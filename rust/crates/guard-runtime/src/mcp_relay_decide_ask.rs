@@ -69,7 +69,7 @@ pub(super) const OPENCODE: &str = "opencode";
 /// The busy timeout the daemon's own store calls take.
 const BUSY_TIMEOUT_MS: u64 = 250;
 /// The actions `_needs_review` queues; any other item is dropped unwritten.
-const REVIEWABLE: [&str; 2] = ["review", "require-reapproval"];
+pub(super) const REVIEWABLE: [&str; 2] = ["review", "require-reapproval"];
 
 /// The hosts `canonical_local_approval_url` treats as this machine.
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "::1", "localhost"];

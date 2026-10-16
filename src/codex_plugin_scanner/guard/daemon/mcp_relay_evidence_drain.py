@@ -266,16 +266,22 @@ def _raise_approval_surface(store: Any, guard_home: Path, harness: str, queued: 
     a failure leaves the request in the approval center the user opens.
     """
 
+    _raise_notices(store, queued.notices)
+    with contextlib.suppress(Exception):
+        _open_approval_center(store, guard_home, harness, queued)
+
+
+def _raise_notices(store: Any, notices: tuple[dict[str, Any], ...]) -> None:
+    """The desktop notice each queued request raises, as the proxy raises it."""
+
     from ..approvals import (  # pyright: ignore[reportPrivateUsage]
         _notify_pending_approval,
         _QueuedNotice,
     )
 
-    for notice in queued.notices:
+    for notice in notices:
         with contextlib.suppress(Exception):
             _notify_pending_approval(store=store, request=_QueuedNotice(**notice))  # pyright: ignore[reportArgumentType]
-    with contextlib.suppress(Exception):
-        _open_approval_center(store, guard_home, harness, queued)
 
 
 def _open_approval_center(store: Any, guard_home: Path, harness: str, queued: _QueuedApproval) -> None:

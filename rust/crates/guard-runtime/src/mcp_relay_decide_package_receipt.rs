@@ -38,6 +38,7 @@
 use serde_json::{json, Map, Value};
 
 use super::package_lane::PackageAnswer;
+use super::package_observe;
 use super::package_policy::PackagePolicy;
 use super::{McpRelayDecideRequestV1, IDENTITY_FAILED};
 use crate::mcp_tool_policy_decision::Decision;
@@ -123,6 +124,13 @@ pub(super) fn record(
     // the other, never both: the two modes queue the same request differently.
     if let Some(approval) = &answer.approval {
         record["approval"] = approval.clone();
+    }
+    // The observed approval requests the forward was queued with, which only
+    // `mode = "observe"` leaves. The call reached the child, so the drain
+    // raises their desktop notices and no approval center beside them, and the
+    // key states the empty list when the observed actions queued nothing.
+    if answer.decision_source == package_observe::OBSERVE_SOURCE {
+        record["observed"] = json!({"notices": answer.observed_notices.clone()});
     }
     Ok(record)
 }

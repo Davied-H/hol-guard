@@ -211,7 +211,10 @@ fn launch_target(request: &McpRelayDecideRequestV1) -> Result<String, &'static s
 
 /// `_package_decision_v2`: the decision the reasons' own V2 signals compose,
 /// with the evaluation's user copy written over its text.
-fn decision_v2(answer: &PackageAnswer, action: GuardAction) -> Result<Value, &'static str> {
+pub(super) fn decision_v2(
+    answer: &PackageAnswer,
+    action: GuardAction,
+) -> Result<Value, &'static str> {
     let reasons = answer
         .evaluation
         .get("reasons")
@@ -244,7 +247,7 @@ fn decision_v2(answer: &PackageAnswer, action: GuardAction) -> Result<Value, &'s
 /// `_queue_artifact` for a package-request artifact: the projection wire the
 /// capability and incident logic read, the command metadata it never carries,
 /// and the artifact's own derived risk facts.
-fn queue_artifact(artifact: &GuardArtifact) -> Result<Map<String, Value>, &'static str> {
+pub(super) fn queue_artifact(artifact: &GuardArtifact) -> Result<Map<String, Value>, &'static str> {
     let risk = guard_command::artifact_risk::artifact_risk(&risk_wire(artifact))
         .map_err(|_| PACKAGE_ASK_FAILED)?;
     let signals: Vec<Value> = risk["signals"]

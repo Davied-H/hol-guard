@@ -715,6 +715,19 @@ fn settle_package(
             queued = package_ask::queue(request, admitted, resolved, &packaged.artifact, asked)?;
             &queued
         }
+        // So do the observed rows the forward is queued with, which the
+        // answer carries the notices of once they are written.
+        package_lane::PackageOutcome::ObservePackage { answer, observed } => {
+            queued = package_observe::queue(
+                request,
+                admitted,
+                resolved,
+                &packaged.artifact,
+                answer,
+                observed,
+            )?;
+            &queued
+        }
         package_lane::PackageOutcome::ToolLeg(leg) => {
             let routed = match leg {
                 ToolLeg::StoredBlock => Routed::StoredBlock {
@@ -827,6 +840,8 @@ mod package_config;
 mod package_lane;
 #[path = "mcp_relay_decide_package_leg.rs"]
 mod package_leg;
+#[path = "mcp_relay_decide_package_observe.rs"]
+mod package_observe;
 #[path = "mcp_relay_decide_package_policy.rs"]
 mod package_policy;
 #[path = "mcp_relay_decide_package_receipt.rs"]

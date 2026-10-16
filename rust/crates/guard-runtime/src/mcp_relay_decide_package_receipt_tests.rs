@@ -89,6 +89,7 @@ fn answer(block: Option<(String, Value)>, policy_action: &str) -> PackageAnswer 
         evidence: vec![json!({"kind": "package_execution_context"})],
         redaction_level: None,
         approval: None,
+        observed_notices: Vec::new(),
     }
 }
 

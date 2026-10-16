@@ -41,6 +41,7 @@ use serde_json::{Map, Value};
 use super::package_answer;
 use super::package_archive;
 use super::package_ask;
+use super::package_observe;
 use super::package_policy::PackagePolicy;
 use super::package_receipt;
 use super::package_route::{self, Decided, PackageRoute, ToolLeg};
@@ -56,6 +57,13 @@ pub(super) enum PackageOutcome {
     /// A queued request the bound `ask` mode answers, whose row the caller
     /// writes before the answer is complete.
     AskPackage(PackageAnswer),
+    /// A forward `mode = "observe"` recorded under the action the enforced
+    /// policies would have taken, whose observed approval requests the caller
+    /// writes before the answer is complete.
+    ObservePackage {
+        answer: PackageAnswer,
+        observed: package_observe::Observed,
+    },
     ToolLeg(ToolLeg),
 }
 
@@ -91,6 +99,10 @@ pub(super) struct PackageAnswer {
     /// The approval-center surface raised once a queued row is written, which
     /// only the `ask` queued leg leaves.
     pub(super) approval: Option<Value>,
+    /// The desktop notices the observed approval requests raise, which only an
+    /// observed forward leaves. The call is forwarded rather than blocked on
+    /// them, so they are the whole surface this leg leaves.
+    pub(super) observed_notices: Vec<Value>,
 }
 
 /// The review binding one queued package request is answered under: the
@@ -148,6 +160,7 @@ fn answered(
         evidence: package_receipt::evidence(policy),
         redaction_level: None,
         approval: None,
+        observed_notices: Vec::new(),
     };
     if let PackageRoute::Forward { .. } = route {
         if package_archive::requires_binding(&policy.evaluation) {
@@ -181,11 +194,20 @@ fn answered(
         _ => None,
     };
     let signals = package_answer::signals(route, policy);
-    Ok(PackageOutcome::Answered(PackageAnswer {
+    let answer = PackageAnswer {
         block: package_answer::block(route, tool, server, policy, &signals),
         redaction_level,
         ..facts(signals)
-    }))
+    };
+    if let PackageRoute::ObserveForward(observed) = route {
+        // The observed rows are written against the store the caller holds,
+        // and the notices they raise complete this answer there.
+        return Ok(PackageOutcome::ObservePackage {
+            answer,
+            observed: observed.clone(),
+        });
+    }
+    Ok(PackageOutcome::Answered(answer))
 }
 
 /// `_queue_package_approval_response` under `safe-alternative`: the request is

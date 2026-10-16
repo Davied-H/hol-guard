@@ -56,7 +56,9 @@ fn policy(policy_action: &str, reasons: Value) -> PackagePolicy {
 /// The lane's own answer, for a call no tool leg decided.
 fn answered(outcome: PackageOutcome) -> PackageAnswer {
     match outcome {
-        PackageOutcome::Answered(answer) | PackageOutcome::AskPackage(answer) => answer,
+        PackageOutcome::Answered(answer)
+        | PackageOutcome::AskPackage(answer)
+        | PackageOutcome::ObservePackage { answer, .. } => answer,
         PackageOutcome::ToolLeg(leg) => panic!("the package lane answers this leg: {leg:?}"),
     }
 }

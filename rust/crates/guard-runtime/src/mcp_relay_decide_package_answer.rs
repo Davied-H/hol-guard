@@ -15,6 +15,7 @@
 
 use serde_json::{json, Map, Value};
 
+use super::package_observe;
 use super::package_policy::PackagePolicy;
 use super::package_route::PackageRoute;
 use super::queue;
@@ -58,7 +59,12 @@ pub(super) fn block(
                 )
             }
         }
-        PackageRoute::QueuePackage { .. } | PackageRoute::Forward { .. } => return None,
+        PackageRoute::QueuePackage { .. }
+        | PackageRoute::Forward { .. }
+        // The observed forward is the ordinary forward: the call reaches the
+        // child, and the rows the enforced policies would have blocked it on
+        // are queued beside it rather than answered to the client.
+        | PackageRoute::ObserveForward(_) => return None,
     };
     Some((
         message,
@@ -106,6 +112,10 @@ pub(super) fn policy_action(route: &PackageRoute) -> &str {
         PackageRoute::TerminalPackage { policy_action }
         | PackageRoute::QueuePackage { policy_action }
         | PackageRoute::Forward { policy_action } => policy_action,
+        // `policy_action=executed_action`: observe mode records the call under
+        // the action it was actually forwarded with, not the one the enforced
+        // policy would have stopped it with.
+        PackageRoute::ObserveForward(observed) => &observed.executed_action,
     }
 }
 
@@ -116,6 +126,10 @@ pub(super) fn policy_action(route: &PackageRoute) -> &str {
 pub(super) fn decision_source(route: &PackageRoute) -> String {
     match route {
         PackageRoute::Forward { policy_action } => format!("policy-{policy_action}"),
+        // `decision_source="policy-observe"`: the observed forward is recorded
+        // under the mode rather than the action it was forwarded with, which
+        // is how the receipt states that no policy enforced it.
+        PackageRoute::ObserveForward(_) => package_observe::OBSERVE_SOURCE.to_owned(),
         // The queued leg is recorded by the tool lane's own queue response,
         // against the package artifact it was asked with.
         PackageRoute::QueuePackage { .. } => queue::SAFE_ALTERNATIVE_SOURCE.to_owned(),
@@ -133,6 +147,9 @@ pub(super) fn decision_label(route: &PackageRoute) -> String {
         }
         PackageRoute::QueuePackage { .. } => "safe-alternative".to_owned(),
         PackageRoute::Forward { policy_action } => format!("package-{policy_action}"),
+        // `{**observe_event, "decision": executed_action}`: the proxy's event
+        // names the executed action itself rather than a package label.
+        PackageRoute::ObserveForward(observed) => observed.executed_action.clone(),
     }
 }
 

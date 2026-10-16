@@ -106,6 +106,7 @@ fn answer() -> PackageAnswer {
         evidence: vec![json!({"kind": "package_execution_context"})],
         redaction_level: None,
         approval: None,
+        observed_notices: Vec::new(),
     }
 }
 

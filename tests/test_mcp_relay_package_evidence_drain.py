@@ -540,3 +540,114 @@ def test_a_forwarded_call_never_carries_an_approval_surface(
     del record["approval"]
     assert not record_mcp_relay_package_evidence(object(), tmp_path, record)
     assert calls == [] and surfaces == []
+
+
+def _observed(**fields: object) -> dict[str, object]:
+    """The record a forward under `mode = "observe"` leaves."""
+
+    forwarded: dict[str, object] = {
+        "decision_source": "policy-observe",
+        "policy_action": "allow",
+        "observed": {"notices": [dict(NOTICE)]},
+    }
+    forwarded.update(fields)
+    return _record(**forwarded)
+
+
+@pytest.fixture
+def notices(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, object]]:
+    """The desktop notices the drain raises for the observed requests."""
+
+    raised: list[tuple[object, object]] = []
+    monkeypatch.setattr(
+        mcp_relay_package_evidence_drain,
+        "_raise_notices",
+        lambda store, queued: raised.append((store, queued)),
+    )
+    return raised
+
+
+def test_an_observed_forward_is_recorded_under_the_mode_it_forwarded_in(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    notices: list[tuple[object, object]],
+    surfaces: list[tuple[object, Path, str, object]],
+) -> None:
+    store = object()
+
+    assert record_mcp_relay_package_evidence(store, tmp_path, _observed())
+
+    [(kind, recorded)] = calls
+    # The call reached the child, so the receipt is the ordinary allow receipt
+    # under the action it was executed with, named by the mode rather than it.
+    assert kind == "allow"
+    assert recorded["decision_source"] == "policy-observe"
+    assert recorded["policy_action"] == "allow"
+    assert recorded["policy_workspace"] == WORKSPACE
+    assert recorded["remember"] is False
+    # The observed rows raise their desktop notices and nothing else: nothing
+    # is waiting on an answer, so there is no approval center to open.
+    assert notices == [(store, (NOTICE,))]
+    assert surfaces == []
+
+
+def test_an_observation_that_queued_no_row_still_names_the_mode(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    notices: list[tuple[object, object]],
+) -> None:
+    # Both policies permitted the call, so the observation has nothing to
+    # raise; the receipt is still the one this mode writes.
+    assert record_mcp_relay_package_evidence(object(), tmp_path, _observed(observed={"notices": []}))
+
+    [(kind, recorded)] = calls
+    assert kind == "allow" and recorded["decision_source"] == "policy-observe"
+    assert notices == []
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        # A notice the proxy never raises.
+        {"observed": {"notices": [{"request_id": "req-1"}]}},
+        {"observed": {"notices": "none"}},
+        # The observation is the notices alone.
+        {"observed": {"notices": [], "extra": True}},
+        {"observed": []},
+        # The mode's source belongs to an observed forward and to nothing else.
+        {"observed": None},
+        # A block is never the receipt an observed forward leaves.
+        {"outcome": "block", "policy_action": "block", "decision": _decision("block")},
+        # The forward is never queued on a row of its own.
+        {"review": {"redaction_level": "partial"}},
+        {"approval": _asked()["approval"]},
+    ],
+)
+def test_an_observation_the_proxy_could_not_have_written_is_dropped(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    notices: list[tuple[object, object]],
+    reviews: list[dict[str, Any]],
+    surfaces: list[tuple[object, Path, str, object]],
+    fields: dict[str, object],
+) -> None:
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, _observed(**fields))
+    assert calls == [] and notices == [] and reviews == [] and surfaces == []
+
+
+def test_an_enforced_forward_is_never_recorded_under_the_observed_mode(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    notices: list[tuple[object, object]],
+) -> None:
+    # The source names the mode only where the observation it left is stated.
+    record = _observed()
+    del record["observed"]
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, record)
+    # And an observed forward recorded under its action is the enforced one.
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, _observed(decision_source="policy-allow"))
+    assert calls == [] and notices == []

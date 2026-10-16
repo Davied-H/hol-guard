@@ -16,7 +16,7 @@ use super::McpRelayDecideRequestV1;
 use crate::mcp_tool_policy_decision::Decision;
 
 /// The artifact type a tool call is built with.
-const ARTIFACT_TYPE: &str = "tool_call";
+pub(super) const ARTIFACT_TYPE: &str = "tool_call";
 /// `_QUEUE_METADATA_KEYS`, which a tool-call artifact never carries.
 const QUEUE_METADATA_KEYS: [&str; 4] = [
     "raw_command_text",

@@ -37,14 +37,15 @@
 use guard_contracts::{McpPackageComposeQueryV1, McpPackageFactsV1, McpPackagePrecheckQueryV1};
 use serde_json::Value;
 
+use super::package_observe;
 use super::package_policy::PackagePolicy;
 use crate::mcp_tool_policy_decision::Decision;
 
 /// The call needs the package-shaped approval request
 /// `_queue_package_approval_response` writes under the `ask` mode.
 pub(super) const PACKAGE_QUEUE: &str = "mcp_relay_package_queue";
-/// `mode = "observe"`: the forward comes with the observed approval requests
-/// the proxy queues first.
+/// The observe answer named a forward this port cannot read the observed
+/// requests out of.
 pub(super) const PACKAGE_OBSERVE: &str = "mcp_relay_package_observe";
 /// The tool or the package policy holds a saved approval the forward spends.
 pub(super) const PACKAGE_PENDING_CLAIM: &str = "mcp_relay_package_pending_claim";
@@ -74,6 +75,11 @@ pub(super) enum PackageRoute {
     /// `_record_package_forward`: neither policy stops the call and no saved
     /// approval is pending.
     Forward { policy_action: String },
+    /// `mode = "observe"`: the same forward, recorded under the action the
+    /// enforced policies would have taken, once the observed approval
+    /// requests they would have blocked it on are queued
+    /// (`mcp_relay_decide_package_observe.rs`).
+    ObserveForward(package_observe::Observed),
 }
 
 /// A leg of the package lane the tool policy decided. Each names the proxy
@@ -150,7 +156,9 @@ pub(super) fn compose(
         "queue_package" => Ok(Decided::Package(PackageRoute::QueuePackage {
             policy_action: answered_action(&answer)?,
         })),
-        "observe_forward" => Err(PACKAGE_OBSERVE),
+        "observe_forward" => Ok(Decided::Package(PackageRoute::ObserveForward(
+            package_observe::observed(&answer).map_err(|_| PACKAGE_OBSERVE)?,
+        ))),
         "proceed" => match answer.get("pending_claims").and_then(Value::as_bool) {
             Some(false) => Ok(Decided::Package(PackageRoute::Forward {
                 policy_action: answer
