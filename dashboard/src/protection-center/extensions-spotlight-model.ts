@@ -41,6 +41,55 @@ export const STARTER_SPOTLIGHT_IDS: readonly string[] = [
   "command.filesystem",
 ];
 
+/**
+ * Plain English for the risk classes the catalog already declares. Every
+ * phrase describes what the extension's own rules look at, so a starter card
+ * can say something useful without inventing a claim or a metric. An id with
+ * no entry here is skipped rather than guessed at.
+ */
+export const RISK_CLASS_PHRASES: Readonly<Record<string, string>> = {
+  destructive_shell: "irreversible deletes and overwrites",
+  network_egress: "commands that send data off this machine",
+  execution: "running code that was fetched or generated",
+  dynamic_execution: "code assembled at run time",
+  encoded_execution: "code hidden behind encoding",
+  remote_execution: "commands run on another host",
+  local_secret_read: "reads of local secrets and keys",
+  credential_access: "credential lookups",
+  credential_exfiltration: "credentials being sent somewhere",
+  security_credential_provisioning: "new credentials being issued",
+  data_flow_exfiltration: "data leaving on an unexpected path",
+  data_export: "bulk exports",
+  database_mutation: "writes against live databases",
+  supply_chain: "untrusted installs and lockfile edits",
+  financial_transaction: "transfers and payments",
+  permission_change: "permission and access changes",
+  policy_bypass: "attempts to work around your own policy",
+  destructive: "irreversible changes",
+};
+
+/**
+ * What this extension watches for, in the catalog's own words. Two phrases at
+ * most: the point is to help someone choose, not to recite a taxonomy.
+ */
+export function protectionLine(catalog: ExtensionCatalogSummary): string | null {
+  const phrases: string[] = [];
+  for (const riskClass of catalog.risk_classes ?? []) {
+    const phrase = RISK_CLASS_PHRASES[riskClass];
+    if (phrase && !phrases.includes(phrase)) phrases.push(phrase);
+    if (phrases.length === 2) break;
+  }
+  if (phrases.length === 0) return null;
+  return `Watches for ${phrases.join(" and ")}.`;
+}
+
+/** The rule count the catalog reports, stated as a count and nothing more. */
+export function ruleCountLabel(catalog: ExtensionCatalogSummary): string | null {
+  const count = catalog.rule_count;
+  if (!Number.isFinite(count) || count <= 0) return null;
+  return `${count.toLocaleString()} ${count === 1 ? "rule" : "rules"}`;
+}
+
 export type SpotlightBasis = "paid" | "activity" | "starter";
 
 export interface SpotlightCard {
@@ -65,6 +114,11 @@ export interface Spotlight {
   lead: SpotlightBasis;
   /** True when no card was paid for, so the vacant cell is worth showing. */
   vacant: boolean;
+  /**
+   * True when every organic card on the shelf is already protecting this
+   * device. The shelf then stops reading like a to-do list and says so.
+   */
+  allActive: boolean;
 }
 
 function commandsCheckedLabel(count: number): string {
@@ -81,6 +135,12 @@ export function buildSpotlight(input: {
   sponsored: readonly JoinedDiscoveryCard[];
   activity: readonly SpotlightActivityCount[];
   catalog: readonly ExtensionCatalogSummary[];
+  /**
+   * Whether an extension is already protecting this device. The starter tier
+   * leads with what is still off, because that is the only cell a reader can
+   * act on; everything else is a reassurance, not a suggestion.
+   */
+  isActive?: (extension: ExtensionCatalogSummary) => boolean;
 }): Spotlight {
   const cards: SpotlightCard[] = [];
   const taken = new Set<string>();
@@ -109,9 +169,11 @@ export function buildSpotlight(input: {
     add({ catalog, placement: null, featured: false, basis: "activity", reason: commandsCheckedLabel(bucket.count) });
   }
 
-  for (const extensionId of STARTER_SPOTLIGHT_IDS) {
-    const catalog = catalogById.get(extensionId);
-    if (!catalog) continue;
+  const isActive = input.isActive ?? (() => false);
+  const starters = STARTER_SPOTLIGHT_IDS
+    .map((extensionId) => catalogById.get(extensionId))
+    .filter((catalog): catalog is ExtensionCatalogSummary => catalog !== undefined);
+  for (const catalog of [...starters.filter((c) => !isActive(c)), ...starters.filter((c) => isActive(c))]) {
     add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
   }
   // A catalog need not contain any starter id - a trimmed build, a future
@@ -121,10 +183,12 @@ export function buildSpotlight(input: {
     add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
   }
 
+  const organic = cards.filter((card) => card.basis !== "paid");
   return {
     cards,
     lead: paidCount > 0 ? "paid" : (cards.some((card) => card.basis === "activity") ? "activity" : "starter"),
     vacant: paidCount === 0,
+    allActive: organic.length > 0 && organic.every((card) => isActive(card.catalog)),
   };
 }
 
@@ -134,7 +198,7 @@ export interface SpotlightHeading {
 }
 
 /** What the shelf says it is, and on what evidence. One per lead basis. */
-export function spotlightHeading(lead: SpotlightBasis): SpotlightHeading {
+export function spotlightHeading(lead: SpotlightBasis, allActive = false): SpotlightHeading {
   if (lead === "paid") {
     return {
       title: "Featured by their makers",
@@ -145,6 +209,12 @@ export function spotlightHeading(lead: SpotlightBasis): SpotlightHeading {
     return {
       title: "Busiest tools on this device",
       basis: `Counted from Guard's own decisions over the last ${SPOTLIGHT_ACTIVITY_DAYS} days.`,
+    };
+  }
+  if (allActive) {
+    return {
+      title: "Already covering the basics",
+      basis: "These are on, and Guard checks them on every command. Not a ranking or a popularity measure.",
     };
   }
   return {
@@ -207,6 +277,38 @@ export function slotStartingPrice(
   } catch {
     return null;
   }
+}
+
+/**
+ * How many of these spots are still for sale, summed over the products that
+ * buy this placement. Returns null unless every open product the server sent
+ * carried a slot pair: a partial answer would read as a complete one.
+ */
+export function slotInventory(
+  offers: readonly DiscoveryOffer[],
+  products: readonly DiscoveryProduct[],
+): { open: number; total: number } | null {
+  const known = forProducts(offers, products).filter((offer) => offer.availability !== "unknown");
+  if (known.length === 0) return null;
+  let open = 0;
+  let total = 0;
+  for (const offer of known) {
+    if (offer.openSlots === null || offer.totalSlots === null) return null;
+    open += offer.openSlots;
+    total += offer.totalSlots;
+  }
+  if (total < 1) return null;
+  return { open, total };
+}
+
+/** "3 of 4 open", only when the server actually confirmed both numbers. */
+export function slotInventoryLabel(
+  offers: readonly DiscoveryOffer[],
+  products: readonly DiscoveryProduct[],
+): string | null {
+  const inventory = slotInventory(offers, products);
+  if (!inventory) return null;
+  return `${inventory.open} of ${inventory.total} open.`;
 }
 
 /** Reads the extension dimension of a command-activity analytics response. */

@@ -5,7 +5,10 @@ import type { DiscoveryFeedStatus, DiscoveryOffer, DiscoveryPlacement, JoinedDis
 import {
   buildSpotlight,
   CATALOG_SLOT_PRODUCTS,
+  protectionLine,
+  ruleCountLabel,
   SHELF_SLOT_PRODUCTS,
+  slotInventoryLabel,
   slotStartingPrice,
   slotState,
   spotlightActivityFromDimensions,
@@ -54,6 +57,8 @@ function offer(overrides: Partial<DiscoveryOffer> = {}): DiscoveryOffer {
     currency: "usd",
     checkedAt: null,
     quoteRequired: true,
+    openSlots: null,
+    totalSlots: null,
     ...overrides,
   };
 }
@@ -220,6 +225,119 @@ const CATALOG = [
     ["command.unlisted-a", "command.unlisted-b", "command.unlisted-c"],
   );
   assert.ok(spotlight.cards.every((card) => card.basis === "starter"));
+}
+
+// Remaining inventory is only ever repeated back from the server, and only
+// when every open product it sent carried a complete pair.
+{
+  assert.equal(
+    slotInventoryLabel([offer({ openSlots: 3, totalSlots: 4 })], CATALOG_SLOT_PRODUCTS),
+    "3 of 4 open.",
+  );
+  // One product missing its counts makes the sum a guess, so nothing is said.
+  assert.equal(
+    slotInventoryLabel(
+      [
+        offer({ product: "always", openSlots: 1, totalSlots: 2 }),
+        offer({ product: "time_slot" }),
+      ],
+      SHELF_SLOT_PRODUCTS,
+    ),
+    null,
+  );
+  // Counts across the products that buy the same placement add up.
+  assert.equal(
+    slotInventoryLabel(
+      [
+        offer({ product: "always", openSlots: 1, totalSlots: 2 }),
+        offer({ product: "time_slot", openSlots: 2, totalSlots: 6 }),
+      ],
+      SHELF_SLOT_PRODUCTS,
+    ),
+    "3 of 8 open.",
+  );
+  // An unknown offer contributes nothing and is not counted as inventory.
+  assert.equal(
+    slotInventoryLabel(
+      [offer({ availability: "unknown", indicativeAmountCents: null, currency: null })],
+      CATALOG_SLOT_PRODUCTS,
+    ),
+    null,
+  );
+  assert.equal(slotInventoryLabel([], CATALOG_SLOT_PRODUCTS), null);
+  // A sold-out product still reports honestly rather than going silent.
+  assert.equal(
+    slotInventoryLabel([offer({ availability: "sold_out", openSlots: 0, totalSlots: 4 })], CATALOG_SLOT_PRODUCTS),
+    "0 of 4 open.",
+  );
+}
+
+// Starter copy comes from the catalog entry and stops at what it declares.
+{
+  const withRisk = {
+    ...catalog("command.git"),
+    risk_classes: ["destructive_shell", "network_egress", "execution"],
+    rule_count: 1240,
+  } as ExtensionCatalogSummary;
+  assert.equal(
+    protectionLine(withRisk),
+    "Watches for irreversible deletes and overwrites and commands that send data off this machine.",
+  );
+  assert.equal(ruleCountLabel(withRisk), "1,240 rules");
+  assert.equal(ruleCountLabel({ ...withRisk, rule_count: 1 } as ExtensionCatalogSummary), "1 rule");
+  // An unmapped class is skipped rather than guessed at, and an entry that
+  // declares nothing says nothing.
+  assert.equal(
+    protectionLine({ ...withRisk, risk_classes: ["not_a_real_class"] } as ExtensionCatalogSummary),
+    null,
+  );
+  assert.equal(protectionLine(catalog("command.git")), null);
+  assert.equal(ruleCountLabel(catalog("command.git")), null);
+}
+
+// The starter tier leads with what is still off: a shelf of cards a reader
+// has already turned on is a wall, not a suggestion.
+{
+  const off = new Set(["command.cloud.aws"]);
+  const spotlight = buildSpotlight({
+    featured: [],
+    sponsored: [],
+    activity: [],
+    catalog: CATALOG,
+    isActive: (extension) => !off.has(extension.extension_id),
+  });
+  assert.equal(spotlight.cards[0]?.catalog.extension_id, "command.cloud.aws");
+  assert.equal(spotlight.allActive, false);
+  assert.equal(spotlightHeading(spotlight.lead, spotlight.allActive).title, "Good places to start");
+}
+
+// Every starter already on: the shelf says so instead of asking again.
+{
+  const spotlight = buildSpotlight({
+    featured: [],
+    sponsored: [],
+    activity: [],
+    catalog: CATALOG,
+    isActive: () => true,
+  });
+  assert.equal(spotlight.allActive, true);
+  const heading = spotlightHeading(spotlight.lead, spotlight.allActive);
+  assert.equal(heading.title, "Already covering the basics");
+  assert.match(heading.basis, /Not a ranking/);
+}
+
+// A paid cell is never counted as coverage: the shelf still has work to do.
+{
+  const spotlight = buildSpotlight({
+    featured: [paid("command.git", "always")],
+    sponsored: [],
+    activity: [],
+    catalog: CATALOG,
+    isActive: () => true,
+  });
+  assert.equal(spotlight.lead, "paid");
+  assert.equal(spotlight.allActive, true);
+  assert.equal(spotlightHeading(spotlight.lead, spotlight.allActive).title, "Featured by their makers");
 }
 
 console.log("extensions-spotlight-model tests passed");
