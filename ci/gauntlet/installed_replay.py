@@ -10,6 +10,7 @@ any disagreement between runs as a failure of the build rather than noise.
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from collections import Counter
 from pathlib import Path
@@ -25,14 +26,25 @@ _REPLAY_TIMEOUT = 120.0
 
 
 def handler_argv(handler: dict[str, Any]) -> list[str]:
-    """The exact argv a harness would run for one Guard hook handler."""
+    """The exact argv a harness would run for one Guard hook handler.
+
+    A handler records its command either as an argv list or as a single shell
+    command line, which is what Codex writes and runs through a shell. Taking
+    the string whole would make the entire quoted line one filename, so it is
+    split the way the harness's own shell would split it.
+    """
 
     command = handler.get("command")
     argv: list[str] = []
     if isinstance(command, list):
         argv.extend(str(part) for part in command)
     elif isinstance(command, str):
-        argv.append(command)
+        try:
+            argv.extend(shlex.split(command))
+        except ValueError:
+            # Unbalanced quoting: no argv the harness could run either, so
+            # report nothing rather than a command line this lane invented.
+            return []
     arguments = handler.get("args")
     if isinstance(arguments, list):
         argv.extend(str(argument) for argument in arguments)

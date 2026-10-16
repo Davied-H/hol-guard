@@ -23,6 +23,7 @@ from ci.gauntlet.installed_registration import (
     install_harness,
     load_contract,
 )
+from ci.gauntlet.installed_replay import handler_argv
 from ci.gauntlet.installed_runtime import SCRIPT, SHIM, InstalledRuntimeError, classify, resolve_runtime
 from ci.gauntlet.installed_store import STALE_COMMAND
 
@@ -284,7 +285,9 @@ def test_the_lane_never_touches_the_operators_own_home(tmp_path: Path) -> None:
         assert not (tmp_path / "work" / relative).exists()
 
 
-def test_report_only_prints_the_findings_and_still_exits_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_report_only_prints_the_findings_and_still_exits_zero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """A pull request that changes the lane must not gate on the build's defects.
 
     The findings still have to be written and printed, or report-only would be
@@ -344,3 +347,40 @@ def test_the_summary_says_so_when_the_lane_never_ran(tmp_path: Path) -> None:
     from ci.gauntlet.summarise_installed_acceptance import render
 
     assert "did not get as far as running" in "\n".join(render(tmp_path / "missing"))
+
+
+def test_a_shell_quoted_command_line_is_split_the_way_a_shell_would() -> None:
+    """Codex records one shell command line, not an argv list.
+
+    Taking that string whole made the entire quoted line a single filename, so
+    the lane reported FileNotFoundError against a path ending in the JSON
+    argument instead of running the bridge.
+    """
+
+    handler = {
+        "command": "/opt/guard/hol-guard-runtime codex-hook-bridge /opt/guard/hol-guard "
+        '--_hol-guard-codex-bridge \'{"state_path":"/home/a b/.hol-guard/state.json"}\''
+    }
+
+    argv = handler_argv(handler)
+
+    assert argv == [
+        "/opt/guard/hol-guard-runtime",
+        "codex-hook-bridge",
+        "/opt/guard/hol-guard",
+        "--_hol-guard-codex-bridge",
+        '{"state_path":"/home/a b/.hol-guard/state.json"}',
+    ]
+
+
+def test_an_argv_list_command_is_left_alone() -> None:
+    assert handler_argv({"command": ["/opt/guard/hol-guard", "hook"], "args": ["--harness", "codex"]}) == [
+        "/opt/guard/hol-guard",
+        "hook",
+        "--harness",
+        "codex",
+    ]
+
+
+def test_an_unbalanced_quote_registers_no_argv_rather_than_an_invented_one() -> None:
+    assert handler_argv({"command": "/opt/guard/hol-guard --flag 'unterminated"}) == []
