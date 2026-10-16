@@ -170,8 +170,18 @@ fn harness_version_writes_require_the_header_token() {
         "/v1/harness-versions/acknowledge",
         "/v1/harness-versions/clear-acknowledgement",
     ] {
-        assert!(crate::daemon_route_paths::requires_header_token(path), "{path}");
-        assert!(crate::daemon_route_paths::session_path("POST", path), "{path}");
-        assert_eq!(crate::daemon_route_paths::route_class(path), "none", "{path}");
+        assert!(
+            crate::daemon_route_paths::requires_header_token(path),
+            "{path}"
+        );
+        assert!(
+            crate::daemon_route_paths::session_path("POST", path),
+            "{path}"
+        );
+        assert_eq!(
+            crate::daemon_route_paths::route_class(path),
+            "none",
+            "{path}"
+        );
     }
 }
