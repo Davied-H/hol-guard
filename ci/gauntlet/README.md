@@ -266,11 +266,13 @@ A local live inference server can be selected with `--provider-url http://127.0.
 `qualify --prepare-only` sets up the same inputs for such a run: it builds or reuses the cached SDK and wheel, installs the wheel into a fresh candidate worktree, prints the usual JSON line with `candidate` and `sdk.root`, and stops without live cases (exit 0 when setup succeeded; it never qualifies). For example, on Linux with a local OpenAI-compatible server:
 
 ```sh
+set -euo pipefail
 umask 077
 sha=$(git rev-parse origin/main)
-python -m ci.gauntlet qualify --sha "$sha" --prepare-only > prepared.json
-candidate=$(jq -r .candidate prepared.json)
-sdk=$(jq -r .sdk.root prepared.json)
+prepared=$(mktemp)  # outside the checkout, so the trusted verifier stays clean
+python -m ci.gauntlet qualify --sha "$sha" --prepare-only > "$prepared"
+candidate=$(jq -er .candidate "$prepared")
+sdk=$(jq -er .sdk.root "$prepared")
 cd "$candidate"
 PATH="$candidate/.venv/bin:$sdk/node_modules/.bin:$PATH" .venv/bin/python -m ci.gauntlet run \
   --expected-source-sha "$sha" \
@@ -279,7 +281,7 @@ PATH="$candidate/.venv/bin:$sdk/node_modules/.bin:$PATH" .venv/bin/python -m ci.
   --case CASE_ID --output /absolute/path/outside-the-checkout/gauntlet-evidence
 ```
 
-A `--case` run is investigation evidence, not qualification. The candidate worktree stays under the run root until you remove it with `git worktree remove`.
+A `--case` run is investigation evidence, not qualification. The candidate worktree stays under the run root until you remove it with `git worktree remove`. Linux builds only the development-profile wheel: the release profile runs the published size check, which has no budget for the local `linux_x86_64` wheel, so `--release-profile-wheel` (or a candidate that predates development wheels) needs `--wheel` there.
 
 On a machine that also runs HOL Guard for everyday work, that Guard's package shims (`~/.hol-guard/package-shims/bin`) usually come first on `PATH`. The runner starts each agent as `bun <sdk>/…/omp … <prompt>`, so the host shim reviews that launch and can stop it before the agent starts (#4833). The case then fails as `harness-error` with zero inference rounds. Each case runs its own isolated Guard, so for Gauntlet runs only, leave the host shim directory out of `PATH` and put the real Bun directory after the SDK:
 

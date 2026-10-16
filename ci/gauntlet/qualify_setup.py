@@ -38,6 +38,8 @@ GNU_SED_DIRS = (
     Path("/usr/local/opt/gnu-sed/libexec/gnubin"),
 )
 LOCK_DIR = "ci/pi-exact-continuation"
+# The local Linux wheel is never published, so the release size budgets do not cover it.
+LINUX_LOCAL_TAG = "linux_x86_64"
 
 
 def _reap_group(process: subprocess.Popen[Any]) -> None:
@@ -253,7 +255,7 @@ def host_platform() -> tuple[str, str, str]:
             return "macosx_13_0_x86_64", "x86_64-apple-darwin", "13.0"
         raise RuntimeError(f"unsupported macOS architecture: {arch}")
     if sys.platform.startswith("linux") and arch == "x86_64":
-        return "linux_x86_64", "x86_64-unknown-linux-gnu", ""
+        return LINUX_LOCAL_TAG, "x86_64-unknown-linux-gnu", ""
     raise RuntimeError("in-place wheel builds support macOS and Linux x86_64; pass --wheel on this platform")
 
 
@@ -396,6 +398,11 @@ def ensure_wheel(
     if profile == "dev" and DEV_WHEEL_MARKER.encode() not in git_show(repo, sha, WHEEL_BUILD_SCRIPT):
         # Candidates older than the dev-profile switch still run the stable size check.
         profile = "release"
+    if profile == "release" and tag == LINUX_LOCAL_TAG:
+        raise RuntimeError(
+            "release-profile wheels run the published size check, which has no budget for the local "
+            "linux_x86_64 wheel; build the development profile or pass --wheel"
+        )
     private_dir(cache_root / "wheels", tighten=driver_owned(cache_root / "wheels"))
     store = cache_root / "wheels" / f"{sha}-{tag}{'-dev' if profile == 'dev' else ''}"
     store.mkdir(parents=True, exist_ok=True)
