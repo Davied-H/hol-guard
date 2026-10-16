@@ -1,21 +1,26 @@
-//! Inline Node source whose only network use is loopback HTTP on literal
-//! ports: a server listening on `127.0.0.1` or `localhost`, and `fetch`
-//! calls to a loopback URL, as agents write to smoke-test a page they built.
+//! Node source whose only network use is loopback HTTP on literal ports: a
+//! server listening on a literal port with no host or a loopback or wildcard
+//! one, and `fetch` calls to a loopback URL, as agents write to smoke-test a
+//! page they built. The source is inline (`node -e`) or a script file in the
+//! working directory whose local imports were all read.
 //!
 //! Such a program runs in the workspace sandbox, which grants exactly these
-//! loopback ports and still withholds every other address. The sandbox, not
-//! this scan, bounds the program: the scan names the ports to grant and
-//! predicts that nothing else is needed. Any other network client, a dynamic
-//! host or port, an administrative port or a credential store keeps the
-//! review.
+//! ports and still withholds every other one and every remote host. The
+//! sandbox, not this scan, bounds the program: the scan names the ports to
+//! grant and predicts that nothing else is needed. Any other network client,
+//! a dynamic host or port, an administrative port or a credential store keeps
+//! the review.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
 use super::launch::{launched_program, Program};
-use super::{code_lines, python_network, Language, CREDENTIAL_STORE, NODE_NETWORK};
+use super::{
+    code_lines, python_network, Entry, Language, PathContext, CREDENTIAL_STORE, NODE_NETWORK,
+};
 
 /// Loopback services this grant must never reach: container and cluster
 /// control planes, service meshes, debuggers, Guard's own approval center,
@@ -76,12 +81,44 @@ static DYNAMIC_CODE: LazyLock<Regex> = LazyLock::new(|| {
 static VM_MODULE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"["'`](?:node:)?vm["'`]"#).unwrap());
 static LISTEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.\s*listen\s*\(").unwrap());
+/// `.listen(port)`, `.listen(port, callback)` or `.listen(port, host)` with
+/// a loopback or wildcard host literal. The port is a literal, a name
+/// [`PORT_CONSTANT`] binds, or `process.env.NAME || <literal>` (or `??`),
+/// which earns only the literal: the sandbox refuses any other port, so an
+/// override fails to bind. A callback named by a bare identifier is checked
+/// against [`STRING_BINDING`], so a host held in a variable keeps the review.
+///
+/// The host is not what keeps the server local. On macOS a Seatbelt
+/// `localhost` inbound rule matches every local address, so the grant bounds
+/// the port, not the interface; outbound stays limited to this host. On
+/// Linux the sandbox has a private loopback.
 static LOOPBACK_LISTEN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"^\.\s*listen\s*\(\s*([0-9]{1,5})\s*,\s*(?:"(?:127\.0\.0\.1|localhost)"|'(?:127\.0\.0\.1|localhost)')\s*[,)]"#,
+        r#"^\.\s*listen\s*\(\s*(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*(?:\|\||\?\?)\s*([0-9]{1,5})|([0-9]{1,5})|([A-Za-z_][A-Za-z0-9_]*))\s*(?:\)|,\s*(?:(?:"(?:127\.0\.0\.1|localhost|0\.0\.0\.0|::)"|'(?:127\.0\.0\.1|localhost|0\.0\.0\.0|::)')\s*[,)]|function\b|async\b|\(|([A-Za-z_$][A-Za-z0-9_$]*)\s*[,)]))"#,
     )
     .unwrap()
 });
+/// `const PORT = 3000`, or `const PORT = process.env.PORT || 3000` (or `??`):
+/// a name bound to a literal port, and nothing more. Only the literal is
+/// granted.
+static PORT_CONSTANT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?m)\bconst\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*(?:\|\||\?\?)\s*)?([0-9]{1,5})[ \t]*(?:[;,]|$)",
+    )
+    .unwrap()
+});
+/// `const HOST = "..."`: a name bound to a string, which as the second
+/// `listen` argument would be a host, not a callback.
+static STRING_BINDING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*["'`]"#).unwrap()
+});
+/// Every declaration of a name, any of which may rebind or shadow it.
+static DECLARATION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(?:const|let|var|function|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b").unwrap()
+});
+/// `${PORT}` in a template literal.
+static TEMPLATE_NAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}").unwrap());
 static MODULE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"["'](?:node:)?([^"']+)["']"#).unwrap());
 /// `const http = require("node:http")` or `import http from "node:http"`.
@@ -99,12 +136,23 @@ static HTTP_NAMED: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 static HTTP_MEMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\.\s*(\w+)").unwrap());
+/// `require("node:http").createServer`, read straight off the import.
+static REQUIRED_SERVER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*\)\s*\.\s*createServer\b").unwrap());
 
 /// The loopback ports a Node program's source `code` (its comments already
 /// dropped) listens and fetches on, when that is all of its network use;
 /// `None` for anything else.
 pub(super) fn node_loopback_ports(code: &str, home_dir: Option<&str>) -> Option<BTreeSet<u16>> {
-    // A template expansion is code the string mask below would hide.
+    let constants = port_constants(code);
+    // `${PORT}` naming a port constant reads as the literal it is bound to.
+    let expanded = TEMPLATE_NAME.replace_all(code, |name: &regex::Captures| {
+        constants
+            .get(&name[1])
+            .map_or_else(|| name[0].to_owned(), u16::to_string)
+    });
+    let code: &str = &expanded;
+    // Any other template expansion is code the string mask below would hide.
     if code.contains("${") || CREDENTIAL_STORE.is_match(code) {
         return None;
     }
@@ -130,6 +178,11 @@ pub(super) fn node_loopback_ports(code: &str, home_dir: Option<&str>) -> Option<
         let module = MODULE.captures(text)?;
         if &module[1] != "http" {
             return None;
+        }
+        // The server constructor is the only member read off this import, so
+        // it needs no binding.
+        if text.starts_with("require") && REQUIRED_SERVER.is_match(&code[found.end()..]) {
+            continue;
         }
         http_imports += 1;
     }
@@ -165,19 +218,52 @@ pub(super) fn node_loopback_ports(code: &str, home_dir: Option<&str>) -> Option<
             return None;
         }
     }
+    let strings: BTreeSet<&str> = STRING_BINDING
+        .captures_iter(code)
+        .filter_map(|binding| binding.get(1).map(|name| name.as_str()))
+        .collect();
     let mut ports = BTreeSet::new();
     for found in URL.find_iter(code) {
         let port = LOOPBACK_URL.captures(&code[found.start()..])?;
         ports.insert(port[1].parse::<u16>().ok()?);
     }
     for found in LISTEN.find_iter(&masked) {
-        let port = LOOPBACK_LISTEN.captures(&code[found.start()..])?;
-        ports.insert(port[1].parse::<u16>().ok()?);
+        let listen = LOOPBACK_LISTEN.captures(&code[found.start()..])?;
+        if let Some(callback) = listen.get(4) {
+            if strings.contains(callback.as_str()) {
+                return None;
+            }
+        }
+        let port = match listen.get(1).or_else(|| listen.get(2)) {
+            Some(literal) => literal.as_str().parse::<u16>().ok()?,
+            None => *constants.get(&listen[3])?,
+        };
+        ports.insert(port);
     }
     ports
         .iter()
         .all(|port| grantable(*port, home_dir))
         .then_some(ports)
+}
+
+/// The names `code` binds to a literal port with `const` and declares nowhere
+/// else. Strings are masked first, so a declaration spelled inside one is not
+/// read. A name the program rebinds or shadows is left out, so a `listen` on
+/// it keeps the review; any port read here is still held to [`grantable`].
+fn port_constants(code: &str) -> BTreeMap<String, u16> {
+    let Some(masked) = mask_strings(code) else {
+        return BTreeMap::new();
+    };
+    let mut declared = BTreeMap::<&str, usize>::new();
+    for declaration in DECLARATION.captures_iter(&masked) {
+        let name = declaration.get(1).map_or("", |name| name.as_str());
+        *declared.entry(name).or_default() += 1;
+    }
+    PORT_CONSTANT
+        .captures_iter(&masked)
+        .filter(|constant| declared.get(&constant[1]) == Some(&1))
+        .filter_map(|constant| Some((constant[1].to_owned(), constant[2].parse().ok()?)))
+        .collect()
 }
 
 /// Whether every use of the HTTP module bound to `name`, besides its
@@ -229,12 +315,18 @@ fn mask_strings(code: &str) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
-/// The loopback ports inline Node source in the program `command` runs
-/// (`/bin/sh -c <text>`) serves and fetches on, for the workspace sandbox to
-/// grant. Empty when any inline program uses other network, so the sandbox
-/// then withholds the network whole, as it did before.
+/// The loopback ports the programs `command` (`/bin/sh -c <text>`) launches
+/// serve and fetch on, for the workspace sandbox to grant: inline Node
+/// source, and a Node script file in the working directory `cwd`, read again
+/// as the sandbox is about to run it. Empty when any of those programs uses
+/// other network, so the sandbox then withholds the network whole, as it did
+/// before.
 #[cfg_attr(not(unix), allow(dead_code))]
-pub(crate) fn inline_loopback_ports(command: &[String], home_dir: Option<&str>) -> Vec<u16> {
+pub(crate) fn launch_loopback_ports(
+    command: &[String],
+    cwd: Option<&str>,
+    home_dir: Option<&str>,
+) -> Vec<u16> {
     let [shell, flag, text] = command else {
         return Vec::new();
     };
@@ -252,17 +344,45 @@ pub(crate) fn inline_loopback_ports(command: &[String], home_dir: Option<&str>) 
     if model.confidence != "exact" {
         return Vec::new();
     }
+    let context = PathContext {
+        home_dir,
+        cwd,
+        ..PathContext::default()
+    };
     let mut ports = BTreeSet::new();
-    for segment in &model.segments {
-        let Some((language, Program::Inline(source), false)) = launched_program(segment) else {
-            continue;
-        };
-        let code = code_lines(language, source);
-        let found = match language {
-            Language::Python if python_network(&code) => None,
-            Language::Python => continue,
-            Language::Node if NODE_NETWORK.is_match(&code) => node_loopback_ports(&code, home_dir),
-            Language::Node => continue,
+    for (index, segment) in model.segments.iter().enumerate() {
+        let found = match launched_program(segment) {
+            Some((language, Program::Inline(source), false)) => {
+                let code = code_lines(language, source);
+                match language {
+                    Language::Python if python_network(&code) => None,
+                    Language::Python => continue,
+                    Language::Node if NODE_NETWORK.is_match(&code) => {
+                        node_loopback_ports(&code, home_dir)
+                    }
+                    Language::Node => continue,
+                }
+            }
+            Some((Language::Node, Program::Script(script), false)) => {
+                // An earlier directory change moves a relative path out of
+                // reach, as it does when the command is judged.
+                let moved = model.segments[..index].iter().any(|prior| {
+                    prior.executable.as_deref().is_some_and(|value| {
+                        matches!(
+                            super::super::executable_basename(value),
+                            "cd" | "pushd" | "popd"
+                        )
+                    })
+                });
+                if moved && !Path::new(script).is_absolute() {
+                    continue;
+                }
+                match script_ports(script, context) {
+                    Some(found) => found,
+                    None => continue,
+                }
+            }
+            _ => continue,
         };
         match found {
             Some(found) => ports.extend(found),
@@ -272,8 +392,38 @@ pub(crate) fn inline_loopback_ports(command: &[String], home_dir: Option<&str>) 
     ports.into_iter().collect()
 }
 
-/// The ports a launched program's sources earn: its inline Node source
-/// when it is loopback-only and no local module it imports uses the
+/// What the Node script file `script` needs from the network, read the way
+/// the command was judged: `None` when it cannot be read or uses no network,
+/// and otherwise the loopback ports it earns, if any.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn script_ports(script: &str, context: PathContext<'_>) -> Option<Option<BTreeSet<u16>>> {
+    if !super::read_paths::verified_path_context(context.home_dir, context.cwd) {
+        return None;
+    }
+    let path = super::resolve(script, context)?;
+    let (sources, complete) = super::read_graph(Language::Node, Entry::File(path.clone()))?;
+    let network = sources
+        .iter()
+        .any(|source| NODE_NETWORK.is_match(&code_lines(Language::Node, source)));
+    network.then(|| {
+        (complete && in_working_directory(&path, context))
+            .then(|| program_ports(&sources, context.home_dir))
+            .flatten()
+    })
+}
+
+/// Whether the canonical script `path` lies under the working directory,
+/// where the workspace scripts a contained command runs live. A script
+/// elsewhere earns no loopback grant.
+pub(super) fn in_working_directory(path: &Path, context: PathContext<'_>) -> bool {
+    context
+        .cwd
+        .and_then(|cwd| std::fs::canonicalize(cwd).ok())
+        .is_some_and(|root| path.starts_with(root))
+}
+
+/// The ports a launched program's sources earn: its inline Node source or
+/// script when it is loopback-only and no local module it imports uses the
 /// network or names a credential store.
 pub(super) fn program_ports(sources: &[String], home_dir: Option<&str>) -> Option<BTreeSet<u16>> {
     let (first, imports) = sources.split_first()?;
