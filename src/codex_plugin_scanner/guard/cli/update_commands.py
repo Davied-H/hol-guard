@@ -76,6 +76,7 @@ from .update_install_verify import verify_installed_distribution
 from .update_native_wheel import (
     bundled_native_runtime_missing,
     github_only_platform,
+    install_native_payload,
     native_platform_supported,
     native_runtime_payload,
     native_wheel_install_recorded,
@@ -796,7 +797,7 @@ def _run_guard_update_unlocked(
     wheel_flags = _wheel_install_flags(
         wheel_version,
         current_version,
-        native_repair=requested_wheel_path is None and native_wheel_plan is not None,
+        native_repair=wheel is None and native_wheel_plan is not None,
     )
     command = _update_command(
         installer,
@@ -932,6 +933,35 @@ def _run_guard_update_unlocked(
             if len(repaired_installs) == 1:
                 payload["managed_install"] = repaired_installs[0]
         return payload, 0
+    if native_repair_only and trusted_wheel is not None and Version(trusted_wheel.version) == Version(current_version):
+        # Same version: add the runtime files rather than reinstall the package this process is running from.
+        try:
+            trusted_wheel.revalidate()
+            install_native_payload(trusted_wheel.staged_path)
+        except UpdateArtifactError as error:
+            return _trusted_update_failure(
+                payload, UpdateSubprocessError(error.reason_code), trusted_wheel=trusted_wheel
+            )
+        except NativeWheelError as error:
+            trusted_wheel.cleanup()
+            native_wheel_failure_payload(payload, error, version=current_version, installer=installer)
+            return payload, 1
+        trusted_wheel.cleanup()
+        runtime_restored = not bundled_native_runtime_missing()
+        payload.update(
+            {
+                "status": "updated" if runtime_restored else "failed",
+                "changed": runtime_restored,
+                "resulting_version": current_version,
+                "native_runtime": native_runtime_payload(
+                    not runtime_restored, version=current_version, installer=installer
+                ),
+                "message": "Installed the native runtime from the GitHub release."
+                if runtime_restored
+                else "The native runtime is still missing after the repair.",
+            }
+        )
+        return payload, 0 if runtime_restored else 1
     active_command = execution_command
     active_display_command = command
     attempted_force_retry = False
