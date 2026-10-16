@@ -29,6 +29,12 @@ use std::collections::BTreeMap;
 /// A bound view whose configuration fields this cannot read.
 const CONFIG_INVALID: &str = "mcp_relay_package_config_invalid";
 
+/// `GuardConfig.risk_actions`: an action per risk class.
+type RiskActions = BTreeMap<String, String>;
+
+/// `GuardConfig.harness_risk_actions`: the same, per harness.
+type HarnessRiskActions = BTreeMap<String, RiskActions>;
+
 /// The hydrated policy view a package request's approval hash is bound to.
 pub(super) fn config_policy(
     view: &HarnessView,
@@ -130,10 +136,7 @@ fn strings(map: &Map<String, Value>, key: &str) -> Result<Vec<String>, &'static 
 }
 
 /// `risk_actions`: an action per risk class, or none bound at all.
-fn actions(
-    map: &Map<String, Value>,
-    key: &str,
-) -> Result<Option<BTreeMap<String, String>>, &'static str> {
+fn actions(map: &Map<String, Value>, key: &str) -> Result<Option<RiskActions>, &'static str> {
     match map.get(key) {
         Some(Value::Null) => Ok(None),
         Some(Value::Object(entries)) => Ok(Some(action_map(entries)?)),
@@ -145,7 +148,7 @@ fn actions(
 fn harness_risk_actions(
     map: &Map<String, Value>,
     key: &str,
-) -> Result<Option<BTreeMap<String, BTreeMap<String, String>>>, &'static str> {
+) -> Result<Option<HarnessRiskActions>, &'static str> {
     match map.get(key) {
         Some(Value::Null) => Ok(None),
         Some(Value::Object(entries)) => entries
@@ -160,7 +163,7 @@ fn harness_risk_actions(
     }
 }
 
-fn action_map(entries: &Map<String, Value>) -> Result<BTreeMap<String, String>, &'static str> {
+fn action_map(entries: &Map<String, Value>) -> Result<RiskActions, &'static str> {
     entries
         .iter()
         .map(|(class, action)| {

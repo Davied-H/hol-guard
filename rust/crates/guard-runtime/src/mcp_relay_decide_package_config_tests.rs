@@ -184,10 +184,10 @@ fn a_risk_action_that_is_not_an_action_defers() {
         Some(CONFIG_INVALID)
     );
 
-    let mut config = config();
-    config.insert("harness_risk_actions".to_owned(), json!({"codex": "block"}));
+    let mut harness = config();
+    harness.insert("harness_risk_actions".to_owned(), json!({"codex": "block"}));
     assert_eq!(
-        config_policy(&view(config), &artifact()).err(),
+        config_policy(&view(harness), &artifact()).err(),
         Some(CONFIG_INVALID),
         "a harness maps to its risk classes, not to one action"
     );
