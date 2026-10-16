@@ -443,6 +443,11 @@ mod tests {
             ("cp -R tree/* \"new-directory\"", true),
             // `dotglob` hands the copy the hidden names this leaves out.
             ("shopt -s dotglob && cp -R tree/* new-directory", true),
+            (
+                "builtin shopt -s dotglob && cp -R tree/* new-directory",
+                true,
+            ),
+            ("builtin set -o noglob && cp -R tree/* new-directory", true),
         ] {
             let model = crate::parse_command(&crate::CommandModelRequestV1 {
                 command: command.into(),
