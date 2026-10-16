@@ -698,6 +698,7 @@ pub mod detectors;
 pub mod direct_vitest;
 mod egress_archive;
 pub mod egress_broker;
+pub mod egress_caller;
 mod egress_spool;
 pub mod false_positive_rules;
 pub mod guard_sync_transport;
