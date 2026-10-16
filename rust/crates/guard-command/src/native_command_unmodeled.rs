@@ -286,6 +286,14 @@ impl CompiledNativeCommandControls {
     }
 }
 
+/// A pipeline whose only data movement is a pipe into an `xargs` that names
+/// the program it runs. A pipe into a shell, `curl url | sh`, is not one.
+fn named_xargs_pipeline(text: &str) -> bool {
+    text.contains("xargs")
+        && xargs_names_its_program(text)
+        && !text.contains(['<', '>', '`', '$', '\n'])
+}
+
 /// Loops and conditionals, or one heredoc that only feeds standard input,
 /// with nothing in the shell text that substitutes or overrides `PATH` and no
 /// redirect except to a literal path.
@@ -315,8 +323,10 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
                 && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
         }
         Some("compound_shell_not_yet_supported") => {
-            !moves_data(&unquoted_literal(&command.normalized_text))
+            let literal = unquoted_literal(&command.normalized_text);
+            !moves_data(&literal)
                 || literal_redirects_only(&command.normalized_text)
+                || named_xargs_pipeline(&command.normalized_text)
         }
         Some("command_redirect_not_yet_supported") => {
             let text = without_lookups(&command.normalized_text);
