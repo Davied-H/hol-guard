@@ -9,6 +9,7 @@ import pytest
 from codex_plugin_scanner.guard.runtime import contained_test_hook as sink
 from codex_plugin_scanner.guard.runtime.contained_authority import authority_unavailable, settled_authority
 from codex_plugin_scanner.guard.runtime.restricted_pytest import RestrictedPytestError
+from codex_plugin_scanner.guard.runtime.restricted_pytest_model import PYTEST_INVALID_COMMAND_REASON_CODE
 
 UNAVAILABLE = {
     "decision": "block",
@@ -65,6 +66,13 @@ def test_a_script_that_is_not_pytest_reports_the_authorization_that_failed(
     scripts = tmp_path / "scripts"
     scripts.mkdir()
     _ = (scripts / "report.py").write_text("print('report')\n", encoding="utf-8")
+
+    def not_a_pytest(*_args: object, **_kwargs: object) -> object:
+        raise RestrictedPytestError(
+            PYTEST_INVALID_COMMAND_REASON_CODE,
+            "Restricted pytest accepts only a pytest executable or a Python `-m pytest` invocation.",
+        )
+
     from codex_plugin_scanner.guard import native_restricted_pytest
 
     monkeypatch.setattr(
@@ -78,6 +86,7 @@ def test_a_script_that_is_not_pytest_reports_the_authorization_that_failed(
             "node_tool": False,
         },
     )
+    monkeypatch.setattr(sink, "prepare_restricted_pytest", not_a_pytest)
     with pytest.raises(RestrictedPytestError) as failure:
         _ = sink.run_authorized_contained_test(
             {
