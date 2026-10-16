@@ -421,6 +421,10 @@ mod local_store_read;
 mod local_tool_eligibility_op;
 mod managed_controls_policy_fields;
 mod managed_policy;
+mod managed_policy_file_trust;
+mod managed_policy_floor;
+mod managed_policy_load;
+mod managed_policy_plist;
 mod managed_resident;
 mod mcp_probe_op;
 mod mcp_proxy_actions;
@@ -445,27 +449,18 @@ mod mcp_proxy_route;
 mod mcp_proxy_shlex;
 mod mcp_proxy_signals;
 mod mcp_relay;
-#[cfg(unix)]
 mod mcp_relay_args;
-#[cfg(unix)]
 mod mcp_relay_authority;
-#[cfg(unix)]
 mod mcp_relay_catalog;
 mod mcp_relay_claims;
-#[cfg(unix)]
 mod mcp_relay_core;
 mod mcp_relay_decide;
-#[cfg(unix)]
 mod mcp_relay_host;
-#[cfg(unix)]
 mod mcp_relay_lane;
-#[cfg(unix)]
 mod mcp_relay_launch;
-#[cfg(unix)]
 mod mcp_relay_order;
 mod mcp_relay_pending;
 mod mcp_relay_ready;
-#[cfg(unix)]
 mod mcp_relay_resident;
 mod mcp_relay_servers;
 mod mcp_runtime_evidence_op;
@@ -628,7 +623,10 @@ mod supply_chain_cloud_vectors_tests;
 mod supply_chain_egress;
 mod supply_chain_eval_rounds;
 mod supply_chain_eval_seams;
+mod supply_chain_eval_transport;
 mod totp;
+#[cfg(windows)]
+mod windows_node_build;
 #[cfg(windows)]
 mod windows_readonly;
 mod workspace_inventory_files;
