@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -240,3 +241,60 @@ def test_windows_kernel_refuses_writers_while_digest_is_reused(tmp_path):
     after = identity.validate_native_binary(path)
     assert after is not None and after.sha256 == hashlib.sha256(b"native-runtime-modified").hexdigest()
     assert len(identity._WRITE_LOCKS) == 1
+
+
+def _evict(key: tuple[str, tuple[int, ...]]) -> None:
+    with identity._CACHE_LOCK:
+        identity._forget_locked(key)
+
+
+def _still_open(descriptor: int) -> bool:
+    try:
+        os.fstat(descriptor)
+    except OSError:
+        return False
+    return True
+
+
+def test_an_eviction_cannot_interleave_with_the_reused_digests_path_check(monkeypatch, tmp_path, windows_reuse):
+    """The handle check and the path check are one decision, not two.
+
+    The held handle is the whole proof that a cached digest still describes the
+    file, because it is what keeps every writer out. If another thread can
+    evict the entry and close that handle while the reuse path checks the
+    paths, a Windows owner can rewrite the bytes in place and restore the size
+    and timestamps that check reads, and the digest of the old bytes comes back
+    for a file that no longer holds them.
+    """
+
+    path = _binary(tmp_path)
+    first = identity.validate_native_binary(path)
+    assert first is not None
+    key = next(iter(identity._WRITE_LOCKS))
+    descriptor = identity._WRITE_LOCKS[key]
+    stable = identity._stable_names
+    calls: list[int] = []
+    observed: list[tuple[bool, bool]] = []
+    evictor = threading.Thread(target=_evict, args=(key,))
+
+    def watched(*args: object) -> bool:
+        calls.append(1)
+        # The first call precedes the cache lookup; the second is the reuse path.
+        if len(calls) == 2:
+            evictor.start()
+            evictor.join(0.2)
+            held = not identity._CACHE_LOCK.acquire(blocking=False)
+            if not held:
+                identity._CACHE_LOCK.release()
+            observed.append((held, _still_open(descriptor)))
+        return stable(*args)
+
+    monkeypatch.setattr(identity, "_stable_names", watched)
+    try:
+        second = identity.validate_native_binary(path)
+    finally:
+        if evictor.is_alive() or evictor.ident is not None:
+            evictor.join(5)
+
+    assert observed == [(True, True)]
+    assert second == first

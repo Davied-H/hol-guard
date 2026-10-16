@@ -110,8 +110,22 @@ def _forget_locked(key: tuple[str, tuple[int, ...]]) -> None:
             os.close(descriptor)
 
 
-def _locked_identity(key: tuple[str, tuple[int, ...]]) -> NativeRuntimeIdentity | None:
-    """Cached identity whose write-locked handle still names the same file."""
+def _locked_identity(
+    key: tuple[str, tuple[int, ...]],
+    lexical: Path,
+    resolved: Path,
+    expected: tuple[int, ...],
+) -> NativeRuntimeIdentity | None:
+    """Cached identity whose write-locked handle still names the same file.
+
+    The path check belongs under the same lock as the handle check. The handle
+    is the whole proof: it is what keeps every writer out of the file, and the
+    cache is what keeps it open. Checking the paths after the lock is released
+    leaves room for another thread to evict this entry and close the handle,
+    and a Windows owner can then rewrite the bytes in place and restore the
+    size and timestamps the path check reads, so the digest of the old bytes
+    comes back for a file that no longer holds them.
+    """
 
     with _CACHE_LOCK:
         cached = _IDENTITIES.get(key)
@@ -124,6 +138,8 @@ def _locked_identity(key: tuple[str, tuple[int, ...]]) -> NativeRuntimeIdentity 
             unchanged = False
         if not unchanged:
             _forget_locked(key)
+            return None
+        if not _stable_names(lexical, resolved, expected):
             return None
         _IDENTITIES.move_to_end(key)
         return cached
@@ -172,9 +188,9 @@ def validate_native_binary(path: Path) -> NativeRuntimeIdentity | None:
             if cached is not None:
                 return cached if _stable_names(lexical, resolved, expected) else None
         elif _WRITE_LOCK_ENABLED:
-            cached = _locked_identity(key)
+            cached = _locked_identity(key, lexical, resolved, expected)
             if cached is not None:
-                return cached if _stable_names(lexical, resolved, expected) else None
+                return cached
         locked = open_write_locked(resolved) if _WRITE_LOCK_ENABLED and not cacheable else None
         try:
             digest = _read_digest(resolved, expected, locked)
