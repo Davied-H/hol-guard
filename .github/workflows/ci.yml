@@ -157,7 +157,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [clippy, test-core, test-command, test-runtime]
+        check: [clippy, test-core, test-command, test-runtime-1, test-runtime-2]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -203,15 +203,17 @@ jobs:
           } >> "$GITHUB_ENV"
         env:
           SCCACHE_MODE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'READ_WRITE' || 'READ_ONLY' }}
-      - name: Provision bubblewrap for the Linux workspace sandbox tests
+      - name: Provision the Linux test linker
         if: matrix.check != 'clippy'
-        # Without it the overlay sandbox tests take the unavailable-host branch
-        # and the live confinement run is skipped.
-        # The test wrapper links with lld; the sandbox needs bubblewrap 0.10+.
+        # The checked test wrapper links with lld. Reuse the runner's linker
+        # when present instead of refreshing apt for an installed tool.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends lld
-          bash ci/containment/install-bubblewrap.sh
+          if ! command -v ld.lld >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends lld
+          fi
+      - uses: ./.github/actions/setup-bubblewrap
+        if: matrix.check != 'clippy'
       - name: Validate the locked Rust workspace
         env:
           CARGO_CHECK: ${{ matrix.check }}
@@ -229,17 +231,23 @@ jobs:
                 exit "$clippy_status"
               fi
               ;;
-            test-core|test-command|test-runtime)
+            test-core|test-command|test-runtime-1|test-runtime-2)
               # Partition before compiling, not merely when running tests.
               # The core partition includes every other (and future) member.
+              nextest_args=(--profile ci)
               case "$CARGO_CHECK" in
                 test-core) packages=(--workspace --exclude guard-command --exclude hol-guard-runtime) ;;
                 test-command) packages=(--package guard-command) ;;
-                test-runtime) packages=(--package hol-guard-runtime) ;;
+                test-runtime-1|test-runtime-2)
+                  packages=(--package hol-guard-runtime)
+                  # nextest partitions after compilation; both jobs retain every
+                  # runtime target, and together run each test exactly once.
+                  nextest_args+=(--partition "hash:${CARGO_CHECK##*-}/2")
+                  ;;
               esac
               nextest_bin="$(python3 scripts/ci/install_nextest.py)"
               PATH="$nextest_bin:$PATH" cargo nextest run --manifest-path rust/Cargo.toml --locked --all-targets "${packages[@]}" \
-                --profile ci \
+                "${nextest_args[@]}" \
                 --test-threads 4 --retries 0 --no-fail-fast
               ;;
             *) echo "Unsupported workspace check" >&2; exit 64 ;;
@@ -376,7 +384,7 @@ jobs:
         # Without it every command the sandbox would contain falls back to
         # review, and the gates measure a host that Linux users with
         # bubblewrap never see.
-        run: bash ci/containment/install-bubblewrap.sh
+        uses: ./.github/actions/setup-bubblewrap
       - name: Benign false-positive and Gauntlet replay gates (model-free, native path)
         env:
           SHARD_INDEX: ${{ matrix.shard-index }}
@@ -399,57 +407,14 @@ jobs:
   native-release-size:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    concurrency:
+      group: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && format('shipped-native-ci-build-{0}-linux', github.sha) || format('shipped-native-ci-build-run-{0}-linux', github.run_id) }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
-      - name: Stage shipped runtime trust bindings
-        run: python3 scripts/refresh_extension_artifacts.py --trust-only
-      - name: Identify the shipping build platform
-        id: shipping-platform
-        run: echo "image=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_OUTPUT"
-      - name: Restore the exact shipped runtime
-        id: shipped-runtime-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: rust/target/release/hol-guard-runtime
-          # No prefix restore: every embedded input, build recipe and toolchain
-          # must match. Hash before setup-rust restores dependency artifacts.
-          key: shipped-runtime-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.shipping-platform.outputs.image }}-${{ hashFiles('rust/**', 'contributions/**', 'contracts/**', 'spec/**', 'src/codex_plugin_scanner/guard/contracts/**', '.github/actions/setup-rust/action.yml', '.github/workflows/ci.yml') }}
-      - uses: ./.github/actions/setup-rust
-        if: steps.shipped-runtime-cache.outputs.cache-hit != 'true'
-      - name: Install content-addressed compiler cache
-        if: steps.shipped-runtime-cache.outputs.cache-hit != 'true'
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
-        with:
-          version: v0.18.0
-      - name: Build the shipped fat-LTO runtime
-        if: steps.shipped-runtime-cache.outputs.cache-hit != 'true'
-        env:
-          RUSTC_WORKSPACE_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: 'on'
-          SCCACHE_GHA_VERSION: native-release-size
-          SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'READ_WRITE' || 'READ_ONLY' }}
-          SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
-        run: |
-          unset CARGO_PROFILE_RELEASE_LTO
-          unset CARGO_PROFILE_RELEASE_CODEGEN_UNITS
-          if [ -n "${CARGO_PROFILE_RELEASE_LTO+x}" ] || [ -n "${CARGO_PROFILE_RELEASE_CODEGEN_UNITS+x}" ]; then
-            echo "Shipped size gate must use the rust/Cargo.toml release profile" >&2
-            exit 1
-          fi
-          # Only the runtime ships in platform wheels; the native evaluator
-          # builds and verifies guard-command-source separately on this commit.
-          cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime
-      - name: Measure the shipped fat-LTO runtime size
-        run: |
-          python3 scripts/ci/check_wheel_size.py --native-dir rust/target/release --platform manylinux_2_17_x86_64
-      - name: Save the verified shipped runtime
-        if: steps.shipped-runtime-cache.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
-        with:
-          path: rust/target/release/hol-guard-runtime
-          key: ${{ steps.shipped-runtime-cache.outputs.cache-primary-key }}
+      - uses: ./.github/actions/ci-job-native-release-size
 
   coverage:
     name: coverage (3.12, ${{ matrix.shard-index }})
@@ -601,18 +566,14 @@ jobs:
           retention-days: 90
           overwrite: true
 
-  sonar:
+  sonar-context:
     # PRs already run the full behavioral suite above; Sonar consumes the
     # authoritative instrumented main run and stays off the contributor path.
     if: vars.SONAR_CI_ENABLED == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # A cold Rust coverage build alone takes about 16 minutes; leave room for
-    # the scan and the five-minute quality gate check so the cache can seed.
-    timeout-minutes: 35
-    permissions:
-      contents: read
-      actions: read
-      pull-requests: read
+    timeout-minutes: 2
+    outputs:
+      has-token: ${{ steps.token-presence.outputs.has-token }}
     steps:
       - name: Check for SonarQube Cloud token
         id: token-presence
@@ -625,16 +586,48 @@ jobs:
             echo "has-token=false" >> "$GITHUB_OUTPUT"
             echo "SONAR_TOKEN secret is not set; skipping SonarQube Cloud analysis"
           fi
+
+  sonar-rust-coverage:
+    name: Rust coverage (${{ matrix.partition }})
+    needs: sonar-context
+    if: needs.sonar-context.outputs.has-token == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [core, command, runtime-1, runtime-2]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-rust-coverage
+        with:
+          partition: ${{ matrix.partition }}
+
+  sonar:
+    needs: [sonar-context, sonar-rust-coverage, native-workspace, coverage]
+    if: >-
+      !cancelled() &&
+      needs.sonar-context.outputs.has-token == 'true' &&
+      needs.sonar-rust-coverage.result == 'success' &&
+      needs.native-workspace.result == 'success' &&
+      needs.coverage.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
           persist-credentials: false
-        if: steps.token-presence.outputs.has-token == 'true'
       - uses: ./.github/actions/ci-job-sonar
         with:
-          has-token: ${{ steps.token-presence.outputs.has-token }}
+          has-token: ${{ needs.sonar-context.outputs.has-token }}
           secret-sonar-token: ${{ secrets.SONAR_TOKEN }}
-        if: steps.token-presence.outputs.has-token == 'true'
 
   scheduling-sensitive:
     needs: [plan, native-command-evaluators]
@@ -819,13 +812,15 @@ jobs:
       (github.event_name != 'pull_request' ||
        (needs.plan.result == 'success' && needs.plan.outputs.data_only != 'true'))
     runs-on: windows-latest
-    # The two native Windows shim contract families are independent. Run them
-    # concurrently, but require both outcomes via the existing job-level needs.
+    # Runtime and MCP test executables otherwise compile serially. Keep all
+    # three contract families independent and require every matrix outcome.
     timeout-minutes: 15
+    env:
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
     strategy:
       fail-fast: false
       matrix:
-        shim-gate: [vectors, native-op]
+        shim-gate: [vectors, native-op, mcp]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:

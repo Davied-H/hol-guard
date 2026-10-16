@@ -239,13 +239,16 @@ const MAX_LEAF_ENTRIES: usize = 4096;
 /// match has its entries listed, so it needs the listing proof itself, and
 /// any other match must clear the sensitive-path and credential-name screens.
 fn leaf_glob_operand(value: &str, context: super::PathContext<'_>) -> bool {
-    let Some((directory, pattern)) = value.rsplit_once('/') else {
+    // Windows spells the home path with `\`, so there it is a separator.
+    let separator = |c: char| c == '/' || (c == '\\' && cfg!(windows));
+    let Some((directory, pattern)) = value.rsplit_once(separator) else {
         return false;
     };
     if directory.is_empty()
         || directory.contains(['*', '?', '[', ']'])
         || pattern.is_empty()
-        || value.contains(['$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '\\'])
+        || value.contains(['$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0'])
+        || (value.contains('\\') && !cfg!(windows))
         || value.contains(['{', '}', '(', ')', '!'])
         // A trailing wildcard can always spell a credential name, so the
         // pattern only screens its fixed path; every match is screened below.
@@ -407,8 +410,8 @@ mod tests {
             std::fs::write(file, "synthetic\n").unwrap();
         }
         let (home, project) = (
-            std::fs::canonicalize(home).unwrap(),
-            std::fs::canonicalize(project).unwrap(),
+            crate::runtime_read_paths::canonicalize_text(&home).unwrap(),
+            crate::runtime_read_paths::canonicalize_text(&project).unwrap(),
         );
         let context = crate::pretool::PathContext {
             home_dir: home.to_str(),

@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import sqlite3
+import stat as stat_module
 import subprocess
 import sys
 import threading
@@ -78,9 +79,6 @@ from .store_approvals import (
 )
 from .store_approvals import (
     get_approval_request as load_approval_request,
-)
-from .store_approvals import (
-    get_approval_extension_allow_hint,
 )
 from .store_approvals import (
     list_approval_requests as load_approval_requests,
@@ -1121,21 +1119,68 @@ def _set_private_mode(path: Path, mode: int) -> None:
             _set_windows_private_directory(path)
         return
     try:
+        # A chmod to the current mode still moves ctime, which the policy
+        # snapshot publisher watches, so every store close would wake it.
+        if os.stat(path).st_mode & 0o7777 == mode:
+            return
         os.chmod(path, mode)
     except OSError as exc:
         _store_logger.debug("Could not set private mode %o on %s: %s", mode, path, exc)
         return
 
 
+# Binding a Windows directory opens every ancestor and re-reads the DACL. The
+# store repairs guard home after each connection closes, so a hook request paid
+# for that walk several times. Within one process, a directory bound recently
+# under the same identity is skipped; a recreated directory is bound at once.
+# A path that passes through a junction or link is bound every time, since the
+# directory it reaches can change without the final identity changing first.
+_WINDOWS_PRIVATE_DIRECTORY_RECHECK_SECONDS = 30.0
+_windows_private_directory_lock = threading.Lock()
+_windows_private_directory_bound: dict[str, tuple[int, int, float]] = {}
+
+
+def _windows_path_is_direct(path: str) -> bool:
+    """True when no component of an absolute path is a reparse point (a junction or link)."""
+    current = Path(path)
+    try:
+        for component in (current, *current.parents):
+            if getattr(os.lstat(component), "st_file_attributes", 0) & stat_module.FILE_ATTRIBUTE_REPARSE_POINT:
+                return False
+    except OSError:
+        return False
+    return True
+
+
 def _set_windows_private_directory(path: Path) -> None:
     from .native_policy_snapshot import NativePolicySnapshotError
     from .native_policy_snapshot_windows_state import _windows_ensure_private_directory
 
+    key = os.path.normcase(os.path.abspath(path))
+    try:
+        stat = os.stat(path)
+    except OSError:
+        stat = None
+    now = time.monotonic()
+    if stat is not None and _windows_path_is_direct(key):
+        with _windows_private_directory_lock:
+            bound = _windows_private_directory_bound.get(key)
+        if (
+            bound is not None
+            and bound[:2] == (stat.st_dev, stat.st_ino)
+            and now - bound[2] < _WINDOWS_PRIVATE_DIRECTORY_RECHECK_SECONDS
+        ):
+            return
     try:
         _windows_ensure_private_directory(path)
     except (NativePolicySnapshotError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        with _windows_private_directory_lock:
+            _windows_private_directory_bound.pop(key, None)
         _store_logger.debug("Could not set Windows private directory on %s: %s", path, exc)
         return
+    if stat is not None:
+        with _windows_private_directory_lock:
+            _windows_private_directory_bound[key] = (stat.st_dev, stat.st_ino, now)
 
 
 def _system_keyring_availability_cache_path(guard_home: Path) -> Path:

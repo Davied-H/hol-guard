@@ -39,6 +39,8 @@ use winapi::um::winnt::{FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE
 mod bound_open;
 #[path = "windows/capture.rs"]
 mod capture;
+#[path = "windows/child_tree.rs"]
+mod child_tree;
 #[path = "directory_binding.rs"]
 mod directory_binding;
 #[path = "file_identity.rs"]
@@ -51,12 +53,14 @@ mod private_files;
 mod process_lifecycle;
 pub use bound_open::{
     directory_file_id, handle_file_id, open_bound_executable_file, open_bound_regular_file,
-    open_bound_replaceable_file, open_skill_directory, regular_file_id, FileId,
+    open_bound_replaceable_file, open_skill_directory, path_stat, regular_file_id, FileId,
+    PathStat,
 };
 pub use capture::{
     capture as capture_managed_child, capture_owned_child, capture_pipes, CaptureCommand,
     CapturePipes, CapturedOutput, InheritWindow,
 };
+pub use child_tree::{ChildTree, CHILD_TREE_CREATION_FLAGS};
 pub use directory_binding::{
     bind_directory, bind_private_directory, bind_readonly_directory, create_private_directory,
     path_is_within, PrivateDirectoryBinding,
@@ -67,7 +71,7 @@ pub use private_files::{
     create_private_file, delete_private_file_handle, open_private_directory, open_private_file,
 };
 pub use process_lifecycle::{
-    process_start_marker, running_process_start_marker, terminate_process,
+    process_liveness, process_start_marker, running_process_start_marker, terminate_process,
     terminate_process_verified, wait_for_process_exit,
 };
 

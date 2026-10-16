@@ -95,6 +95,7 @@ pub(crate) use git_routes::{git_dir_route_within_scope, git_route_within_workspa
 mod apply_patch_writes;
 mod lockfile_install;
 mod omp_hashline_writes;
+mod pipe_attacks;
 mod pure_expression;
 mod read_paths;
 mod source_reads;
@@ -107,6 +108,7 @@ mod safe_links;
 pub(crate) mod safe_reads;
 mod safe_scalar;
 mod safe_writes;
+mod script_content;
 mod search;
 mod search_scope;
 mod search_scope_filter;
@@ -198,12 +200,15 @@ pub(super) fn normalized_haystack(value: &str) -> String {
 
 /// Floors no extension permission can settle: Guard self-protection, secret
 /// exfiltration, a glob that could name a secret file, and Git configuration
-/// that runs a program Guard cannot read.
+/// that runs a program Guard cannot read. An unproven model has no segments
+/// to screen, so it is a floor itself rather than passing every screen.
 pub(crate) fn fixed_command_floor(model: &CanonicalCommandV1) -> bool {
-    model
-        .segments
-        .iter()
-        .any(crate::command_compatibility::git_runs_configured_program)
+    model.confidence != "exact"
+        || model.segments.is_empty()
+        || model
+            .segments
+            .iter()
+            .any(crate::command_compatibility::git_runs_configured_program)
         || crate::command_critical_floors::guard_control_block_in_launcher_text(
             &model.normalized_text,
         )
@@ -702,6 +707,14 @@ fn evaluate_single_command(
             "HOL Guard blocked a local script that combines credential access with outbound posting.",
         ));
     }
+    if script_content::exfiltrates(&model, context) {
+        return Ok(pretool_decision(
+            model,
+            "block",
+            "native_secret_exfiltration",
+            "HOL Guard blocked a script that reads a credential store and uses the network.",
+        ));
+    }
     if exact_safe_command_with_context(&model, false, context)
         && model.segments.iter().all(|segment| {
             segment
@@ -760,6 +773,9 @@ fn evaluate_single_command(
             "native_secret_exfiltration",
             "HOL Guard blocked a command that combines sensitive data access with network transfer.",
         ));
+    }
+    if let Some((reason_code, reason)) = pipe_attacks::pipe_attack(&model) {
+        return Ok(pretool_decision(model, "block", reason_code, reason));
     }
     if model
         .wrapper_chain
