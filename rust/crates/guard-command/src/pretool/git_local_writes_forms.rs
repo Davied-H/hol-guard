@@ -283,7 +283,10 @@ pub(super) fn stash_free(
     // configuration proof a `git diff` read clears under, read with the
     // options the caller gave. `--no-ext-diff` and `--no-textconv` keep a
     // configured driver out of the read, and a summary form runs no textconv
-    // program. The diff pages under `pager.stash`, not `pager.diff`.
+    // program. It pages twice over: `pager.stash` decides whether the stash
+    // command pages at all, and `show_stash` then asks for the diff pager, so
+    // `pager.diff` starts a program of its own where `pager.stash` left the
+    // choice open. Both keys are held to the proof.
     stash_pages
         && match segment.arguments.get(1).map(String::as_str) {
             Some("list") => free(&["log", "-g", "--first-parent", "refs/stash"], None),
@@ -295,7 +298,7 @@ pub(super) fn stash_free(
                         .map(String::as_str)
                         .filter(|word| word.starts_with('-')),
                 );
-                free(&arguments, Some("stash"))
+                free(&arguments, None)
             }
             Some("apply" | "pop") => !merge_driver && free(&["status"], None),
             _ => true,

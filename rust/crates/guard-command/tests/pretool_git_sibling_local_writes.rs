@@ -181,6 +181,11 @@ fn stash_restores_and_identity_variables_are_local_writes() {
     for (key, value, command) in [
         ("pager.stash", "sh -c id", "git stash list"),
         ("pager.stash", "sh -c id", "git stash show -p"),
+        // `show_stash` asks for the diff pager besides, so `pager.diff` starts
+        // a program of its own where `pager.stash` leaves the choice open, for
+        // a summary form as much as for a patch.
+        ("pager.diff", "sh -c id", "git stash show -p"),
+        ("pager.diff", "sh -c id", "git stash show --stat"),
         ("diff.external", "sh -c id", "git stash show -p"),
         ("pager.log", "sh -c id", "git stash list"),
         ("pager.status", "sh -c id", "git stash pop"),
@@ -230,13 +235,6 @@ fn stash_restores_and_identity_variables_are_local_writes() {
         assert_reviewed(&session, still_reviewed);
         session.config(&["--unset-all", key]);
     }
-    // Stash pages under pager.stash. An unsafe pager.diff does not read the stash.
-    session.config(&["pager.diff", "sh -c id"]);
-    assert!(
-        allowed(&session, "git stash show -p"),
-        "pager.diff must not gate stash show"
-    );
-    session.config(&["--unset-all", "pager.diff"]);
 }
 
 #[test]
