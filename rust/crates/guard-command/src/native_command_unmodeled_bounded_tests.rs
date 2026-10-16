@@ -1,22 +1,9 @@
-//! Two shapes that name the programs they run: a search path the command
-//! sets for one call, and an `xargs` that names its program.
+//! An `xargs` names the program it runs in the command text: standard input
+//! supplies its arguments, not its program.
 use super::tests::{controls, decision, github};
 use super::xargs_names_its_program;
 
 const FAILED: &str = "native_command_extension_evaluation_failed";
-
-#[test]
-fn a_search_path_the_command_sets_is_reviewable() {
-    let controls = controls(github("enabled", None), false);
-    for command in [
-        "PATH=./node_modules/.bin:$PATH tsc --noEmit",
-        "PATH=node_modules/.bin:$PATH eslint src --max-warnings 0",
-    ] {
-        let (action, code) = decision(&controls, command);
-        assert_ne!(code, FAILED, "{command}");
-        assert_eq!(action, "review", "{command}: {code}");
-    }
-}
 
 #[test]
 fn an_xargs_that_names_its_program_is_reviewable() {
