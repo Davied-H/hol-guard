@@ -137,6 +137,27 @@ def test_unproven_lock_falls_back_to_hashing_every_lookup(monkeypatch, tmp_path)
     assert not identity._IDENTITIES
 
 
+@pytest.mark.parametrize(
+    ("os_name", "version", "supported"),
+    [("nt", (3, 10, 11), False), ("nt", (3, 11, 9), False), ("nt", (3, 12, 0), True), ("posix", (3, 13, 1), False)],
+)
+def test_write_lock_needs_full_windows_file_ids(os_name, version, supported):
+    assert identity._write_lock_supported(os_name, version) is supported
+
+
+def test_interpreters_without_full_file_ids_never_cache(monkeypatch, tmp_path):
+    path = _binary(tmp_path)
+    monkeypatch.setattr(identity, "_CACHE_ENABLED", False)
+    monkeypatch.setattr(identity, "_WRITE_LOCK_ENABLED", identity._write_lock_supported("nt", (3, 11, 9)))
+    opened: list[Path] = []
+    monkeypatch.setattr(identity, "open_write_locked", lambda found: opened.append(found))
+    calls = _count_hashes(monkeypatch)
+    assert identity.validate_native_binary(path) is not None
+    assert identity.validate_native_binary(path) is not None
+    assert len(calls) == 2
+    assert not opened and not identity._WRITE_LOCKS and not identity._IDENTITIES
+
+
 def test_evicted_entries_close_their_locks(monkeypatch, tmp_path, windows_reuse):
     monkeypatch.setattr(identity, "_MAX_IDENTITIES", 2)
     for index in range(3):
@@ -199,7 +220,7 @@ def test_lock_is_unavailable_off_windows(tmp_path):
     assert write_lock.open_write_locked(_binary(tmp_path)) is None
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows share-mode enforcement")
+@pytest.mark.skipif(not identity._WRITE_LOCK_ENABLED, reason="needs Windows on Python 3.12 or later")
 def test_windows_kernel_refuses_writers_while_digest_is_reused(tmp_path):
     path = _binary(tmp_path)
     first = identity.validate_native_binary(path)

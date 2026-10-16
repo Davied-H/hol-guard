@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import os
 import stat
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -18,7 +19,17 @@ from .native_runtime_values import NativeRuntimeIdentity
 _MAX_IDENTITIES = 64
 _MIN_CACHE_AGE_NS = 2_000_000_000
 _CACHE_ENABLED = os.name == "posix" and hasattr(os, "O_NOFOLLOW")
-_WRITE_LOCK_ENABLED = os.name == "nt"
+
+
+def _write_lock_supported(os_name: str, version: tuple[int, ...]) -> bool:
+    # Before 3.12, Windows os.stat fills st_ino from the 64-bit nFileIndex,
+    # which truncates 128-bit ReFS file IDs. Every other identity field is
+    # owner-forgeable on Windows, so a colliding file renamed over the binary
+    # could inherit its digest. Older interpreters keep hashing every lookup.
+    return os_name == "nt" and tuple(version[:2]) >= (3, 12)
+
+
+_WRITE_LOCK_ENABLED = _write_lock_supported(os.name, (sys.version_info.major, sys.version_info.minor))
 _CACHE_LOCK = threading.Lock()
 _IDENTITIES: OrderedDict[tuple[str, tuple[int, ...]], NativeRuntimeIdentity] = OrderedDict()
 # Windows reuses a digest only while it holds a handle that denies writers.
