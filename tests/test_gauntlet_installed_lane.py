@@ -17,8 +17,13 @@ from pathlib import Path
 import pytest
 
 from ci.gauntlet.installed_lane import run_lane
-from ci.gauntlet.installed_registration import assess_harness, load_contract
-from ci.gauntlet.installed_runtime import SCRIPT, InstalledRuntimeError, classify, resolve_runtime
+from ci.gauntlet.installed_registration import (
+    GateBlockedError,
+    assess_harness,
+    install_harness,
+    load_contract,
+)
+from ci.gauntlet.installed_runtime import SCRIPT, SHIM, InstalledRuntimeError, classify, resolve_runtime
 from ci.gauntlet.installed_store import STALE_COMMAND
 
 HARNESSES = ["claude-code"]
@@ -146,6 +151,28 @@ def test_a_console_script_cannot_stand_in_for_the_frozen_bundle(tmp_path: Path) 
         resolve_runtime(runtime, require_frozen=True)
 
 
+def test_a_shell_shim_onto_a_frozen_bundle_is_accepted(tmp_path: Path) -> None:
+    """The Desktop install is reached through two `/bin/sh` wrappers.
+
+    Its first two bytes are `#!`, so judging packaging by them would refuse a
+    genuinely frozen install under --require-frozen. What settles it is that
+    the executable still answers with no interpreter on PATH.
+    """
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    real = bundle / "hol-guard"
+    real.write_text("#!/bin/sh\necho 'hol-guard 9.9.9'\n", encoding="utf-8")
+    real.chmod(real.stat().st_mode | stat.S_IEXEC)
+    shim = tmp_path / "hol-guard"
+    shim.write_text(f'#!/bin/sh\nexec "{real}" "$@"\n', encoding="utf-8")
+    shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
+    assert classify(shim)[0] == SCRIPT
+    runtime = resolve_runtime(shim, require_frozen=True)
+    assert runtime.kind == SHIM
+    assert runtime.frozen is True
+
+
 def test_a_frozen_layout_without_a_sealed_manifest_is_refused(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle"
     internal = bundle / "_internal" / "codex_plugin_scanner" / "_native"
@@ -193,6 +220,59 @@ def test_registration_reads_the_harness_file_not_the_install_report(tmp_path: Pa
     assessment = assess_harness(home, "claude-code", expectation)
     assert assessment["registered"] is False
     assert len(assessment["failures"]) == len(_CLAUDE_EVENTS)
+
+
+def test_an_advisory_enrolment_notice_is_not_a_gate(tmp_path: Path) -> None:
+    """Guard prints the approval-password notice on hosts with no gate at all.
+
+    The notice says it does not block the command, so a failing install that
+    happens to carry it is an ordinary failure. Reading it as a gate hid the
+    real error behind "run this somewhere else".
+    """
+
+    runtime_path = tmp_path / "hol-guard"
+    runtime_path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "hol-guard 0.0.0-stub"; exit 0; fi\n'
+        'echo "Local Guard approval protection is not enabled. ... set an \\`Approval password\\`."\n'
+        'echo "could not write the harness configuration" >&2\n'
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    runtime_path.chmod(runtime_path.stat().st_mode | stat.S_IEXEC)
+    runtime = resolve_runtime(runtime_path, require_frozen=False)
+    (tmp_path / "workspace").mkdir()
+    result = install_harness(
+        runtime,
+        "claude-code",
+        home=tmp_path / "home",
+        guard_home=tmp_path / "home" / ".hol-guard",
+        workspace=tmp_path / "workspace",
+    )
+    assert result["exit_code"] == 1
+    assert "could not write the harness configuration" in result["stderr_tail"]
+
+
+def test_a_real_gate_refusal_names_what_the_install_printed(tmp_path: Path) -> None:
+    runtime_path = tmp_path / "hol-guard"
+    runtime_path.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "hol-guard 0.0.0-stub"; exit 0; fi\n'
+        'echo "{\\"error\\": \\"approval_gate_required\\"}" >&2\n'
+        "exit 4\n",
+        encoding="utf-8",
+    )
+    runtime_path.chmod(runtime_path.stat().st_mode | stat.S_IEXEC)
+    runtime = resolve_runtime(runtime_path, require_frozen=False)
+    (tmp_path / "workspace").mkdir()
+    with pytest.raises(GateBlockedError, match="approval_gate_required"):
+        install_harness(
+            runtime,
+            "claude-code",
+            home=tmp_path / "home",
+            guard_home=tmp_path / "home" / ".hol-guard",
+            workspace=tmp_path / "workspace",
+        )
 
 
 def test_the_lane_never_touches_the_operators_own_home(tmp_path: Path) -> None:

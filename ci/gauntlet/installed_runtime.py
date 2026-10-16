@@ -28,6 +28,8 @@ BUNDLED_NATIVE_MANIFEST = Path("codex_plugin_scanner") / "_native" / "runtime-ma
 FROZEN_ONEDIR = "frozen-onedir"
 FROZEN_ONEFILE = "frozen-onefile"
 SCRIPT = "script"
+#: A shell wrapper that reaches a frozen bundle it does not name literally.
+SHIM = "shim"
 
 _VERSION_TIMEOUT = 120.0
 
@@ -48,7 +50,7 @@ class InstalledRuntime:
 
     @property
     def frozen(self) -> bool:
-        return self.kind in {FROZEN_ONEDIR, FROZEN_ONEFILE}
+        return self.kind in {FROZEN_ONEDIR, FROZEN_ONEFILE, SHIM}
 
     def as_evidence(self) -> dict[str, object]:
         return {
@@ -150,11 +152,19 @@ def resolve_runtime(path: Path, *, require_frozen: bool) -> InstalledRuntime:
     if not os.access(resolved, os.X_OK):
         raise InstalledRuntimeError(f"{resolved} is not executable")
     kind, native_runtime = classify(resolved)
+    interpreter_free = prove_interpreter_free(resolved)
+    if kind == SCRIPT and interpreter_free:
+        # The Desktop install is reached through two `/bin/sh` wrappers, the
+        # second of which computes the bundle path from `current.json` at run
+        # time. Reading the first wrapper's bytes says "console script" about a
+        # genuinely frozen install, so the packaging question is settled by
+        # what the executable can actually do without an interpreter, not by
+        # how its first two bytes look.
+        kind = SHIM
     if require_frozen and kind == SCRIPT:
         raise InstalledRuntimeError(
             f"--require-frozen was asked for, but {resolved} is a console script, not a frozen bundle"
         )
-    interpreter_free = prove_interpreter_free(resolved)
     if require_frozen and not interpreter_free:
         raise InstalledRuntimeError(
             f"{resolved} looks frozen but needs an interpreter on PATH to answer --version; "
@@ -235,6 +245,7 @@ __all__ = [
     "FROZEN_ONEDIR",
     "FROZEN_ONEFILE",
     "SCRIPT",
+    "SHIM",
     "InstalledRuntime",
     "InstalledRuntimeError",
     "classify",

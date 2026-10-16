@@ -26,7 +26,13 @@ CONTRACT_PATH = Path(__file__).with_name("installed_contract.json")
 GUARD_COMMAND_MARKERS = ("hol-guard", "hol_guard", "guard-command", "codex_plugin_scanner")
 
 #: The gate refuses non-interactively rather than letting the lane through.
-GATE_REASONS = ("approval_gate", "approval gate", "lifecycle gate", "Password")
+#:
+#: These are the gate's own error codes, not its prose. Guard prints an
+#: advisory enrolment notice mentioning the approval password on hosts that
+#: have no gate at all, and that notice says in so many words that it does not
+#: block the command, so matching on wording turned every unrelated install
+#: failure into "this host has a gate".
+GATE_REASONS = ("approval_gate_required", "approval_gate_totp_required", "lifecycle_gate")
 
 
 class GateBlockedError(RuntimeError):
@@ -77,7 +83,8 @@ def install_harness(
     if completed.returncode != 0 and any(reason in combined for reason in GATE_REASONS):
         raise GateBlockedError(
             "the host's canonical approval gate owns `install`, so this lane cannot run here; "
-            "run it on a machine with no enrolled gate (CI runners have none)"
+            "run it on a machine with no enrolled gate (CI runners have none). "
+            f"`install {harness}` exited {completed.returncode}: {combined.strip()[-400:]}"
         )
     return {
         "harness": harness,

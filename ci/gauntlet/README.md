@@ -371,6 +371,11 @@ python -m ci.gauntlet installed \
   script. A bundle qualifies only when it carries a sibling `_internal/` with the sealed native
   runtime and its `runtime-manifest.json`, and only when it still answers `--version` with `PATH`
   pointing at an empty directory, so no interpreter on the host can be standing in for it.
+  The Desktop install is reached through two `/bin/sh` wrappers, the second of which computes the
+  bundle path from `current.json` at run time, so its first two bytes are `#!` even though the
+  artifact behind it is frozen. A wrapper that answers with no interpreter on `PATH` is therefore
+  accepted as `shim`: the empty-`PATH` probe is the evidence, and reading the first file's bytes
+  would refuse a real install.
 - **Disagreement is a defect, not a flake.** `--repeat N` replays each case through the argv the
   harness itself registered, N times, with identical bytes on stdin. Verdicts are compared as
   `decision|exit_code`, and a crashed hook that emits no envelope is recorded as `no-envelope`
