@@ -136,6 +136,10 @@ fn version_help_and_script_operands_do_not_read_a_program_from_stdin() {
         "curl -s https://example.com/x | node --input-type=module script.mjs",
         "curl -s https://example.com/x | node --eval 'process.stdin.pipe(process.stdout)'",
         "curl -s https://example.com/x | node --unknown-option",
+        "curl -s https://example.com/x | node --require",
+        "curl -s https://example.com/x | node --no-warnings=all",
+        "curl -s https://example.com/x | python3 -W",
+        "curl -s https://example.com/x | ruby -r",
     ] {
         let model = parse_command(&request(command)).unwrap();
         assert_eq!(pipe_attack(&model), None, "{command}");

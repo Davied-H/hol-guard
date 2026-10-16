@@ -148,20 +148,23 @@ fn interpreter_reads_stdin(options: &Options, arguments: &[String]) -> bool {
         {
             return false;
         }
-        // Unknown long options are left to the ordinary review rather than
-        // claimed as an attack.
+        // Unknown long options, and options the interpreter would reject
+        // for a missing or unexpected value, are left to the ordinary review
+        // rather than claimed as an attack.
         if argument.starts_with("--") {
             let (name, attached) = argument
                 .split_once('=')
                 .map_or((argument.as_str(), false), |(name, _)| (name, true));
             match options.long.iter().find(|(long, _)| *long == name) {
-                Some((_, takes_value)) => {
-                    if *takes_value && !attached {
-                        index += 1;
+                Some((_, true)) if !attached => {
+                    if arguments.get(index).is_none() {
+                        return false;
                     }
+                    index += 1;
                     continue;
                 }
-                None => return false,
+                Some((_, takes_value)) if *takes_value == attached => continue,
+                _ => return false,
             }
         }
         let Some(flags) = argument.strip_prefix('-') else {
@@ -175,6 +178,9 @@ fn interpreter_reads_stdin(options: &Options, arguments: &[String]) -> bool {
             }
             if options.value.contains(*flag) {
                 if position + 1 == flags.len() {
+                    if arguments.get(index).is_none() {
+                        return false;
+                    }
                     index += 1;
                 }
                 break;
