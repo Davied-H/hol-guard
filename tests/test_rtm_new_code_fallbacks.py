@@ -368,6 +368,7 @@ _VERDICT = {
         ("review", True, False, True, {"policy_action": "allow", **_VERDICT}),
         # No rebuilt authority: the reply can only reject the reuse.
         ("block", False, False, False, {"policy_action": "allow", **_VERDICT}),
+        ("block", False, False, False, {"policy_action": "warn", **_VERDICT}),
         # An action change must carry its verdict.
         ("allow", False, False, True, {"policy_action": "allow"}),
         # Only a claimed approval may be reused.

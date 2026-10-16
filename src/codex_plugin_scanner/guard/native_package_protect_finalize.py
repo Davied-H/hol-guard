@@ -28,6 +28,7 @@ from .native_package_evaluation_compose import (
     native_unavailable_block_evaluation,
 )
 from .native_package_policy_resolve import _hydrate
+from .runtime.package_execution_policy import is_execution_permitted
 
 _FINALIZE_FEATURE = "package-protect-finalize-v1"
 _EVALUATION_FIELDS = ("policy_action", "reasons", "packages")
@@ -161,7 +162,7 @@ def _check_reply(
         raise NativePackageProtectFinalizeError("Native package protect finalize changed the action without a verdict")
     if current is None:
         # Nothing rebuilt to run: the reply can only reject the reuse.
-        if effective == "allow":
+        if is_execution_permitted(effective):
             raise NativePackageProtectFinalizeError("Native package protect finalize allowed an unbound launch")
         return
     if (claim_failure is not None or current.observe_mode) and effective != current.current_action:
