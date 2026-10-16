@@ -138,6 +138,18 @@ _RETRY_ALLOWANCE_MULTIPLIER = 2
 # under the default home.  Unbound calls fall back to the default resolution.
 _BOUND_GUARD_HOME: ContextVar[Path | None] = ContextVar("guard_context_digest_home", default=None)
 
+# The steady-state budget above keeps enforcement cheap because enforcement
+# runs on every tool call and can degrade.  A lifecycle command cannot: it runs
+# once, at a keystroke, and a digest it cannot get aborts the install and
+# leaves the machine unprotected.  It is also the one call that pays for a
+# never-before-run binary — a first install on Windows faults in and scans a
+# 20 MB executable that no later call pays for again, which is why a tester saw
+# an install fail on native identity and the identical second run succeed.
+# Lifecycle commands bind this floor so that spawn has room; it stays under the
+# resident's own 9 s ceiling so the retry still has a budget to carry.
+_LIFECYCLE_TIMEOUT_SECONDS = 5.0
+_BOUND_TIMEOUT_FLOOR: ContextVar[float | None] = ContextVar("guard_context_digest_timeout_floor", default=None)
+
 # ContextVars do not propagate to worker threads (the policy publisher, for
 # example, builds observed MCP identities on its own thread).  Remember the
 # most recently bound enforcement home at process level so those threads —
@@ -239,6 +251,24 @@ def bind_context_digest_home(guard_home: Path | None, *, remember: bool = True) 
 
 def reset_context_digest_home(token: Any) -> None:
     _BOUND_GUARD_HOME.reset(token)
+
+
+def bind_context_digest_lifecycle_budget(active: bool = True) -> Any:
+    """Bind the digest budget a one-shot lifecycle command runs under.
+
+    The floor applies to every digest call made under it, including the ones
+    that pin the steady-state constant themselves: a command that installs or
+    reports protection has no hot path to protect, and no fallback when the
+    answer does not arrive.  `active=False` binds the steady-state budget back,
+    so a process that dispatches more than one command cannot let a lifecycle
+    command's floor widen the next command's enforcement calls.
+    """
+
+    return _BOUND_TIMEOUT_FLOOR.set(_LIFECYCLE_TIMEOUT_SECONDS if active else None)
+
+
+def reset_context_digest_budget(token: Any) -> None:
+    _BOUND_TIMEOUT_FLOOR.reset(token)
 
 
 def context_digest_guard_home() -> Path | None:
@@ -440,6 +470,11 @@ def native_context_digest(
     """
 
     _LAST_DIGEST_FAILURE.set(None)
+    # A lifecycle command's floor only ever lengthens a budget, and never
+    # revives a call whose caller disabled it with a non-positive one.
+    floor = _BOUND_TIMEOUT_FLOOR.get()
+    if floor is not None and timeout_seconds > 0:
+        timeout_seconds = max(timeout_seconds, floor)
     status = _native_runtime_status_memo()
     if (
         not status.available
@@ -975,6 +1010,7 @@ def context_mcp_redact_json(value: object) -> object:
 
 __all__ = [
     "bind_context_digest_home",
+    "bind_context_digest_lifecycle_budget",
     "bound_context_digest_home",
     "context_browser_mcp",
     "context_digest_guard_home",
@@ -990,5 +1026,6 @@ __all__ = [
     "context_sha256_digest",
     "is_unbound_context_digest",
     "native_context_digest",
+    "reset_context_digest_budget",
     "reset_context_digest_home",
 ]

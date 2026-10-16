@@ -27,6 +27,13 @@ _EARLY_HANDLERS = {
     "mcp": "_run_guard_mcp_command",
 }
 
+# Commands that stand up, repair or report this machine's protection. Each is
+# a user-invoked one-shot, so it values arriving at an answer over arriving
+# quickly; see `bind_context_digest_lifecycle_budget`.
+_NATIVE_LIFECYCLE_COMMANDS = frozenset(
+    {"apps", "bootstrap", "doctor", "init", "install", "repair", "uninstall", "update"}
+)
+
 _PRESTORE_HANDLERS = {
     "daemon": "_run_guard_daemon_command",
     "update": "_run_guard_update_command",
@@ -176,9 +183,16 @@ def run_guard_command(
     # Detection runs before the consumer/protect entry points that bind the
     # digest home, so bind at the router: every enforcement subcommand below
     # resolves its context-digest calls against this deployment's resident.
-    from ..native_context import bind_context_digest_home
+    from ..native_context import bind_context_digest_home, bind_context_digest_lifecycle_budget
 
     bind_context_digest_home(guard_home)
+    # Lifecycle commands install, repair or report protection: each runs once
+    # at a keystroke, each pays for a cold native runtime nothing else pays for,
+    # and none of them has a fallback when the answer does not arrive in time.
+    # A slow first install has to stay an install.  Every other command binds
+    # the steady-state budget back, so a process that dispatches more than one
+    # keeps enforcement on the hot path's budget.
+    bind_context_digest_lifecycle_budget(args.guard_command in _NATIVE_LIFECYCLE_COMMANDS)
     workspace = _resolve_guard_workspace(
         args,
         guard_home=guard_home,
