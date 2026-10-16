@@ -422,3 +422,121 @@ def test_the_direct_drain_routes_a_package_record_here(
     assert kind == "allow"
     assert recorded["store"] is store
     assert recorded["artifact"].artifact_id == ARTIFACT_ID
+
+
+NOTICE = {
+    "request_id": "req-1",
+    "harness": "codex",
+    "workspace": "/work",
+    "approval_url": "http://127.0.0.1:8787/requests/req-1",
+    "artifact_name": "left-pad",
+    "risk_headline": "left-pad has a known advisory",
+    "trigger_summary": "npm install left-pad",
+}
+
+
+def _asked(**fields: object) -> dict[str, object]:
+    """The record a request the `ask` mode queued leaves."""
+
+    package = _package()
+    del package["policy_workspace"]
+    queued: dict[str, object] = {
+        "outcome": "block",
+        "decision_source": "approval-center-pending",
+        "policy_action": "review",
+        "decision": _decision("review"),
+        "package": package,
+        "approval": {
+            "approval_center_url": "http://127.0.0.1:8787",
+            "review_url": "http://127.0.0.1:8787/requests/req-1",
+            "request_id": "req-1",
+            "workspace": "/work",
+            "notices": [dict(NOTICE)],
+        },
+    }
+    queued.update(fields)
+    return _record(**queued)
+
+
+@pytest.fixture
+def surfaces(monkeypatch: pytest.MonkeyPatch) -> list[tuple[object, Path, str, object]]:
+    """The approval surfaces the drain raises after a queued request's receipt."""
+
+    raised: list[tuple[object, Path, str, object]] = []
+    monkeypatch.setattr(
+        mcp_relay_package_evidence_drain,
+        "_raise_approval_surface",
+        lambda store, guard_home, harness, queued: raised.append((store, guard_home, harness, queued)),
+    )
+    return raised
+
+
+def test_a_request_the_ask_mode_queued_is_blocked_on_its_approval_row(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    reviews: list[dict[str, Any]],
+    surfaces: list[tuple[object, Path, str, object]],
+) -> None:
+    store = object()
+
+    assert record_mcp_relay_package_evidence(store, tmp_path, _asked())
+
+    [(kind, recorded)] = calls
+    assert kind == "block"
+    assert recorded["decision_source"] == "approval-center-pending"
+    assert recorded["policy_action"] == "review"
+    assert recorded["signals"] == ("left-pad has an advisory",)
+    # The `ask` branch projects the call without its artifact, so the receipt
+    # carries no risk categories and the plain safe arguments.
+    assert "risk_categories" not in recorded
+    assert recorded["arguments"] == {"safe": True, "artifact": False}
+    assert "policy_workspace" not in recorded
+    # It writes no inbox row; the approval request answers the call instead.
+    assert reviews == []
+    [(raised_store, guard_home, harness, queued)] = surfaces
+    assert raised_store is store
+    assert guard_home == tmp_path
+    assert harness == "codex"
+    assert queued.request_id == "req-1"
+    assert queued.review_url == "http://127.0.0.1:8787/requests/req-1"
+    assert queued.notices == (NOTICE,)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        # A surface the proxy never raises.
+        {"approval": {**_asked()["approval"], "request_id": " "}},  # pyright: ignore[reportGeneralTypeIssues]
+        {"approval": {**_asked()["approval"], "notices": [{"request_id": "req-1"}]}},  # pyright: ignore[reportGeneralTypeIssues]
+        {"approval": {"request_id": "req-1"}},
+        # Only the ask branch is recorded as pending.
+        {"decision_source": "policy-safe-alternative"},
+        # The two queue routes are never both taken.
+        {"review": {"redaction_level": "partial"}},
+    ],
+)
+def test_an_approval_surface_the_proxy_could_not_have_raised_is_dropped(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    reviews: list[dict[str, Any]],
+    surfaces: list[tuple[object, Path, str, object]],
+    fields: dict[str, object],
+) -> None:
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, _asked(**fields))
+    assert calls == [] and reviews == [] and surfaces == []
+
+
+def test_a_forwarded_call_never_carries_an_approval_surface(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    surfaces: list[tuple[object, Path, str, object]],
+) -> None:
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, _record(approval=_asked()["approval"]))
+    # And a pending block with no row to point at is not that branch's receipt.
+    record = _asked()
+    del record["approval"]
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, record)
+    assert calls == [] and surfaces == []

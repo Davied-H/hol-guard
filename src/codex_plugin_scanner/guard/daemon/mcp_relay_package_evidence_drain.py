@@ -32,6 +32,15 @@ is written with, as a relayed tool call's does. It is recorded as
 ``policy-safe-alternative`` block receipt against the package artifact, with
 the risk categories of the call projected with it, and then the inbox row
 ``record_unprompted_review`` leaves.
+
+Under ``ask`` the resident writes the package-shaped approval request itself
+and blocks the call on it, so its record carries that request's surface rather
+than an inbox row. The ``ask`` branch of ``_queue_package_approval_response``
+leaves the ``approval-center-pending`` block receipt against the package
+artifact and nothing else: it projects the call without the artifact and so
+records no risk categories, and it writes no unprompted review. What is left
+for the drain is the desktop notice and the approval center the proxy raises
+once the row is written, which is best effort there and here.
 """
 
 from __future__ import annotations
@@ -42,12 +51,16 @@ from pathlib import Path
 from typing import Any
 
 from .mcp_relay_evidence_drain import (
+    _APPROVAL_KEY,
+    _APPROVAL_PENDING_SOURCE,
     _BLOCK_SOURCE,
     _FORWARD_ACTIONS,
     _RELAY_HARNESSES,
     _SAFE_ALTERNATIVE_SOURCE,
     _decision,
     _ordered_params,
+    _queued_approval,
+    _raise_approval_surface,
     _record_unprompted_review,
     _redaction_level,
 )
@@ -85,7 +98,7 @@ _PACKAGE_KEYS = frozenset(
 _POLICY_WORKSPACE_KEY = "policy_workspace"
 # The silent inbox row, present only on a safe-alternative block's record.
 _REVIEW_KEY = "review"
-_OPTIONAL_KEYS = frozenset({_REVIEW_KEY})
+_OPTIONAL_KEYS = frozenset({_REVIEW_KEY, _APPROVAL_KEY})
 
 
 def is_mcp_relay_package_evidence(record: object) -> bool:
@@ -117,22 +130,28 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
         or params.get("name") != tool_name
     ):
         return False
-    # Only a queued request carries its inbox row, and it must.
+    # Only a safe-alternative queued request carries its inbox row, and it must.
     reviewed = _REVIEW_KEY in record
     redaction_level = _redaction_level(record[_REVIEW_KEY]) if reviewed else None
     if reviewed and redaction_level is None:
+        return False
+    # Only an ask queued request carries the approval request it was written
+    # on, which answers the call instead of the inbox row the other mode adds.
+    queued = _queued_approval(record[_APPROVAL_KEY]) if _APPROVAL_KEY in record else None
+    if _APPROVAL_KEY in record and (queued is None or reviewed):
         return False
     forwarded = outcome == "forward"
     if forwarded:
         # The proxy forwards under the action it permitted the call with, and
         # records the receipt under that same action.
-        if reviewed or policy_action not in _FORWARD_ACTIONS or source != f"policy-{policy_action}":
+        if (
+            reviewed
+            or queued is not None
+            or policy_action not in _FORWARD_ACTIONS
+            or source != f"policy-{policy_action}"
+        ):
             return False
-    elif (
-        outcome != "block"
-        or policy_action in _FORWARD_ACTIONS
-        or source != (_SAFE_ALTERNATIVE_SOURCE if reviewed else _BLOCK_SOURCE)
-    ):
+    elif outcome != "block" or policy_action in _FORWARD_ACTIONS or source != _block_source(reviewed, queued):
         return False
     facts = _package_facts(package, forwarded=forwarded)
     if facts is None:
@@ -159,7 +178,8 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
             return False
         scanner_evidence = (*tool_decision_scanner_evidence(decision), *facts["evidence"])
         # `_queue_approval_center_response` projects a queued call with its
-        # artifact; `_record_package_{block,forward}` project it without one.
+        # artifact; `_record_package_{block,forward}` and the `ask` branch of
+        # `_queue_package_approval_response` project it without one.
         projector = McpCallProjector(guard_home)
         projection = (
             projector.project(tool_name, ordered, artifact)
@@ -194,6 +214,11 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
             # by `_queue_approval_center_response` instead, which projects the
             # call with its artifact and so does carry risk categories.
             block_tool_call(**recorded)
+        if queued is not None:
+            # After the receipt, as the proxy raises it: the request is
+            # written and the call is already blocked on it, so the notice
+            # and the approval center are best effort.
+            _raise_approval_surface(store, guard_home, harness, queued)
         if redaction_level is not None:
             # After the receipt, as the proxy writes it.
             _record_unprompted_review(
@@ -210,6 +235,14 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
         # A record the proxy could not have written is dropped, never guessed.
         return False
     return True
+
+
+def _block_source(reviewed: bool, queued: object) -> str:
+    """The decision source this block receipt's queue route is recorded under."""
+
+    if queued is not None:
+        return _APPROVAL_PENDING_SOURCE
+    return _SAFE_ALTERNATIVE_SOURCE if reviewed else _BLOCK_SOURCE
 
 
 def _package_facts(package: object, *, forwarded: bool) -> dict[str, Any] | None:

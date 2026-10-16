@@ -248,7 +248,7 @@ impl Prepared {
 /// `first_approval_url(...) or approval_center_url`: the written row's own
 /// link, rewritten when it names a stale loopback center, and this center's
 /// deep link for the row's request when the row carries no link at all.
-fn review_url(row: &Map<String, Value>, center: &str, request_id: &str) -> String {
+pub(super) fn review_url(row: &Map<String, Value>, center: &str, request_id: &str) -> String {
     if let Some(approval_url) = nonempty(row.get("approval_url")) {
         return canonical_local_approval_url(&approval_url, center);
     }
@@ -310,7 +310,7 @@ fn url_host(netloc: &str) -> &str {
 
 /// Write the request through the daemon's own store operation, under the
 /// storage gate every writer of this store holds.
-fn write(
+pub(super) fn write(
     request: &McpRelayDecideRequestV1,
     oauth_source: &str,
     args: Map<String, Value>,
@@ -346,7 +346,7 @@ fn write(
 
 /// `store.get_approval_request(request_id)`, with the queue hints Python
 /// attaches to every approval read.
-fn read_back(
+pub(super) fn read_back(
     request: &McpRelayDecideRequestV1,
     request_id: &str,
 ) -> Result<Map<String, Value>, &'static str> {
@@ -400,7 +400,7 @@ fn store(
 
 /// `_now()`: `datetime.now(timezone.utc).isoformat()`, which leaves the
 /// fraction out at exactly zero microseconds.
-fn now_isoformat() -> Option<String> {
+pub(super) fn now_isoformat() -> Option<String> {
     let micros = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?

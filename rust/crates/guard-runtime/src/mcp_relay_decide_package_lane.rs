@@ -18,8 +18,9 @@
 //! call's configs bound. Under `safe-alternative` the proxy blocks it in place
 //! and leaves the silent inbox row, so the lane answers it and carries the
 //! bound receipt redaction level for the drain to write that row with. Under
-//! `ask` it defers, because the package-shaped approval row the proxy then
-//! writes is not one the relay shapes.
+//! `ask` it writes the package-shaped approval row and blocks the call on it,
+//! which the caller performs because the write reads the store this lane does
+//! not hold (`mcp_relay_decide_package_ask.rs`).
 //!
 //! Not every leg of this lane is a package answer. The three the tool policy
 //! decides — `_stored_tool_block_response`, `_terminal_tool_response` and
@@ -32,10 +33,12 @@
 use serde_json::{Map, Value};
 
 use super::package_answer;
+use super::package_ask;
 use super::package_policy::PackagePolicy;
 use super::package_receipt;
 use super::package_route::{self, Decided, PackageRoute, ToolLeg};
 use super::queue;
+use super::{ask, ASK_MODE};
 use crate::mcp_tool_policy_decision::Decision;
 
 /// What one decided package call leaves the caller: the lane's own answer, or
@@ -43,6 +46,9 @@ use crate::mcp_tool_policy_decision::Decision;
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum PackageOutcome {
     Answered(PackageAnswer),
+    /// A queued request the bound `ask` mode answers, whose row the caller
+    /// writes before the answer is complete.
+    AskPackage(PackageAnswer),
     ToolLeg(ToolLeg),
 }
 
@@ -73,8 +79,11 @@ pub(super) struct PackageAnswer {
     /// The package half of the receipt's scanner evidence.
     pub(super) evidence: Vec<Value>,
     /// The receipt redaction level the silent inbox row is written with,
-    /// which only the queued leg leaves.
+    /// which only the `safe-alternative` queued leg leaves.
     pub(super) redaction_level: Option<String>,
+    /// The approval-center surface raised once a queued row is written, which
+    /// only the `ask` queued leg leaves.
+    pub(super) approval: Option<Value>,
 }
 
 /// The review binding one queued package request is answered under: the
@@ -103,17 +112,13 @@ where
     if let Some(route) = package_route::precheck(mode, resolved)? {
         // The precheck answers on the package policy alone, so every leg it
         // decides is this lane's own.
-        return Ok(PackageOutcome::Answered(answered(
-            &route, tool, server, resolved, binding,
-        )?));
+        return answered(&route, tool, server, resolved, binding);
     }
     let (authority, policy) = re_resolve()?;
-    Ok(match package_route::compose(mode, &authority, &policy)? {
-        Decided::Package(route) => {
-            PackageOutcome::Answered(answered(&route, tool, server, &policy, binding)?)
-        }
-        Decided::Tool(leg) => PackageOutcome::ToolLeg(leg),
-    })
+    match package_route::compose(mode, &authority, &policy)? {
+        Decided::Package(route) => answered(&route, tool, server, &policy, binding),
+        Decided::Tool(leg) => Ok(PackageOutcome::ToolLeg(leg)),
+    }
 }
 
 /// The answer and the receipt facts of one decided package route.
@@ -123,14 +128,9 @@ fn answered(
     server: &str,
     policy: &PackagePolicy,
     binding: QueueBinding<'_>,
-) -> Result<PackageAnswer, &'static str> {
-    let redaction_level = match route {
-        PackageRoute::QueuePackage { .. } => Some(queued_redaction_level(binding)?),
-        _ => None,
-    };
-    let signals = package_answer::signals(route, policy);
-    Ok(PackageAnswer {
-        block: package_answer::block(route, tool, server, policy, &signals),
+) -> Result<PackageOutcome, &'static str> {
+    let facts = |signals: Vec<String>| PackageAnswer {
+        block: None,
         policy_action: package_answer::policy_action(route).to_owned(),
         decision_source: package_answer::decision_source(route),
         decision: package_answer::decision_label(route),
@@ -139,14 +139,36 @@ fn answered(
         artifact_hash: policy.artifact_hash.clone(),
         evaluation: policy.evaluation.clone(),
         evidence: package_receipt::evidence(policy),
+        redaction_level: None,
+        approval: None,
+    };
+    if let PackageRoute::QueuePackage { .. } = route {
+        if binding.blocked_request_mode == Some(ASK_MODE) {
+            // The row, the block and the approval surface are the caller's,
+            // which holds the store the write and the read-back go through.
+            return Ok(PackageOutcome::AskPackage(PackageAnswer {
+                decision_source: ask::APPROVAL_PENDING_SOURCE.to_owned(),
+                decision: package_ask::DECISION_LABEL.to_owned(),
+                ..facts(package_answer::reason_signals(policy))
+            }));
+        }
+    }
+    let redaction_level = match route {
+        PackageRoute::QueuePackage { .. } => Some(queued_redaction_level(binding)?),
+        _ => None,
+    };
+    let signals = package_answer::signals(route, policy);
+    Ok(PackageOutcome::Answered(PackageAnswer {
+        block: package_answer::block(route, tool, server, policy, &signals),
         redaction_level,
-    })
+        ..facts(signals)
+    }))
 }
 
-/// `_queue_package_approval_response` by the bound blocked-request mode. Under
-/// `safe-alternative` the request is blocked in place and the inbox row is
-/// written with the bound receipt redaction level; `ask` defers, because the
-/// package-shaped approval row it writes instead is not one the relay shapes.
+/// `_queue_package_approval_response` under `safe-alternative`: the request is
+/// blocked in place and the inbox row is written with the bound receipt
+/// redaction level. `ask` is answered before this, and every other mode is one
+/// the relay has no answer for.
 fn queued_redaction_level(binding: QueueBinding<'_>) -> Result<String, &'static str> {
     match (binding.blocked_request_mode, binding.redaction_level) {
         (Some(queue::SAFE_ALTERNATIVE_MODE), Some(level)) => Ok(level.to_owned()),

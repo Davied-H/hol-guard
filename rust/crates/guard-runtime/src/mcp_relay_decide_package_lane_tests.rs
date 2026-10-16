@@ -56,7 +56,7 @@ fn policy(policy_action: &str, reasons: Value) -> PackagePolicy {
 /// The lane's own answer, for a call no tool leg decided.
 fn answered(outcome: PackageOutcome) -> PackageAnswer {
     match outcome {
-        PackageOutcome::Answered(answer) => answer,
+        PackageOutcome::Answered(answer) | PackageOutcome::AskPackage(answer) => answer,
         PackageOutcome::ToolLeg(leg) => panic!("the package lane answers this leg: {leg:?}"),
     }
 }
@@ -240,33 +240,57 @@ fn the_composed_queue_blocks_in_place_on_the_re_resolved_policy() {
 }
 
 #[test]
-fn a_queued_request_defers_under_every_other_blocked_request_mode() {
-    // `ask`: the proxy writes the package-shaped approval request for it.
-    assert_eq!(
+fn a_queued_request_the_ask_mode_bound_is_left_for_the_caller_to_write() {
+    // The caller writes the package-shaped approval row and completes the
+    // answer, so the lane states the facts the row and the receipt are built
+    // from and names neither a block nor a receipt redaction level.
+    for outcome in [
         decide_package(
             "enforce",
             TOOL,
             SERVER,
-            &policy("review", json!([])),
+            &policy(
+                "review",
+                json!([{"code": "advisory", "message": "left-pad has an advisory"}]),
+            ),
             bound("ask"),
             || panic!("a queued precheck re-resolves nothing"),
-        )
-        .err(),
-        Some(package_route::PACKAGE_QUEUE),
-    );
-    // The composition's, once the fresh package policy asks for approval.
-    assert_eq!(
+        ),
+        // The composition's, once the fresh package policy asks for approval.
         decide_package(
             "enforce",
             TOOL,
             SERVER,
             &policy("allow", json!([])),
             bound("ask"),
-            || Ok((tool(GuardAction::Allow), policy("review", json!([])))),
-        )
-        .err(),
-        Some(package_route::PACKAGE_QUEUE),
-    );
+            || {
+                Ok((
+                    tool(GuardAction::Allow),
+                    policy(
+                        "review",
+                        json!([{"code": "advisory", "message": "left-pad has an advisory"}]),
+                    ),
+                ))
+            },
+        ),
+    ] {
+        let outcome = outcome.expect("the lane answers the queued request");
+        assert!(matches!(outcome, PackageOutcome::AskPackage(_)));
+        let answer = answered(outcome);
+        assert_eq!(answer.block, None);
+        assert_eq!(answer.policy_action, "review");
+        assert_eq!(answer.decision_source, "approval-center-pending");
+        assert_eq!(answer.decision, "queue-package-approval");
+        // The reason signals alone, not the risk summary the
+        // `safe-alternative` branch leads its own with.
+        assert_eq!(answer.signals, vec!["left-pad has an advisory".to_owned()]);
+        assert_eq!(answer.redaction_level, None);
+        assert_eq!(answer.approval, None);
+    }
+}
+
+#[test]
+fn a_queued_request_defers_under_every_other_blocked_request_mode() {
     // A binding whose configs left no mode or no redaction level at all.
     for binding in [
         QueueBinding {

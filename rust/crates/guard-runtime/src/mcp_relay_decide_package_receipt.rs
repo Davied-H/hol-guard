@@ -31,6 +31,9 @@
 //! blocked-request mode also leaves the silent inbox row
 //! `_queue_approval_center_response` writes, so its record carries the receipt
 //! redaction level that row is written with, as a relayed tool call's does.
+//! One queued under `ask` leaves the written approval row's surface instead,
+//! which the drain raises after the same block receipt
+//! (`mcp_relay_decide_package_ask.rs`).
 
 use serde_json::{json, Map, Value};
 
@@ -114,6 +117,12 @@ pub(super) fn record(
     // receipt, which only the queued leg leaves.
     if let Some(level) = &answer.redaction_level {
         record["review"] = json!({"redaction_level": level});
+    }
+    // The approval surface the drain raises after a queued request's block
+    // receipt, which only the `ask` queued leg leaves. A record carries one or
+    // the other, never both: the two modes queue the same request differently.
+    if let Some(approval) = &answer.approval {
+        record["approval"] = approval.clone();
     }
     Ok(record)
 }

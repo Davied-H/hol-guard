@@ -706,8 +706,15 @@ fn settle_package(
     packaged: &package_leg::Packaged,
     policy_store: &PolicySnapshotStore,
 ) -> Result<Answer, &'static str> {
+    let queued;
     let answer = match &packaged.outcome {
         package_lane::PackageOutcome::Answered(answer) => answer,
+        // The row the bound `ask` mode writes reads the store this holds, so
+        // the answer is only completed here.
+        package_lane::PackageOutcome::AskPackage(asked) => {
+            queued = package_ask::queue(request, admitted, resolved, &packaged.artifact, asked)?;
+            &queued
+        }
         package_lane::PackageOutcome::ToolLeg(leg) => {
             let routed = match leg {
                 ToolLeg::StoredBlock => Routed::StoredBlock {
@@ -810,6 +817,8 @@ mod observe;
 mod package;
 #[path = "mcp_relay_decide_package_answer.rs"]
 mod package_answer;
+#[path = "mcp_relay_decide_package_ask.rs"]
+mod package_ask;
 #[path = "mcp_relay_decide_package_config.rs"]
 mod package_config;
 #[path = "mcp_relay_decide_package_lane.rs"]

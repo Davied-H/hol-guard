@@ -159,7 +159,7 @@ pub(super) fn signals(route: &PackageRoute, policy: &PackagePolicy) -> Vec<Strin
 /// The reason signals of the evaluation: each reason's message, its code when
 /// it carries no message, and an empty string when it carries neither, in the
 /// order the evaluation reported them.
-fn reason_signals(policy: &PackagePolicy) -> Vec<String> {
+pub(super) fn reason_signals(policy: &PackagePolicy) -> Vec<String> {
     policy
         .evaluation
         .get("reasons")
