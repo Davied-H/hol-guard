@@ -535,34 +535,44 @@ fn a_linked_worktree_pins_its_own_refs() {
         };
         push_state(command, &str_path(&repo.path("linked")), &ctx)
     };
-    for (command, edited) in [
+    let other = format!("{}\n", "1".repeat(40));
+    repo.write("work/.git/refs/heads/other", &other);
+    for (command, edited, replacement) in [
+        // Retargeting the worktree's HEAD pins the new branch instead.
         (
             "git push origin HEAD:feature",
             "work/.git/worktrees/linked/HEAD",
+            "ref: refs/heads/other\n".to_owned(),
         ),
         (
             "git push origin HEAD:feature",
             "work/.git/refs/heads/feature",
+            format!("{}\n", "2".repeat(40)),
         ),
         (
             "git push origin refs/worktree/wip:refs/heads/wip",
             "work/.git/worktrees/linked/refs/worktree/wip",
+            format!("{}\n", "3".repeat(40)),
         ),
     ] {
         let before = state(command).unwrap();
         let original = fs::read_to_string(repo.path(edited)).unwrap();
-        repo.write(
-            edited,
-            &original
-                .replace('e', "1")
-                .replace('f', "2")
-                .replace("feature", "other"),
-        );
-        assert_ne!(
-            state(command).unwrap_or_default(),
-            before,
-            "{command} after editing {edited}"
-        );
+        repo.write(edited, &replacement);
+        let after = state(command).expect("the edited repository still binds");
+        assert_ne!(after, before, "{command} after editing {edited}");
         repo.write(edited, &original);
+        assert_eq!(
+            state(command).unwrap(),
+            before,
+            "{command} after restoring {edited}"
+        );
     }
+    // Once retargeted, the new branch's ref is the one pinned.
+    repo.write("work/.git/worktrees/linked/HEAD", "ref: refs/heads/other\n");
+    let retargeted = state("git push origin HEAD:feature").unwrap();
+    repo.write(
+        "work/.git/refs/heads/other",
+        &format!("{}\n", "4".repeat(40)),
+    );
+    assert_ne!(state("git push origin HEAD:feature").unwrap(), retargeted);
 }
