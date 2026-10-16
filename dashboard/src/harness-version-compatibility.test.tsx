@@ -70,6 +70,18 @@ for (const raw of [undefined, null, {}, { state: "tested" }, payload({ schema: "
 const testedWithoutEvidence = normalizeVersionCompatibility("omp", payload({ state: "tested", detected_version: "18.8.3" }));
 assert(testedWithoutEvidence.state === "version_unknown", "tested without evidence is not trusted");
 
+// Evidence must be complete and cover the detected version before "tested" is shown.
+for (const evidence of [
+  [{ ...testedEvidence[0], suite: "guard-gauntlet-full-task" }],
+  [{ ...testedEvidence[0], suite: { id: "guard-gauntlet-full-task", result: "failed" } }],
+  [{ ...testedEvidence[0], events: [] }],
+  [{ ...testedEvidence[0], evidence_reference: "http://example.com/run" }],
+  [{ ...testedEvidence[0], harness_version: "18.4.12" }],
+]) {
+  const normalized = normalizeVersionCompatibility("omp", payload({ state: "tested", detected_version: "18.8.3", evidence }));
+  assert(normalized.state === "version_unknown", `incomplete evidence is not trusted: ${JSON.stringify(evidence)}`);
+}
+
 const untested = normalizeVersionCompatibility("omp", payload());
 assert(untested.state === "untested", "untested payload is preserved");
 assert(versionRowLabel(untested) === "Untested version", "untested row label");

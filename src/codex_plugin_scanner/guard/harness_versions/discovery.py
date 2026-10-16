@@ -56,6 +56,7 @@ class VersionObservation:
     reason: str | None
     observed_at: float
     identity: tuple[tuple[str, int, int, int], ...] = ()
+    candidates: tuple[str, ...] = ()
 
 
 def current_platform() -> str:
@@ -189,22 +190,34 @@ def observe_harness_version(
         return VersionObservation(harness, "unavailable", None, "none", None, "executable_missing", now)
     results = [_observe_one(harness, executable, context, run_probe) for executable in executables]
     identity = tuple(item for item in (_stat_identity(path) for *_, path in results) if item is not None)
-    installation_id = _hash(harness, *sorted(str(path) for path in executables))
+    candidates = tuple(sorted(str(path) for path in executables))
+    installation_id = _hash(harness, *candidates)
     failures = [reason for version, _, reason, _ in results if version is None]
     if failures:
-        return VersionObservation(harness, "unavailable", None, "none", installation_id, failures[0], now, identity)
+        return VersionObservation(
+            harness, "unavailable", None, "none", installation_id, failures[0], now, identity, candidates
+        )
     versions = {version.canonical for version, *_ in results if version is not None}
     if len(versions) != 1:
         return VersionObservation(
-            harness, "ambiguous", None, "none", installation_id, "multiple_installations", now, identity
+            harness, "ambiguous", None, "none", installation_id, "multiple_installations", now, identity, candidates
         )
     version, source, _, _ = results[0]
-    return VersionObservation(harness, "observed", version, source, installation_id, None, now, identity)
+    return VersionObservation(harness, "observed", version, source, installation_id, None, now, identity, candidates)
 
 
-def observation_identity_changed(observation: VersionObservation) -> bool:
-    """Cheaply detect a replaced executable or package since the observation."""
+def observation_identity_changed(
+    observation: VersionObservation,
+    context: HarnessContext | None = None,
+    *,
+    which: Callable[[str], str | None] = shutil.which,
+) -> bool:
+    """Cheaply detect a replaced executable or package, or a changed set of installs."""
 
+    if context is not None and observation.harness in VERSION_SOURCES:
+        current = tuple(sorted(str(path) for path in candidate_executables(observation.harness, context, which=which)))
+        if current != observation.candidates:
+            return True
     for path_text, inode, size, mtime in observation.identity:
         current = _stat_identity(Path(path_text))
         if current != (path_text, inode, size, mtime):

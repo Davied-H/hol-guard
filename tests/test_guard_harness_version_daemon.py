@@ -212,3 +212,16 @@ def test_untested_acknowledge_then_version_change_flow(
         dashboard_session=session,
     )
     assert (status, payload) == (409, {"error": "acknowledgement_not_eligible"})
+
+
+def test_acknowledgement_store_failure_returns_json_error(
+    daemon: GuardDaemonServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unavailable(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise PermissionError("read-only guard home")
+
+    monkeypatch.setattr(service, "clear_acknowledgement", unavailable)
+    status, payload = _call(
+        daemon, "/v1/harness-versions/clear-acknowledgement", {"harness": "omp"}, dashboard_session=_session(daemon)
+    )
+    assert (status, payload) == (500, {"error": "acknowledgement_store_unavailable"})

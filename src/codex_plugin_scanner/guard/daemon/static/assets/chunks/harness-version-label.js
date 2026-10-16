@@ -24,15 +24,22 @@ function evidenceList(value) {
   return value.flatMap((item) => {
     const entry = record(item);
     const suite = record(entry?.suite);
+    const harnessVersion = text(entry?.harness_version);
+    const guardVersion = text(entry?.guard_version);
+    const suiteId = text(suite?.id);
     const reference = text(entry?.evidence_reference);
-    if (!entry || !suite || !reference?.startsWith("https://")) return [];
+    const platforms = texts(entry?.platforms);
+    const events = texts(entry?.events);
+    if (!entry || !harnessVersion || !guardVersion || !suiteId || suite?.result !== "passed" || !reference?.startsWith("https://") || platforms.length === 0 || events.length === 0) {
+      return [];
+    }
     return [{
-      harness_version: text(entry.harness_version) ?? "",
-      guard_version: text(entry.guard_version) ?? "",
-      platforms: texts(entry.platforms),
+      harness_version: harnessVersion,
+      guard_version: guardVersion,
+      platforms,
       transport: text(entry.transport) ?? "",
-      events: texts(entry.events),
-      suite: { id: text(suite.id) ?? "", result: text(suite.result) ?? "" },
+      events,
+      suite: { id: suiteId, result: "passed" },
       evidence_level: text(entry.evidence_level) ?? "",
       evidence_reference: reference,
       observed_at: text(entry.observed_at) ?? ""
@@ -71,7 +78,7 @@ function normalizeVersionCompatibility(harness, raw) {
   }
   const evidence = evidenceList(payload.evidence);
   const detectedVersion = text(payload.detected_version);
-  if (state === "tested" && (!detectedVersion || evidence.length === 0)) {
+  if (state === "tested" && (!detectedVersion || !evidence.some((item) => item.harness_version === detectedVersion))) {
     return unknownCompatibility(harness, "malformed_payload");
   }
   const ack = record(payload.acknowledgement);

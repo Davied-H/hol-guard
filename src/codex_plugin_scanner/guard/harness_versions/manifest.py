@@ -97,7 +97,8 @@ class CoverageRecord:
             "platforms": list(self.platforms),
             "transport": self.transport,
             "events": list(self.events),
-            "suite": self.suite_id,
+            # Same shape as the manifest: only passed suites are ever recorded.
+            "suite": {"id": self.suite_id, "result": "passed"},
             "evidence_level": self.evidence_level,
             "evidence_reference": self.evidence_reference,
             "observed_at": self.observed_at,

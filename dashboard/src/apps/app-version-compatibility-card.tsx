@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ActionButton, SectionLabel } from "../approval-center-primitives";
 import { formatRelativeTime } from "../approval-center-utils";
@@ -60,17 +60,28 @@ export function AppVersionCompatibilityCard({ initial }: { initial: HarnessVersi
   const [compatibility, setCompatibility] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setCompatibility(initial), [initial]);
+  // Responses for an app the user has since navigated away from are dropped.
+  const currentHarness = useRef(initial?.harness ?? null);
+  useEffect(() => {
+    currentHarness.current = initial?.harness ?? null;
+    setCompatibility(initial);
+    setBusy(false);
+    setError(null);
+  }, [initial]);
 
   const run = useCallback(async (action: () => Promise<HarnessVersionCompatibility>) => {
+    const requested = currentHarness.current;
     setBusy(true);
     setError(null);
     try {
-      setCompatibility(await action());
+      const next = await action();
+      if (currentHarness.current === requested) setCompatibility(next);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Guard could not update version coverage.");
+      if (currentHarness.current === requested) {
+        setError(caught instanceof Error ? caught.message : "Guard could not update version coverage.");
+      }
     } finally {
-      setBusy(false);
+      if (currentHarness.current === requested) setBusy(false);
     }
   }, []);
 

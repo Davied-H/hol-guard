@@ -24,7 +24,7 @@
       "properties": {
         "harness": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"},
         "version_source": {"enum": ["package-metadata", "unavailable"]},
-        "limitations": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+        "limitations": {"type": "array", "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 400}},
         "remediation": {
           "type": "array",
           "maxItems": 8,
@@ -33,8 +33,8 @@
             "additionalProperties": false,
             "required": ["label", "url"],
             "properties": {
-              "label": {"type": "string", "minLength": 1, "maxLength": 256},
-              "url": {"type": "string", "pattern": "^https://"}
+              "label": {"type": "string", "minLength": 1, "maxLength": 80},
+              "url": {"type": "string", "maxLength": 400, "pattern": "^https://(github\\.com|www\\.npmjs\\.com|omp\\.sh)([/?#].*)?$"}
             }
           }
         },

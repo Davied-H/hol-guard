@@ -74,12 +74,15 @@ def handle_harness_version_write(
         service.invalidate(context.guard_home, harness)
         target._write_json({"version_compatibility": compatibility_or_unknown(harness, context, force=True)})
         return
-    if path == ACKNOWLEDGE_PATH:
-        try:
+    try:
+        if path == ACKNOWLEDGE_PATH:
             result = service.acknowledge(harness, payload.get("acknowledgement_key"), context)
-        except service.AcknowledgementRejectedError as error:
-            target._write_json({"error": str(error)}, status=409)
-            return
-        target._write_json({"version_compatibility": result})
+        else:
+            result = service.clear_acknowledgement(harness, context)
+    except service.AcknowledgementRejectedError as error:
+        target._write_json({"error": str(error)}, status=409)
         return
-    target._write_json({"version_compatibility": service.clear_acknowledgement(harness, context)})
+    except OSError:
+        target._write_json({"error": "acknowledgement_store_unavailable"}, status=500)
+        return
+    target._write_json({"version_compatibility": result})

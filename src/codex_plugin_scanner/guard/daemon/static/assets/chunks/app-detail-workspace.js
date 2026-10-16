@@ -401,16 +401,26 @@ function AppVersionCompatibilityCard({ initial }) {
   const [compatibility, setCompatibility] = reactExports.useState(initial);
   const [busy, setBusy] = reactExports.useState(false);
   const [error, setError] = reactExports.useState(null);
-  reactExports.useEffect(() => setCompatibility(initial), [initial]);
+  const currentHarness = reactExports.useRef(initial?.harness ?? null);
+  reactExports.useEffect(() => {
+    currentHarness.current = initial?.harness ?? null;
+    setCompatibility(initial);
+    setBusy(false);
+    setError(null);
+  }, [initial]);
   const run = reactExports.useCallback(async (action) => {
+    const requested = currentHarness.current;
     setBusy(true);
     setError(null);
     try {
-      setCompatibility(await action());
+      const next = await action();
+      if (currentHarness.current === requested) setCompatibility(next);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Guard could not update version coverage.");
+      if (currentHarness.current === requested) {
+        setError(caught instanceof Error ? caught.message : "Guard could not update version coverage.");
+      }
     } finally {
-      setBusy(false);
+      if (currentHarness.current === requested) setBusy(false);
     }
   }, []);
   if (!compatibility || versionCheckUnsupported(compatibility)) return null;

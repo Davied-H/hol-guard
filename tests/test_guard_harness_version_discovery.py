@@ -56,6 +56,12 @@ def _observe(context: HarnessContext, **kwargs: object):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The service re-checks installs with the real PATH; keep a developer's own omp out of it.
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+
+
+@pytest.fixture(autouse=True)
 def _reset_service_cache() -> Iterator[None]:
     service._observations.clear()
     yield
@@ -154,6 +160,14 @@ class TestDiscovery:
         package_json.write_text(json.dumps({"name": PACKAGE, "version": "18.11.20"}), encoding="utf-8")
         os.utime(package_json, ns=(1, 1))
         assert observation_identity_changed(observation)
+
+    def test_new_installation_on_path_changes_identity(self, tmp_path: Path) -> None:
+        context = _context(tmp_path)
+        _link_bun(context, _install(tmp_path / "bun", "18.8.3"))
+        observation = _observe(context)
+        assert not observation_identity_changed(observation, context, which=lambda _name: None)
+        second = _install(tmp_path / "npm", "18.11.2")
+        assert observation_identity_changed(observation, context, which=lambda _name: str(second))
 
 
 class TestAcknowledgementStore:

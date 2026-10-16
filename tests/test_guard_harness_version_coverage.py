@@ -194,6 +194,9 @@ class TestDecision:
         assert payload["tested_scope"] == "all_declared_events"
         assert payload["enforcement_effect"] == "none"
         assert payload["acknowledgement"] == {"eligible": False, "acknowledged": False, "key": None}
+        evidence = payload["evidence"]
+        assert isinstance(evidence, list) and evidence
+        assert all(item["suite"] == {"id": item["suite"]["id"], "result": "passed"} for item in evidence)
 
     @pytest.mark.parametrize("version", ["18.11.2", "18.4.11", "18.6.0", "18.8.3-rc.1", "19.0.0"])
     def test_newer_lower_and_intermediate_versions_are_untested(self, version: str) -> None:

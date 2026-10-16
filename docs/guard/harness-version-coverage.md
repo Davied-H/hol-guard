@@ -69,7 +69,8 @@ The bundled manifest is
 ([schema](schemas/harness-version-coverage.v1.schema.json)). The runtime
 validator in `codex_plugin_scanner.guard.harness_versions.manifest` is
 authoritative; it rejects the whole manifest on any defect, and the dashboard
-then shows **Coverage unavailable** for every app.
+then shows **Coverage unavailable** for every app whose version Guard detected
+(apps without a detected version still show **Version unknown**).
 
 ### Eligibility
 

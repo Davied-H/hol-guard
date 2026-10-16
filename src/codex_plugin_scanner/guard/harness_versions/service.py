@@ -54,16 +54,19 @@ def _observation(
     key = (str(context.guard_home), harness)
     with _lock:
         cached = _observations.get(key)
-        if (
-            not force
-            and cached is not None
-            and clock() - cached.observed_at < CACHE_TTL_SECONDS
-            and not observation_identity_changed(cached)
-        ):
-            return cached
-        observation = observe(harness, context, clock=clock)
+    if (
+        not force
+        and cached is not None
+        and clock() - cached.observed_at < CACHE_TTL_SECONDS
+        and not observation_identity_changed(cached, context)
+    ):
+        return cached
+    # Discovery can run a bounded probe; keep it outside the lock so other harnesses and homes
+    # are not serialized behind it. Concurrent misses may observe twice; the newest result wins.
+    observation = observe(harness, context, clock=clock)
+    with _lock:
         _observations[key] = observation
-        return observation
+    return observation
 
 
 def compatibility_for(
