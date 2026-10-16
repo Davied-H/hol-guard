@@ -90,7 +90,11 @@ def _python_toolchain(workspace: Path) -> None:
         script = venv / "bin" / name
         _write(script, f"#!/bin/sh\nexec echo '{name}'\n")
         script.chmod(0o755)
-    _write(venv / "lib" / "python3.12" / "site-packages" / "pytest" / "__init__.py", "__version__ = '8.4.1'\n")
+    packages = venv / "lib" / "python3.12" / "site-packages"
+    _write(packages / "pytest" / "__init__.py", "__version__ = '8.4.1'\n")
+    # `python -m pytest` is the other spelling agents reach for, and it reads
+    # the package's entry module rather than the console script.
+    _write(packages / "pytest" / "__main__.py", "raise SystemExit(0)\n")
     # The script `source .venv/bin/activate` reads, which agents run before the
     # tools rather than spelling out `.venv/bin/`. Without it that command
     # sources a file the fixture never wrote, and the case would prove nothing

