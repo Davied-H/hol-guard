@@ -28,6 +28,9 @@ def test_only_the_active_omp_extension_resumes_after_a_safe_alternative_approval
     active = _source(tmp_path, "omp")
     assert "function scheduleToolApprovalResume" in active
     assert active.count("scheduleToolApprovalResume(response, ctx, snapshot);") == 1
+    # The user's own prompt ends a pending resume; the turn a resume starts does not.
+    assert active.count("    invalidateInputApprovalResumes();\n    invalidateToolApprovalResumes();\n") == 1
+    assert "invalidateToolApprovalResumes" not in active[active.index('pi.on("agent_start"') :].split("});")[0]
     for source in (
         _source(tmp_path, "pi"),
         _source(tmp_path, "omp", previous=True),
@@ -44,20 +47,20 @@ def test_an_approval_starts_one_turn_that_asks_for_the_identical_call(tmp_path: 
         """
 const sent = [];
 const notices = [];
-let generation = 0;
-const pendingApprovalResumes = new Map();
-const pi = { sendMessage: (...args) => sent.push(args) };
+const handlers = new Map<string, Array<() => void>>();
+const pi = {
+  on: (event: string, handler: () => void) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
+  sendMessage: (...args) => sent.push(args),
+};
+const fire = (event: string) => { for (const handler of handlers.get(event) ?? []) handler(); };
 let pollQueue = [];
 let polls = 0;
 type GuardResponse = Record<string, unknown>;
 function canonicalJson(value: unknown): string | null { return JSON.stringify(value); }
 function ompInteractiveContext(ctx: any): boolean { return ctx.mode === 'tui'; }
-function captureInputApprovalResumeBinding(ctx: any) {
-  return { generation, sessionId: ctx.sessionId, cwd: ctx.cwd };
-}
-function inputApprovalResumeBindingIsActive(ctx: any, binding: any): boolean {
-  return binding !== null && binding.generation === generation && ctx.sessionId === binding.sessionId;
-}
+function contextSessionId(ctx: any): string | null { return ctx.sessionId; }
+function contextCwd(ctx: any): string | null { return ctx.cwd; }
+function loadGuardDaemonConnection() { return { stateId: 'daemon-a' }; }
 async function pollApprovalResolution(_id: string, _path: string, _signal: unknown, isActive: () => boolean) {
   polls += 1;
   await new Promise((resolve) => setTimeout(resolve, 5));
@@ -97,13 +100,65 @@ async function run() {
   results.not_scheduled = { sent: sent.splice(0), polls };
   polls = 0; pollQueue = ['allow'];
   scheduleToolApprovalResume(blocked('d'), ctx(), snapshot({ memory: 'x' }));
-  generation += 1;
+  invalidateToolApprovalResumes();
   await settle();
   results.moved_on = { sent: sent.splice(0) };
   pollQueue = ['allow'];
   scheduleToolApprovalResume(blocked('e'), ctx(), snapshot({ memory: 'y'.repeat(9000) }));
   await settle();
   results.oversized = { sent: sent.splice(0) };
+  notices.splice(0);
+  polls = 0; pollQueue = ['allow'];
+  scheduleToolApprovalResume(blocked('a'), ctx(), snapshot({ memory: 'tests run with uv', context: 'repo' }));
+  scheduleToolApprovalResume(blocked('b'), ctx(), snapshot({ memory: 'x' }));
+  await settle();
+  results.settled_again = { sent: sent.splice(0), polls };
+  polls = 0; pollQueue = [];
+  for (const id of ['c1', 'c2', 'c3', 'c4', 'c5']) {
+    scheduleToolApprovalResume(blocked(id), ctx(), snapshot({ memory: id }));
+  }
+  const cappedNotices = notices.splice(0);
+  invalidateToolApprovalResumes();
+  scheduleToolApprovalResume(blocked('c6'), ctx(), snapshot({ memory: 'c6' }));
+  await settle();
+  results.capped = { polls, notices: cappedNotices, after_moving_on: notices.splice(0) };
+  sent.splice(0); notices.splice(0);
+  const sessionEvents: Record<string, number> = {};
+  for (const event of ['session_start', 'session_switch', 'session_branch', 'session_tree', 'session_shutdown']) {
+    pollQueue = ['allow'];
+    scheduleToolApprovalResume(blocked(`event-${event}`), ctx(), snapshot({ memory: event }));
+    fire(event);
+    await settle();
+    sessionEvents[event] = sent.splice(0).length;
+  }
+  pollQueue = ['allow'];
+  scheduleToolApprovalResume(blocked('event-compact'), ctx(), snapshot({ memory: 'compact' }));
+  fire('session_compact');
+  await settle();
+  sessionEvents.session_compact = sent.splice(0).length;
+  results.session_events = sessionEvents;
+  polls = 0; pollQueue = ['allow'];
+  scheduleToolApprovalResume(blocked('r'), ctx(), snapshot({ memory: 'r' }));
+  invalidateToolApprovalResumes();
+  scheduleToolApprovalResume(blocked('r'), ctx(), snapshot({ memory: 'r' }));
+  await settle();
+  results.reissued = { sent: sent.splice(0).map(([message]) => message.details.requestId), polls };
+  polls = 0; pollQueue = ['allow', 'allow']; notices.splice(0);
+  const currentNotices = [];
+  const currentView = {
+    ...ctx(),
+    sessionId: 's2',
+    ui: { notify: (m: string, k: string) => currentNotices.push([k, m]) },
+  };
+  scheduleToolApprovalResume(blocked('q'), ctx(), snapshot({ memory: 'q' }));
+  scheduleToolApprovalResume(blocked('q'), currentView, snapshot({ memory: 'q' }));
+  await settle();
+  results.two_views = {
+    sent: sent.splice(0).length,
+    polls,
+    stale: notices.splice(0).length,
+    current: currentNotices.length,
+  };
   console.log(JSON.stringify(results));
 }
 run();
@@ -133,10 +188,33 @@ run();
     assert kept_blocked["notices"] == [["warning", "HOL Guard kept this request blocked. Oh My Pi will not run it."]]
 
     assert results["not_scheduled"] == {"sent": [], "polls": 0}
-    assert results["moved_on"] == {"sent": []}, "a new prompt or session drops the pending resume"
+    assert results["moved_on"] == {"sent": []}, "the user's own input drops the pending resume"
 
     oversized = results["oversized"]
     assert isinstance(oversized, dict)
     ((oversized_message, _),) = oversized["sent"]
     assert "with exactly the same arguments, unchanged" in oversized_message["content"]
     assert "y" * 100 not in oversized_message["content"]
+
+    assert results["settled_again"] == {"sent": [], "polls": 0}, "a settled request is never watched again"
+    capped = results["capped"]
+    assert isinstance(capped, dict)
+    assert capped["polls"] == 5, "four watched at once, then a fifth once the user moved on from them"
+    ((kind, message),) = capped["notices"]
+    assert kind == "warning" and "will not rerun this one on its own" in message
+    assert capped["after_moving_on"] == [], "a watcher the user moved on from no longer holds a slot"
+
+    assert results["session_events"] == {
+        "session_start": 0,
+        "session_switch": 0,
+        "session_branch": 0,
+        "session_tree": 0,
+        "session_shutdown": 0,
+        "session_compact": 1,
+    }, "moving to another session, or to another point in this one, drops a pending resume; compaction does not"
+    assert results["reissued"] == {"sent": ["r"], "polls": 2}, (
+        "the same request blocked again after the user moved on is watched afresh"
+    )
+    assert results["two_views"] == {"sent": 1, "polls": 2, "stale": 0, "current": 1}, (
+        "only a request's current watcher may act on it"
+    )
