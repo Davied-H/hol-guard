@@ -16,7 +16,11 @@ struct PromptingAuthority {
     answers: Vec<Option<Value>>,
     /// Ask for a second prompt for the same call instead of deciding it.
     insistent: bool,
-    asked: usize,
+    /// The call this authority has already asked about, so a second call of
+    /// the same session raises a prompt of its own.
+    prompted: Option<Value>,
+    /// How many prompts it asked for, over every call.
+    prompts: usize,
 }
 
 impl RelayAuthority for PromptingAuthority {
@@ -27,8 +31,10 @@ impl RelayAuthority for PromptingAuthority {
         _order: Option<&[String]>,
         _catalog: &RelayCatalog,
     ) -> ToolCallVerdict {
-        if self.insistent || self.answers.len() == self.asked {
-            self.asked += 1;
+        let id = message["id"].clone();
+        if self.insistent || self.prompted.as_ref() != Some(&id) {
+            self.prompted = Some(id);
+            self.prompts += 1;
             return ToolCallVerdict::Elicit(json!({"mode": "form", "message": "approve?"}));
         }
         ToolCallVerdict::Respond(json!({
@@ -140,7 +146,7 @@ fn a_second_prompt_for_one_call_is_no_decision() {
     };
     let mut relay = relay(FakeChild::replying(), host, authority);
     assert_eq!(relay.serve(), Ok(RelayExit::HostClosed));
-    assert_eq!(relay.authority.asked, 2);
+    assert_eq!(relay.authority.prompts, 2);
     assert!(relay.child.sent.is_empty());
     let blocked = relay.host.sent.last().unwrap();
     assert_eq!(blocked["id"], json!(9));
