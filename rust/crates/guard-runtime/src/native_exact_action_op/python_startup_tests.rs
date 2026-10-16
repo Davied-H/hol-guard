@@ -160,11 +160,12 @@ fn a_virtualenv_shim_is_bound_by_content() {
     assert!(bind(&project, &["tool.py"], &[]).is_ok());
     // A method named for a redirected package runs only when that package
     // is imported, so a finder may dispatch to it by name.
-    let finder = |name: &str, target: &str| {
+    let dispatched = |name: &str, call: &str, target: &str| {
         format!(
-            "{shim}import importlib\nclass Finder:\n    def find_spec(self, fullname, path, target=None):\n        {name}\n        return getattr(self, method_name)()\n    def {target}(self):\n        importlib.import_module('setuptools')\n"
+            "{shim}import importlib\nclass Finder:\n    def find_spec(self, fullname, path, target=None):\n        {name}\n        return getattr(self, {call})()\n    def {target}(self):\n        importlib.import_module('setuptools')\n"
         )
     };
+    let finder = |name: &str, target: &str| dispatched(name, "method_name", target);
     let formed = "method_name = 'spec_for_{fullname}'.format(**locals())";
     project.write(
         &format!("{SITE}/_virtualenv.py"),
@@ -216,6 +217,9 @@ fn a_virtualenv_shim_is_bound_by_content() {
         finder("method_name = f'spec_for_{fullname}'", "spec_for_payload"),
         finder(&format!("{formed}; fullname = 'payload'"), "spec_for_distutils"),
         finder(&format!("\"\"\"{formed}\"\"\"; method_name = 'load'"), "spec_for_x"),
+        dispatched(formed, "method_name.replace('json', 'distutils')", "spec_for_distutils"),
+        dispatched(formed, "method_name[:-1]", "spec_for_distutils"),
+        dispatched(formed, "method_name + 's'", "spec_for_distutils"),
     ] {
         project.write(&format!("{SITE}/_virtualenv.py"), &text);
         assert_eq!(

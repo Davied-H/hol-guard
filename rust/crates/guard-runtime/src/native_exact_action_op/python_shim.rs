@@ -97,10 +97,12 @@ fn definition() -> &'static Regex {
     )
 }
 
-/// An attribute read by name, which calls whatever the name selects.
+/// An attribute read by name, which calls whatever the name selects. The
+/// name is captured only when the argument is a bare variable; a name the
+/// call slices, joins or replaces can select any method.
 fn dispatch() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"\bgetattr\(\s*([\w.]+)\s*,\s*(\w*)")
+    pattern(&CELL, r"\bgetattr\(\s*([\w.]+)\s*,\s*(?:(\w+)\s*[,)])?")
 }
 
 /// A method name formed from a literal prefix and one name, as
@@ -214,7 +216,10 @@ fn reach(lines: &[(&str, &str)], function: &Function, classes: &[String]) -> Vec
             let target = &captures[1];
             matches!(target, "self" | "cls") || classes.iter().any(|name| name == target)
         })
-        .map(|captures| prefix(&captures[2], lines, &body, function.parameter.as_deref()))
+        .map(|captures| {
+            let variable = captures.get(2).map_or("", |found| found.as_str());
+            prefix(variable, lines, &body, function.parameter.as_deref())
+        })
         .collect()
 }
 
