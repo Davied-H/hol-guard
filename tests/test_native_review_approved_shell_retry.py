@@ -86,8 +86,15 @@ def test_one_approval_carries_the_identical_shell_retry_but_not_a_reworded_one(
         _grant(store, pending[0]["request_id"], workspace)
 
         identical = worker.review_http_payload(payload=_payload("git status --short", "retry", workspace), **kwargs)
+        requeued = store.list_approval_requests(status="pending")
+        # A retry can only reuse the grant when it binds the same contract the
+        # granted row was queued for, so report that binding before the verdict.
+        assert [row["artifact_hash"] for row in requeued] == [], {
+            "granted_binding": pending[0]["artifact_hash"],
+            "retry_binding": [row["artifact_hash"] for row in requeued],
+            "retry_reason": identical.get("reason_code"),
+        }
         assert identical["policy_action"] == "allow", identical
-        assert store.list_approval_requests(status="pending") == []
 
         # Same intent, the model's own wording. Today this needs a second approval.
         reworded = worker.review_http_payload(payload=_payload("git status --porcelain", "reword", workspace), **kwargs)
