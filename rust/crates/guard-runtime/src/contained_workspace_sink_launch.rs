@@ -271,26 +271,33 @@ const MAX_SAFETY_GUIDE_BYTES: u64 = 64 * 1024;
 
 /// Copy Guard's safety guide into the private home, so the
 /// `~/.hol-support/SAFETY.md` that classification admits reads the same text
-/// inside the sandbox. Only a regular file with one link, in a real
-/// `.hol-support` directory, is copied: a link swapped in for the guide
-/// would otherwise put the file it names in reach of the sandboxed command.
-/// A guide that cannot be copied is left out and the read fails in the sandbox.
+/// inside the sandbox. `.hol-support` and the guide are opened relative to
+/// descriptors without following links, and only a regular file with one link
+/// is copied: a link or directory swapped in at either step would otherwise
+/// put another file in reach of the sandboxed command. A guide that cannot be
+/// copied is left out and the read fails in the sandbox.
 pub(super) fn seed_safety_guide(home: &Path, private_home: &Path) {
+    use nix::fcntl::{open, openat, OFlag};
+    use nix::sys::stat::Mode;
     use std::io::Read;
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    let directory = home.join(".hol-support");
-    let is_directory =
-        std::fs::symlink_metadata(&directory).is_ok_and(|metadata| metadata.file_type().is_dir());
-    if !is_directory {
-        return;
-    }
-    let Ok(mut file) = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(directory.join("SAFETY.md"))
-    else {
+    let directory_flags =
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+    let Ok(home) = open(
+        home,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) else {
         return;
     };
+    let Ok(directory) = openat(&home, ".hol-support", directory_flags, Mode::empty()) else {
+        return;
+    };
+    let file_flags = OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC;
+    let Ok(file) = openat(&directory, "SAFETY.md", file_flags, Mode::empty()) else {
+        return;
+    };
+    let mut file = std::fs::File::from(file);
     let Ok(metadata) = file.metadata() else {
         return;
     };

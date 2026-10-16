@@ -118,6 +118,8 @@ fn other_home_reads_chained_with_a_listing_keep_their_review() {
         "cat ~/.hol-support/SAFETY.md ~/.ssh/id_rsa && rg --files -g 'src/**'",
         "cp ~/.hol-support/SAFETY.md notes.md && rg --files -g 'src/**'",
         "cat ~/.hol-support/SAFETY.md > ~/.zshrc && rg --files -g 'src/**'",
+        "export HOME=. && cat ~/.hol-support/SAFETY.md && rg --files -g 'src/**'",
+        "HOME=. cat ~/.hol-support/SAFETY.md && rg --files -g 'src/**'",
     ] {
         let result = fixture.classify(command);
         assert_ne!(result.minimum_action, "allow", "{command}");

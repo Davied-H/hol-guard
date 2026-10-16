@@ -47,12 +47,15 @@ const DEVICES: &[&str] = &[
 
 /// `temp_fixed` says nothing in the command rebinds `TMPDIR`, so each
 /// `$TMPDIR` the shell expands is the one the sandbox launcher sets.
+/// `home_fixed` says nothing in the command rebinds `HOME`, so `~` is the
+/// private home the launcher seeds with the safety guide.
 /// `granted_script` is the operand of an outside script the sandbox may read.
 pub(super) fn reaches_outside(
     segment: &CommandSegmentV1,
     name: &str,
     workspace: &Path,
     temp_fixed: bool,
+    home_fixed: bool,
     granted_script: Option<&str>,
 ) -> bool {
     if GUARD_CLIS.contains(&name) || DATABASE_CLIENTS.contains(&name) {
@@ -63,7 +66,7 @@ pub(super) fn reaches_outside(
     let fixed_expansions = identity_expansions_only(segment, name)
         || exit_status_expansions_only(&segment.text)
         || (temp_fixed && private_temp_expansions_only(&segment.text));
-    let guide = GUIDE_READERS.contains(&name);
+    let guide = home_fixed && GUIDE_READERS.contains(&name);
     if (expands_variable(&segment.text, name) && !fixed_expansions)
         || segment.text.split_whitespace().any(|word| {
             // Only the bare word expands; a quoted or redirected guide does not.
