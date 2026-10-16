@@ -13,6 +13,7 @@ from ci.gauntlet.full_task_local_checks import (
     _code,
     _game_logic,
     _js_tests_import_source,
+    _spawned_script,
     _todo_operations,
     committed_evidence,
 )
@@ -145,6 +146,16 @@ SPAWN = "import { spawn } from 'node:child_process';\n"
             True,
         ),
         (
+            "server.test.js",
+            SPAWN + "test('api', () => { spawn(process.execPath, ['--require', setupPath, 'server.js']); });\n",
+            True,
+        ),
+        (
+            "server.test.js",
+            SPAWN + "test('api', () => { exec('node --require setup.js', {stdio: 'pipe'}); });\n",
+            False,
+        ),
+        (
             "tests/api.test.js",
             SPAWN + "test('api', () => { spawn(process.execPath, [join(__dirname, '..', 'server.js')]); });\n",
             True,
@@ -162,6 +173,12 @@ def test_tests_may_run_the_committed_server_as_a_child(
     files = {"server.js": REST_SERVER, test_path: test_source}
     workspace = _commit(tmp_path / "todo", files)
     assert _js_tests_import_source(workspace, sorted(files), _todo_operations) is expected
+
+
+def test_spawned_script_keeps_option_values_out_of_the_script() -> None:
+    assert _spawned_script("process.execPath, ['--require', setupPath, 'server.js']") == "server.js"
+    assert _spawned_script("'node --require setup.js', {stdio: 'pipe'}") is None
+    assert _spawned_script("process.execPath, ['-e', 'x', 'server.js']") is None
 
 
 def test_committed_evidence_lists_digests_and_facts_without_contents(tmp_path: Path) -> None:
