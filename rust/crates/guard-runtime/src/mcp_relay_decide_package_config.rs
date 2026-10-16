@@ -60,6 +60,14 @@ pub(super) fn sandbox_analysis(view: &HarnessView) -> Result<String, &'static st
 fn guard_config(view: &HarnessView, artifact: &GuardArtifact) -> Result<GuardConfig, &'static str> {
     let config = &view.config;
     let hash_config = &view.hash_config;
+    // An override map this cannot read is not a view without an override: the
+    // policy context reports no artifact, publisher, or harness override, so a
+    // bound `block` would be dropped from the composed action rather than
+    // deferring the call. `mode` reads the same way, through `extra`.
+    text(config, "mode")?;
+    for key in ["artifact_actions", "publisher_actions", "harness_actions"] {
+        actions(config, key)?;
+    }
     let mut extra = config.clone();
     extra.insert(
         "resolved_override".to_owned(),

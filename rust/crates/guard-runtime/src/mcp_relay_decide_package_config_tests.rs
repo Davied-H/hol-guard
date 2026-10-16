@@ -143,12 +143,16 @@ fn a_view_this_cannot_read_defers_rather_than_reading_a_default() {
     // Every one of these reads permissively if it is defaulted: an unlocked
     // setting, an absent managed policy, no risk action bound at all.
     for key in [
+        "mode",
         "security_level",
         "protection_posture",
         "protection_posture_explicit",
         "managed_locked_settings",
         "risk_actions",
         "harness_risk_actions",
+        "artifact_actions",
+        "publisher_actions",
+        "harness_actions",
     ] {
         let mut config = config();
         config.remove(key);
@@ -173,6 +177,24 @@ fn a_view_this_cannot_read_defers_rather_than_reading_a_default() {
     let mut bound = view(config());
     bound.hash_config.remove("sandbox_analysis");
     assert_eq!(sandbox_analysis(&bound).err(), Some(CONFIG_INVALID));
+}
+
+#[test]
+fn an_override_map_this_cannot_read_defers_rather_than_resolving_no_override() {
+    // Each of these reads as "nothing overrides this artifact" if it is taken
+    // for an absent map, which is the permissive answer: a bound `block` would
+    // leave the composed action untouched.
+    for key in ["artifact_actions", "publisher_actions", "harness_actions"] {
+        for bound in [json!("block"), json!(["block"]), json!({"codex": 7})] {
+            let mut config = config();
+            config.insert((*key).to_owned(), bound.clone());
+            assert_eq!(
+                config_policy(&view(config), &artifact()).err(),
+                Some(CONFIG_INVALID),
+                "{key} bound as {bound} is not the view this reads"
+            );
+        }
+    }
 }
 
 #[test]
