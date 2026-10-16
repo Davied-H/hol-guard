@@ -108,3 +108,60 @@ def _assignments_applied(assignments: Mapping[str, str]) -> Iterator[None]:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+
+
+# The shell resolves a bare `timeout` on `PATH`, and the two system paths name
+# that same program. `./timeout` or `bin/timeout` is whatever that file holds,
+# so native authority leaves it wrapped and this peel does not read it either.
+_SYSTEM_TIMEOUT = frozenset({"timeout", "/usr/bin/timeout", "/bin/timeout"})
+_CLOCK_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def _clock_seconds(value: str) -> int | None:
+    """Seconds in a duration `timeout` reads, mirroring the native reader.
+
+    A number of seconds, or one carrying an `s`, `m`, `h` or `d` unit, with an
+    optional fraction. Anything else is not a duration, so the word after it is
+    not the program and the command is not peeled.
+    """
+    number = value[:-1] if value[-1:] in _CLOCK_UNITS else value
+    whole, _, fraction = number.partition(".")
+    digits = set("0123456789")
+    if not number or len(number) > 10 or not whole or not set(whole) <= digits:
+        return None
+    if fraction and not set(fraction) <= digits:
+        return None
+    unit = _CLOCK_UNITS.get(value[-1:], 1) if value[-1:] in _CLOCK_UNITS else 1
+    return max(1, round(float(number) * unit))
+
+
+def peel_timeout_clock(command: list[str]) -> tuple[list[str], int | None]:
+    """Peel a system `timeout <duration>` prefix and report its seconds.
+
+    Native authority reads that clock through to the program it bounds, because
+    it limits how long the work may take and not what it may do. The contained
+    planners are handed the program the text already names, so `timeout 20
+    pytest -q` reaches the same read-only profile as `pytest -q`, and the clock
+    still bounds the run it is peeled from.
+    """
+    seconds: int | None = None
+    for _ in range(4):
+        if len(command) < 3 or command[0] not in _SYSTEM_TIMEOUT:
+            break
+        rest = command[1:]
+        if rest[0] == "--":
+            rest = rest[1:]
+        if len(rest) < 2:
+            break
+        clock = _clock_seconds(rest[0])
+        program = rest[1]
+        if clock is None or not program or program.startswith("-") or _assignment_word(program):
+            break
+        seconds = clock if seconds is None else min(seconds, clock)
+        command = rest[1:]
+    return command, seconds
+
+
+def _assignment_word(word: str) -> bool:
+    name, separator, _ = word.partition("=")
+    return bool(separator and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name))

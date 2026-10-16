@@ -190,6 +190,10 @@ fn direct_pytest_requires_real_containment_never_direct_allow() {
         "py.test tests/unit -q",
         "./.venv/bin/python3 -m pytest -q",
         "/usr/bin/python3 -m pytest tests/unit -q",
+        // A system clock bounds how long the run may take, not what it may
+        // do, so it reaches the same containment as the command it wraps.
+        "timeout 20 pytest -q",
+        "timeout 5m python3 -m pytest -q",
     ] {
         for harness in ["omp", "claude-code", "codex"] {
             let result = classify(harness, command);
@@ -225,7 +229,8 @@ fn unrelated_execution_and_shell_effects_do_not_inherit_test_delegation() {
         "pytest &",
         "PATH=/tmp pytest -q",
         "PYTHONPATH=/tmp python3 -m pytest",
-        "timeout 20 pytest -q",
+        // A `timeout` named by path is whatever that file holds.
+        "./timeout 20 pytest -q",
         "sudo pytest -q",
         "pytest .env",
     ] {
