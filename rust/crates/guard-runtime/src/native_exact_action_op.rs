@@ -121,21 +121,16 @@ fn review_binding_with(
     else {
         return None;
     };
-    // Only this query carries the home and environment the launcher's
-    // files resolve against; the bare review-binding query never binds one.
     let launcher = || {
-        let text = command.as_deref()?;
-        let cwd = token::launch_cwd(payload_cwd.as_deref(), workspace.as_deref())?;
-        let budget = Duration::from_millis((*budget_ms).min(NATIVE_EXACT_ACTION_MAX_BUDGET_MS));
-        let ctx = Ctx {
-            home: home_dir.as_deref(),
-            env: environment,
-            deadline: Instant::now() + budget,
+        launcher_reuse(
+            command.as_deref(),
+            payload_cwd.as_deref(),
+            workspace.as_deref(),
+            home_dir.as_deref(),
+            environment,
+            *budget_ms,
             engines,
-        };
-        git_push::push_state(text, &cwd, &ctx)
-            .ok()
-            .map(reuse_shape::Reuse::Launcher)
+        )
     };
     binding::review_binding(
         harness,
@@ -150,6 +145,32 @@ fn review_binding_with(
         policy_binding,
         launcher,
     )
+}
+
+/// The launcher state a one-time approval of `command` binds to: only a plain
+/// `git push` has one (`git_push`). It needs the home and environment the
+/// action launches in, so a query without them binds no launcher.
+fn launcher_reuse(
+    command: Option<&str>,
+    payload_cwd: Option<&str>,
+    workspace: Option<&str>,
+    home_dir: Option<&str>,
+    environment: &std::collections::BTreeMap<String, String>,
+    budget_ms: u64,
+    engines: &dyn Engines,
+) -> Option<reuse_shape::Reuse> {
+    let text = command?;
+    let cwd = token::launch_cwd(payload_cwd, workspace)?;
+    let budget = Duration::from_millis(budget_ms.min(NATIVE_EXACT_ACTION_MAX_BUDGET_MS));
+    let ctx = Ctx {
+        home: home_dir,
+        env: environment,
+        deadline: Instant::now() + budget,
+        engines,
+    };
+    git_push::push_state(text, &cwd, &ctx)
+        .ok()
+        .map(reuse_shape::Reuse::Launcher)
 }
 
 fn decide(
@@ -168,6 +189,10 @@ fn decide(
             facts,
             receipt,
             policy_binding,
+            workspace,
+            home_dir,
+            environment,
+            budget_ms,
         } => NativeExactActionPayloadV1::ReviewBinding {
             binding: binding::review_binding(
                 harness,
@@ -177,7 +202,17 @@ fn decide(
                 facts,
                 receipt.as_ref(),
                 policy_binding,
-                || None,
+                || {
+                    launcher_reuse(
+                        command.as_deref(),
+                        cwd.as_deref(),
+                        workspace.as_deref(),
+                        home_dir.as_deref(),
+                        environment.as_ref()?,
+                        (*budget_ms)?,
+                        engines,
+                    )
+                },
             ),
         },
         NativeExactActionQueryV1::ExactAction { budget_ms, .. } => {

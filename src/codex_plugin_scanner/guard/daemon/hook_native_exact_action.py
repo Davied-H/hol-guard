@@ -174,8 +174,15 @@ def native_review_binding(
     native_receipt: Mapping[str, object] | None,
     workspace: Path | None,
     guard_home: Path | None = None,
+    *,
+    home_dir: Path | None = None,
 ) -> str | None:
-    """Bind a short-lived retry to Rust-owned request and decision evidence."""
+    """Bind a short-lived retry to Rust-owned request and decision evidence.
+
+    The workspace, home and environment let the resident bind a plain
+    ``git push`` to the files it runs; every caller of one review must pass
+    the same ``home_dir`` or the queued row and its retry never match.
+    """
 
     raw_cwd = payload.get("cwd")
     try:
@@ -188,6 +195,10 @@ def native_review_binding(
             "facts": _facts(native_result),
             "receipt": dict(native_receipt) if isinstance(native_receipt, Mapping) else None,
             "policy_binding": _policy_binding(harness, native_result, native_receipt),
+            "workspace": _text(workspace),
+            "home_dir": _text(home_dir),
+            "environment": {key: value for key, value in os.environ.items() if isinstance(value, str)},
+            "budget_ms": _BUDGET_MS,
         }
         return _answer(query, guard_home)["binding"]
     except (NativeExactActionError, OSError, RuntimeError, TypeError, ValueError) as error:

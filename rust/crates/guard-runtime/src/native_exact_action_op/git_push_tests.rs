@@ -433,3 +433,48 @@ fn a_hook_the_push_runs_leaves_it_unbound() {
         }
     }
 }
+
+fn binding_query(repo: &Repo, launch_context: bool) -> Option<String> {
+    let work = str_path(&repo.path("work"));
+    let mut query = json!({
+        "kind": "review_binding", "harness": "omp", "command": "git push origin dev",
+        "cwd": work, "workspace_bound": true,
+        "facts": {"decision": "ask", "minimum_action": "review", "policy_action": "review", "reason_code": "r"},
+        "receipt": {
+            "schema": "guard-native-hook-decision-receipt.v1", "version": 1, "authority": "rust",
+            "harness": "omp", "event_name": "PreToolUse", "workspace_bound": true,
+            "request_digest": "ab".repeat(32), "decision": "ask", "policy_action": "review", "reason_code": "r"
+        },
+        "policy_binding": {"state": "unbound"}
+    });
+    if launch_context {
+        query["workspace"] = json!(work);
+        query["home_dir"] = json!(str_path(&repo.path("home")));
+        query["environment"] = json!({"PATH": "/usr/bin:/bin"});
+        query["budget_ms"] = json!(5000);
+    }
+    let request: guard_contracts::NativeExactActionRequestV1 = serde_json::from_value(json!({
+        "schema": "guard-native-exact-action-request.v1", "request_id": "req-push", "query": query
+    }))
+    .unwrap();
+    let engines = Fake {
+        root: repo.root.to_string_lossy().into_owned(),
+        unreusable: None,
+    };
+    match super::super::decide(&request, &engines).unwrap() {
+        guard_contracts::NativeExactActionPayloadV1::ReviewBinding { binding } => binding,
+        other => panic!("unexpected payload {other:?}"),
+    }
+}
+
+#[test]
+fn the_daemon_review_binding_query_binds_a_push_only_with_its_launch_context() {
+    let repo = Repo::new();
+    assert_eq!(binding_query(&repo, false), None);
+    let bound = binding_query(&repo, true).expect("a plain push with its launch context is bound");
+    let prefix = format!("native-review-v4:{}:ask:review:review:r:", "ab".repeat(32));
+    assert!(bound.starts_with(&prefix), "{bound}");
+    assert_eq!(binding_query(&repo, true).as_deref(), Some(bound.as_str()));
+    repo.append("work/.git/config", "[push]\n\tdefault = current\n");
+    assert_ne!(binding_query(&repo, true).as_deref(), Some(bound.as_str()));
+}

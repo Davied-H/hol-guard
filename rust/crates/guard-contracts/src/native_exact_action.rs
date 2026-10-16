@@ -102,6 +102,16 @@ pub enum NativeExactActionQueryV1 {
         #[serde(default)]
         receipt: Option<Value>,
         policy_binding: NativePolicyBindingV1,
+        /// The launch context a mutable launcher's files resolve against
+        /// (`git push`); without an environment no launcher is bound.
+        #[serde(default)]
+        workspace: Option<String>,
+        #[serde(default)]
+        home_dir: Option<String>,
+        #[serde(default)]
+        environment: Option<BTreeMap<String, String>>,
+        #[serde(default)]
+        budget_ms: Option<u64>,
     },
 }
 

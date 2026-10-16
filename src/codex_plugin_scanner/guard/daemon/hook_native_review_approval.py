@@ -74,7 +74,9 @@ def pause_native_pre_tool_for_approval(
         return render_pre_tool(harness, failed, guard_home=guard_home)
     launch_target = _native_review_launch_target(payload)
     tool_name = _native_review_tool_name(payload)
-    identity = native_review_binding(harness, payload, native_result, native_receipt, workspace, guard_home)
+    identity = native_review_binding(
+        harness, payload, native_result, native_receipt, workspace, guard_home, home_dir=home_dir
+    )
     # Custom-extension and saved exact-action blocks win over any allow or pending once approval.
     custom = native_local_cli_grant_response(
         store,
@@ -332,7 +334,7 @@ def queue_native_pre_tool_review(
     # The pause path already asked the resident for this binding. Asking again
     # repeats a resident round trip that can exhaust the hook deadline on Windows.
     binding = (
-        native_review_binding(harness, payload, native_result, native_receipt, workspace, guard_home)
+        native_review_binding(harness, payload, native_result, native_receipt, workspace, guard_home, home_dir=home_dir)
         if isinstance(review_binding, TokenUnset)
         else review_binding
     )
@@ -423,6 +425,7 @@ def record_claude_permission_notice_for_native_review(
     native_receipt: Mapping[str, object] | None,
     workspace: Path | None,
     guard_home: Path,
+    home_dir: Path | None = None,
 ) -> None:
     """Persist the Claude permission-prompt notice for a queued native review."""
     from ..cli.commands_support_hook_state import _record_claude_permission_notice
@@ -431,7 +434,9 @@ def record_claude_permission_notice_for_native_review(
     tool_name = _native_review_tool_name(payload)
     command = pre_tool_command(payload)
     artifact_id = _native_review_artifact_id(harness, tool_name)
-    binding = native_review_binding(harness, payload, native_result, native_receipt, workspace, guard_home)
+    binding = native_review_binding(
+        harness, payload, native_result, native_receipt, workspace, guard_home, home_dir=home_dir
+    )
     metadata: dict[str, object] = {"raw_command_text": command} if command else {}
     artifact = GuardArtifact(
         artifact_id=artifact_id,

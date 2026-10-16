@@ -614,6 +614,7 @@ class HookWorkerNativeMixin:
                             native_receipt=accepted_receipt,
                             workspace=workspace,
                             guard_home=guard_home,
+                            home_dir=home_dir,
                         )
                 return (_record_native_pre_activity(self, native_harness, payload, response, accepted_receipt), True)
             custom_block = native_local_cli_block_response(
