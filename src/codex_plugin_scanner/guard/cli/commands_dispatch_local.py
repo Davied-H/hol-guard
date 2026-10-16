@@ -684,8 +684,8 @@ def _run_guard_install_command(
             guard_home=guard_home,
         )
         if repair is not None:
-            native_repair, _repair_exit = repair
-            if str(native_repair.get("reason_code") or "").startswith("native_wheel_"):
+            native_repair, repair_exit = repair
+            if repair_exit != 0 or native_repair.get("status") in {"failed", "blocked"}:
                 if getattr(args, "json", False):
                     print(json.dumps({"status": "failed", "native_runtime_repair": native_repair}, indent=2))
                 else:

@@ -1091,7 +1091,14 @@ jobs:
         # A stable repair below replaces the rebuilt files with the attested release files, manifest included.
         env:
           VERSION: ${{ needs.build.outputs.version }}
-        run: uv run --no-sync python scripts/embed_native_wheel_manifest.py --dist-dir dist --version "$VERSION"
+        run: |
+          set -euo pipefail
+          # Repair runs of sources that predate GitHub-only native wheels keep their original pure wheel.
+          if [[ ! -f scripts/embed_native_wheel_manifest.py ]]; then
+            echo "Source predates the native wheel manifest; skipping."
+            exit 0
+          fi
+          uv run --no-sync python scripts/embed_native_wheel_manifest.py --dist-dir dist --version "$VERSION"
       - name: Reuse wheels already attested on the GitHub release
         # Any stable run can follow a deferred publication, including a dispatch
         # from the release tag itself, so check every stable run for attached wheels.

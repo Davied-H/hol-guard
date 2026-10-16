@@ -55,6 +55,7 @@ from ..runtime.extension_control_authority import AuthorityHealth
 from ..store import GuardStore
 from .install_commands import apply_managed_install
 from .managed_install_context import managed_install_context as _repair_context_from_managed_install
+from .native_wheel_sources import NativeWheelError, is_alpha_version
 from .update_alpha_tag_lookup import build_alpha_liveness_checker
 from .update_artifact import (
     TrustedWheelArtifact,
@@ -73,15 +74,14 @@ from .update_desktop_core import is_desktop_managed_runtime
 from .update_grok_repair import append_grok_repair
 from .update_install_verify import verify_installed_distribution
 from .update_native_wheel import (
-    NativeWheelError,
     bundled_native_runtime_missing,
     github_only_platform,
-    is_alpha_version,
     native_platform_supported,
     native_runtime_payload,
     native_wheel_install_recorded,
     plan_native_wheel_update,
     prepare_native_wheel,
+    pypi_serves_native_wheel,
     record_native_wheel_install,
     update_command_for,
 )
@@ -453,13 +453,19 @@ def repair_native_runtime_if_missing(
     (source, VCS, and local wheel installs keep their own workflow).
     """
 
-    if (
-        _is_desktop_managed_runtime()
-        or not bundled_native_runtime_missing()
-        or not native_platform_supported()
-        or _direct_url_payload() is not None
-    ):
+    if _is_desktop_managed_runtime() or not bundled_native_runtime_missing() or not native_platform_supported():
         return None
+    direct_url = _direct_url_payload()
+    if direct_url is not None:
+        if guard_home is not None:
+            home = guard_home.expanduser().resolve()
+        elif context is not None:
+            home = context.guard_home.expanduser().resolve()
+        else:
+            home = resolve_guard_home()
+        # A native wheel this updater installed is recorded and can be reinstalled; other direct installs cannot.
+        if not native_wheel_install_recorded(home, archive_sha256=_direct_url_archive_sha256(direct_url)):
+            return None
     return run_guard_update(
         dry_run=False,
         context=context,
@@ -645,7 +651,8 @@ def _run_guard_update_unlocked(
         network_policy=network_policy,
         include_alpha=include_alpha,
     )
-    if requested_wheel_path is None and _python_runtime_blocks_update(version_check):
+    # A same-version runtime repair installs nothing newer, so the latest release's Python floor does not apply.
+    if requested_wheel_path is None and not native_repair_only and _python_runtime_blocks_update(version_check):
         payload.update(
             {
                 "version_check": version_check,
@@ -688,7 +695,13 @@ def _run_guard_update_unlocked(
             target_version=target_version,
             runtime_missing=runtime_missing,
             platform_supported=runtime_platform_supported,
-            github_only=github_only_platform(),
+            # Intel macOS wheels stay on PyPI until a later release; use PyPI whenever it has this host's wheel.
+            github_only=github_only_platform()
+            and not (
+                target_version is not None
+                and not is_alpha_version(target_version)
+                and pypi_serves_native_wheel(target_version, network_policy=network_policy)
+            ),
         )
         if requested_wheel_path is None and not force_pypi_reinstall and configured_index_url is None
         else None
@@ -722,7 +735,11 @@ def _run_guard_update_unlocked(
             payload["status"] = "current"
             payload["changed"] = False
             payload["resulting_version"] = current_version
-            payload["message"] = already_current_update_message(version_check)
+            payload["message"] = (
+                native_wheel_note
+                if native_wheel_plan.reason == "upgrade" and native_wheel_note
+                else already_current_update_message(version_check)
+            )
             return payload, 0
         else:
             requested_wheel_path = native_wheel_download.path
