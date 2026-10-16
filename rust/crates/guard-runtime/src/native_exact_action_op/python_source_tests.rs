@@ -123,6 +123,8 @@ fn writes_are_seen_in_code_only() {
         "open('x'\n",
         "Path('payload.py').replace('json.py')\n",
         "Path.replace(Path('payload.py'), 'json.py')\n",
+        "a = parser.add_argument('--o', type=Path)\na.type.replace('payload.py', 'json.py')\n",
+        "fields(C)[0].type.replace(src, dst)\n",
         "type(staged).replace(staged, target)\n",
         "staged.replace(target)\n",
         "Path(a).replace(*pair)\n",

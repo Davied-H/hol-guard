@@ -206,6 +206,12 @@ fn reaches_class(original: &str) -> bool {
     })
 }
 
+/// `action.type` and `field.type` hand back a class that was only named as
+/// data, including `add_argument(type=Path)` and a dataclass annotation.
+fn type_attribute_receiver(code: &str, dot: usize) -> bool {
+    code[..dot].trim_end().ends_with(".type")
+}
+
 pub(super) fn replaces(code: &str) -> Replaces {
     let mut found = Replaces {
         classes: reaches_class(code),
@@ -228,7 +234,9 @@ pub(super) fn replaces(code: &str) -> Replaces {
                     .map(|range| code[range].trim())
                     .filter(|argument| !argument.is_empty())
                     .collect();
-                if arguments.len() < 2 || arguments.iter().any(|argument| argument.starts_with('*'))
+                if arguments.len() < 2
+                    || arguments.iter().any(|argument| argument.starts_with('*'))
+                    || type_attribute_receiver(code, attribute.start())
                 {
                     found.moves = true;
                 } else {
