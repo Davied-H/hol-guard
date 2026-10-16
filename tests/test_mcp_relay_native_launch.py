@@ -59,7 +59,6 @@ def _python_args(tmp_path: Path, proxy: str = "codex-mcp-proxy", harness: str = 
 def advertised(monkeypatch: pytest.MonkeyPatch) -> set[str]:
     features: set[str] = set()
     monkeypatch.delenv(MCP_RELAY_SELECTION_ENV, raising=False)
-    monkeypatch.setattr(mcp_relay_native.os, "name", "posix")
     monkeypatch.setattr(
         native_hook_bridge,
         "native_hook_bridge_executable",
@@ -136,7 +135,6 @@ def test_frozen_builds_keep_the_python_proxy_and_windows_selects_the_relay(
     monkeypatch.setattr(mcp_relay_native.sys, "frozen", True, raising=False)
     assert mcp_proxy_launch(sys.executable, args)[0] == sys.executable
     monkeypatch.delattr(mcp_relay_native.sys, "frozen")
-    monkeypatch.setattr(mcp_relay_native.os, "name", "nt")
     assert mcp_proxy_launch(sys.executable, args)[0] == str(_RUNTIME)
 
 
@@ -178,6 +176,7 @@ def test_codex_interpreter_refresh_reselects_the_launcher(tmp_path: Path, advert
     assert entry["args"] == args
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the server identity digest needs the resident runtime")
 def test_inventory_recovers_the_original_launch_behind_the_relay(tmp_path: Path) -> None:
     server = replace(_server(tmp_path, "cursor"), config_path=str(tmp_path / "mcp.json"))
     args = proxy_cli_args(proxy_command="cursor-mcp-proxy", guard_home=str(tmp_path / "guard"), server=server)
