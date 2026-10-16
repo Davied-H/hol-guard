@@ -424,5 +424,11 @@ fn lookup_primary_is_safe(
     read_only_lookup_primary_segment_is_safe(command_name, args, Some(segment_root), ctx)
         && (command_name != "find"
             || find_exec_ls_resolves_safely(args, prefix, segment_root, home_dir, ctx))
-        && local_read_operands_resolve_safely(command_name, args, segment_root, inspection_root)
+        && local_read_operands_resolve_safely(
+            command_name,
+            args,
+            segment_root,
+            inspection_root,
+            Some(home_dir),
+        )
 }

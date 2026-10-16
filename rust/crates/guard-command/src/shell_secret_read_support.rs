@@ -700,6 +700,19 @@ pub(crate) fn shell_segment_file_operand_tokens(segment: &[String]) -> Vec<Strin
     Vec::new()
 }
 
+/// The path a read reaches inside the agent's own home, with that home, for a
+/// read the inspection root does not contain. `None` when there is no home to
+/// read against, when the read lands outside it, or when it names the home
+/// itself: an empty relative path would read as the checkout root.
+fn home_relative_read(resolved: &Path, home_dir: Option<&Path>) -> Option<(PathBuf, PathBuf)> {
+    let home = home_dir?.canonicalize().ok()?;
+    let relative = resolved.strip_prefix(&home).ok()?.to_path_buf();
+    if relative.as_os_str().is_empty() {
+        return None;
+    }
+    Some((relative, home))
+}
+
 /// `_local_read_operands_resolve_safely` (:77-136).
 #[allow(dead_code)]
 pub(crate) fn local_read_operands_resolve_safely(
@@ -707,6 +720,7 @@ pub(crate) fn local_read_operands_resolve_safely(
     args: &[String],
     cwd: &Path,
     root: &Path,
+    home_dir: Option<&Path>,
 ) -> bool {
     let allow_dirs = ["grep", "egrep", "fgrep", "rg"].contains(&command_name);
     let resolved_root = match root.canonicalize() {
@@ -755,9 +769,18 @@ pub(crate) fn local_read_operands_resolve_safely(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(_) => return false,
         };
-        let relative = match resolved.strip_prefix(&resolved_root) {
-            Ok(r) => r.to_path_buf(),
-            Err(_) => return false,
+        // A read that lands outside the inspection root is still ordinary work
+        // when it lands in the agent's own home: `cat ~/.claude/settings.json`
+        // is the same work as reading a file in the checkout. The lookup below
+        // reads that path exactly as it reads one inside the root, so a
+        // credential store there is still named and still kept behind review,
+        // and the lexical check below still refuses a link that leaves either.
+        let (relative, lookup_root) = match resolved.strip_prefix(&resolved_root) {
+            Ok(relative) => (relative.to_path_buf(), root.to_path_buf()),
+            Err(_) => match home_relative_read(&resolved, home_dir) {
+                Some(reached) => reached,
+                None => return false,
+            },
         };
         let safe_git_pointer = command_name == "cat" && relative.as_os_str() == ".git";
         if resolved != lexical
@@ -765,7 +788,7 @@ pub(crate) fn local_read_operands_resolve_safely(
                 && !read_only_lookup_target_is_safe(
                     &relative.to_string_lossy(),
                     allow_dirs && resolved.is_dir(),
-                    Some(root),
+                    Some(lookup_root.as_path()),
                 ))
         {
             return false;
@@ -973,7 +996,7 @@ pub(crate) fn search_operands_are_safe(
     }
     match root {
         None => true,
-        Some(root) => local_read_operands_resolve_safely(command_name, args, root, root),
+        Some(root) => local_read_operands_resolve_safely(command_name, args, root, root, None),
     }
 }
 
