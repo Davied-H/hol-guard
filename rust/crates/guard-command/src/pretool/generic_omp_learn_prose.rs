@@ -59,14 +59,26 @@ pub(super) fn inert_prose(text: &str) -> bool {
 fn names_a_destination(lowered: &str) -> bool {
     lowered.contains("://")
         || lowered.contains("www.")
-        || lowered.contains("@")
+        || lowered.contains('@')
         || lowered.split_whitespace().any(|token| {
             let token = token.trim_matches(|c: char| !c.is_ascii_alphanumeric());
-            token.contains('.')
-                && token.rsplit('.').next().is_some_and(|tld| {
-                    tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic())
-                })
-                && !token.rsplit('.').next().is_some_and(is_file_suffix)
+            // A destination is the host, and what follows it is a path, a port
+            // or a query. Read the host first so `evil.example/ingest` and
+            // `collector.example:8443` are read the same way a bare host is.
+            let host = token.split(['/', ':', '?', '#']).next().unwrap_or(token);
+            let addressed = host.split('.').count() == 4
+                && host
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()));
+            let suffix = host.rsplit('.').next();
+            addressed
+                || (host.contains('.')
+                    && suffix.is_some_and(|tld| {
+                        tld.len() >= 2 && tld.chars().all(|c| c.is_ascii_alphabetic())
+                    })
+                    // A file this project owns is a lesson's own subject, but
+                    // only when nothing is addressed through it.
+                    && (host.len() != token.len() || !suffix.is_some_and(is_file_suffix)))
         })
 }
 
@@ -104,8 +116,11 @@ fn spells_a_command(text: &str, lowered: &str) -> bool {
 fn holds_a_credential(lowered: &str) -> bool {
     lowered.lines().any(|line| {
         CREDENTIAL_WORDS.iter().any(|word| {
-            line.find(word)
-                .is_some_and(|at| line[at + word.len()..].trim_start().starts_with([':', '=']))
+            // Every occurrence, because the word reads as ordinary prose
+            // before the line labels the value: "the api key rotates monthly.
+            // api key: ..." carries one all the same.
+            line.match_indices(word)
+                .any(|(at, _)| line[at + word.len()..].trim_start().starts_with([':', '=']))
         })
     })
 }
