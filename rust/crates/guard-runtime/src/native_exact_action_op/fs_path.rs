@@ -121,8 +121,14 @@ pub(super) fn is_inside(path: &str, root: &str) -> bool {
 
 /// A relative path is never probed: on Windows the process cwd and per-drive
 /// state would decide what it names.
+#[cfg(windows)]
 fn is_probe(path: &str) -> bool {
-    !cfg!(windows) || is_abs(path)
+    is_abs(path)
+}
+
+#[cfg(not(windows))]
+fn is_probe(_path: &str) -> bool {
+    true
 }
 
 pub(super) fn is_dir(path: &str) -> bool {
