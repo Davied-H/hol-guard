@@ -13,6 +13,7 @@ def _launched(path: Path, command: str) -> bool:
     """The command carries an absolute word that names exactly this file."""
     lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    lexer.commenters = ""
     try:
         words = list(lexer)
     except ValueError:
