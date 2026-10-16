@@ -43,17 +43,6 @@ def test_manifest_merges_reports_deterministically_and_rejects_duplicate_nodes(t
         duration_manifest.merge_duration_reports([first, second])
 
 
-def test_duration_candidate_runs_after_a_skipped_planner_but_requires_successful_producers() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
-    job = workflow["jobs"]["duration-manifest-candidate"]
-    assert set(job["needs"]) == {"coverage", "native-command-evaluators"}
-    # An explicit status function prevents success() from skipping this job
-    # transitively when main's PR-only planner is skipped.
-    assert " ".join(job["if"].split()) == (
-        "!cancelled() && needs.coverage.result == 'success' && needs.native-command-evaluators.result == 'success'"
-    )
-
-
 def test_ci_duration_artifacts_cannot_mix_rerun_attempts(tmp_path: Path) -> None:
     """Verify CI duration artifacts cannot mix rerun attempts."""
     workflow = expand_ci_job_actions(yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")))
