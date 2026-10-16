@@ -166,6 +166,18 @@ pub(crate) struct ClaimContext {
     claimed: Claimed,
 }
 
+/// A package call that forwards only once the approvals its two policies
+/// left are claimed. Unlike a tool call's, the claim carries an evaluation of
+/// its own: the relay re-reads the package request after the claim, with the
+/// external archive network authorized, and the policy is re-resolved from
+/// that (`mcp_relay_decide_package_spend.rs`).
+#[allow(dead_code)]
+pub(crate) struct PackageClaimContext {
+    request: McpRelayDecideRequestV1,
+    admitted: Admitted,
+    claimed: package_claim::PackageClaimed,
+}
+
 /// The approval a decision claims and the forward it then routes.
 struct Claimed {
     artifact_id: String,
@@ -910,6 +922,11 @@ mod package_postclaim;
 mod package_receipt;
 #[path = "mcp_relay_decide_package_route.rs"]
 mod package_route;
+// What a claimed package call spends, and the answer it commits with; the
+// resident reaches it once the lane holds a package claim.
+#[allow(dead_code)]
+#[path = "mcp_relay_decide_package_spend.rs"]
+mod package_spend;
 #[path = "mcp_relay_decide_policy.rs"]
 mod policy;
 use policy::run_policy;

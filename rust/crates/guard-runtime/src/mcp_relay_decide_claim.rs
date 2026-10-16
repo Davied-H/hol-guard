@@ -177,7 +177,10 @@ struct Requeue {
 /// Whether a lane admission is the very one a decision was made under: the
 /// same workspace and the same published snapshot and binding, not merely
 /// equal ones, so any republish in between counts as a change.
-fn unchanged<S, B>(held: (&str, &Arc<S>, &Arc<B>), now: (&str, &Arc<S>, &Arc<B>)) -> bool {
+pub(super) fn unchanged<S, B>(
+    held: (&str, &Arc<S>, &Arc<B>),
+    now: (&str, &Arc<S>, &Arc<B>),
+) -> bool {
     held.0 == now.0 && Arc::ptr_eq(held.1, now.1) && Arc::ptr_eq(held.2, now.2)
 }
 
