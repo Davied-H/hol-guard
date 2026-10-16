@@ -491,6 +491,42 @@ fn the_second_send_carries_the_evaluation_and_nothing_else_new() {
     assert!(decoded.package_evaluation.is_none());
 }
 
+/// A package claim is sent twice: the round that asks for the evaluation, and
+/// the round that carries it and spends the rows held against the new ticket.
+#[test]
+fn the_second_claim_carries_the_evaluation_and_the_held_ticket() {
+    let authority = authority();
+    let first: Value =
+        serde_json::from_slice(&authority.claim_payload("claim-1:1", None).unwrap()).unwrap();
+    assert_eq!(first["operation"], json!("mcp_relay_claim"));
+    assert_eq!(first["request"]["ticket"], json!("claim-1:1"));
+    let evaluation: Map<String, Value> = [("decision".to_owned(), json!("allow"))]
+        .into_iter()
+        .collect();
+    let second: Value = serde_json::from_slice(
+        &authority
+            .claim_payload("claim-1:2", Some(evaluation))
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(second["request"]["ticket"], json!("claim-1:2"));
+    assert_eq!(
+        second["request"]["package_evaluation"],
+        json!({"decision": "allow"})
+    );
+    // The same claim of the same session: only the ticket its rows are held
+    // against and the evaluation it spends them with differ.
+    assert_eq!(
+        second["request"]["guard_home"],
+        first["request"]["guard_home"]
+    );
+    // The authority reads the evaluation as optional, so the round that asks
+    // for it omits it rather than sending an empty one.
+    let asked: crate::mcp_relay_claims::McpRelayClaimRequestV1 =
+        serde_json::from_value(first["request"].clone()).unwrap();
+    assert!(asked.package_evaluation.is_none());
+}
+
 /// The process the relay runs in reports its own environment, which the
 /// execution context a package policy digests is built from.
 #[test]
