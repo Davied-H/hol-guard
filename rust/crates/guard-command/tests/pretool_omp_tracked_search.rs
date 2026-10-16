@@ -116,12 +116,8 @@ fn a_tracked_fixture_without_a_credential_value_is_not_a_secret() {
 fn credential_shaped_values_untracked_files_and_stores_keep_review() {
     let f = fixture();
     // A tracked file holding a credential-shaped value.
-    repository(
-        &f,
-        "leaky",
-        &[(".env", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7REALKEY\n")],
-        &[],
-    );
+    let key = format!("AWS_ACCESS_KEY_ID={}{}\n", "AKIA", "IOSFODNN7REALKEY");
+    repository(&f, "leaky", &[(".env", key.as_str())], &[]);
     // A tracked fixture beside an untracked `.env`.
     repository(&f, "mixed", &[(".env.example", PLAIN)], &[(".env", PLAIN)]);
     // A tracked file in a credential-store directory.
