@@ -582,3 +582,36 @@ fn recursive_removal_runs_in_the_sandbox_only_for_ignored_or_missing_targets() {
     }
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// `timeout 30 pytest -q` runs the program the text already names, under a
+/// clock that signals that one child, so the sandbox bounds it exactly as it
+/// bounds the command without the wrapper. A wrapper that changes who runs
+/// the program, or a `timeout` whose own options this parser does not read,
+/// keeps the review.
+#[test]
+fn a_timeout_clock_keeps_the_command_it_wraps_in_the_sandbox() {
+    let ws = workspace("timeout-wrapper", true);
+    for command in [
+        "timeout 30 python3 app.py",
+        "timeout 5s ./todo.py add x",
+        "timeout 10 git commit -m init",
+        "timeout -- 30 rm -f *.pyc",
+        "timeout 60 npm run build && git diff",
+    ] {
+        assert_eq!(
+            reason("omp", command, &ws, true) == CONTAINED,
+            host(),
+            "{command}"
+        );
+    }
+    for command in [
+        "timeout 30 sudo npm run build",
+        "sudo timeout 30 npm run build",
+        "timeout 30 curl https://example.com",
+        "timeout 30 cat /Users/nobody/.ssh/id_rsa",
+        "timeout 30 git push origin main",
+    ] {
+        assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
+    }
+    let _ = std::fs::remove_dir_all(&ws);
+}
