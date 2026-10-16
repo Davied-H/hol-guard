@@ -277,3 +277,30 @@ fn no_saved_row_leaves_the_evaluation_alone() {
     assert_eq!(unchanged.policy_action().as_deref(), Some("review"));
     assert_eq!(unchanged.value.get("saved_approval_applied"), None);
 }
+
+#[test]
+fn a_saved_row_recording_another_action_is_not_claimed_as_an_approval() {
+    for action in ["block", "review", "require-reapproval"] {
+        let unchanged = resolve(Some(json!({
+            "decision_id": 7,
+            "action": action,
+            "artifact_hash": ARTIFACT_HASH,
+        })));
+        assert_eq!(
+            unchanged.policy_action().as_deref(),
+            Some("review"),
+            "{action}"
+        );
+        assert_eq!(
+            unchanged.value.get("saved_approval_applied"),
+            None,
+            "{action}"
+        );
+    }
+    // A row with no action at all is read the same way.
+    let unchanged = resolve(Some(json!({
+        "decision_id": 7,
+        "artifact_hash": ARTIFACT_HASH,
+    })));
+    assert_eq!(unchanged.value.get("saved_approval_applied"), None);
+}

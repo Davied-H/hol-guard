@@ -124,3 +124,47 @@ fn schema_mismatch_returns_error_result() {
     assert_eq!(result.code, "schema_mismatch");
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// The columns the resident store's decision lookup projects, which the
+/// override reads to name and claim the saved approval.
+fn seed_decision_row(home: &std::path::Path) {
+    let conn = Connection::open(home.join("guard.db")).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE policy_decisions (
+           decision_id INTEGER PRIMARY KEY, harness TEXT, scope TEXT,
+           artifact_id TEXT, artifact_hash TEXT, workspace TEXT, publisher TEXT,
+           action TEXT, reason TEXT, owner TEXT, source TEXT, expires_at TEXT,
+           policy_document_schema_version TEXT, policy_document_id TEXT,
+           policy_document_digest TEXT, policy_rule_id TEXT,
+           policy_provenance_json TEXT, updated_at TEXT
+        );
+         INSERT INTO policy_decisions
+           (decision_id, harness, scope, artifact_id, artifact_hash, action, updated_at)
+         VALUES (11, 'claude', 'workspace', 'command:install', 'deadbeef', 'allow',
+                 '2026-10-06T00:00:00Z');",
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_resident_lookup_reports_the_saved_decision_identifier() {
+    let home = temp_home("decision-id");
+    seed_decision_row(&home);
+    let store = ResidentSupplyChainStore::new(&home.join("guard.db"), &home);
+    let lookup = store.resolve_policy_decision_lookup(
+        "claude",
+        "command:install",
+        Some("deadbeef"),
+        home.to_string_lossy().as_ref(),
+        None,
+        "2026-10-06T00:00:00Z",
+        false,
+    );
+    let decision = lookup.decision.expect("the saved row is read");
+    // Without this column the override cannot name the decision it claims and
+    // returns every saved approval unapplied.
+    assert_eq!(decision["decision_id"], json!(11));
+    assert_eq!(decision["action"], json!("allow"));
+    assert_eq!(decision["artifact_hash"], json!("deadbeef"));
+    let _ = std::fs::remove_dir_all(&home);
+}

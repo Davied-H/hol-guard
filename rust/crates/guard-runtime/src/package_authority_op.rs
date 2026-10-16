@@ -1058,7 +1058,7 @@ impl SupplyChainStore for ResidentSupplyChainStore {
         // `_policy_row_payload` — project the `policy_decisions` columns into
         // the decision dict the callers inspect.
         let mut stmt = match conn.prepare(
-            "SELECT harness, scope, artifact_id, artifact_hash, workspace, \
+            "SELECT decision_id, harness, scope, artifact_id, artifact_hash, workspace, \
                     publisher, action, reason, owner, source, expires_at, \
                     policy_document_schema_version, policy_document_id, \
                     policy_document_digest, policy_rule_id, \
@@ -1073,6 +1073,9 @@ impl SupplyChainStore for ResidentSupplyChainStore {
             .query_row([artifact_id], |row| {
                 let mut map = Map::new();
                 for (i, name) in [
+                    // The saved row's own identifier, which the override reads
+                    // to name the decision it claims.
+                    "decision_id",
                     "harness",
                     "scope",
                     "artifact_id",

@@ -5582,6 +5582,14 @@ fn resolve_stored_package_policy_override(
             claim_disposition: None,
         };
     };
+    // Only a saved allow is reused. A row recording any other action is read
+    // by the saved-policy lanes that own it, never claimed as an approval.
+    if saved.get("action").and_then(Value::as_str) != Some("allow") {
+        return StoredPackagePolicyResolution {
+            evaluation: evaluation.clone(),
+            claim_disposition: None,
+        };
+    }
     let saved_hash = saved.get("artifact_hash").and_then(Value::as_str);
     if saved_hash != Some(artifact_hash) {
         return StoredPackagePolicyResolution {
