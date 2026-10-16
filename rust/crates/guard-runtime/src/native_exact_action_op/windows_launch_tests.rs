@@ -357,6 +357,38 @@ fn dlls_the_search_path_reaches_are_bound() {
 }
 
 #[test]
+fn unresolved_path_entries_are_bound_instead_of_refusing_the_launch() {
+    let tree = Tree::new();
+    git_repository(&tree);
+    let tools = tree.path("tools");
+    std::fs::create_dir_all(&tools).unwrap();
+    // A trailing dot is not a pinned spelling, so `resolve` is None, but
+    // Windows still opens the directory. A missing short-shaped tail fails
+    // the same way and must not refuse every launch.
+    let dotted = format!("{tools}.");
+    let missing = format!("{}\\missing~1", tree.ws());
+    let entries = format!("{dotted};{missing}");
+    let launch_entries = |tree: &Tree| {
+        launch(tree, "git status", &|_, _, env| {
+            prepend_path(env, &entries);
+        })
+    };
+    let clean = launch_entries(&tree).expect("unresolved entries stay reusable");
+    put(&tree, "tools\\libwinpthread-1.dll", "MZ planted");
+    assert_ne!(clean, launch_entries(&tree).unwrap());
+    // The same directory, spelled as a walk out of Program Files plus a
+    // trailing dot, is not an install root just because the text starts there.
+    let program_files = std::env::var("ProgramFiles").unwrap();
+    let detour = format!("{program_files}\\..{}.", &tools[2..]);
+    let before = launch(&tree, "git status", &|_, _, env| prepend_path(env, &detour)).unwrap();
+    put(&tree, "tools\\detour.dll", "MZ planted");
+    assert_ne!(
+        before,
+        launch(&tree, "git status", &|_, _, env| prepend_path(env, &detour)).unwrap()
+    );
+}
+
+#[test]
 fn loader_steering_and_sibling_programs_are_bound_or_refused() {
     let tree = Tree::new();
     git_repository(&tree);

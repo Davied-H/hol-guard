@@ -205,12 +205,17 @@ fn search_path_dlls(budget: &mut Budget, ctx: &Ctx) -> Proof<BTreeMap<String, St
         if entry.contains('"') || !fs_path::is_abs(&entry) {
             return Err(UNPROVEN_LAUNCH);
         }
-        // Compare where the entry leads, never how it is spelled.
-        let entry = fs_path::resolve(&entry).ok_or(UNPROVEN_LAUNCH)?;
+        // Compare where the entry leads, never how it is spelled. A mapped
+        // drive canonicalizes to UNC, which this proof does not store, and an
+        // offline share cannot be canonicalized. Bind the folded spelling
+        // then. Only a resolved path may skip the system and install roots,
+        // so an unresolved spelling cannot hide a directory by naming one.
+        let resolved = fs_path::resolve(&entry);
+        let entry = resolved.clone().unwrap_or_else(|| fs_path::norm(&entry));
         let system = SYSTEM_PATH_DIRS
             .iter()
             .any(|dir| fs_path::join(&windows, dir).eq_ignore_ascii_case(&entry));
-        if system || under_install_root(&entry) {
+        if resolved.is_some() && (system || under_install_root(&entry)) {
             continue;
         }
         if fs_path::is_dir(&entry) {
