@@ -467,16 +467,27 @@ fn module_member_listed(code: &str, end: usize, root: &str) -> bool {
     if !MODULE_NAMES.contains(&name.as_str()) || !self_named_ok(&name, root) {
         return false;
     }
-    // Chaining past a member is for the date classes only; any other member
-    // may be a module re-exported by another one.
+    // Chaining past a member is for classes of their own root only; any
+    // other member may be a module re-exported by another one.
     let after = rest[name.len()..].trim_start();
     !after.starts_with('.')
-        || (root == "datetime"
-            && matches!(
-                name.as_str(),
-                "datetime" | "date" | "timedelta" | "timezone" | "time"
-            ))
+        || CHAINABLE_CLASSES
+            .iter()
+            .any(|(module, class)| *module == root && *class == name)
 }
+
+const CHAINABLE_CLASSES: &[(&str, &str)] = &[
+    ("datetime", "datetime"),
+    ("datetime", "date"),
+    ("datetime", "timedelta"),
+    ("datetime", "timezone"),
+    ("datetime", "time"),
+    ("itertools", "chain"),
+    ("decimal", "Decimal"),
+    ("fractions", "Fraction"),
+    ("collections", "OrderedDict"),
+    ("collections", "Counter"),
+];
 
 fn next_symbol(code: &str, end: usize) -> Option<char> {
     code[end..].chars().find(|c| !c.is_whitespace())
@@ -676,6 +687,9 @@ mod tests {
             "import re\ntext = 'a1b22'\nprint(re.findall(r'\\d+', text))\n",
             "import json\nrows = [{'a': 1}]\nprint(json.dumps(rows, indent=2))\n",
             "import datetime\nprint(datetime.datetime.now())",
+            "import itertools\nprint(list(itertools.chain.from_iterable([[1], [2]])))",
+            "import decimal\nprint(decimal.Decimal.from_float(1.5))",
+            "import collections\nprint(collections.OrderedDict.fromkeys('ab'))",
             "from re import sub\nprint(sub('a', 'b', 'abc'))",
             "def total(xs):\n    return sum(x * 2 for x in xs)\nprint(total([1, 2, 3]))\n",
         ] {
