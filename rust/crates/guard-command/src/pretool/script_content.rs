@@ -160,6 +160,61 @@ pub(crate) fn sole_program_sources(
     }
 }
 
+/// The text of every file the command sources, when each one resolves to a
+/// readable local file.
+///
+/// Sourcing runs a file's words in the shell that reads it, so the file names
+/// the programs the command can run, exactly as a script file names the ones
+/// an interpreter runs. `None` means at least one sourced file could not be
+/// read, so the command keeps the owners it had: an unreadable file must not
+/// buy a bounded owner set it has not earned.
+pub(crate) fn sourced_program_sources(
+    model: &CanonicalCommandV1,
+    context: PathContext<'_>,
+) -> Option<Vec<String>> {
+    let (_, segments) = structure(model, context)?;
+    let mut sources = Vec::new();
+    for (index, segment) in segments.iter().enumerate() {
+        let Some(target) = sourced_file(segment) else {
+            continue;
+        };
+        // An earlier directory change moves a relative path out of reach.
+        let moved = segments[..index].iter().any(|prior| {
+            prior.executable.as_deref().is_some_and(|value| {
+                matches!(super::executable_basename(value), "cd" | "pushd" | "popd")
+            })
+        });
+        if moved && !Path::new(target).is_absolute() {
+            return None;
+        }
+        sources.push(read_text(&resolve(target, context)?)?);
+    }
+    Some(sources)
+}
+
+/// The file a `source FILE` or `. FILE` segment runs, when the shell reads it
+/// from a path it was given rather than searching `PATH`.
+fn sourced_file(segment: &crate::CommandSegmentV1) -> Option<&str> {
+    let executable = segment.executable.as_deref()?;
+    if executable != "." && super::executable_basename(executable) != "source" {
+        return None;
+    }
+    if !segment.wrapper_chain.is_empty()
+        || !segment.environment_names.is_empty()
+        || segment.path_overridden
+    {
+        return None;
+    }
+    let target = segment.arguments.first()?;
+    // A name without a separator is searched for on `PATH`, so the file the
+    // shell runs is not the one this relative path names. An expansion or a
+    // glob leaves the target unknown either way.
+    (target.contains('/')
+        && !target.starts_with('-')
+        && !target.contains(['$', '*', '?', '[', '`']))
+    .then_some(target.as_str())
+}
+
 /// `assess`, leaving out script files when `scripts` is false.
 fn assess_programs(
     model: &CanonicalCommandV1,

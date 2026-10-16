@@ -178,14 +178,32 @@ impl CompiledNativeCommandControls {
         let shell = without_plain_awk(&shell);
         let shell = shell.as_str();
         let interpreted = named_words(&joined_quotes(shell));
+        // `source FILE` runs the file's words in this shell, so the file names
+        // the programs the command can run. Reading it bounds those owners the
+        // way a script file bounds an interpreter's. Until it was read, an
+        // ordinary `source .venv/bin/activate && pytest -q` had no owner set at
+        // all and was refused outright, with no approval left to give it.
+        let sources_files = interpreted.contains("source") || interpreted.contains(".");
+        let sourced = if sources_files {
+            crate::pretool::sourced_program_sources(command, context)
+        } else {
+            Some(Vec::new())
+        };
+        let sourced_resolved = sources_files && sourced.is_some();
         if shell.contains("$'")
             || shell.contains("$\"")
-            || synthesizes_program(&unquoted_literal(shell))
+            || synthesizes_program(&unquoted_literal(shell), sourced_resolved)
         {
             return None;
         }
         let mut named = named_words(text);
-        if INTERPRETERS.iter().any(|name| interpreted.contains(*name)) {
+        for source in sourced.iter().flatten() {
+            named.extend(named_words(source));
+        }
+        if INTERPRETERS
+            .iter()
+            .any(|name| interpreted.contains(*name) && !(sourced_resolved && *name == "source"))
+        {
             // A program read from a file names the tools it may launch
             // outside the command text, so it counts toward the owners.
             for source in crate::pretool::sole_program_sources(command, context)? {
@@ -458,14 +476,18 @@ fn joined_quotes(text: &str) -> String {
 
 /// Whether a command position holds an expansion, glob or `.` source, which
 /// can run a program whose name appears nowhere in the text.
-fn synthesizes_program(literal: &str) -> bool {
+///
+/// `sourced` says every file the command sources was read, so a `.` command
+/// word no longer hides a program: the file it runs is already among the
+/// owners.
+fn synthesizes_program(literal: &str, sourced: bool) -> bool {
     let masked = mask_double_quoted_separators(literal);
     let mut words = command_words(&masked).filter(|word| !is_assignment(word));
     words.any(|word| {
         !matches!(
             word,
             "for" | "case" | "select" | "in" | "done" | "fi" | "esac" | "[" | "[["
-        ) && (word == "." || word.contains(['$', '*', '?', '[']))
+        ) && ((word == "." && !sourced) || word.contains(['$', '*', '?', '[']))
     })
 }
 
@@ -567,3 +589,7 @@ fn is_assignment(word: &str) -> bool {
 #[cfg(test)]
 #[path = "native_command_unmodeled_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_sourced_tests.rs"]
+mod sourced_tests;
