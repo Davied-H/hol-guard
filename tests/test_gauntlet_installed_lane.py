@@ -282,3 +282,65 @@ def test_the_lane_never_touches_the_operators_own_home(tmp_path: Path) -> None:
     assert os.environ.get("HOME") == before
     for relative in (".claude/settings.json", ".codex/config.toml"):
         assert not (tmp_path / "work" / relative).exists()
+
+
+def test_report_only_prints_the_findings_and_still_exits_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A pull request that changes the lane must not gate on the build's defects.
+
+    The findings still have to be written and printed, or report-only would be
+    indistinguishable from a lane that found nothing.
+    """
+
+    from ci.gauntlet.__main__ import main
+
+    runtime = _stub(tmp_path / "hol-guard", register=False, verdicts=["allow"])
+    exit_code = main(
+        [
+            "installed",
+            "--runtime",
+            str(runtime),
+            "--harness",
+            "claude-code",
+            "--repeat",
+            "1",
+            "--no-aged-store",
+            "--report-only",
+            "--output",
+            str(tmp_path / "evidence"),
+        ]
+    )
+    assert exit_code == 0
+    printed = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert printed["accepted"] is False
+    assert any("carries no Guard handler" in failure for failure in printed["failures"])
+    written = json.loads((tmp_path / "evidence" / "installed-acceptance.json").read_text(encoding="utf-8"))
+    assert written["accepted"] is False
+
+
+def test_the_summary_names_every_finding(tmp_path: Path) -> None:
+    """Evidence nobody downloads is the same as no evidence."""
+
+    from ci.gauntlet.summarise_installed_acceptance import render
+
+    (tmp_path / "wheel").mkdir()
+    (tmp_path / "wheel" / "installed-acceptance.json").write_text(
+        json.dumps(
+            {
+                "accepted": False,
+                "repeat": 5,
+                "runtime": {"version": "hol-guard 3.46.0", "kind": "shim"},
+                "failures": ["benign-git-status: ordinary work was not allowed quietly (deny)"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    rendered = "\n".join(render(tmp_path))
+    assert "hol-guard 3.46.0" in rendered
+    assert "benign-git-status" in rendered
+    assert "not accepted" in rendered
+
+
+def test_the_summary_says_so_when_the_lane_never_ran(tmp_path: Path) -> None:
+    from ci.gauntlet.summarise_installed_acceptance import render
+
+    assert "did not get as far as running" in "\n".join(render(tmp_path / "missing"))

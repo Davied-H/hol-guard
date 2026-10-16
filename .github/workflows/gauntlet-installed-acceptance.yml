@@ -20,6 +20,7 @@ on:
   pull_request:
     paths:
       - 'ci/gauntlet/installed_*'
+      - 'ci/gauntlet/summarise_installed_acceptance.py'
       - 'tests/test_gauntlet_installed_lane.py'
       - '.github/workflows/gauntlet-installed-acceptance.yml'
 
@@ -34,6 +35,11 @@ env:
   TARGET: x86_64-unknown-linux-musl
   PLATFORM_TAG: manylinux_2_17_x86_64
   REPEAT: ${{ inputs.repeat || '5' }}
+  # A pull request that touches the lane is testing the lane, not the build it
+  # runs against. The acceptance steps assert against the shipped product, so
+  # making them a merge gate here would block lane changes on defects they did
+  # not introduce. The scheduled and dispatched runs fail loudly instead.
+  REPORT_ONLY: ${{ github.event_name == 'pull_request' && '--report-only' || '' }}
   # The development profile the Gauntlet already builds with: no LTO, 16 codegen units. The lane
   # tests install and hook behaviour, which the optimisation level does not change.
   CARGO_PROFILE_RELEASE_LTO: 'false'
@@ -139,6 +145,7 @@ jobs:
             --runtime "$RUNNER_TEMP/wheel-venv/bin/hol-guard" \
             --harness claude-code codex omp \
             --repeat "$REPEAT" \
+            $REPORT_ONLY \
             --output "$RUNNER_TEMP/evidence/wheel"
 
       - name: Freeze the bundle the Desktop app installs
@@ -176,7 +183,15 @@ jobs:
             --harness claude-code codex omp \
             --repeat "$REPEAT" \
             --require-frozen \
+            $REPORT_ONLY \
             --output "$RUNNER_TEMP/evidence/frozen"
+
+      - name: Summarise the findings
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 -I ci/gauntlet/summarise_installed_acceptance.py "$RUNNER_TEMP/evidence" \
+            >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish the evidence
         if: always()

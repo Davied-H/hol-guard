@@ -397,6 +397,37 @@ python -m ci.gauntlet installed \
   nothing behind. `.github/workflows/gauntlet-installed-acceptance.yml` runs it on a weekly
   schedule and on dispatch, against both the wheel and a PyInstaller onedir build of the same
   commit. Like the rest of the Gauntlet it is not a required check.
+- **A pull request that changes the lane runs it with `--report-only`.** These steps assert
+  against the shipped build, so gating lane changes on them would block the lane on defects it did
+  not introduce and cannot fix from here. Report-only still writes the evidence, prints the
+  findings and puts them in the job summary; it only declines to fail the job. The scheduled and
+  dispatched runs are strict.
+
+#### What it found on installed 3.46.0
+
+The first run against a pip-installed 3.46.0 on a clean Ubuntu runner, with every replay case
+repeated five times, returned four findings that qualification had scored as a pass:
+
+- `git status --short` in an ordinary repository was **denied** and sent to the approval inbox,
+  five times out of five: "this Git read may execute a configured helper, or its effective
+  configuration could not be verified". The other two benign cases allowed quietly, and both
+  attack cases were stopped, so this is one rule misreading an ordinary repository rather than a
+  build that blocks everything.
+- `install codex` exited 1 with "The Codex hook interpreter is writable by another user; repair
+  the installation", and the harness was left with **zero** Guard hook entries. A stock runner is
+  not a damaged machine, so Guard declines to protect Codex on a default host.
+- Reinstalling over a home with upgrade history left **all six** Claude handlers still pointing at
+  the previous install's path. The install joins rather than prunes, so every event calls a
+  command that is no longer there.
+- Reinstalling Codex over that aged home exited 4 with an empty stderr.
+
+Separately, on a macOS host with no long-lived Guard process, each one-shot `hol-guard hook` call
+spawns its own native resident, uses it, and lets it exit about a second later, because the
+resident's lifetime is pinned to its owner and to a one-second client lease. Every spawn consumes
+the resident restart budget, which allows three per minute; the fourth tool call in a minute is
+refused and the harness is handed a fixed `native_hook_worker_exception` deny. The resident's own
+stderr is discarded and the Python handler logged nothing, so this surfaced as a blocked tool call
+with no recoverable cause.
 
 ## Publish evidence in the pull request
 

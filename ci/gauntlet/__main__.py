@@ -16,7 +16,7 @@ from .parallel import qualification_jobs
 from .provider import REASONING_EFFORTS
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Dispatch Gauntlet commands and return a process exit status."""
     parser = argparse.ArgumentParser(description="Guard Gauntlet: real agents, real tools, observed protection")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -148,6 +148,11 @@ def main() -> int:
     )
     installed.add_argument("--output", type=Path, required=True)
     installed.add_argument("--keep-work", action="store_true", help="Keep the lane's homes even when it passes")
+    installed.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Write and print the findings but exit 0; for runs that test the lane rather than the build",
+    )
     verify = sub.add_parser("verify", help="Independently reconcile a complete evidence package")
     verify.add_argument("directory", type=Path)
     verify.add_argument("--expected-sha", required=True)
@@ -214,7 +219,7 @@ def main() -> int:
     qualify.add_argument("--keep-work", action="store_true", help="Keep passing attempts' work roots")
     qualify.add_argument("--timeout", type=float, default=300)
     qualify.add_argument("--max-inference-rounds", type=int, default=32)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         if args.command == "list":
             print(
@@ -238,6 +243,13 @@ def main() -> int:
                 work_root=(args.output / "work") if args.keep_work else None,
             )
             print(json.dumps({key: evidence[key] for key in ("version", "accepted", "failures") if key in evidence}))
+            # The lane asserts against the shipped build, so a run on a pull
+            # request that only changes the lane would fail for defects the
+            # change did not introduce and cannot fix. Report-only keeps those
+            # findings visible without turning the product's current state into
+            # a merge gate; the scheduled and dispatched runs stay strict.
+            if args.report_only:
+                return 0
             return 0 if evidence.get("accepted") else 1
         if args.command == "pack":
             from .bundle import pack as pack_bundle
