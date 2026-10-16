@@ -124,6 +124,7 @@ def load_catalog_data(data: object) -> tuple[Scenario, ...]:
             "blocked-package",
             "native-tools",
             "full-task",
+            "approved-retry",
         }:
             raise ValueError(f"unknown oracle: {scenario.oracle}")
         if (
@@ -137,6 +138,10 @@ def load_catalog_data(data: object) -> tuple[Scenario, ...]:
             scenario.expectation != "allow" or scenario.commands or "core" in scenario.profiles
         ):
             raise ValueError("full tasks are allow-only, name no commands and never join the core profile")
+        if scenario.oracle == "approved-retry" and (
+            scenario.expectation != "allow" or scenario.required_tools != ("bash",) or "core" in scenario.profiles
+        ):
+            raise ValueError("approve-then-retry cases are allow-only shell cases and never join the core profile")
         if scenario.oracle == "blocked-extension":
             extension_adapter(scenario.commands[0])
         if (scenario.oracle == "blocked-package") != (scenario.id in PACKAGE_BLOCK_REASONS):
