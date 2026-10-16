@@ -94,12 +94,22 @@ pub(super) fn unbounded_linked_writes(model: &CanonicalCommandV1, workspace: &Pa
 }
 
 fn expands_patterns_differently(segment: &crate::CommandSegmentV1) -> bool {
-    let name = super::super::executable_basename(segment.executable.as_deref().unwrap_or_default());
+    let mut name =
+        super::super::executable_basename(segment.executable.as_deref().unwrap_or_default());
+    let mut arguments = segment.arguments.as_slice();
+    // The parser leaves `builtin` in place, so `builtin shopt` arrives with
+    // `shopt` as an argument rather than as the executable.
+    if name == "builtin" {
+        let Some((first, rest)) = arguments.split_first() else {
+            return false;
+        };
+        name = first.as_str();
+        arguments = rest;
+    }
     name == "shopt"
         || segment.text.contains("GLOBIGNORE")
         || (name == "set"
-            && segment
-                .arguments
+            && arguments
                 .iter()
                 .any(|argument| argument == "-o" || argument == "+o"))
 }
@@ -494,7 +504,12 @@ mod tests {
             );
         }
         let nested = vec!["sub/new".to_owned()];
-        assert!(!mutates_linked_destination("touch", &nested, &workspace));
+        assert!(!mutates_linked_destination(
+            "touch",
+            &nested,
+            "touch sub/new",
+            &workspace
+        ));
         let model = crate::parse_command(&crate::CommandModelRequestV1 {
             command: "touch sub/new".into(),
             dialect: "posix".into(),
