@@ -342,6 +342,57 @@ python -m ci.gauntlet run --profile full-tasks --full-task-mode discover --full-
 - `--full-task-mode enforce` (the default) passes a task only when it completed with no approval request and no interruption under the core judge's rule, exempting only bound contained runs.
 - `--native-route PROVIDER/MODEL` runs a pinned native Oh My Pi backend through the same adapter as `--native-luna-route`. Tasks run one at a time; `--jobs`, `--fail-fast`, `--host-slots` and `--max-load` are rejected.
 
+### Installed acceptance (`installed`, never merge-qualifying)
+
+Every lane above drives Guard as a library, inside a private per-case `settings.json` that no
+harness ever reads, from a wheel, against a Guard home created moments earlier, and scores each
+case once. So four things stay invisible to them: whether `hol-guard install <harness>` really
+writes Guard's hooks into the harness's own configuration, whether the frozen bundle the Desktop
+app ships behaves like the wheel, whether the same payload gets the same verdict twice, and
+whether a home with upgrade history still ends up correct. A build can pass qualification and
+leave a machine with no protection at all.
+
+```sh
+python -m ci.gauntlet installed \
+  --runtime /absolute/path/to/hol-guard \
+  --harness claude-code codex omp \
+  --repeat 10 \
+  --output /absolute/path/outside-the-checkout/installed-acceptance
+```
+
+- **Registration is read from the harness, not from the install report.** The lane runs the
+  shipped `install` command as a subprocess into a lane-owned HOME, then opens
+  `.claude/settings.json`, `.codex/config.toml` (or the pre-migration `.codex/hooks.json`) and the
+  Oh My Pi extension files and looks for Guard's own handlers. The expectations live in
+  `installed_contract.json`, which is the lane's, not the product's: asserting against a shipped
+  contract would let an emptied one pass. A build that reports a successful install and registers
+  nothing fails here.
+- **The frozen bundle counts as a different artifact.** `--require-frozen` refuses a wheel console
+  script. A bundle qualifies only when it carries a sibling `_internal/` with the sealed native
+  runtime and its `runtime-manifest.json`, and only when it still answers `--version` with `PATH`
+  pointing at an empty directory, so no interpreter on the host can be standing in for it.
+- **Disagreement is a defect, not a flake.** `--repeat N` replays each case through the argv the
+  harness itself registered, N times, with identical bytes on stdin. Verdicts are compared as
+  `decision|exit_code`, and a crashed hook that emits no envelope is recorded as `no-envelope`
+  rather than folded into `allow`, so a crash loop cannot read as silence. More than one signature
+  across the N runs fails the case.
+- **One pass uses a home with history.** The lane installs, writes the artifacts a previous
+  version would have left (a stale Claude handler pointing at a command that no longer exists, a
+  legacy `.codex/hooks.json`), installs again, and fails if a handler survives that the harness
+  would now try to run.
+- Replay covers the harnesses whose registration is a runnable argv. Oh My Pi's extension is
+  TypeScript loaded by the agent runtime, so this lane asserts its registration and records the
+  determinism gap in the evidence rather than claiming coverage it does not have.
+- The lane refuses to run on a host whose canonical approval gate owns `install`. That gate
+  resolves its home from the OS account, not from `HOME`, and has no environment seam by design;
+  CI runners have no enrolled gate. The lane never touches the operator's own `~/.claude`,
+  `~/.codex`, `~/.omp` or `~/.hol-guard`.
+- Evidence is `hol-guard-installed-acceptance.v1` in `installed-acceptance.json`, and the exit
+  status is zero only when every harness registered, every replay agreed and the aged pass left
+  nothing behind. `.github/workflows/gauntlet-installed-acceptance.yml` runs it on a weekly
+  schedule and on dispatch, against both the wheel and a PyInstaller onedir build of the same
+  commit. Like the rest of the Gauntlet it is not a required check.
+
 ## Publish evidence in the pull request
 
 The contribution path is:

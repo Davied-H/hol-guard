@@ -118,6 +118,36 @@ def main() -> int:
     from . import full_task_cli
 
     full_task_cli.add_arguments(run)
+    installed = sub.add_parser(
+        "installed",
+        help="Installed acceptance: run the shipped executable's own install and hooks (never a merge gate)",
+    )
+    installed.add_argument("--runtime", type=Path, required=True, help="The hol-guard executable under test")
+    installed.add_argument(
+        "--harness",
+        nargs="+",
+        default=["claude-code", "codex", "omp"],
+        help="Harnesses to install and check",
+    )
+    installed.add_argument(
+        "--repeat",
+        type=int,
+        default=10,
+        help="Times each replay case runs against identical input; any disagreement fails the lane",
+    )
+    installed.add_argument(
+        "--require-frozen",
+        action="store_true",
+        help="Refuse a wheel console script; accept only the frozen bundle the Desktop app installs",
+    )
+    installed.add_argument(
+        "--no-aged-store",
+        dest="aged_store",
+        action="store_false",
+        help="Skip the pass that installs over a home with upgrade history",
+    )
+    installed.add_argument("--output", type=Path, required=True)
+    installed.add_argument("--keep-work", action="store_true", help="Keep the lane's homes even when it passes")
     verify = sub.add_parser("verify", help="Independently reconcile a complete evidence package")
     verify.add_argument("directory", type=Path)
     verify.add_argument("--expected-sha", required=True)
@@ -193,6 +223,22 @@ def main() -> int:
                 )
             )
             return 0
+        if args.command == "installed":
+            from .installed_lane import run_lane
+
+            if not 1 <= args.repeat <= 100:
+                raise ValueError("--repeat is supported from 1 through 100")
+            evidence = run_lane(
+                runtime_path=args.runtime,
+                harnesses=list(args.harness),
+                repeat=args.repeat,
+                require_frozen=args.require_frozen,
+                aged_store=args.aged_store,
+                output=args.output,
+                work_root=(args.output / "work") if args.keep_work else None,
+            )
+            print(json.dumps({key: evidence[key] for key in ("version", "accepted", "failures") if key in evidence}))
+            return 0 if evidence.get("accepted") else 1
         if args.command == "pack":
             from .bundle import pack as pack_bundle
             from .verify import verify_report
