@@ -68,11 +68,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends musl-tools
 
-      - name: Lane tests
-        run: |
-          set -euo pipefail
-          uv sync --frozen --extra mdm-build --group ci-test --python 3.12
-          uv run --no-sync python -m pytest tests/test_gauntlet_installed_lane.py -q
+      - name: Sync the Python environment
+        run: uv sync --frozen --extra mdm-build --group ci-test --python 3.12
 
       - name: Build the native runtime and the source compiler
         env:
@@ -87,7 +84,20 @@ jobs:
             -p hol-guard-runtime -p guard-command --bin hol-guard-runtime --bin guard-command-source \
             --config "$RUNNER_TEMP/dev-workspace-profile.toml"
           "rust/target/$TARGET/release/hol-guard-runtime" self-test --json
+          "rust/target/$TARGET/release/guard-command-source" export-trust \
+            > contracts/extensions/build-trust-class-map.v1.json
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "COMPILER=$PWD/rust/target/$TARGET/release/guard-command-source" >> "$GITHUB_ENV"
+
+      # The generated command catalog is a build output, not a checked-in file, and importing
+      # codex_plugin_scanner without it raises generated_command_catalog_unavailable. Stage it
+      # before anything imports the package, the way the pytest lanes in ci.yml do.
+      - uses: ./.github/actions/stage-command-projections
+        with:
+          compiler: ${{ env.COMPILER }}
+
+      - name: Lane tests
+        run: uv run --no-sync python -m pytest tests/test_gauntlet_installed_lane.py -q
 
       - name: Assemble the native wheel
         env:
@@ -96,7 +106,6 @@ jobs:
           set -euo pipefail
           runtime="rust/target/$TARGET/release/hol-guard-runtime"
           compiler="rust/target/$TARGET/release/guard-command-source"
-          "$compiler" export-trust > contracts/extensions/build-trust-class-map.v1.json
           jq -n \
             --slurpfile source rust/crates/guard-command/tests/fixtures/command-source-example.v1.json \
             --slurpfile trust contracts/extensions/build-trust-class-map.v1.json \
