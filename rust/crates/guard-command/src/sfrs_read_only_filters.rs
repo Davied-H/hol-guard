@@ -311,11 +311,13 @@ pub(crate) fn read_only_lookup_target_is_safe(
         .iter()
         .filter(|part| part.starts_with('.'))
         .collect();
+    let credential_screen_clears =
+        hidden_content_read_allowed(&lowered) && !narrow_guidance_rule_owns(&lowered);
     if !hidden.is_empty()
         && !hidden
             .iter()
             .all(|part| SOURCE_INSPECTION_BENIGN_DOTFILES.contains(&part.as_str()))
-        && !(hidden_content_read_allowed(&lowered) && !narrow_guidance_rule_owns(&lowered))
+        && !credential_screen_clears
     {
         return false;
     }

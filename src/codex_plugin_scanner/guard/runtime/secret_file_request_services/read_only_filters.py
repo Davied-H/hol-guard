@@ -416,10 +416,13 @@ def _read_only_lookup_target_is_safe(target: str, *, allow_dirs: bool, home_dir:
     # not the fact of being hidden: the stores the listing screen refuses, and
     # the file names a token is normally written under.
     hidden_parts = [part for part in lowered_parts if part.startswith(".")]
+    credential_screen_clears = hidden_content_read_allowed(lowered_parts) and not _narrow_guidance_rule_owns(
+        lowered_parts
+    )
     if (
         hidden_parts
         and not all(part in SOURCE_INSPECTION_BENIGN_DOTFILES for part in hidden_parts)
-        and not (hidden_content_read_allowed(lowered_parts) and not _narrow_guidance_rule_owns(lowered_parts))
+        and not credential_screen_clears
     ):
         return False
     if any(part in SOURCE_INSPECTION_PARTS for part in lowered_parts):
