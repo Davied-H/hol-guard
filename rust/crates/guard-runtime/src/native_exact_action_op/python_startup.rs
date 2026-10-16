@@ -7,12 +7,12 @@
 use std::io::Read;
 use std::sync::OnceLock;
 
-use regex::Regex;
+use regex::{Captures, Regex};
 use serde_json::Value;
 
 use super::super::fs_path;
 use super::super::python_modules::{REFUSED_MODULES, STANDARD_MODULES};
-use super::super::python_source::scan;
+use super::super::python_source::{imports_in, readable, scan, Import};
 use super::super::reasons::{Proof, MUTABLE_LAUNCHER};
 use super::{Graph, COMPILED_SUFFIXES};
 use layout::Layout;
@@ -55,73 +55,136 @@ pub(super) fn runs_in_place(source: &std::fs::Metadata, pyc: &str) -> bool {
 
 /// Meta-path shims that virtualenv, uv and setuptools install through a
 /// `.pth` file. Their finders use import machinery the scan refuses, but they
-/// only redirect the `SHIMMED` packages. They are bound by content when they
-/// evaluate no strings, read no files and import only standard modules.
+/// only redirect the `SHIMMED` packages. They are bound by content when no
+/// name in them can load code the proof does not bind, and what they import
+/// by name is bound as the graph binds any startup import.
 const SHIMS: [&str; 2] = ["_virtualenv", "_distutils_hack"];
 const SHIMMED: [&str; 3] = ["distutils", "setuptools", "pip"];
+/// What a shim may read or set attributes on by name: itself, its own
+/// classes, and the loader it wraps.
+const SHIM_TARGETS: [&str; 3] = ["self", "cls", "spec.loader"];
+
+fn pattern(cell: &'static OnceLock<Regex>, source: &str) -> &'static Regex {
+    cell.get_or_init(|| Regex::new(source).expect("static pattern"))
+}
 
 /// `__import__('name')` with a literal name, as `.pth` import lines write it.
 fn literal_import() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| {
-        Regex::new(r#"__import__\(\s*(?:'([A-Za-z_][\w.]*)'|"([A-Za-z_][\w.]*)")\s*\)"#)
-            .expect("static pattern")
-    })
+    pattern(
+        &CELL,
+        r#"__import__\(\s*(?:'([A-Za-z_][\w.]*)'|"([A-Za-z_][\w.]*)")\s*\)"#,
+    )
 }
 
-/// Calls that evaluate strings, read files or start programs.
+/// `import_module('name')` with a literal name.
+fn literal_import_module() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(
+        &CELL,
+        r#"\bimport_module\(\s*(?:'([A-Za-z_][\w.]*)'|"([A-Za-z_][\w.]*)")\s*\)"#,
+    )
+}
+
+/// Names that evaluate strings, read or write files, start programs, or
+/// load a module from a name or path the text does not spell out. Matched as words
+/// against code with literal bodies and comments blanked, so a reference is
+/// refused as well as a call.
 fn shim_refused() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| {
-        Regex::new(concat!(
-            r"\b(?:exec|eval|compile|execfile|__import__|open|read_text|read_bytes|loads|load_source|run_path|run_module|system|popen)\s*\(",
-            r"|\b(?:subprocess|ctypes|marshal|pickle|codecs)\b",
-        ))
-        .expect("static pattern")
-    })
+    pattern(
+        &CELL,
+        concat!(
+            r"\b(?:exec|eval|compile|execfile|__import__|open|read_text|read_bytes|loads|system|popen",
+            r"|import_module|exec_module|load_module|load_source|spec_from_file_location|module_from_spec",
+            r"|get_code|source_to_code|run_path|run_module|runsource|runcode|runpy|zipimport|pkgutil",
+            r"|SourceFileLoader|SourcelessFileLoader|ExtensionFileLoader|FunctionType|CodeType",
+            r"|getattr|setattr|delattr|globals|vars|builtins|attrgetter|methodcaller",
+            r"|rename|renames|unlink|rmtree|symlink|symlink_to|hardlink_to|link|truncate|ftruncate",
+            r"|makedirs|mkdir|copyfile|copytree|copy2|move|write|writelines|write_text|write_bytes",
+            r"|writestr|FileIO|mmap|chmod|chown|utime|extractall|unpack_archive",
+            r"|subprocess|ctypes|marshal|pickle|codecs)\b|\bos\s*\.\s*replace\b",
+        ),
+    )
 }
 
-/// Each import statement, at any indentation.
-fn any_import() -> &'static Regex {
+fn method_definition() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    CELL.get_or_init(|| {
-        Regex::new(r"(?m)^[ \t]*(?:from[ \t]+(\S+)[ \t]+import\b|import[ \t]+([^#\n;]+))")
-            .expect("static pattern")
-    })
+    pattern(&CELL, r"\bdef[ \t]+\w+")
+}
+
+/// A shim's own loader hooks, which wrap the loader it found.
+fn own_loader_hook() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(&CELL, r"\bself\.(?:exec_module|load_module)\b")
+}
+
+fn class_name() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(&CELL, r"(?m)^[ \t]*class[ \t]+(\w+)")
+}
+
+fn attribute_by_name() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(&CELL, r"\b(?:getattr|setattr)\(\s*([\w.]+)\s*,")
+}
+
+fn literal(captures: &Captures) -> String {
+    captures
+        .get(1)
+        .or_else(|| captures.get(2))
+        .map_or("", |m| m.as_str())
+        .to_owned()
 }
 
 fn top(name: &str) -> &str {
     name.split('.').next().unwrap_or_default()
 }
 
-/// Whether a shim's source evaluates no strings, reads no files, and imports
-/// only standard modules, `importlib` and the shims themselves.
-fn plain_shim(text: &str) -> bool {
-    let allowed = |name: &str| {
-        let name = top(name);
-        STANDARD_MODULES.contains(&name) || name == "importlib" || SHIMS.contains(&name)
-    };
-    let mut plain = true;
-    let rewritten = literal_import().replace_all(text, |captures: &regex::Captures| {
-        let name = captures
-            .get(1)
-            .or_else(|| captures.get(2))
-            .map_or("", |m| m.as_str());
-        plain &= allowed(name);
+/// The imports a shim makes, or `None` when a name in it could load code
+/// the proof does not bind: a string evaluation, a file read, an
+/// `import_module` of anything but a package the shim redirects, or an
+/// attribute read or set by name on anything but the shim's own classes and
+/// the loader it wraps.
+fn shim_imports(text: &str) -> Option<Vec<Import>> {
+    let mut imports = Vec::new();
+    let text = literal_import().replace_all(text, |captures: &Captures| {
+        imports.push(Import {
+            level: 0,
+            module: literal(captures),
+            names: Vec::new(),
+        });
         "_imported_"
     });
-    plain
-        && !shim_refused().is_match(&rewritten)
-        && any_import().captures_iter(&rewritten).all(|captures| {
-            let names = captures
-                .get(1)
-                .or_else(|| captures.get(2))
-                .map_or("", |m| m.as_str());
-            names.split(',').all(|name| {
-                let name = name.split_whitespace().next().unwrap_or_default();
-                !name.is_empty() && allowed(name)
-            })
-        })
+    let mut redirected = true;
+    let text = literal_import_module().replace_all(&text, |captures: &Captures| {
+        let name = literal(captures);
+        redirected &= SHIMMED.contains(&top(&name)) || STANDARD_MODULES.contains(&top(&name));
+        "_imported_"
+    });
+    if !redirected {
+        return None;
+    }
+    let code = readable(&text)?;
+    let code = method_definition().replace_all(&code, "def _");
+    let code = own_loader_hook().replace_all(&code, "self._");
+    let classes: Vec<String> = class_name()
+        .captures_iter(&code)
+        .map(|captures| captures[1].to_owned())
+        .collect();
+    let code = attribute_by_name().replace_all(&code, |captures: &Captures| {
+        let target = &captures[1];
+        if SHIM_TARGETS.contains(&target) || classes.iter().any(|name| name == target) {
+            "_attr_(".to_owned()
+        } else {
+            captures[0].to_owned()
+        }
+    });
+    if shim_refused().is_match(&code) {
+        return None;
+    }
+    imports.extend(imports_in(&code)?);
+    Some(imports)
 }
 
 impl Graph<'_> {
@@ -148,20 +211,21 @@ impl Graph<'_> {
         let bytes = self.bind_startup(path)?;
         let text = String::from_utf8(bytes).map_err(|_| MUTABLE_LAUNCHER)?;
         let text = text.trim_start_matches('\u{feff}');
-        if shim {
-            return if plain_shim(text) {
-                Ok(())
-            } else {
-                Err(MUTABLE_LAUNCHER)
-            };
-        }
-        let scanned = scan(text).ok_or(MUTABLE_LAUNCHER)?;
-        if scanned.writes {
-            return Err(MUTABLE_LAUNCHER);
-        }
-        for import in &scanned.imports {
+        let imports = if shim {
+            shim_imports(text).ok_or(MUTABLE_LAUNCHER)?
+        } else {
+            let scanned = scan(text).ok_or(MUTABLE_LAUNCHER)?;
+            if scanned.writes {
+                return Err(MUTABLE_LAUNCHER);
+            }
+            scanned.imports
+        };
+        for import in &imports {
             if import.level == 0 {
-                self.bind_import(sites, &import.module, &import.names)?;
+                // A shim finds the packages it redirects through `importlib`.
+                if !(shim && top(&import.module) == "importlib") {
+                    self.bind_import(sites, &import.module, &import.names)?;
+                }
                 continue;
             }
             let mut directory = fs_path::parent(path);
@@ -179,7 +243,7 @@ impl Graph<'_> {
                 .split('.')
                 .filter(|part| !part.is_empty())
                 .collect();
-            self.bind_parts(sites, directory, &parts, &import.names, false)?;
+            self.bind_parts(sites, directory, &parts, &import.names, shim)?;
         }
         Ok(())
     }
@@ -253,20 +317,16 @@ impl Graph<'_> {
                 continue;
             }
             if line.starts_with("import ") || line.starts_with("import\t") {
-                let mut literal = Vec::new();
-                let rewritten = literal_import().replace_all(line, |captures: &regex::Captures| {
-                    let name = captures
-                        .get(1)
-                        .or_else(|| captures.get(2))
-                        .map_or("", |m| m.as_str());
-                    literal.push(name.to_owned());
+                let mut named = Vec::new();
+                let rewritten = literal_import().replace_all(line, |captures: &Captures| {
+                    named.push(literal(captures));
                     "_imported_"
                 });
                 let scanned = scan(&rewritten).ok_or(MUTABLE_LAUNCHER)?;
                 if scanned.writes {
                     return Err(MUTABLE_LAUNCHER);
                 }
-                for name in literal {
+                for name in named {
                     self.bind_import(sites, &name, &[])?;
                 }
                 for import in &scanned.imports {

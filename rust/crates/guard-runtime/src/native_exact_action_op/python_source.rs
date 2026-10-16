@@ -240,9 +240,10 @@ fn code_only(text: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// Every import `source` makes and whether it writes files, or `None` when
-/// it can run code its imports do not name or the scan cannot read it.
-pub(super) fn scan(source: &str) -> Option<Scan> {
+/// `source` with literal bodies and comments blanked, or `None` when it
+/// declares another encoding, reaches interpreter internals through a dunder
+/// name, or has a shape the scan cannot read.
+pub(super) fn readable(source: &str) -> Option<String> {
     for line in source.lines().take(2) {
         if let Some(captures) = coding_declaration().captures(line) {
             let codec = captures[1].to_ascii_lowercase().replace('_', "-");
@@ -256,12 +257,31 @@ pub(super) fn scan(source: &str) -> Option<Scan> {
     }
     let code = code_only(source)?;
     // A line continuation hides a statement's shape from the scan.
-    if forbidden().is_match(&code) || code.contains("\\\n") || code.contains("\\\r\n") {
+    if code.contains("\\\n") || code.contains("\\\r\n") {
         return None;
     }
+    Some(code)
+}
+
+/// Every import `source` makes and whether it writes files, or `None` when
+/// it can run code its imports do not name or the scan cannot read it.
+pub(super) fn scan(source: &str) -> Option<Scan> {
+    let code = readable(source)?;
+    if forbidden().is_match(&code) {
+        return None;
+    }
+    Some(Scan {
+        imports: imports_in(&code)?,
+        writes: writes_files().is_match(&code),
+    })
+}
+
+/// The import statements in `code`, as `readable` returns it; `None` when
+/// one takes names the text does not spell out.
+pub(super) fn imports_in(code: &str) -> Option<Vec<Import>> {
     let mut imports = Vec::new();
     let mut covered: Vec<(usize, usize)> = Vec::new();
-    for found in keyword_from().find_iter(&code) {
+    for found in keyword_from().find_iter(code) {
         // `raise ... from` and `yield from` are not imports.
         let Some(captures) = from_statement().captures(&code[found.start()..]) else {
             continue;
@@ -292,7 +312,7 @@ pub(super) fn scan(source: &str) -> Option<Scan> {
             names,
         });
     }
-    for found in keyword_import().find_iter(&code) {
+    for found in keyword_import().find_iter(code) {
         if covered
             .iter()
             .any(|(start, end)| (*start..*end).contains(&found.start()))
@@ -308,10 +328,7 @@ pub(super) fn scan(source: &str) -> Option<Scan> {
             });
         }
     }
-    Some(Scan {
-        imports,
-        writes: writes_files().is_match(&code),
-    })
+    Some(imports)
 }
 
 #[cfg(test)]

@@ -113,7 +113,22 @@ fn a_virtualenv_shim_is_bound_by_content() {
     let site = format!("{}/{SITE}", project.cwd());
     project.write("tool.py", "print(1)\n");
     project.write(&format!("{SITE}/_virtualenv.pth"), "import _virtualenv\n");
-    let shim = "import os\nimport sys\n\n_DISTUTILS_PATCH = 'distutils.dist', 'setuptools.dist'\n\nclass _Finder:\n    def find_spec(self, fullname, path, target=None):\n        if fullname in _DISTUTILS_PATCH:\n            from importlib.util import find_spec\n            spec = find_spec(fullname, path)\n            return getattr(spec, 'loader', None) and spec\n\nsys.meta_path.insert(0, _Finder())\n";
+    let shim = concat!(
+        "import sys\nfrom functools import partial\n\n",
+        "_DISTUTILS_PATCH = 'distutils.dist', 'setuptools.dist'\n\n",
+        "class _Finder:\n",
+        "    def find_spec(self, fullname, path, target=None):\n",
+        "        if fullname in _DISTUTILS_PATCH:\n",
+        "            from importlib.util import find_spec\n",
+        "            spec = find_spec(fullname, path)\n",
+        "            old = getattr(spec.loader, 'exec_module')\n",
+        "            setattr(spec.loader, 'exec_module', partial(self.exec_module, old))\n",
+        "            return spec\n\n",
+        "    @staticmethod\n",
+        "    def exec_module(old, module):\n",
+        "        old(module)\n\n",
+        "sys.meta_path.insert(0, _Finder())\n",
+    );
     project.write(&format!("{SITE}/_virtualenv.py"), shim);
     let bound = bind(&project, &["tool.py"], &[]).unwrap();
     assert_eq!(
@@ -133,10 +148,22 @@ fn a_virtualenv_shim_is_bound_by_content() {
     project.write(&format!("{SITE}/_virtualenv.pth"), "import _virtualenv\n");
 
     project.write("tool.py", "print(1)\n");
+    project.write(
+        &format!("{SITE}/_virtualenv.py"),
+        &format!("{shim}import importlib\nimportlib.import_module('setuptools._distutils')\n"),
+    );
+    assert!(bind(&project, &["tool.py"], &[]).is_ok());
+    // Names that could load code the proof does not bind.
     for text in [
         format!("{shim}open('x').read()\n"),
         format!("{shim}import subprocess\n"),
         format!("{shim}__import__('helper')\n"),
+        format!("{shim}import importlib\nimportlib.import_module('payload')\n"),
+        format!("{shim}import importlib\nload = importlib.import_module\n"),
+        format!("{shim}from importlib.util import find_spec\nfind_spec('payload').loader.exec_module(None)\n"),
+        format!("{shim}import builtins\n"),
+        format!("{shim}getattr(sys, 'modules')\n"),
+        format!("{shim}import os\nos.rename('a.py', 'b.py')\n"),
     ] {
         project.write(&format!("{SITE}/_virtualenv.py"), &text);
         assert_eq!(
@@ -145,6 +172,27 @@ fn a_virtualenv_shim_is_bound_by_content() {
             "{text}"
         );
     }
+}
+
+#[test]
+fn a_shim_binds_the_modules_it_imports() {
+    let project = site_project();
+    let site = format!("{}/{SITE}", project.cwd());
+    project.write(
+        &format!("{SITE}/_distutils_hack/__init__.py"),
+        "import _distutils_hack.payload\n\ndef add_shim():\n    pass\n",
+    );
+    project.write(&format!("{SITE}/_distutils_hack/payload.py"), "X = 1\n");
+    let bound = bind(&project, &["tool.py"], &[]).unwrap();
+    assert!(startup_paths(&bound).contains(&format!("{site}/_distutils_hack/payload.py")));
+    project.write(&format!("{SITE}/_distutils_hack/payload.py"), "X = 2\n");
+    let edited = bind(&project, &["tool.py"], &[]).unwrap();
+    assert_ne!(edited["startup"], bound["startup"]);
+    project.write(
+        &format!("{SITE}/_distutils_hack/payload.py"),
+        "exec(open('x').read())\n",
+    );
+    assert_eq!(bind(&project, &["tool.py"], &[]), Err("mutable_launcher"));
 }
 
 #[test]
