@@ -36,6 +36,9 @@ def test_only_known_families_are_prunable() -> None:
     assert cache_family(f"macos-hol-guard-runtime-v2-ARM64-macos26-{'a' * 64}-lto-false-cgu-16-{'b' * 64}") == (
         f"macos-hol-guard-runtime-v2-ARM64-macos26-{'a' * 64}-lto-false-cgu-16"
     )
+    assert cache_family(f"shipped-runtime-v2-Linux-X64-ubuntu24-20261012.334.1-{'a' * 64}-{'b' * 64}") == (
+        f"shipped-runtime-v2-Linux-X64-ubuntu24-20261012.334.1-{'a' * 64}"
+    )
 
 
 def test_overlay_status_entries_selects_only_main_status_flags() -> None:

@@ -37,7 +37,7 @@ MAIN_REF = "refs/heads/main"
 CODEQL_KEY = re.compile(r"^(codeql-overlay-base-database-.+)-[0-9a-f]{40}-[0-9]+-[0-9]+$")
 CODEQL_STATUS_PREFIX = "codeql-overlay-status-"
 RUNTIME_ARCHIVE_KEY = re.compile(
-    r"^((?:runtime-test-archive-v[12]|linux-native-evaluators-v1|macos-hol-guard-runtime-v2|windows-hol-guard-runtime-v2|linux-shipped-hol-guard-runtime-v1)-.+)-[0-9a-f]{64}$"
+    r"^((?:runtime-test-archive-v[12]|linux-native-evaluators-v1|macos-hol-guard-runtime-v2|windows-hol-guard-runtime-v2|shipped-runtime-v[12])-.+)-[0-9a-f]{64}$"
 )
 RUST_PREFIXES = ("v0-rust-", "release-native-")
 SCCACHE_PREFIX = "sccache/"
