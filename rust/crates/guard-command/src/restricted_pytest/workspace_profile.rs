@@ -453,8 +453,12 @@ pub(super) fn compose(
     for pattern in denial_patterns(workspace, &input.write_denials)? {
         lines.push(regex_rule("file-write*", &pattern));
     }
+    // The daemon's state is read again here, at launch: the port it settled
+    // on may have changed since the command was judged.
+    let home = std::env::var("HOME").ok();
     lines.extend(loopback_rules(&crate::pretool::inline_loopback_ports(
         &input.command,
+        home.as_deref(),
     )));
     // Last, so no earlier allow can reopen a credential for reading or writing.
     for pattern in patterns() {

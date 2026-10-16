@@ -35,16 +35,18 @@ const ADMIN_PORTS: &[u16] = &[
 /// Services whose components bind a whole block of loopback ports.
 const ADMIN_PORT_RANGES: &[std::ops::RangeInclusive<u16>] = &[10248..=10256, 27017..=27019];
 
-/// Whether the workspace sandbox may open `port` to the contained tree.
+/// Whether the workspace sandbox may open `port` to the contained tree: a
+/// conventional dev-server port ([`crate::pretool::loopback_ports`]) that
+/// none of these services and no Guard daemon under `home_dir` may answer
+/// on.
 ///
-/// Ports below 1024 are refused as a class rather than listed: every one of
-/// them belongs to a registered service, and a dev server an agent starts to
-/// smoke-test its own page binds none of them without privilege it does not
-/// have here.
-fn grantable(port: u16) -> bool {
+/// Ports below 1024 are refused as a class: every one of them belongs to a
+/// registered service, and a dev server an agent starts to smoke-test its own
+/// page binds none of them without privilege it does not have here.
+fn grantable(port: u16, home_dir: Option<&str>) -> bool {
     port >= 1024
-        && !ADMIN_PORTS.contains(&port)
         && !ADMIN_PORT_RANGES.iter().any(|range| range.contains(&port))
+        && crate::pretool::loopback_ports::dev_server_port(port, ADMIN_PORTS, home_dir)
 }
 
 /// HTTP module members that open no connection of their own.
@@ -88,7 +90,7 @@ static HTTP_MEMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*\.\s*(\w
 /// The loopback ports a Node program's source `code` (its comments already
 /// dropped) listens and fetches on, when that is all of its network use;
 /// `None` for anything else.
-pub(super) fn node_loopback_ports(code: &str) -> Option<BTreeSet<u16>> {
+pub(super) fn node_loopback_ports(code: &str, home_dir: Option<&str>) -> Option<BTreeSet<u16>> {
     // A template expansion is code the string mask below would hide.
     if code.contains("${") || CREDENTIAL_STORE.is_match(code) {
         return None;
@@ -154,7 +156,10 @@ pub(super) fn node_loopback_ports(code: &str) -> Option<BTreeSet<u16>> {
         let port = LOOPBACK_LISTEN.captures(&code[found.start()..])?;
         ports.insert(port[1].parse::<u16>().ok()?);
     }
-    ports.iter().copied().all(grantable).then_some(ports)
+    ports
+        .iter()
+        .all(|port| grantable(*port, home_dir))
+        .then_some(ports)
 }
 
 /// Whether every use of the HTTP module bound to `name`, besides its
@@ -207,7 +212,7 @@ fn mask_strings(code: &str) -> Option<String> {
 /// grant. Empty when any inline program uses other network, so the sandbox
 /// then withholds the network whole, as it did before.
 #[cfg_attr(not(unix), allow(dead_code))]
-pub(crate) fn inline_loopback_ports(command: &[String]) -> Vec<u16> {
+pub(crate) fn inline_loopback_ports(command: &[String], home_dir: Option<&str>) -> Vec<u16> {
     let [shell, flag, text] = command else {
         return Vec::new();
     };
@@ -234,7 +239,7 @@ pub(crate) fn inline_loopback_ports(command: &[String]) -> Vec<u16> {
         let found = match language {
             Language::Python if python_network(&code) => None,
             Language::Python => continue,
-            Language::Node if NODE_NETWORK.is_match(&code) => node_loopback_ports(&code),
+            Language::Node if NODE_NETWORK.is_match(&code) => node_loopback_ports(&code, home_dir),
             Language::Node => continue,
         };
         match found {
@@ -248,14 +253,14 @@ pub(crate) fn inline_loopback_ports(command: &[String]) -> Vec<u16> {
 /// The ports a launched program's sources earn: its inline Node source
 /// when it is loopback-only and no local module it imports uses the
 /// network or names a credential store.
-pub(super) fn program_ports(sources: &[String]) -> Option<BTreeSet<u16>> {
+pub(super) fn program_ports(sources: &[String], home_dir: Option<&str>) -> Option<BTreeSet<u16>> {
     let (first, imports) = sources.split_first()?;
     let clean = imports.iter().all(|source| {
         let code = code_lines(Language::Node, source);
         !NODE_NETWORK.is_match(&code) && !CREDENTIAL_STORE.is_match(&code)
     });
     clean
-        .then(|| node_loopback_ports(&code_lines(Language::Node, first)))
+        .then(|| node_loopback_ports(&code_lines(Language::Node, first), home_dir))
         .flatten()
 }
 

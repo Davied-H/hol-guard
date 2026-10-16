@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use super::super::{code_lines, Language};
-use super::{inline_loopback_ports, node_loopback_ports, program_ports};
+use super::node_loopback_ports;
 
 /// A static file server an agent starts to look at the page it built.
 const STATIC_SERVER: &str = "const http=require('node:http'),fs=require('node:fs'),path=require('node:path');const types={'.html':'text/html','.js':'text/javascript','.css':'text/css'};http.createServer((q,r)=>{const p=path.join(process.cwd(),q.url==='/'?'index.html':q.url);fs.readFile(p,(e,b)=>{r.writeHead(e?404:200,{'Content-Type':types[path.extname(p)]||'application/octet-stream'});r.end(e?'not found':b)})}).listen(4173,'127.0.0.1')";
@@ -10,8 +10,18 @@ const SELF_CHECK: &str = "const http=require(\"node:http\"),fs=require(\"node:fs
 /// A smoke test that starts the project's server and requests its root.
 const SPAWNED_SERVER: &str = "import { spawn } from \"node:child_process\"; import assert from \"node:assert/strict\"; const child = spawn(process.execPath, [\"server.js\"], { stdio: \"inherit\" }); await new Promise((resolve) => setTimeout(resolve, 500)); const response = await fetch(\"http://127.0.0.1:3000/\"); assert.equal(response.status, 200); child.kill()";
 
+/// These judge with no home, so Guard's whole default daemon range stays
+/// closed.
 fn ports(source: &str) -> Option<BTreeSet<u16>> {
-    node_loopback_ports(&code_lines(Language::Node, source))
+    node_loopback_ports(&code_lines(Language::Node, source), None)
+}
+
+fn program_ports(sources: &[String]) -> Option<BTreeSet<u16>> {
+    super::program_ports(sources, None)
+}
+
+fn inline_loopback_ports(command: &[String]) -> Vec<u16> {
+    super::inline_loopback_ports(command, None)
 }
 
 fn set(ports: &[u16]) -> Option<BTreeSet<u16>> {
@@ -24,12 +34,12 @@ fn loopback_servers_and_fetches_name_their_ports() {
     assert_eq!(ports(SELF_CHECK), set(&[8765]));
     assert_eq!(ports(SPAWNED_SERVER), set(&[3000]));
     assert_eq!(
-        ports("const response = await fetch('http://localhost:5173/');\nconsole.log(response.status);\n"),
-        set(&[5173])
+        ports("const response = await fetch('http://localhost:5500/');\nconsole.log(response.status);\n"),
+        set(&[5500])
     );
     assert_eq!(
-        ports("import { createServer } from 'node:http';\ncreateServer((q, r) => r.end('ok')).listen(5173, 'localhost');\n"),
-        set(&[5173])
+        ports("import { createServer } from 'node:http';\ncreateServer((q, r) => r.end('ok')).listen(5500, 'localhost');\n"),
+        set(&[5500])
     );
 }
 
@@ -49,6 +59,11 @@ fn other_network_use_keeps_the_review() {
         // Every port a kube control-plane component binds, not only the three
         // this list used to name.
         "await fetch('http://127.0.0.1:10252/healthz')",
+        // Guard's daemon on a fixed or ephemeral port, and ports no dev
+        // server conventionally binds.
+        "await fetch('http://127.0.0.1:7392/v1/requests?status=pending')",
+        "await fetch('http://127.0.0.1:54321/v1/requests')",
+        "require('node:http').createServer().listen(9000, '127.0.0.1')",
         // Registered service ports as a class.
         "await fetch('http://127.0.0.1:631/')",
         "await fetch('http://localhost:22/')",
@@ -125,9 +140,9 @@ fn the_sandbox_reads_the_ports_from_the_command_it_runs() {
     );
     assert_eq!(
         inline_loopback_ports(&shell(
-            "node -e \"fetch('http://127.0.0.1:3000/')\" && node -e \"fetch('http://localhost:5173/')\""
+            "node -e \"fetch('http://127.0.0.1:3000/')\" && node -e \"fetch('http://localhost:5500/')\""
         )),
-        vec![3000, 5173]
+        vec![3000, 5500]
     );
     for text in [
         "node --test",
@@ -140,4 +155,23 @@ fn the_sandbox_reads_the_ports_from_the_command_it_runs() {
     let mut other = shell("node -e \"fetch('http://127.0.0.1:3000/')\"");
     other[0] = "/bin/bash".into();
     assert!(inline_loopback_ports(&other).is_empty());
+}
+
+#[test]
+fn a_dev_port_in_the_daemon_range_follows_the_daemon_state() {
+    let home = std::env::temp_dir().join(format!("script-loopback-daemon-{}", std::process::id()));
+    let guard = home.join(".hol-guard");
+    std::fs::create_dir_all(&guard).unwrap();
+    let vite = code_lines(Language::Node, "await fetch('http://localhost:5173/')");
+    let home_dir = home.to_str();
+    assert_eq!(
+        node_loopback_ports(&vite, home_dir),
+        None,
+        "no daemon state"
+    );
+    std::fs::write(guard.join("daemon-state.json"), r#"{"port": 4781}"#).unwrap();
+    assert_eq!(node_loopback_ports(&vite, home_dir), set(&[5173]));
+    std::fs::write(guard.join("daemon-state.json"), r#"{"port": 5173}"#).unwrap();
+    assert_eq!(node_loopback_ports(&vite, home_dir), None, "daemon on 5173");
+    let _ = std::fs::remove_dir_all(&home);
 }

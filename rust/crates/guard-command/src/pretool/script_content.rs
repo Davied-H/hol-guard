@@ -246,7 +246,7 @@ fn assess_programs(
             found.credential_store |= CREDENTIAL_STORE.is_match(&code);
         }
         if inline && language == Language::Node {
-            found.loopback = loopback::program_ports(&sources);
+            found.loopback = loopback::program_ports(&sources, context.home_dir);
         }
         found.sources = sources;
         findings.push(found);
