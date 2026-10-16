@@ -37,8 +37,26 @@ const DIRECT_LANE_ACK_MAX_LEASE_MS: u64 = 120_000;
 /// How long a hook waits for the ACK of a snapshot the resident has already
 /// bound. The publisher writes the ACK as soon as the resident accepts the
 /// push, so this covers one ACK write, not a publish.
-pub(super) const DIRECT_LANE_ACK_SETTLE_MS: u64 = 100;
+const DIRECT_LANE_ACK_SETTLE_MS: u64 = 100;
 const DIRECT_LANE_ACK_SETTLE_POLL: Duration = Duration::from_millis(5);
+
+#[cfg(test)]
+thread_local! {
+    /// Only a test moves its own settle wait off the hook budget.
+    static DIRECT_LANE_ACK_SETTLE_OVERRIDE_MS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(DIRECT_LANE_ACK_SETTLE_MS) };
+}
+
+/// How long that re-read lasts. Tests that land the ACK from another thread
+/// widen it on their own thread, so a host too loaded to schedule that thread
+/// inside a hook's budget cannot turn the race they describe into a failure.
+fn direct_lane_ack_settle() -> Duration {
+    #[cfg(test)]
+    let millis = DIRECT_LANE_ACK_SETTLE_OVERRIDE_MS.with(std::cell::Cell::get);
+    #[cfg(not(test))]
+    let millis = DIRECT_LANE_ACK_SETTLE_MS;
+    Duration::from_millis(millis)
+}
 
 pub(crate) struct DirectLaneBinding {
     generation: u64,
@@ -336,7 +354,7 @@ impl PolicySnapshotStore {
         {
             return Ok((ack, false));
         }
-        let deadline = Instant::now() + self.direct_lane_ack_settle();
+        let deadline = Instant::now() + direct_lane_ack_settle();
         loop {
             let now = Instant::now();
             if now >= deadline {
@@ -348,17 +366,6 @@ impl PolicySnapshotStore {
                 return Ok((ack, true));
             }
         }
-    }
-
-    /// How long that re-read lasts. Tests that land the ACK from another
-    /// thread widen it, so a host too loaded to schedule that thread inside a
-    /// hook's budget cannot turn the race they describe into a failure.
-    fn direct_lane_ack_settle(&self) -> Duration {
-        #[cfg(test)]
-        let millis = self.direct_lane_ack_settle_ms.load(Ordering::Acquire);
-        #[cfg(not(test))]
-        let millis = DIRECT_LANE_ACK_SETTLE_MS;
-        Duration::from_millis(millis)
     }
 
     fn read_direct_lane_ack(&self) -> Result<DirectLaneAckV1, DirectLaneDefer> {

@@ -204,9 +204,6 @@ pub(crate) struct PolicySnapshotStore {
     state: Mutex<PolicyState>,
     direct_lane: Mutex<Option<Arc<policy_store_direct_lane::DirectLaneBinding>>>,
     direct_lane_ack_wait_claimed: AtomicU64,
-    /// Only tests move the settle wait off the hook budget.
-    #[cfg(test)]
-    direct_lane_ack_settle_ms: AtomicU64,
     direct_evidence: crate::hook_direct_evidence::DirectEvidenceQueue,
     mcp_relay_pending: crate::mcp_relay_pending::PendingRelayEvidence,
     mcp_relay_claims: crate::mcp_relay_claims::HeldClaims<crate::mcp_relay_decide::ClaimContext>,
@@ -316,10 +313,6 @@ impl PolicySnapshotStore {
             }),
             direct_lane: Mutex::new(None),
             direct_lane_ack_wait_claimed: AtomicU64::new(0),
-            #[cfg(test)]
-            direct_lane_ack_settle_ms: AtomicU64::new(
-                policy_store_direct_lane::DIRECT_LANE_ACK_SETTLE_MS,
-            ),
             direct_evidence: crate::hook_direct_evidence::DirectEvidenceQueue::default(),
             mcp_relay_pending: crate::mcp_relay_pending::PendingRelayEvidence::default(),
             mcp_relay_claims: crate::mcp_relay_claims::HeldClaims::default(),
