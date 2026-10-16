@@ -24,19 +24,21 @@ pub(crate) use edge_identity::{policy_generation_matches, stable_policy_identity
 
 /// Bind the exact validated tool intent without policy-generation identity.
 /// Policy evaluation remains bound by `request_identity`; this commitment is
-/// only the stable action/source input for a later native review anchor.
+/// the stable action/source input a native review's retry binding anchors to.
+/// `home_dir` is bound because path resolution (`~`, dotfiles) depends on it.
 pub(crate) fn execution_intent_digest(envelope: &GuardHookEnvelopeV2) -> Result<String, String> {
     let harness = canonical_harness(&envelope.harness)?;
     let event = authoritative_event(envelope)?;
     let payload = request_payload_identity(&envelope.raw_payload, &harness, &event)?;
     let mut value = serde_json::json!({
-        "schema": "guard-native-execution-intent.v1",
-        "version": 1,
+        "schema": "guard-native-execution-intent.v2",
+        "version": 2,
         "event": event,
         "harness": harness,
         "payload": payload,
         "source": {
             "cwd": envelope.source.cwd,
+            "home_dir": envelope.source.home_dir,
         },
     });
     if let Some(context) = &envelope.source.execution_environment {
