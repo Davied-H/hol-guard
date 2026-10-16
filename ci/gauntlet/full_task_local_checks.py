@@ -55,6 +55,20 @@ _JS_JOINED = re.compile(
     r"""\b(?:join|resolve)\s*\(\s*(?:[\w$.]+\s*,\s*)?((?:['"`][^'"`]*['"`]\s*,\s*)*['"`][^'"`]*['"`])(?:\s*,)?\s*\)"""
 )
 _NODE_EVAL = frozenset({"-e", "--eval", "-p", "--print"})
+# Node options whose next word is a value, not the script. ``--require=./setup.js``
+# stays a flag because it already starts with ``-``.
+_NODE_VALUED = frozenset(
+    {
+        "-r",
+        "--require",
+        "--import",
+        "--loader",
+        "--experimental-loader",
+        "--env-file",
+        "-C",
+        "--conditions",
+    }
+)
 _LAUNCHERS = frozenset({"node", "nodejs"})
 
 
@@ -120,16 +134,26 @@ def _code(text: str, hash_comments: bool = False) -> str:
 
 
 def _spawned_script(arguments: str) -> str | None:
-    """The script a child-process call runs: the first word of its string arguments that is neither
-    the Node launcher nor a flag. Code passed with ``-e``/``-p`` runs no script.
+    """The script a child-process call runs.
+
+    The first word of its string arguments that is neither the Node launcher nor a flag.
+    The value after an option such as ``--require`` or ``--env-file`` is not the script.
+    Code passed with ``-e``/``-p`` runs no script.
     """
     arguments = _JS_JOINED.sub(
         lambda match: "'" + posixpath.join(*(part for _, part in _JS_LITERAL.findall(match.group(1)))) + "'", arguments
     )
+    skip_value = False
     for _, literal in _JS_LITERAL.findall(arguments):
         for word in literal.split():
+            if skip_value:
+                skip_value = False
+                continue
             if word in _NODE_EVAL:
                 return None
+            if word in _NODE_VALUED:
+                skip_value = True
+                continue
             if word not in _LAUNCHERS and not word.startswith("-"):
                 return word
     return None
