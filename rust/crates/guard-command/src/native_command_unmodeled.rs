@@ -251,7 +251,11 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         return false;
     }
     match command.uncertainty_reason.as_deref() {
-        Some("compound_shell_not_yet_supported") => {
+        // Backgrounding runs the same programs the foreground text names, so
+        // `npm start &` owns exactly what `npm start` owns. Without this arm a
+        // trailing `&` blocked outright while the same command with a redirect
+        // reached review, because the redirect reason wins the parser's scan.
+        Some("background_job_not_yet_supported" | "compound_shell_not_yet_supported") => {
             !moves_data(&unquoted_literal(&command.normalized_text))
                 || literal_redirects_only(&command.normalized_text)
         }
