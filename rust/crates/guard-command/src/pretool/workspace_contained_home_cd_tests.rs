@@ -36,7 +36,7 @@ fn parse(command: &str) -> crate::CanonicalCommandV1 {
     crate::parse_command(&CommandModelRequestV1 {
         command: command.to_owned(),
         dialect: "posix".into(),
-        transport: "literal".into(),
+        transport: "shell_string".into(),
         extraction_provenance: "test".into(),
     })
     .unwrap()
