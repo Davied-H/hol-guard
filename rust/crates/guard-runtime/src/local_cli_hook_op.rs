@@ -91,6 +91,7 @@ fn request_digest(request: &LocalCliHookRequestV1) -> Result<String, String> {
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn run(request: &LocalCliHookRequestV1) -> Result<String, &'static str> {
     run_with_connector(request).map(|(action, _)| action)
 }
