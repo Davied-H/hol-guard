@@ -99,19 +99,19 @@ def _tool_entry(name: str, cwd: Path, workspace: Path) -> tuple[Path, str]:
 
 
 def _script_task(manager: str, args: Sequence[str]) -> str | None:
-    """The lint/typecheck/build script a package-manager command names.
+    """The script a package-manager command names.
 
     npm and Bun need the explicit `run`. pnpm and Yarn also run a script named
     directly, and a project that documents `pnpm lint` or `yarn build` means
-    the same script, so both spellings resolve the same way here.
+    the same script, so both spellings resolve the same way here. The name the
+    project chose decides nothing: the body behind it still has to be one of
+    the tools below, in a mode that only reports.
     """
     if len(args) == 2 and args[0] == "run":
-        task = args[1]
-    elif len(args) == 1 and manager in {"pnpm", "yarn"}:
-        task = args[0]
-    else:
-        return None
-    return task if task in {"lint", "typecheck", "build"} else None
+        return args[1]
+    if len(args) == 1 and manager in {"pnpm", "yarn"}:
+        return args[0]
+    return None
 
 
 def _package_directory(directory: Path, workspace: Path) -> bool:
@@ -311,7 +311,7 @@ def prepare_restricted_node_tool(
         task = _script_task(name, args)
         if task is None:
             raise RestrictedPytestError(
-                "node_tool_invalid_command", "Only direct lint/typecheck scripts are supported."
+                "node_tool_invalid_command", "Only a single named package script is supported."
             )
         if sys.platform == "win32":
             raise RestrictedPytestError(

@@ -469,17 +469,15 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         return Some("native_node_build_output_containment_required");
     }
     let read_only_node_tool = match executable {
-        "bun" | "npm" | "yarn" => matches!(
-            manager_script_task(executable, arguments),
-            Some("lint" | "typecheck")
-        ),
+        // The script body is what runs, not the name a project chose for it:
+        // `format:check` and `ci:lint` are the work `lint` is. The route below
+        // reads the manifest and keeps this only for a body the sink runs.
+        "bun" | "npm" | "yarn" => manager_script_task(executable, arguments).is_some(),
         // `pnpm exec` is pnpm's spelling of a local-bin run; only the bare
         // form, with no pnpm option before the tool, reads as one.
         "pnpm" => {
-            matches!(
-                manager_script_task(executable, arguments),
-                Some("lint" | "typecheck")
-            ) || matches!(arguments, [exec, tool, rest @ ..] if exec == "exec" && (tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit")) || (tool == "prettier" && prettier_checks(rest))))
+            manager_script_task(executable, arguments).is_some()
+                || matches!(arguments, [exec, tool, rest @ ..] if exec == "exec" && (tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit")) || (tool == "prettier" && prettier_checks(rest))))
         }
         "bunx" | "npx" => {
             matches!(arguments, [tool, rest @ ..] if tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit")) || (tool == "prettier" && prettier_checks(rest)))
