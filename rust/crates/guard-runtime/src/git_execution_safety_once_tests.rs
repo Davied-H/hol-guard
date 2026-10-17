@@ -149,16 +149,17 @@ impl Fixture {
         files.extend(directory.iter().flatten().map(|path| (path.clone(), false)));
         let running: Vec<String> = files
             .into_iter()
-            .filter(|(path, include)| {
-                std::fs::read_to_string(path)
-                    .is_ok_and(|text| !ssh_config_runs_no_program(&text, *include))
+            // A config the binding cannot read refuses it as well.
+            .filter(|(path, include)| match std::fs::read(path) {
+                Ok(data) => !ssh_config_runs_no_program(&String::from_utf8_lossy(&data), *include),
+                Err(error) => error.kind() != std::io::ErrorKind::NotFound,
             })
             .map(|(path, _)| path)
             .collect();
         // Printed on failure, so a host this cannot bind names its reason.
         eprintln!(
             "host ssh {ssh:?} trusted={trusted}; {SYSTEM_SSH_CONFIG_DIR} {directory:?}; \
-             configs that run a program: {running:?}"
+             configs that run a program or cannot be read: {running:?}"
         );
         let bindable = trusted && directory.is_some() && running.is_empty();
         if !bindable {
