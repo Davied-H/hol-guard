@@ -251,7 +251,10 @@ def build_fixture(root: Path) -> BenignFixture:
         home / ".nvm/versions/node/v25.2.1/lib/node_modules/inert-pkg/package.json",
         '{\n  "name": "inert-pkg",\n  "version": "3.1.0"\n}\n',
     )
-    _write(home / ".github/workflows/inert-check.yml", "name: inert-check\non: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n")
+    _write(
+        home / ".github/workflows/inert-check.yml",
+        "name: inert-check\non: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n",
+    )
     # Negative controls for the same screen: a credential store nested under
     # `.config`, and a token-shaped file name in an otherwise ordinary place.
     _write(home / ".config/gcloud/credentials.db", "synthetic fixture\n")
