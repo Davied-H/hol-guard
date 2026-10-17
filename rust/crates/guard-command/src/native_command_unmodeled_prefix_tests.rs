@@ -51,7 +51,9 @@ fn a_prefix_hiding_an_interpreter_keeps_the_failure() {
 
 /// A launcher runs the program it is handed directly, so a script file behind
 /// one is a file whose own text names the programs it runs. Nothing here has
-/// read it, and `nice ./deploy.sh` must not be a way to run it unread.
+/// read it, and `nice ./deploy.sh` must not be a way to run it unread. The
+/// clock is spelled with its kill-after option because the parser models
+/// `timeout 30 ./run.sh` on its own, so that spelling never reaches here.
 #[test]
 fn a_script_file_behind_a_prefix_keeps_the_failure() {
     let controls = controls(github("enabled", None), false);
@@ -59,7 +61,7 @@ fn a_script_file_behind_a_prefix_keeps_the_failure() {
         "nice ./deploy.sh",
         "nice -n 10 ../tools/build.sh",
         "nohup ./scripts/release.sh",
-        "timeout 30 ./run.sh",
+        "timeout -k 5 30 ./run.sh",
         "setsid /usr/local/bin/deploy",
         "stdbuf -oL release.py",
     ] {
