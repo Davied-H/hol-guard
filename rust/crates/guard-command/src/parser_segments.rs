@@ -83,6 +83,12 @@ fn split_execution_segments_inner(
             '$' if chars.get(index + 1) == Some(&'{') => {
                 return Err("parameter_expansion_not_yet_supported");
             }
+            // Each `$` pairs off with the next one: `$$` is the shell's own
+            // process id, so the word beside it opens where this pair ends.
+            '$' if chars.get(index + 1) == Some(&'$') => {
+                index += 2;
+                continue;
+            }
             // The word runs nothing, so carry on past the text it spells.
             '$' if chars.get(index + 1) == Some(&'\'') => {
                 index = ansi_c::word(&chars, index, preserve_unquoted_backslash)?.1 + 1;
@@ -446,6 +452,11 @@ fn shell_tokens_mode(
                     for _ in 0..10 {
                         characters.next();
                     }
+                }
+                '$' if chars.get(index + 1) == Some(&'$') => {
+                    token.push_str("$$");
+                    token_started = true;
+                    characters.next();
                 }
                 '$' if chars.get(index + 1) == Some(&'\'') => {
                     let (literal, end) = ansi_c::word(&chars, index, preserve_backslash)?;
