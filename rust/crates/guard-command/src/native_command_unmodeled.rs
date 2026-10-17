@@ -37,6 +37,8 @@ use super::{rank, rule_floor, CompiledNativeCommandControls};
 use crate::pretool::generic::workspace_redirects;
 use crate::CanonicalCommandV1;
 
+#[path = "native_command_unmodeled_expansion.rs"]
+mod expansion;
 #[path = "native_command_link_makers.rs"]
 mod link_makers;
 #[path = "native_command_unmodeled_redirections.rs"]
@@ -471,10 +473,12 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         // spellings of the same value do: those two model exactly, while this
         // one reached an evaluation failure and blocked outright. A command
         // word built from an expansion, `${ cmd; }` among them, is refused
-        // before any floor is read.
+        // before any floor is read, and so is a brace form the shell
+        // evaluates rather than substitutes (see `expansion`).
         Some("parameter_expansion_not_yet_supported") => {
             let literal = unquoted_literal(&command.normalized_text);
-            !expansion_builds_a_word(&command.normalized_text)
+            expansion::expansions_are_inert(&command.normalized_text)
+                && !expansion_builds_a_word(&command.normalized_text)
                 && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
         }
         // A lookup in a substitution is the only one that does not run a
@@ -925,8 +929,12 @@ fn expansion_builds_a_word(text: &str) -> bool {
     false
 }
 
+/// A character the shell joins to the expansion beside it. Quotes and a
+/// backslash join too: `"dock"${X}`, `${X}"er"` and `${X}\er` are each one
+/// word, so the program they name is not in the text either.
 fn glues_a_word(character: char) -> bool {
-    character.is_alphanumeric() || matches!(character, '_' | '-' | '.' | '$' | '}')
+    character.is_alphanumeric()
+        || matches!(character, '_' | '-' | '.' | '$' | '}' | '"' | '\'' | '\\')
 }
 
 fn synthesizes_program(literal: &str, sourced: bool) -> bool {
