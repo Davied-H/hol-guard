@@ -34,15 +34,7 @@ type Cause = (
     &'static [&'static [u8]],
 );
 const CAUSES: [Cause; 6] = [
-    (
-        DOCKER_NOTE,
-        &[
-            b"cannot connect to the docker daemon",
-            b"docker daemon socket",
-            b"is the docker daemon running",
-        ],
-        &[],
-    ),
+    (DOCKER_NOTE, &[], &[b"docker daemon"]),
     (
         PTY_NOTE,
         &[b"out of pty devices"],

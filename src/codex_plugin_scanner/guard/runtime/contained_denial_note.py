@@ -47,11 +47,8 @@ DENIAL_WORDS = (b"eperm", b"eacces", b"operation not permitted", b"permission de
 # Per cause, in order: markers that name the cause alone, then words that name
 # it on a line that also holds a denial word.
 CAUSES = (
-    (
-        DOCKER_NOTE,
-        (b"cannot connect to the docker daemon", b"docker daemon socket", b"is the docker daemon running"),
-        (),
-    ),
+    # A daemon that is merely down prints the same text, so Docker needs a denial word on the line.
+    (DOCKER_NOTE, (), (b"docker daemon",)),
     (
         PTY_NOTE,
         (b"out of pty devices",),

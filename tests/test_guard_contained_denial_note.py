@@ -33,7 +33,7 @@ _NOTE_NAMES = ("WRITE_NOTE", "EXEC_NOTE", "CONNECT_NOTE", "READ_NOTE", "PTY_NOTE
         (b"Error: EACCES: permission denied, openpty", notes.PTY_NOTE),
         (
             b"Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
-            notes.DOCKER_NOTE,
+            None,
         ),
         (
             b"permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock",
@@ -59,7 +59,7 @@ _NOTE_NAMES = ("WRITE_NOTE", "EXEC_NOTE", "CONNECT_NOTE", "READ_NOTE", "PTY_NOTE
         "ptmx",
         "pty-devices",
         "openpty",
-        "docker-daemon",
+        "docker-daemon-down",
         "docker-socket",
         "eperm",
         "eacces",

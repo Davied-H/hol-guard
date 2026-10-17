@@ -48,7 +48,8 @@ pub(crate) const PUBLISH_REASON: &str = concat!(
     "(no network, no home access, no PTY or Docker socket), then runs the Git ",
     "steps that follow directly, outside the sandbox, once it proves them again. ",
     "Every program the checks start, including children of an interpreter, runs ",
-    "contained and can write only the workspace and $TMPDIR.",
+    "contained and can write only the workspace, $TMPDIR and a private ",
+    "scratch $HOME.",
 );
 const AUTHORIZATION_FAILED: &str = "contained_run_authorization_failed";
 const AUTHORIZATION_MESSAGE: &str = "Guard could not authorize this contained run.";

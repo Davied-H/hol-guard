@@ -42,7 +42,7 @@ fn each_cause_gets_its_own_note() {
     );
     assert_eq!(
         note("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"),
-        Some(DOCKER_NOTE)
+        None
     );
     assert_eq!(
         note("permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock"),

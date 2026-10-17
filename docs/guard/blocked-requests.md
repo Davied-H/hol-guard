@@ -32,7 +32,8 @@ contained run prints say so, so an agent can plan around it:
 - Guard runs a command it proves safe directly, outside the sandbox.
 - A contained command and every program it starts, including children of an
   interpreter such as `node`, `python` or a shell script, can write only the
-  workspace and `$TMPDIR`. They have no network, no home directory access, no
+  workspace, `$TMPDIR` and a private scratch `$HOME` that is not your real home
+  directory. They have no network, no access to your home directory, no
   pseudo-terminal and no Docker socket.
 - When a contained command fails on one of those limits, the note names the
   limit that was hit (a write, a program start, the network, a read, a PTY or

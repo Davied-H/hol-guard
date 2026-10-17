@@ -45,7 +45,7 @@ def test_both_contained_reasons_say_what_runs_contained_and_what_runs_directly()
     for text in (plain, workspace_sink.WORKSPACE_PUBLISH_REASON):
         assert "no PTY or Docker socket" in text
         assert "children of an interpreter" in text
-        assert "only the workspace and $TMPDIR" in text
+        assert "only the workspace, $TMPDIR and a private scratch $HOME" in text
         assert "directly, outside the sandbox" in text
         assert "http" not in text
         assert "approv" not in text.lower()
