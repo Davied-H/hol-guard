@@ -465,6 +465,18 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
                     || literal_redirects_only(&text)
                     || data_heredocs(&text).is_some_and(|(shell, _)| plain_after_heredocs(&shell)))
         }
+        // A scheduling or buffering prefix runs the program this text already
+        // names, as this user and in this directory. `nice cargo build` and
+        // `timeout -k 5 30 npm test` left a wrapper the parser does not model
+        // yet, so they reached an evaluation failure and blocked outright,
+        // with no approval left to give them, while `timeout 30 npm test`
+        // modelled exactly. A prefix that changes who runs the program, and an
+        // interpreter standing behind one, are refused before any floor is
+        // read.
+        Some("transparent_wrapper_not_yet_supported") => {
+            let literal = unquoted_literal(&command.normalized_text);
+            !moves_data(&literal) || literal_redirects_only(&command.normalized_text)
+        }
         // A lookup in a substitution is the only one that does not run a
         // program, so a command whose substitutions are all lookups reads
         // like any other compound command.
@@ -758,11 +770,30 @@ fn command_reads_a_program_file(piece: &str) -> bool {
         return false;
     };
     let program = command_basename(program);
+    // A scheduling prefix carries its own options, so the word it hands the
+    // program is not at a fixed offset and cannot be counted to. It opens no
+    // file of its own, which leaves one thing it can stand in front of: an
+    // interpreter, and that interpreter is a word in this same piece. Reading
+    // the piece for one keeps `nice sh -c ...` unreadable while letting
+    // `nice -n 10 cargo build` name its programs the way `cargo build` does.
+    if PREFIX_LAUNCHERS.contains(&program.as_str()) {
+        return words[1..].iter().any(|word| {
+            let word = command_basename(word);
+            INTERPRETERS.contains(&word.as_str()) || is_python(&word)
+        });
+    }
     if !is_python(program.as_str()) {
         return INTERPRETERS.contains(&program.as_str());
     }
     !python_module_launch(&words[1..])
 }
+
+/// Prefixes that run the program the text names after them, changing how it is
+/// scheduled or buffered rather than who runs it or what it reads. `sudo`,
+/// `doas` and `chroot` change the user or the root they run under, `flock`
+/// takes a lock file, and the tracers write a file of their own, so none of
+/// them is here.
+const PREFIX_LAUNCHERS: &[&str] = &["nice", "nohup", "setsid", "stdbuf", "timeout", "gtimeout"];
 
 fn command_basename(word: &str) -> String {
     let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
@@ -1016,3 +1047,7 @@ mod sourced_tests;
 #[cfg(test)]
 #[path = "native_command_unmodeled_bounded_tests.rs"]
 mod bounded_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_prefix_tests.rs"]
+mod prefix_tests;
