@@ -26,14 +26,22 @@ pub fn credential_named_path(path: &Path) -> bool {
     if is_source_code_extension(extension) || matches!(extension, "pyc" | "pyo") {
         return false;
     }
-    // A `.sql` file is a schema or migration script, and its name says which
-    // table or column it defines: `0296_blog_preview_token.sql` adds a token
-    // column, `0060_programmable-secrets-policy-schema.sql` creates the
-    // tables a secrets feature stores rows in. That is a description of the
-    // code, the way a source file's name is, not a mark on stored
-    // credentials. The directory screen below still applies, so a dump
-    // written into a credential store keeps its review.
-    let schema_script = extension.eq_ignore_ascii_case("sql");
+    // A migration script is named for the table or column it defines:
+    // `0296_blog_preview_token.sql` adds a token column,
+    // `0060_programmable-secrets-policy-schema.sql` creates the tables a
+    // secrets feature stores rows in. That is a description of the code, the
+    // way a source file's name is, not a mark on stored credentials.
+    //
+    // Only the migration shape is read that way. A database dump carries the
+    // rows themselves and is named for what it holds, so
+    // `prod_credentials_dump.sql` and `oauth_tokens_export.sql` keep the
+    // review their names earn. The directory screen below applies either
+    // way, so a script written into a credential store keeps its review too.
+    let schema_script = extension.eq_ignore_ascii_case("sql")
+        && last
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .is_some_and(migration_script_stem);
     let mut parts = normalized
         .split('/')
         .map(win32_name)
@@ -43,13 +51,38 @@ pub fn credential_named_path(path: &Path) -> bool {
         || parts.any(credential_directory)
 }
 
+/// Whether a `.sql` file is named the way a migration is.
+///
+/// A migration carries the sequence it runs in, either as a leading number
+/// (`0296_blog_preview_token`, `20260307051222_add_tokens`) or as the fixed
+/// name a tool generates (`migration`, `schema`), and a project that spells
+/// it out says so in the name (`programmable-secrets-policy-schema`). A dump
+/// has none of that: it is named for the rows it holds, which is exactly
+/// what the filename screen reads.
+fn migration_script_stem(stem: &str) -> bool {
+    let lower = stem.to_ascii_lowercase();
+    let digits = lower
+        .split(|character: char| !character.is_ascii_digit())
+        .next()
+        .unwrap_or_default()
+        .len();
+    // `0296_…`, `20260307051222_…`; a two-digit prefix would catch a dump
+    // that happens to start with a year.
+    if digits >= 3 && digits < lower.len() {
+        return true;
+    }
+    lower
+        .split(['-', '_', '.'])
+        .any(|word| DEFINITION_WORDS.contains(&word) || MIGRATION_WORDS.contains(&word))
+}
+
 /// A directory named for credentials: a marker on its own (`secrets`,
 /// `.auth`, `token`), or a compound naming stored secrets with a plural
 /// marker (`prod-secrets`, `aws_credentials`, `api-tokens`). A compound with
 /// a singular or generic marker, such as `secret-egress` or `auth-service`,
 /// names a feature rather than a store, and so do design tokens
 /// (`design-tokens`), which hold styles rather than credentials, and
-/// compounds that go on to name a schema, migration or policy
+/// compounds that end on a schema or policy
 /// (`programmable-secrets-policy-schema`).
 fn credential_directory(part: &str) -> bool {
     let lower = part.to_ascii_lowercase();
@@ -79,31 +112,33 @@ fn credential_directory(part: &str) -> bool {
         "tokens" => !words.contains(&"design"),
         _ => false,
     };
-    // A compound that goes on to name a schema, migration or policy belongs
-    // to a feature about credentials rather than to a store of them:
+    // A compound that ends on a schema or policy belongs to a feature about
+    // credentials rather than to a store of them:
     // `programmable-secrets-policy-schema` holds the definition of where
-    // secrets will live, not the secrets. A marker the compound ends on
-    // (`prod-secrets`, `api-tokens`) still names the store itself.
-    words
-        .iter()
-        .position(|word| marker(word))
-        .is_some_and(|at| {
-            !words[at + 1..]
-                .iter()
-                .any(|word| STRUCTURE_WORDS.contains(word))
-        })
+    // secrets will live, not the secrets.
+    //
+    // The word has to be the last one, and the marker it clears has to be
+    // the last marker, or a store reads as its own definition:
+    // `prod-secrets-schema-credentials` and `secrets-schema-api-tokens` both
+    // end on a store marker. Migration directories are not cleared at all —
+    // `secrets-migration` and `credentials_migrations` are where an export
+    // from one vault waits for its import into the next.
+    let Some(at) = words.iter().rposition(|word| marker(word)) else {
+        return false;
+    };
+    at + 1 == words.len()
+        || !words
+            .last()
+            .is_some_and(|word| DEFINITION_WORDS.contains(word))
 }
 
 /// Words that name a definition of a store rather than the store.
-const STRUCTURE_WORDS: [&str; 7] = [
-    "migration",
-    "migrations",
-    "policies",
-    "policy",
-    "schema",
-    "schemas",
-    "spec",
-];
+const DEFINITION_WORDS: [&str; 6] = ["policies", "policy", "schema", "schemas", "spec", "specs"];
+
+/// Words that name the script that moves a store, which describes a file but
+/// never clears a directory: a migrations directory is where exported rows
+/// sit.
+const MIGRATION_WORDS: [&str; 2] = ["migration", "migrations"];
 
 #[cfg(test)]
 mod tests {
@@ -127,6 +162,17 @@ mod tests {
             // A dump written into a store is still the store's content.
             "secrets/dump.sql",
             "config/prod-secrets/schema.sql",
+            // A dump is named for the rows it holds, wherever it is written.
+            "backups/prod_credentials_dump.sql",
+            "backups/vault_secrets.sql",
+            "backups/oauth_tokens_export.sql",
+            // A migrations directory is where exported rows wait.
+            "ops/secrets-migration/export.json",
+            "ops/credentials_migrations/prod.yaml",
+            "ops/vault-secrets-migration/export.json",
+            // The compound still ends on a store marker.
+            "ops/prod-secrets-schema-credentials/export.json",
+            "ops/secrets-schema-api-tokens/export.json",
         ] {
             assert!(credential_named_path(Path::new(path)), "{path}");
         }
@@ -144,6 +190,8 @@ mod tests {
             "db/0060_programmable-secrets-policy-schema.sql",
             "prisma/migrations/20260307051222_programmable-secrets-policy-schema/migration.sql",
             "prisma/migrations/20260307051222_programmable-secrets-policy-schema/snapshot.json",
+            "db/schema.sql",
+            "db/migration.sql",
         ] {
             assert!(!credential_named_path(Path::new(path)), "{path}");
         }
