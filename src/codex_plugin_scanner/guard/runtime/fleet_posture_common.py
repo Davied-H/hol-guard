@@ -85,7 +85,7 @@ def normalized_timestamp(value: object) -> str | None:
     return iso(parsed) if parsed is not None else None
 
 
-def sha256_text(text: str) -> str:
+def text_digest(text: str) -> str:
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -95,7 +95,7 @@ def digest_rows(rows: Iterable[Iterable[object]]) -> str:
     ordered = sorted(
         ([("" if cell is None else str(cell)) for cell in row] for row in rows),
     )
-    return sha256_text(json.dumps(ordered, separators=(",", ":"), ensure_ascii=False))
+    return text_digest(json.dumps(ordered, separators=(",", ":"), ensure_ascii=False))
 
 
 def normalized_hash(value: object) -> str | None:
