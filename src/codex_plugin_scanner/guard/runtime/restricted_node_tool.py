@@ -310,9 +310,7 @@ def prepare_restricted_node_tool(
     elif name in {"bun", "npm", "pnpm", "yarn"}:
         task = _script_task(name, args)
         if task is None:
-            raise RestrictedPytestError(
-                "node_tool_invalid_command", "Only a single named package script is supported."
-            )
+            raise RestrictedPytestError("node_tool_invalid_command", "Only a single named package script is supported.")
         if sys.platform == "win32":
             raise RestrictedPytestError(
                 PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE, "Package scripts do not run contained on Windows yet."

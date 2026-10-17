@@ -358,9 +358,7 @@ fn tool_script(
         }
         // Prettier publishes one entrypoint per major, and only a checking
         // mode reports instead of rewriting the files it visits.
-        "prettier" if super::restricted_tests::prettier_checks(arguments) => {
-            (&super::restricted_tests::PRETTIER_ENTRIES, NODE_TOOL)
-        }
+        "prettier" if super::prettier_checks(arguments) => (&super::PRETTIER_ENTRIES, NODE_TOOL),
         "vite" if arguments.first().is_some_and(|word| word == "build") => {
             (&["vite/bin/vite.js"], NODE_BUILD)
         }
