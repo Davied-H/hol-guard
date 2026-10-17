@@ -16,7 +16,9 @@
 //! retry hint of a resolved request. Resolving, resuming, opening, unlocking and
 //! clearing approvals are separate subcommands and stay reviewed or blocked. The
 //! bare `approvals` form, like `dashboard`, may open the user's own approval
-//! center once for the next pending request; it resolves nothing.
+//! center once for the next pending request; it resolves nothing. Building the
+//! queue snapshot also applies a due Watch-posture revert, which only moves a
+//! posture back to protected and never weakens one.
 //!
 //! Like every other bare-name proof here, the inherited `PATH` is a host trust
 //! input: Rust has no resolved executable identity. A launcher sitting in the

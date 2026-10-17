@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 from codex_plugin_scanner.cli import main
-from codex_plugin_scanner.guard import approvals as approvals_module
 from codex_plugin_scanner.guard.cli import approval_commands as approval_commands_module
 from codex_plugin_scanner.guard.models import GuardApprovalRequest
 from codex_plugin_scanner.guard.store import GuardStore
@@ -67,21 +66,3 @@ class TestApprovalsListCommand:
 
         assert rc == 0
         assert store.get_approval_request("req-list-2")["status"] == "pending"
-
-    def test_queue_reads_leave_a_due_posture_revert_to_the_daemon(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        home_dir = tmp_path / "guard-home"
-        GuardStore(home_dir)
-        reverts: list[Path] = []
-        monkeypatch.setattr(
-            approvals_module,
-            "maybe_auto_revert_watch",
-            lambda guard_home: reverts.append(guard_home) or approvals_module.load_guard_config(guard_home),
-        )
-        monkeypatch.setattr(approval_commands_module, "open_browser_url", lambda _url: True)
-
-        for argv in (["approvals", "list"], ["approvals"]):
-            rc = main(["guard", *argv, "--home", str(home_dir), "--json"])
-            capsys.readouterr()
-            assert rc == 0
-
-        assert reverts == []

@@ -1200,7 +1200,6 @@ def build_runtime_snapshot(
     include_items: bool = True,
     containment_health: object = None,
     serving_runtime: Mapping[str, object] | None = None,
-    apply_scheduled_posture_reverts: bool = True,
 ) -> dict[str, object]:
     # Each store call otherwise opens its own connection. That made this
     # control-plane read take several seconds on an ordinary local store.
@@ -1215,7 +1214,6 @@ def build_runtime_snapshot(
             include_items=include_items,
             containment_health=containment_health,
             serving_runtime=serving_runtime,
-            apply_scheduled_posture_reverts=apply_scheduled_posture_reverts,
         )
 
 
@@ -1230,7 +1228,6 @@ def _build_runtime_snapshot(
     include_items: bool = True,
     containment_health: object = None,
     serving_runtime: Mapping[str, object] | None = None,
-    apply_scheduled_posture_reverts: bool = True,
 ) -> dict[str, object]:
     queue_page = store.list_pending_approval_summaries(limit=1, exclude_watch_only=True)
     queue_items = queue_page["items"] if isinstance(queue_page["items"], list) else []
@@ -1242,13 +1239,7 @@ def _build_runtime_snapshot(
     next_request_id = active_request_id if active_is_pending else first_request_id
     latest_receipts = store.list_receipts(limit=receipt_limit) if receipt_limit > 0 else []
     snapshot_now = now or _now()
-    # A read-only caller (the approvals CLI an agent may run) leaves a due
-    # watch posture for the daemon to revert, so it writes no settings.
-    config = (
-        maybe_auto_revert_watch(store.guard_home)
-        if apply_scheduled_posture_reverts
-        else load_guard_config(store.guard_home)
-    )
+    config = maybe_auto_revert_watch(store.guard_home)
     latest_connect_state = _build_latest_connect_state(store, snapshot_now)
     oauth_storage_health = store.get_oauth_local_credential_health()
     cloud_context = _build_runtime_cloud_context(
