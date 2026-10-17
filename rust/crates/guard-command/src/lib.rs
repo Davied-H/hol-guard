@@ -784,6 +784,7 @@ pub(crate) mod semantic_workspace;
 pub mod shims;
 pub mod signals;
 pub mod skill_content_risk;
+pub mod skill_identity;
 pub mod supply_chain_bundle;
 pub mod supply_chain_package_identity;
 pub mod supply_chain_risk;
