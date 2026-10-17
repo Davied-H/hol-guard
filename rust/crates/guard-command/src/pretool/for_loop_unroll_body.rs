@@ -214,7 +214,17 @@ fn unquoted(item: &str) -> String {
                 let mut escaped = false;
                 for quoted in characters.by_ref() {
                     if escaped {
-                        built.push(quoted);
+                        // Inside double quotes a backslash escapes only these
+                        // characters, and a backslash-newline pair is a line
+                        // continuation that leaves nothing behind. Before any
+                        // other character the shell keeps the backslash as an
+                        // ordinary character of the word.
+                        if quoted != '\n' {
+                            if !matches!(quoted, '$' | '`' | '"' | '\\') {
+                                built.push('\\');
+                            }
+                            built.push(quoted);
+                        }
                         escaped = false;
                     } else if quoted == '"' {
                         break;
@@ -223,6 +233,9 @@ fn unquoted(item: &str) -> String {
                     } else {
                         built.push(quoted);
                     }
+                }
+                if escaped {
+                    built.push('\\');
                 }
             }
             '\\' => built.extend(characters.next()),

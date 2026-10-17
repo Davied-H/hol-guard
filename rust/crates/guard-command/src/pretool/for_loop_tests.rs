@@ -41,6 +41,12 @@ fn read_only_loops_match_their_unrolled_form() {
             "echo src/*.ts; echo tests/*.ts",
         ),
         ("for d in src/*/; do echo $d; done", "echo src/*/"),
+        // Inside double quotes a backslash before an ordinary character is
+        // part of the word, so `fi\le` is not the loop variable's name.
+        (
+            "for file in a b; do echo \"fi\\le\" \"$file\"; done",
+            "echo \"fi\\le\" \"a\"; echo \"fi\\le\" \"b\"",
+        ),
     ] {
         assert_eq!(decide(looped), decide(unrolled), "{looped}");
         assert_eq!(decide(looped).0, "allow", "{looped}");
