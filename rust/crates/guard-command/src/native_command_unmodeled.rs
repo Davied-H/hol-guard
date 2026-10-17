@@ -255,7 +255,7 @@ impl CompiledNativeCommandControls {
                 // launch such as `python3 -m http.server` looks like a script
                 // that was never read. The module name is already in the
                 // command.
-                None if !interpreter_launch_reads_a_file(&bare) => {}
+                None if !prefix::interpreter_launch_reads_a_file(&bare) => {}
                 None => return None,
             }
         }
@@ -475,7 +475,7 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         // read.
         Some("transparent_wrapper_not_yet_supported") => {
             let literal = unquoted_literal(&command.normalized_text);
-            prefix_launch_only(&literal)
+            prefix::launch_only(&literal)
                 && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
         }
         // A lookup in a substitution is the only one that does not run a
@@ -746,107 +746,11 @@ pub(crate) fn unread_file_interpreter(shell: &str) -> bool {
         })
 }
 
-/// Whether a backgrounded interpreter still names a program file this scan
-/// did not read. A `python -m` module launch does not: the module is an
-/// argument, same as the foreground command.
-fn interpreter_launch_reads_a_file(shell: &str) -> bool {
-    without_redirections(shell)
-        .split(|character: char| {
-            matches!(
-                character,
-                ';' | '&' | '|' | '(' | ')' | '{' | '}' | '\n' | '`'
-            )
-        })
-        .any(command_reads_a_program_file)
-}
-
-fn command_reads_a_program_file(piece: &str) -> bool {
-    let words: Vec<&str> = piece
-        .split_whitespace()
-        .map(|word| word.trim_matches(['\'', '"']))
-        .filter(|word| !word.is_empty() && !is_assignment(word))
-        .skip_while(|word| SHELL_PREFIXES.contains(word))
-        .collect();
-    let Some(program) = words.first() else {
-        return false;
-    };
-    let program = command_basename(program);
-    // A scheduling prefix carries its own options, so the word it hands the
-    // program is not at a fixed offset and cannot be counted to. It opens no
-    // file of its own, which leaves one thing it can stand in front of: an
-    // interpreter, and that interpreter is a word in this same piece. Reading
-    // the piece for one keeps `nice sh -c ...` unreadable while letting
-    // `nice -n 10 cargo build` name its programs the way `cargo build` does.
-    if PREFIX_LAUNCHERS.contains(&program.as_str()) {
-        return words[1..].iter().any(|word| {
-            let word = command_basename(word);
-            INTERPRETERS.contains(&word.as_str()) || is_python(&word)
-        });
-    }
-    if !is_python(program.as_str()) {
-        return INTERPRETERS.contains(&program.as_str());
-    }
-    !python_module_launch(&words[1..])
-}
-
-/// Whether the text is a scheduling prefix standing in front of the program it
-/// already names. Every other wrapper the parser leaves uncertain hides
-/// something the floor cannot read: a shell behind `-c` runs a program spelled
-/// in its own argument, `sudo` runs it as somebody else, and an `env` carrying
-/// a live assignment changes what it inherits. Those keep their failure.
-fn prefix_launch_only(literal: &str) -> bool {
-    let words: Vec<&str> = literal.split_whitespace().collect();
-    let Some(first) = words.first() else {
-        return false;
-    };
-    PREFIX_LAUNCHERS.contains(&command_basename(first).as_str())
-        && !interpreter_launch_reads_a_file(literal)
-}
-
-/// Prefixes that run the program the text names after them, changing how it is
-/// scheduled or buffered rather than who runs it or what it reads. `sudo`,
-/// `doas` and `chroot` change the user or the root they run under, `flock`
-/// takes a lock file, and the tracers write a file of their own, so none of
-/// them is here.
-const PREFIX_LAUNCHERS: &[&str] = &["nice", "nohup", "setsid", "stdbuf", "timeout", "gtimeout"];
-
 fn command_basename(word: &str) -> String {
     let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
     base.strip_suffix(".exe")
         .unwrap_or(base)
         .to_ascii_lowercase()
-}
-
-fn is_python(name: &str) -> bool {
-    name.strip_prefix("python").is_some_and(|version| {
-        version
-            .split('.')
-            .all(|part| part.is_empty() || part.bytes().all(|byte| byte.is_ascii_digit()))
-    })
-}
-
-/// `python -m module` before any script path, inline source, or stdin.
-fn python_module_launch(arguments: &[&str]) -> bool {
-    let mut index = 0;
-    while index < arguments.len() {
-        let argument = arguments[index];
-        if argument == "-m" {
-            return arguments.get(index + 1).is_some();
-        }
-        if argument == "-c" || argument == "-" || argument == "--" {
-            return false;
-        }
-        if matches!(argument, "-W" | "-X" | "--check-hash-based-pycs") {
-            index += 2;
-            continue;
-        }
-        if argument.starts_with('-') {
-            index += 1;
-            continue;
-        }
-        return false;
-    }
-    false
 }
 
 /// Whether a sourced file's own words name every program it runs.
@@ -1050,6 +954,9 @@ fn is_assignment(word: &str) -> bool {
         !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
     })
 }
+
+#[path = "native_command_unmodeled_prefix.rs"]
+mod prefix;
 
 #[cfg(test)]
 #[path = "native_command_unmodeled_tests.rs"]

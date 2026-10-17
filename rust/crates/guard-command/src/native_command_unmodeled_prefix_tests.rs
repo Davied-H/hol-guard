@@ -49,6 +49,40 @@ fn a_prefix_hiding_an_interpreter_keeps_the_failure() {
     assert_eq!(decision(&controls, "env FOO=1 npm run build").0, "review");
 }
 
+/// A launcher runs the program it is handed directly, so a script file behind
+/// one is a file whose own text names the programs it runs. Nothing here has
+/// read it, and `nice ./deploy.sh` must not be a way to run it unread.
+#[test]
+fn a_script_file_behind_a_prefix_keeps_the_failure() {
+    let controls = controls(github("enabled", None), false);
+    for command in [
+        "nice ./deploy.sh",
+        "nice -n 10 ../tools/build.sh",
+        "nohup ./scripts/release.sh",
+        "timeout 30 ./run.sh",
+        "setsid /usr/local/bin/deploy",
+        "stdbuf -oL release.py",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}
+
+/// The launcher's own options are counted through its documented grammar. An
+/// option that grammar does not cover, or a duration that is not one, leaves
+/// the program somewhere this scan cannot point to, so the failure stays.
+#[test]
+fn an_uncounted_option_keeps_the_failure() {
+    let controls = controls(github("enabled", None), false);
+    for command in [
+        "nice --cpu-shares 512 cargo build",
+        "nice -q cargo build",
+        "timeout --signal-name TERM 30 npm test",
+        "timeout thirty npm test",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}
+
 /// Reading the prefix does not read the command past it: a destructive program
 /// the text names still reaches its own owner, whose floor blocks. Prefixing
 /// `nice` must not be a way around that.
