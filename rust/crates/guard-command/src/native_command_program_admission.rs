@@ -4,6 +4,8 @@ use super::*;
 
 #[path = "native_command_program_admission_direct_mcp.rs"]
 mod direct_mcp;
+#[path = "native_command_program_pack_validation.rs"]
+mod pack_validation;
 
 pub(super) fn valid_direct_mcp_command(value: &str) -> bool {
     direct_mcp::valid_direct_mcp_command(value)
@@ -170,6 +172,14 @@ impl NativeCommandProgram {
         bytes: &[u8],
         mut observe_phase: impl FnMut(&'static str),
     ) -> Result<Self, &'static str> {
+        Self::from_bytes_observed(bytes, &mut observe_phase, None)
+    }
+
+    fn from_bytes_observed(
+        bytes: &[u8],
+        observe_phase: &mut impl FnMut(&'static str),
+        interfaces: Option<(&BTreeSet<String>, &BTreeSet<String>)>,
+    ) -> Result<Self, &'static str> {
         if bytes.len() > MAX_PROGRAM_BYTES {
             return Err("native_command_program_bytes_exceeded");
         }
@@ -309,10 +319,10 @@ impl NativeCommandProgram {
                                 )
                         })
                 })
-                || extension
-                    .dependencies
-                    .iter()
-                    .any(|id| !extension_indices.contains_key(id))
+                || extension.dependencies.iter().any(|id| {
+                    !extension_indices.contains_key(id)
+                        && interfaces.is_none_or(|(extensions, _)| !extensions.contains(id))
+                })
             {
                 return Err("native_command_extension_contract_invalid");
             }
@@ -332,7 +342,10 @@ impl NativeCommandProgram {
                     .dependencies
                     .iter()
                     .chain(&permission.implied_permissions)
-                    .any(|id| !permission_owners.contains_key(id))
+                    .any(|id| {
+                        !permission_owners.contains_key(id)
+                            && interfaces.is_none_or(|(_, permissions)| !permissions.contains(id))
+                    })
                 {
                     return Err("native_command_permission_dependency_invalid");
                 }
@@ -453,7 +466,9 @@ impl NativeCommandProgram {
             .filter(|rule| rule.matcher.is_none())
             .map(|rule| rule.rule_id.as_str())
             .collect();
-        if compatibility_ids != catalog_compatibility {
+        if (interfaces.is_none() && compatibility_ids != catalog_compatibility)
+            || (interfaces.is_some() && !catalog_compatibility.is_subset(&compatibility_ids))
+        {
             return Err("native_command_compatibility_inventory_mismatch");
         }
         let rule_indices = rules

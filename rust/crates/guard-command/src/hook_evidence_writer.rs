@@ -5,7 +5,7 @@
 //!
 //! TODO(deps): the surrounding evidence seams are still Python-owned. Store
 //! writes (`record_command_activity`, `record_composio_discovery`,
-//! `record_native_decision_receipt`, `persist_deferred_post_hook_command_activity`,
+//! `record_native_decision_receipt`, `transition_command_activity`,
 //! `is_exact_command_activity_pre_replay`), the journal filesystem
 //! helpers (`runtime_hook_evidence_journal`), correlation derivation and
 //! receipt building (`command_activity_privacy`, `command_activity_lifecycle`,
@@ -32,6 +32,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::hook_evidence_deferred_post::persist_deferred_post_hook_command_activity;
 use crate::local_supply_chain::utc_now_iso;
 use guard_contracts::{is_guard_action, write_canonical_json_with_limit};
 
@@ -77,16 +78,20 @@ pub trait EvidenceStoreApi {
         &self,
         receipt: &Map<String, Value>,
     ) -> Result<bool, io::Error>;
-    /// `persist_deferred_post_hook_command_activity(store, *, harness,
-    /// correlation, succeeded, has_command, invocation_preview)`.
-    fn persist_deferred_post_hook_command_activity(
+    /// `store.get_command_activity_by_request_correlation(correlation)` —
+    /// `Ok(None)` = no pre-hook row under that handle.
+    fn command_activity_by_request_correlation(
         &self,
-        harness: &str,
-        correlation: Option<&CorrelationHandle>,
-        succeeded: bool,
-        has_command: bool,
-        invocation_preview: Option<&str>,
-    ) -> Result<bool, io::Error>;
+        correlation: &CorrelationHandle,
+    ) -> Result<Option<Map<String, Value>>, io::Error>;
+    /// `store.transition_command_activity(current)` — `Ok(false)` = the stored
+    /// row already carried this proof.
+    fn transition_command_activity(&self, current: &Map<String, Value>) -> Result<bool, io::Error>;
+    /// `store.record_command_activity_observation_conflict(occurred_at=)`.
+    fn record_command_activity_observation_conflict(
+        &self,
+        occurred_at: &str,
+    ) -> Result<(), io::Error>;
 }
 
 /// `command_activity_*` seams: correlation derivation, command preview, and
@@ -126,6 +131,23 @@ pub trait CorrelationApi {
         receipt_id: Option<&str>,
         prompted: bool,
         approval_reuse_status: &str,
+    ) -> Result<Map<String, Value>, io::Error>;
+    /// `build_unpaired_post_evidence(*, activity_id, occurred_at, harness,
+    /// succeeded)` — post-hook evidence claiming no pre-hook decision.
+    fn build_unpaired_post_evidence(
+        &self,
+        activity_id: &str,
+        occurred_at: &str,
+        harness: &str,
+        succeeded: bool,
+    ) -> Result<Map<String, Value>, io::Error>;
+    /// `build_correlated_post_activity(previous, *, request_correlation,
+    /// succeeded)` — `Err` covers the Python `ValueError` guards.
+    fn build_correlated_post_activity(
+        &self,
+        previous: &Map<String, Value>,
+        request_correlation: &CorrelationHandle,
+        succeeded: bool,
     ) -> Result<Map<String, Value>, io::Error>;
 }
 
@@ -1338,7 +1360,7 @@ impl RuntimeHookEvidenceWriter {
 }
 
 /// Per-record persist result inside `_run`.
-enum PersistOutcome {
+pub(crate) enum PersistOutcome {
     Done,
     Deduped,
     Retry,
@@ -1549,16 +1571,11 @@ impl EvidenceWorker {
                 .unwrap_or(NonZeroU32::MIN),
         );
         if record.event != "PreToolUse" {
-            return match self.store.persist_deferred_post_hook_command_activity(
-                &record.harness,
-                record.correlation.as_ref(),
-                record.succeeded,
-                record.has_command,
-                record.invocation_preview.as_deref(),
-            ) {
-                Ok(_) => PersistOutcome::Done,
-                Err(_) => PersistOutcome::Retry,
-            };
+            return persist_deferred_post_hook_command_activity(
+                self.store.as_ref(),
+                self.deps.as_ref(),
+                record,
+            );
         }
         let (Some(policy_action), Some(occurred_at)) = (
             record.policy_action.as_deref(),
