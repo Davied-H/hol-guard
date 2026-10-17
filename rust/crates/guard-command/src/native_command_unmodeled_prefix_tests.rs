@@ -40,11 +40,13 @@ fn a_prefix_hiding_an_interpreter_keeps_the_failure() {
         "setsid node server.js",
         "nice -n 10 xargs rm -f",
         "sudo -E npm install -g pnpm",
-        "env FOO=1 npm run build",
         "sh -c 'npm run build'",
     ] {
         assert_eq!(decision(&controls, command).1, FAILED, "{command}");
     }
+    // An `env` carrying a live assignment reaches the installer's own owner,
+    // which reviews it. Reading the prefixes must not turn that into an allow.
+    assert_eq!(decision(&controls, "env FOO=1 npm run build").0, "review");
 }
 
 /// Reading the prefix does not read the command past it: a destructive program
