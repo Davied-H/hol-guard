@@ -170,6 +170,13 @@ const BUILD_OUTPUT_DOT_DIRECTORIES: &[&str] = &[
 /// parent makes them cache directories; the same name elsewhere stays reviewed.
 const NODE_MODULES_DOT_DIRECTORIES: &[&str] = &[".cache", ".vite", ".vite-temp"];
 
+/// Whether a hidden directory holds scratch or regenerated build output.
+fn regenerated_dot_directory(lowered: &str, in_node_modules: bool) -> bool {
+    SCRATCH_DOT_DIRECTORIES.contains(&lowered)
+        || BUILD_OUTPUT_DOT_DIRECTORIES.contains(&lowered)
+        || (in_node_modules && NODE_MODULES_DOT_DIRECTORIES.contains(&lowered))
+}
+
 /// A write whose hidden components are plain scratch names, such as
 /// `.tmp/check.mjs` or `.write-test` in a sibling checkout. No hidden
 /// component may sit directly in the home directory, where dot names are
@@ -196,11 +203,7 @@ pub(super) fn plain_dot_scratch_target(path: &Path, home_dir: Option<&str>) -> b
                     .file_name()
                     .is_some_and(|last| last == "node_modules");
                 if home.starts_with(&parent)
-                    || (directory
-                        && !SCRATCH_DOT_DIRECTORIES.contains(&lowered.as_str())
-                        && !BUILD_OUTPUT_DOT_DIRECTORIES.contains(&lowered.as_str())
-                        && !(in_node_modules
-                            && NODE_MODULES_DOT_DIRECTORIES.contains(&lowered.as_str())))
+                    || (directory && !regenerated_dot_directory(&lowered, in_node_modules))
                     || GUARDED_DOT_NAMES.contains(&lowered.as_str())
                     || GUARDED_DOT_PREFIXES
                         .iter()
