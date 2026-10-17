@@ -7,6 +7,9 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+/// The harness a marker spells is canonicalized on read, the way
+/// `store_mcp_provider_permissions._source` canonicalizes it, so the
+/// selector this store answers with names `claude-code`.
 const MARKER: &str = "observed-mcp:claude:mcp__composio__";
 
 fn identity() -> String {
@@ -99,7 +102,7 @@ fn a_blocked_provider_action_is_read_as_its_selector() {
     assert_eq!(
         choices(&connection),
         Ok(json!({
-            "claude:mcp__composio__:composio:all-accounts:GMAIL_SEND_EMAIL": "block"
+            "claude-code:mcp__composio__:composio:all-accounts:GMAIL_SEND_EMAIL": "block"
         }))
     );
 }

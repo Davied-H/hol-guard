@@ -130,7 +130,7 @@ impl MarkerSource {
 pub(crate) fn marker_source(marker: &str) -> Option<MarkerSource> {
     let (harness, namespace) = marker.strip_prefix(OBSERVED_MCP_PREFIX)?.split_once(':')?;
     let tool = observed_mcp_tool(harness, &format!("{namespace}probe"))?;
-    (tool.namespace == namespace).then(|| MarkerSource {
+    (tool.namespace == namespace).then_some(MarkerSource {
         harness: tool.harness,
         namespace: tool.namespace,
     })
