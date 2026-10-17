@@ -541,7 +541,10 @@ pub(crate) fn mark_contained(result: &mut PreToolResultV1) {
     result.reason_code = REASON.into();
     result.reason = concat!(
         "HOL Guard runs this command in a protected workspace sandbox ",
-        "(no network, no home access).",
+        "(no network, no home access, no PTY or Docker socket). Every program it ",
+        "starts, including children of an interpreter, runs contained and can write ",
+        "only the workspace and $TMPDIR; only commands Guard proves safe run ",
+        "directly, outside the sandbox.",
     )
     .into();
 }
