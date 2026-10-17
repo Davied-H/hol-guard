@@ -340,11 +340,7 @@ pub fn valid_prompt_risk_classes(value: &Value) -> bool {
 }
 
 /// `_bounded_identifier(value, pattern=, maximum=)`.
-fn bounded<'a>(
-    value: Option<&'a Value>,
-    pattern: fn(&str) -> bool,
-    maximum: usize,
-) -> Option<&'a str> {
+fn bounded(value: Option<&Value>, pattern: fn(&str) -> bool, maximum: usize) -> Option<&str> {
     let text = value?.as_str()?;
     if text.is_empty() || text.chars().count() > maximum || !pattern(text) {
         return None;

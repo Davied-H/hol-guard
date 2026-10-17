@@ -254,7 +254,11 @@ fn a_key_file_that_was_edited_is_refused_rather_than_replaced() {
         fs::create_dir_all(&home).expect("home");
         let path = home.join(CORRELATION_KEY_FILE);
         fs::write(&path, &body).expect("write");
-        let error = load_or_create_correlation_key(&home).expect_err("refused");
+        // Destructured rather than `expect_err`, which would need the key type
+        // to be printable; key material must never reach a panic message.
+        let Err(error) = load_or_create_correlation_key(&home) else {
+            panic!("refused: {body}");
+        };
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput, "{body}");
         // The unreadable key stays on disk: a writer that silently replaced it
         // would orphan every handle already recorded under it.
