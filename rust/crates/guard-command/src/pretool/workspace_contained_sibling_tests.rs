@@ -38,10 +38,27 @@ fn reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String {
     .reason_code
 }
 
+/// The stamped shell environment a harness sends with a command, naming the
+/// HOME the shell would expand `~` from.
+fn environment(home: &Path) -> guard_contracts::GuardExecutionEnvironmentV1 {
+    guard_contracts::GuardExecutionEnvironmentV1 {
+        path: std::env::var("PATH").unwrap_or_default(),
+        environment_names: vec!["HOME".to_owned(), "PATH".to_owned()],
+        environment_digest: "0".repeat(64),
+        home: Some(home.to_string_lossy().into_owned()),
+        git_pager_disabled: false,
+        pager_disabled: false,
+        xdg_config_home: None,
+        git_config_no_system: false,
+        library_search_paths: Default::default(),
+    }
+}
+
 /// The same evaluation for a command that spells its directory from home.
 /// A harness stamps the shell's HOME on the way in, and `~` proves only when
-/// that HOME is the declared one; no stamp leaves the runtime reading its own
-/// HOME, which is never a fixture's.
+/// that HOME is the declared one. The runtime rebuilds the path context from
+/// that stamp, so the fixture's home has to arrive stamped: without it the
+/// runtime reads its own HOME, which is never a fixture's.
 fn home_result(
     harness: &str,
     home: &Path,
@@ -49,6 +66,7 @@ fn home_result(
     command: &str,
 ) -> guard_contracts::PreToolResultV1 {
     let controls = controls();
+    let environment = environment(home);
     crate::pretool::evaluate_pre_tool_envelope_with_execution_context(
         harness,
         "PreToolUse",
@@ -65,7 +83,7 @@ fn home_result(
             ripgrep_config_absent: false,
             psql_environment: Default::default(),
         },
-        None,
+        Some(&environment),
     )
 }
 
