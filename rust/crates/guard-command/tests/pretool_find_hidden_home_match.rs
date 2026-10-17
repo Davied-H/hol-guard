@@ -148,3 +148,60 @@ fn a_root_inside_a_credential_store_keeps_its_review() {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }
 }
+
+#[test]
+fn a_print_before_the_pattern_keeps_its_review() {
+    let home = home("print-order");
+    for command in [
+        // `find` runs the print for every entry it reaches before the
+        // pattern filters anything, so the whole tree prints.
+        "find ~/.config/app-portal -print -name run.sh",
+        "find ~/.config/app-portal -print0 -name run.sh",
+        "find ~/.codex -print -name todo.md",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+    assert_eq!(
+        action(
+            &home,
+            "codex",
+            "find ~/.config/app-portal -name run.sh -print"
+        ),
+        "allow"
+    );
+}
+
+#[test]
+fn a_glob_that_could_reach_a_login_keeps_its_review() {
+    let home = home("glob");
+    for command in [
+        "find ~/.codex -maxdepth 4 -name \"*.json\"",
+        "find ~/.codex -maxdepth 4 -name \"*h.json\"",
+        "find ~/.codex -maxdepth 4 -name \"a?th.json\"",
+        "find ~/.codex -maxdepth 4 -name \"aut*\"",
+        "find ~/.codex -maxdepth 4 -name \"[ac]*.json\"",
+        "find ~/.config/app-portal -maxdepth 4 -name \"*.sh\"",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
+
+#[test]
+fn a_shared_root_keeps_its_review_once_the_walk_goes_deeper() {
+    let home = home("shared-root");
+    for command in [
+        // `~/.config` holds one directory per tool, so a walk below it prints
+        // paths through the credential stores the listing screen refuses.
+        "find ~/.config -name hosts.yml",
+        "find ~/.config -maxdepth 4 -name run.sh",
+        "find ~/.local/share -maxdepth 4 -name run.sh",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+    // The directory's own entry names still list: that walk stops at the
+    // tool directories themselves and never enters one.
+    assert_eq!(
+        action(&home, "codex", "find ~/.config -maxdepth 1"),
+        "allow"
+    );
+}

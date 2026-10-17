@@ -39,8 +39,14 @@ pub(super) fn safe_find_listing_arguments(
                 && (bounded_read_target(root, context.home_dir, context.cwd, true)
                     || super::search::skill_listing_root(root, context)
                     || super::search::agent_root_listing(root, context, true)
-                    || ((entries_only(expression) || match_bounded(expression))
+                    || (entries_only(expression)
                         && super::read_paths::home_hidden_directory(
+                            root,
+                            context.home_dir,
+                            context.cwd,
+                        ))
+                    || (match_bounded(expression)
+                        && super::read_paths::home_hidden_tool_directory(
                             root,
                             context.home_dir,
                             context.cwd,
@@ -109,6 +115,11 @@ fn match_bounded(expression: &[String]) -> bool {
                 }
                 bounded = true;
             }
+            // `find` evaluates left to right, so a print that runs before the
+            // first pattern prints every entry the walk reaches and the
+            // pattern after it filters nothing:
+            // `find ~/.codex -print -name run.sh` prints the whole tree.
+            "-print" | "-print0" if !bounded => return false,
             "-type" | "-maxdepth" | "-mindepth" => index += 1,
             _ => {}
         }
@@ -116,17 +127,30 @@ fn match_bounded(expression: &[String]) -> bool {
     bounded
 }
 
+/// Names prose is written under. A pattern anchored to one of these ends
+/// matches only documents: a token is not written in Markdown, and no
+/// credential, key or login file this screen refuses carries such a suffix.
+const DOCUMENT_SUFFIXES: [&str; 3] = [".md", ".markdown", ".rst"];
+
 /// Whether `pattern` names entries specifically enough that the walk prints
-/// only what the agent already named, and names nothing a secret is kept in.
+/// only what the agent already named, and can name nothing a secret is kept
+/// in.
 ///
-/// A pattern built of wildcards selects whatever the tree happens to hold, so
-/// it bounds nothing; one built around a literal prints only paths that
-/// already carry that word. The literal is then read the way a file name is:
-/// the stems and suffixes a token, key or settings file is written under are
-/// refused, as is anything aimed at a hidden entry, since below a home
-/// dot-directory that is where a tool keeps its own login. `.env` files are
-/// refused by name rather than by stem, because an environment file is named
-/// for what it holds wherever it sits.
+/// A wildcard stands for whatever the tree happens to hold, so a pattern
+/// built around one selects names the agent never wrote: `*.json` prints
+/// `auth.json`, `aut*` and `a?th.json` print it too, and `*h.json` gets past
+/// a check that reads the literal characters alone. Deciding which names a
+/// glob can reach means deciding it for every secret-bearing spelling, so
+/// this screen does not try: below a home dot-directory a pattern has to be
+/// the name itself, read the way a file name is read, with the stems and
+/// suffixes a token, key or settings file is written under refused, along
+/// with anything aimed at a hidden entry, which is where a tool keeps its own
+/// login. `.env` files are refused by name rather than by stem, because an
+/// environment file is named for what it holds wherever it sits.
+///
+/// The one glob that survives is a document suffix. `find ~/.codex -name
+/// "*.md"` is how an agent finds the notes a harness keeps, and the suffix is
+/// anchored at the end of the name, so every path it can print is prose.
 fn selects_ordinary_names(pattern: &str) -> bool {
     let lowered = pattern.to_ascii_lowercase();
     if lowered.starts_with('.')
@@ -136,14 +160,15 @@ fn selects_ordinary_names(pattern: &str) -> bool {
     {
         return false;
     }
-    let literal: String = lowered
-        .chars()
-        .filter(|character| !matches!(character, '*' | '?' | '[' | ']' | '{' | '}'))
-        .collect();
-    literal.chars().count() >= 3
-        && ![lowered.as_str(), literal.as_str()]
-            .iter()
-            .any(|name| crate::credential_store_names::secret_bearing_file_name(name))
+    if DOCUMENT_SUFFIXES
+        .iter()
+        .any(|suffix| lowered.ends_with(suffix))
+    {
+        return true;
+    }
+    !lowered.contains(['*', '?', '[', ']', '{', '}'])
+        && lowered.chars().count() >= 3
+        && !crate::credential_store_names::secret_bearing_file_name(&lowered)
 }
 
 fn safe_expression(expression: &[String]) -> bool {

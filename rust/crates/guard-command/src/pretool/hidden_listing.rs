@@ -8,7 +8,8 @@ use std::path::{Component, Path};
 #[path = "home_hidden_listing.rs"]
 mod home;
 pub(in crate::pretool) use home::{
-    home_hidden_content_read, home_hidden_directory, resolved_home_hidden_content_read,
+    home_hidden_content_read, home_hidden_directory, home_hidden_tool_directory,
+    resolved_home_hidden_content_read,
 };
 
 /// Agent state and tool trees whose entry names reveal agent state inside a

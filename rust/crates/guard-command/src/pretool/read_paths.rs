@@ -14,7 +14,8 @@ mod omp_json_query;
 mod omp_targets;
 use hidden_listing::resolved_home_hidden_content_read;
 pub(super) use hidden_listing::{
-    home_hidden_content_read, home_hidden_directory, repository_hidden_directory,
+    home_hidden_content_read, home_hidden_directory, home_hidden_tool_directory,
+    repository_hidden_directory,
 };
 #[path = "private_temporary_workspace.rs"]
 mod private_temporary;

@@ -86,6 +86,36 @@ fn resolved_home_entry(
     Some((canonical.clone(), relative.to_path_buf()))
 }
 
+/// Whether `value` names a directory one tool owns, rather than a root that
+/// several tools keep their own directories under.
+///
+/// A depth-bounded listing prints the entries of the directory it was handed
+/// and stops there, so `~/.config` prints the names of the tool directories
+/// below it and nothing from inside them. A walk with no depth bound prints
+/// what those directories hold, and below `~/.config` and `~/.local/share`
+/// that is where the credential stores live: `find ~/.config -name hosts.yml`
+/// would print a path through `~/.config/gh`, which the listing screen
+/// refuses to name. A tool's own directory has no such shared children, so a
+/// deeper walk stays inside the tree the agent actually named.
+pub(in crate::pretool) fn home_hidden_tool_directory(
+    value: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    if !home_hidden_directory(value, home_dir, cwd) {
+        return false;
+    }
+    let Some((_, relative)) = resolved_home_entry(value, home_dir, cwd) else {
+        return false;
+    };
+    let lowered = lowered_names(&relative);
+    match lowered.first().map(String::as_str) {
+        Some(".config") => lowered.len() > 1,
+        Some(".local") => lowered.len() > 2,
+        _ => true,
+    }
+}
+
 /// Paths a narrower rule already answers, with bounds this screen cannot see.
 ///
 /// [`crate::sfrs_agent_guidance`] admits `sed -n '1,200p' ~/.hol-support/SAFETY.md`
