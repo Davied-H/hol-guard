@@ -7463,6 +7463,8 @@ function ProtectionAuthorityNotice(props) {
 const GUARD_DISCOVERY_CLOUD_ORIGIN = "https://hol.org";
 const GUARD_DISCOVERY_ADVERTISE_PATH = "/guard/extensions/advertise?source=guard_local&intent=extension-promotion";
 const MIN_ORGANIC_ROWS_BEFORE_IN_FEED = 8;
+const IN_FEED_SLOT_INTERVAL = 10;
+const FIRST_IN_FEED_SLOT_INDEX = 6;
 function integerOrNull(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
@@ -7555,6 +7557,14 @@ function featuredWindowLabel(placement) {
   const ends = Date.parse(placement.endsAt);
   if (!Number.isFinite(ends)) return null;
   return `Featured until ${new Date(ends).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" })}`;
+}
+function inFeedSlotIndexes(rowCount) {
+  if (rowCount < 2) return [];
+  const indexes = [];
+  for (let index = Math.min(FIRST_IN_FEED_SLOT_INDEX, rowCount - 1); index < rowCount; index += IN_FEED_SLOT_INTERVAL) {
+    indexes.push(index);
+  }
+  return indexes;
 }
 function orderFeaturedFirst(extensions, featuredIds) {
   if (featuredIds.size === 0) return [...extensions];
@@ -10085,7 +10095,7 @@ function ExtensionsOverview(props) {
     () => slotInventoryLabel(discoveryOffers, CATALOG_SLOT_PRODUCTS),
     [discoveryOffers]
   );
-  const catalogSlotIndex = Math.min(6, Math.max(1, orderedCatalog.length - 1));
+  const catalogSlotIndexes = reactExports.useMemo(() => new Set(inFeedSlotIndexes(orderedCatalog.length)), [orderedCatalog.length]);
   const effective = props.effective;
   const isExtensionActive = reactExports.useCallback(
     (extension) => extensionEffectiveState(effective, extension) === "enabled",
@@ -10275,7 +10285,7 @@ function ExtensionsOverview(props) {
               },
               extension.extension_id
             );
-            if (!catalogSlotOpen || index !== catalogSlotIndex) return row;
+            if (!catalogSlotOpen || !catalogSlotIndexes.has(index)) return row;
             return /* @__PURE__ */ jsxRuntimeExports.jsxs(reactExports.Fragment, { children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 CatalogSlotRow,
