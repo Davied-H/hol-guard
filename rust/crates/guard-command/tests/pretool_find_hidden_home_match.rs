@@ -82,6 +82,7 @@ fn a_name_pattern_bounds_what_a_deeper_walk_prints() {
             "find ~/.agents/skills/github-pr-review-loop -type f -name \"*.md\"",
             "find ~/.agents -maxdepth 6 -iname \"REVIEW-MERGE.MD\"",
             "find ~/.codex -maxdepth 4 -name \"*.md\"",
+            "find ~/.config/app-portal -maxdepth 4 -name run.sh",
             "find ~/.agents ~/.config/app-portal -maxdepth 4 -name run.sh",
         ] {
             assert_eq!(
@@ -96,21 +97,23 @@ fn a_name_pattern_bounds_what_a_deeper_walk_prints() {
 #[test]
 fn an_unbounded_or_widened_expression_keeps_its_review() {
     let home = home("unbounded");
+    // `~/.agents` is a skill root, which lists without review whatever the
+    // expression says, so these use a dot-directory this rule alone reaches.
     for command in [
         // Nothing narrows the output, so the walk prints the whole tree.
-        "find ~/.agents -maxdepth 4",
-        "find ~/.agents -maxdepth 4 -type f",
+        "find ~/.config/app-portal -maxdepth 4",
+        "find ~/.config/app-portal -maxdepth 4 -type f",
         // Negation and alternation both print what the pattern excluded.
-        "find ~/.agents -maxdepth 4 -not -name \"*.md\"",
-        "find ~/.agents -maxdepth 4 ! -name \"*.md\"",
-        "find ~/.agents -maxdepth 4 -name \"*.md\" -o -name \"*.sh\"",
-        "find ~/.agents -maxdepth 4 \\( -name \"*.md\" \\)",
+        "find ~/.config/app-portal -maxdepth 4 -not -name \"*.md\"",
+        "find ~/.config/app-portal -maxdepth 4 ! -name \"*.md\"",
+        "find ~/.config/app-portal -maxdepth 4 -name \"*.md\" -o -name \"*.sh\"",
+        "find ~/.config/app-portal -maxdepth 4 \\( -name \"*.md\" \\)",
         // A pattern that selects everything bounds nothing.
-        "find ~/.agents -maxdepth 4 -name \"*\"",
+        "find ~/.config/app-portal -maxdepth 4 -name \"*\"",
         // `-path` matches the whole path, so a directory prefix satisfies it
         // and every entry below that directory prints.
-        "find ~/.agents -path \"*/scripts/*\"",
-        "find ~/.agents -wholename \"*/scripts/pr-approve-merge.sh\"",
+        "find ~/.config/app-portal -path \"*/scripts/*\"",
+        "find ~/.config/app-portal -wholename \"*/scripts/pr-approve-merge.sh\"",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }
@@ -120,13 +123,13 @@ fn an_unbounded_or_widened_expression_keeps_its_review() {
 fn a_pattern_that_could_name_a_credential_keeps_its_review() {
     let home = home("credential");
     for command in [
-        "find ~/.agents -maxdepth 4 -name .env",
-        "find ~/.agents -maxdepth 4 -name \".env*\"",
-        "find ~/.agents -maxdepth 4 -name \"*.pem\"",
-        "find ~/.agents -maxdepth 4 -name auth.json",
-        "find ~/.agents -maxdepth 4 -name credentials.json",
-        "find ~/.agents -maxdepth 4 -name \"id_*\"",
-        "find ~/.agents -maxdepth 4 -name config.toml",
+        "find ~/.config/app-portal -maxdepth 4 -name .env",
+        "find ~/.config/app-portal -maxdepth 4 -name \".env*\"",
+        "find ~/.config/app-portal -maxdepth 4 -name \"*.pem\"",
+        "find ~/.config/app-portal -maxdepth 4 -name auth.json",
+        "find ~/.config/app-portal -maxdepth 4 -name credentials.json",
+        "find ~/.config/app-portal -maxdepth 4 -name \"id_*\"",
+        "find ~/.config/app-portal -maxdepth 4 -name config.toml",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }
@@ -139,8 +142,8 @@ fn a_root_inside_a_credential_store_keeps_its_review() {
         "find ~/.ssh -maxdepth 2 -name \"*.pub\"",
         "find ~/.config/gh -maxdepth 2 -name \"*.yml\"",
         // An action runs a program per match whatever the pattern says.
-        "find ~/.agents -maxdepth 4 -name \"*.sh\" -exec cat {} ;",
-        "find ~/.agents -maxdepth 4 -name \"*.sh\" -delete",
+        "find ~/.config/app-portal -maxdepth 4 -name \"*.sh\" -exec cat {} ;",
+        "find ~/.config/app-portal -maxdepth 4 -name \"*.sh\" -delete",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }
