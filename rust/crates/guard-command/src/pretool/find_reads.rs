@@ -9,7 +9,8 @@
 //! because the expression prints names, never contents. The Oh My Pi
 //! `~/.agent` root may be one when its tree clears the walk `ls -R` needs.
 //! Another home dot-directory may be one when `-maxdepth 1` keeps the walk to
-//! its own entries.
+//! its own entries, or when the expression prints only the paths an ordinary
+//! name pattern selects.
 
 use super::safe_reads::{bounded_read_target, verified_path_context};
 
@@ -38,7 +39,7 @@ pub(super) fn safe_find_listing_arguments(
                 && (bounded_read_target(root, context.home_dir, context.cwd, true)
                     || super::search::skill_listing_root(root, context)
                     || super::search::agent_root_listing(root, context, true)
-                    || (entries_only(expression)
+                    || ((entries_only(expression) || match_bounded(expression))
                         && super::read_paths::home_hidden_directory(
                             root,
                             context.home_dir,
@@ -71,6 +72,78 @@ fn entries_only(expression: &[String]) -> bool {
         }
     }
     bounded
+}
+
+/// Whether the expression prints only the paths a name pattern selects.
+///
+/// `find` walks whatever its root holds, but what it prints is what the
+/// expression matches, and the depth bound is there for what a deeper walk
+/// would print rather than for the walking itself. A conjunction of `-name`
+/// patterns, none of which can name a credential store or the file a tool
+/// keeps its own login in, bounds the output to paths that name no account,
+/// host or key, however deep the walk goes: `find ~/.agents -maxdepth 4
+/// -name pr-approve-merge.sh` can print nothing else.
+///
+/// Alternation and negation both widen the output back to the whole tree
+/// (`-not -name '*.md'` prints everything else), so the expression must be a
+/// plain conjunction, and it must carry at least one pattern: an expression
+/// that only bounds depth or type still enumerates the tree. `-path` and its
+/// spellings match the whole path rather than the entry name, so a directory
+/// prefix alone satisfies them and they bound nothing here.
+fn match_bounded(expression: &[String]) -> bool {
+    let mut bounded = false;
+    let mut index = 0;
+    while index < expression.len() {
+        let token = expression[index].as_str();
+        index += 1;
+        match token {
+            "!" | "-not" | "-o" | "-or" | "(" | ")" | "-path" | "-ipath" | "-wholename"
+            | "-iwholename" => return false,
+            "-name" | "-iname" => {
+                let Some(pattern) = expression.get(index) else {
+                    return false;
+                };
+                index += 1;
+                if !selects_ordinary_names(pattern) {
+                    return false;
+                }
+                bounded = true;
+            }
+            "-type" | "-maxdepth" | "-mindepth" => index += 1,
+            _ => {}
+        }
+    }
+    bounded
+}
+
+/// Whether `pattern` names entries specifically enough that the walk prints
+/// only what the agent already named, and names nothing a secret is kept in.
+///
+/// A pattern built of wildcards selects whatever the tree happens to hold, so
+/// it bounds nothing; one built around a literal prints only paths that
+/// already carry that word. The literal is then read the way a file name is:
+/// the stems and suffixes a token, key or settings file is written under are
+/// refused, as is anything aimed at a hidden entry, since below a home
+/// dot-directory that is where a tool keeps its own login. `.env` files are
+/// refused by name rather than by stem, because an environment file is named
+/// for what it holds wherever it sits.
+fn selects_ordinary_names(pattern: &str) -> bool {
+    let lowered = pattern.to_ascii_lowercase();
+    if lowered.starts_with('.')
+        || lowered.contains(['/', '\\'])
+        || lowered.contains("..")
+        || lowered.contains("env")
+    {
+        return false;
+    }
+    let literal: String = lowered
+        .chars()
+        .filter(|character| !matches!(character, '*' | '?' | '[' | ']' | '{' | '}'))
+        .collect();
+    literal.chars().count() >= 3
+        && ![lowered.as_str(), literal.as_str()]
+            .iter()
+            .any(|name| crate::credential_store_names::secret_bearing_file_name(name))
 }
 
 fn safe_expression(expression: &[String]) -> bool {

@@ -1,0 +1,147 @@
+#![cfg(unix)]
+//! `find` below a home dot-directory, where a name pattern bounds what the
+//! walk prints.
+use guard_command::pretool::evaluate_pre_tool_envelope_with_context;
+use serde_json::json;
+use std::path::{Path, PathBuf};
+
+/// A home whose skill tree is several levels deep and holds an `.env` of its
+/// own, beside the credential stores a deeper walk must never name.
+fn home(name: &str) -> PathBuf {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/pretool-find-hidden-home-match")
+        .join(format!(
+            "{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+    let home = root.join("home");
+    for directory in [
+        ".agents/skills/github-pr-review-loop/scripts",
+        ".agents/skills/github-pr-review-loop/references",
+        ".agents/skills/cloudflare-vitals",
+        ".config/app-portal/scripts",
+        ".config/gh",
+        ".codex/plans",
+        ".ssh",
+        "work/project/.git",
+    ] {
+        std::fs::create_dir_all(home.join(directory)).unwrap();
+    }
+    for (path, contents) in [
+        (
+            ".agents/skills/github-pr-review-loop/SKILL.md",
+            "# Review loop\n",
+        ),
+        (
+            ".agents/skills/github-pr-review-loop/scripts/pr-approve-merge.sh",
+            "#!/bin/sh\necho merge\n",
+        ),
+        (
+            ".agents/skills/github-pr-review-loop/references/review-merge.md",
+            "# Merge\n",
+        ),
+        (".agents/skills/cloudflare-vitals/.env", "TOKEN=x\n"),
+        (".config/app-portal/scripts/run.sh", "#!/bin/sh\n"),
+        (".config/gh/hosts.yml", "example.com:\n"),
+        (".codex/auth.json", "{}\n"),
+        (".codex/plans/todo.md", "# Todo\n"),
+        (".ssh/id_ed25519", "key\n"),
+        ("work/project/.git/HEAD", "ref: refs/heads/main\n"),
+    ] {
+        std::fs::write(home.join(path), contents).unwrap();
+    }
+    std::fs::canonicalize(home).unwrap()
+}
+
+fn action(home: &Path, harness: &str, command: &str) -> String {
+    let cwd = home.join("work/project");
+    evaluate_pre_tool_envelope_with_context(
+        harness,
+        "PreToolUse",
+        &json!({"tool_name": "bash", "tool_input": {"command": command}}),
+        None,
+        None,
+        home.to_str(),
+        cwd.to_str(),
+    )
+    .minimum_action
+}
+
+#[test]
+fn a_name_pattern_bounds_what_a_deeper_walk_prints() {
+    let home = home("bounded");
+    for harness in ["claude-code", "codex", "omp"] {
+        for command in [
+            "find ~/.agents -maxdepth 4 -name pr-approve-merge.sh",
+            "find ~/.agents -maxdepth 4 -name \"pr-approve-merge.sh\" 2>/dev/null",
+            "find ~/.agents -name \"*review-loop*\" -type d",
+            "find ~/.agents/skills/github-pr-review-loop -type f -name \"*.md\"",
+            "find ~/.agents -maxdepth 6 -iname \"REVIEW-MERGE.MD\"",
+            "find ~/.codex -maxdepth 4 -name \"*.md\"",
+            "find ~/.agents ~/.config/app-portal -maxdepth 4 -name run.sh",
+        ] {
+            assert_eq!(
+                action(&home, harness, command),
+                "allow",
+                "{harness}: {command}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_unbounded_or_widened_expression_keeps_its_review() {
+    let home = home("unbounded");
+    for command in [
+        // Nothing narrows the output, so the walk prints the whole tree.
+        "find ~/.agents -maxdepth 4",
+        "find ~/.agents -maxdepth 4 -type f",
+        // Negation and alternation both print what the pattern excluded.
+        "find ~/.agents -maxdepth 4 -not -name \"*.md\"",
+        "find ~/.agents -maxdepth 4 ! -name \"*.md\"",
+        "find ~/.agents -maxdepth 4 -name \"*.md\" -o -name \"*.sh\"",
+        "find ~/.agents -maxdepth 4 \\( -name \"*.md\" \\)",
+        // A pattern that selects everything bounds nothing.
+        "find ~/.agents -maxdepth 4 -name \"*\"",
+        // `-path` matches the whole path, so a directory prefix satisfies it
+        // and every entry below that directory prints.
+        "find ~/.agents -path \"*/scripts/*\"",
+        "find ~/.agents -wholename \"*/scripts/pr-approve-merge.sh\"",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
+
+#[test]
+fn a_pattern_that_could_name_a_credential_keeps_its_review() {
+    let home = home("credential");
+    for command in [
+        "find ~/.agents -maxdepth 4 -name .env",
+        "find ~/.agents -maxdepth 4 -name \".env*\"",
+        "find ~/.agents -maxdepth 4 -name \"*.pem\"",
+        "find ~/.agents -maxdepth 4 -name auth.json",
+        "find ~/.agents -maxdepth 4 -name credentials.json",
+        "find ~/.agents -maxdepth 4 -name \"id_*\"",
+        "find ~/.agents -maxdepth 4 -name config.toml",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
+
+#[test]
+fn a_root_inside_a_credential_store_keeps_its_review() {
+    let home = home("store");
+    for command in [
+        "find ~/.ssh -maxdepth 2 -name \"*.pub\"",
+        "find ~/.config/gh -maxdepth 2 -name \"*.yml\"",
+        // An action runs a program per match whatever the pattern says.
+        "find ~/.agents -maxdepth 4 -name \"*.sh\" -exec cat {} ;",
+        "find ~/.agents -maxdepth 4 -name \"*.sh\" -delete",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}

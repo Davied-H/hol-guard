@@ -53,6 +53,7 @@ pub mod pretool_env_prefix_controls;
 pub mod pretool_file_copies;
 pub mod pretool_file_mutations;
 pub mod pretool_file_reads;
+pub mod pretool_find_hidden_home_match;
 pub mod pretool_forged_worktree;
 pub mod pretool_generic;
 pub mod pretool_generic_powershell;
