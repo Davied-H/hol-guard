@@ -427,7 +427,14 @@ fn record_negation(pattern: &str, base: &Path, negations: &mut Negations) {
             components.push(("*".to_owned(), true));
             continue;
         }
-        negations.all.push(component.to_owned());
+        // `**` names no entry of its own: it stands for the run of
+        // directories above the name that follows it, which is pushed here
+        // in its own turn. Pushed as a pattern it would match every pruned
+        // directory, so `dist/` beside `!**/notes.md` would read as a
+        // re-included `dist`.
+        if component != "**" {
+            negations.all.push(component.to_owned());
+        }
         let screened = !super::sensitive_path_argument(component)
             && !super::glob_can_select_sensitive_path(component);
         // A wildcard such as `.c[a]rgo` can re-include a whole hidden

@@ -38,15 +38,42 @@ fn sibling_search_with_literal_negations_is_allowed() {
 
 #[test]
 fn a_double_star_negation_naming_an_ordinary_file_is_allowed() {
-    // `!**/notes.md` re-includes that one name however deep it sits, and the
-    // name is an ordinary document, so the search is still proven.
-    let layout = layout("rg-sibling-negation-double-star-allowed");
-    let sibling = layout.org.join("service-api");
-    write(sibling.join(".gitignore"), "!**/notes.md\n");
-    write(sibling.join("docs/team/notes.md"), "fixture\n");
-    write(sibling.join("src/main.rs"), "fn main() {} // fixture\n");
-    let cwd = layout.org.join("app-portal");
-    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
+    // `!**/notes.md` re-includes that one name however deep it sits, which
+    // is what the bare name already means, and the name is an ordinary
+    // document. The rule decides nothing about the directories the pattern
+    // crosses, so `dist/` stays pruned and the search stays proven.
+    for (name, files) in [
+        (
+            "nested",
+            [
+                (".gitignore", "dist/\n!**/notes.md\n"),
+                ("docs/team/notes.md", "fixture\n"),
+            ],
+        ),
+        (
+            "root",
+            [
+                (".gitignore", "dist/\n!**/notes.md\n"),
+                ("notes.md", "fixture\n"),
+            ],
+        ),
+        (
+            "absent",
+            [
+                (".gitignore", "dist/\n!**/notes.md\n"),
+                ("src/main.rs", "fn main() {} // fixture\n"),
+            ],
+        ),
+    ] {
+        let layout = layout(&format!("rg-sibling-negation-double-star-{name}"));
+        let sibling = layout.org.join("service-api");
+        for (path, text) in files {
+            write(sibling.join(path), text);
+        }
+        write(sibling.join("dist/bundle.js"), "// fixture\n");
+        let cwd = layout.org.join("app-portal");
+        assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
+    }
 }
 
 #[test]
@@ -160,42 +187,4 @@ fn an_anchored_negation_decides_only_its_own_path() {
     assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api/src", true);
     // The search that reaches the root does meet the re-included file.
     assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", false);
-}
-
-#[test]
-fn probe_a_nested_document_without_any_negation() {
-    let layout = layout("rg-sibling-probe-plain-nested");
-    let sibling = layout.org.join("service-api");
-    write(sibling.join("docs/team/notes.md"), "fixture\n");
-    let cwd = layout.org.join("app-portal");
-    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
-}
-
-#[test]
-fn probe_a_bare_negation_of_a_nested_document() {
-    let layout = layout("rg-sibling-probe-bare-nested");
-    let sibling = layout.org.join("service-api");
-    write(sibling.join(".gitignore"), "!notes.md\n");
-    write(sibling.join("docs/team/notes.md"), "fixture\n");
-    let cwd = layout.org.join("app-portal");
-    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
-}
-
-#[test]
-fn probe_a_double_star_negation_of_a_root_document() {
-    let layout = layout("rg-sibling-probe-double-star-root");
-    let sibling = layout.org.join("service-api");
-    write(sibling.join(".gitignore"), "!**/notes.md\n");
-    write(sibling.join("notes.md"), "fixture\n");
-    let cwd = layout.org.join("app-portal");
-    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
-}
-
-#[test]
-fn probe_a_double_star_negation_with_no_matching_file() {
-    let layout = layout("rg-sibling-probe-double-star-absent");
-    let sibling = layout.org.join("service-api");
-    write(sibling.join(".gitignore"), "!**/notes.md\n");
-    let cwd = layout.org.join("app-portal");
-    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
 }

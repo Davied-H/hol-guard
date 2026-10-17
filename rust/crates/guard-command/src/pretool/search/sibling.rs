@@ -190,10 +190,19 @@ impl Ignored {
                 continue;
             };
             let pattern = pattern.strip_suffix('/').unwrap_or(pattern);
+            // A leading `**/` stands for any run of directories, which is
+            // what a bare name already means: `!**/notes.md` re-includes
+            // that name wherever it sits. A `**` anywhere else spans
+            // directories this walk would have to match depth by depth, and
+            // falls to the literal screen below.
+            let (pattern, any_depth) = match pattern.strip_prefix("**/") {
+                Some(rest) => (rest, true),
+                None => (pattern, false),
+            };
             // Git anchors a pattern to its ignore file's directory as soon as
             // it carries a slash anywhere but the end, so only a bare name
             // re-includes entries deeper down.
-            let anchored = pattern.strip_prefix('/').is_some() || pattern.contains('/');
+            let anchored = !any_depth && (pattern.starts_with('/') || pattern.contains('/'));
             let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
             let components: Vec<&str> = pattern.split('/').collect();
             let literal = components.iter().all(|component| plain_name(component));
