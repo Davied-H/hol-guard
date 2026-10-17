@@ -19,7 +19,8 @@
 //! the installation's and the snapshot's binaries; this parses manifests only
 //! and runs no module code. Granting `registryRead` instead would also expose
 //! the user's HKCU hive, including persisted environment variables, so only a
-//! build run, whose Node runtime cannot start Winsock without it, requests it.
+//! Node run, build or read-only, which cannot start Winsock without it,
+//! requests it.
 use super::AppContainer;
 use crate::bound_fs::{self, Directory};
 use crate::{CapturedOutput, Isolation, PinnedCommand};
@@ -63,8 +64,9 @@ pub struct ReadonlySnapshotRun<'a> {
     pub cancel: &'a AtomicBool,
     pub job_limits: guard_runtime_windows_process::ResourceLimits,
     pub build: Option<BuildRun<'a>>,
-    /// Copy the executable next to the snapshot, as a build does, so a
-    /// per-user install the LPAC token cannot read still starts.
+    /// Run Node as a build does: copy the executable next to the snapshot, so
+    /// a per-user install the LPAC token cannot read still starts, and request
+    /// `registryRead`, without which Winsock and so Node fail to start.
     pub stage_executable: bool,
 }
 
@@ -120,8 +122,10 @@ pub fn run_readonly_snapshot(run: ReadonlySnapshotRun<'_>) -> io::Result<Capture
     getrandom::fill(&mut suffix).map_err(io::Error::other)?;
     let name = format!("hol-guard-ro-{}", hex::encode(suffix));
     let mut container = AppContainer::create(&name)?;
-    if run.build.is_some() {
+    if run.build.is_some() || run.stage_executable {
         container.allow_registry_read()?;
+    }
+    if run.build.is_some() {
         // Granted while empty, so every copied object inherits write access.
         container.grant(&snapshot, true, true)?;
     }
