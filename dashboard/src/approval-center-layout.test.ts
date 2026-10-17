@@ -32,6 +32,14 @@ import type {
 import { renderToStaticMarkup } from "react-dom/server";
 import { buildWhatWouldHappen, PrimaryActionCard } from "./review-states";
 import { ReviewDecisionCard } from "./review-decision-card";
+import { ConnectorSetupCard } from "./connector-setup-card";
+import {
+  buildConnectorSetupGroups,
+  connectorGroupKey,
+  countConnectorSetupGroups,
+  isConnectorSetupItem,
+} from "./connector-setup-groups";
+import type { LocalCliItem } from "./local-cli-api";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -636,5 +644,131 @@ assert(
   !layoutSource.includes("queuedCount = queuedItems.length;\n  } else if (props.runtime.kind"),
   "inbox observations do not override the actionable runtime total",
 );
+
+// Connector setup: rows held only because a local CLI was never set up share
+// `connector:<identity_hash>:<action>` and collapse into one pinned card.
+{
+  const IDENTITY = "a1b2c3d4e5f6a7b8c9d0";
+  const connectorRow = (id: string, digest: string, command: string, extra: Partial<GuardApprovalRequest> = {}) => ({
+    ...BASE_REQUEST,
+    request_id: id,
+    policy_action: "review" as GuardAction,
+    queue_group_id: `connector:${IDENTITY}:${digest}`,
+    trigger_summary: "Running lanectl to check the local lane",
+    workspace: "/workspace/sample-project",
+    action_envelope_json: { ...BASE_ENVELOPE, action_type: "shell_command", command, workspace: "/workspace/sample-project" },
+    ...extra,
+  });
+  const statusRow = connectorRow("conn-1", "0011223344556677", "lanectl status --port 1", {
+    dedupe_count: 3,
+    last_seen_at: "2026-04-11T12:05:00Z",
+  });
+  const listenRow = connectorRow("conn-2", "8899aabbccddeeff", "lanectl listen ./notes.txt");
+  const otherRow = connectorRow("conn-3", "0000000000000001", "echo-mcp run", {
+    queue_group_id: "connector:ffffeeeeddddcccc:0000000000000001",
+  });
+  const ordinary: GuardApprovalRequest = { ...shellRequest, request_id: "ordinary-1", queue_group_id: "dup:abc" };
+  const lanectl = {
+    cli_id: "local-cli.lanectl",
+    name: "lanectl",
+    display_name: "lanectl",
+    identity_hash: IDENTITY,
+    surface: "cli",
+    source_label: "~/.local/bin",
+    commands: [
+      { command_id: "status", name: "status", usage: "", description: "", parent_id: null, state: "inherit" },
+      { command_id: "listen", name: "listen", usage: "", description: "", parent_id: null, state: "inherit" },
+      { command_id: "port", name: "port", usage: "", description: "", parent_id: "status", state: "inherit" },
+    ],
+  } as unknown as LocalCliItem;
+
+  assert(connectorGroupKey(statusRow.queue_group_id) === `connector:${IDENTITY}`, "group key keeps the first two segments");
+  assert(connectorGroupKey("dup:abc") === null, "ordinary queue groups are not connector groups");
+  assert(connectorGroupKey("connector:") === null, "a connector group without an identity is ignored");
+  assert(isConnectorSetupItem(statusRow) && !isConnectorSetupItem(ordinary), "only connector rows need setup");
+  assert(
+    !isConnectorSetupItem({ ...statusRow, status: "resolved" }),
+    "resolved connector rows leave the Needs setup card",
+  );
+
+  const items = [ordinary, listenRow, statusRow, otherRow];
+  assert(countConnectorSetupGroups(items) === 2, "the Needs setup badge counts connectors, not rows");
+  const groups = buildConnectorSetupGroups(items, [lanectl]);
+  assert(groups.length === 2, "one card per connector identity");
+  const lane = groups.find((group) => group.identityHash === IDENTITY);
+  assert(lane !== undefined, "the lanectl connector is grouped");
+  assert(lane!.items.length === 2, "distinct actions on one connector stay as separate evidence rows");
+  assert(lane!.callCount === 4, "merged retries count toward calls waiting on the connector");
+  assert(lane!.setupHref === "/extensions/local-cli/local-cli.lanectl", "a resolved connector links to its Protect page");
+  assert(
+    lane!.triedCommands.join(",") === "listen,status",
+    "tried commands come from the catalog and never include operands",
+  );
+  assert(!lane!.caution, "plain connector calls carry no caution");
+  const unresolved = groups.find((group) => group.identityHash !== IDENTITY);
+  assert(unresolved?.setupHref === "/extensions", "an unresolved connector falls back to the Protect list");
+  assert(unresolved?.triedCommands.length === 0, "without a catalog nothing from the command line is shown");
+
+  const cautionGroups = buildConnectorSetupGroups(
+    [
+      statusRow,
+      connectorRow("conn-4", "1111111111111111", "lanectl wipe", {
+        extension_recommendation: { caution: true } as GuardApprovalRequest["extension_recommendation"],
+      }),
+    ],
+    [lanectl],
+  );
+  assert(cautionGroups[0].caution && cautionGroups[0].cautionCount === 1, "a caution row marks the whole card");
+
+  const gate = { configured: true, enabled: true } as unknown as GuardApprovalGatePublicConfig;
+  const originalWindow = (globalThis as { window?: unknown }).window;
+  const storage = { getItem: () => null, setItem: () => undefined, removeItem: () => undefined };
+  (globalThis as { window?: unknown }).window = {
+    location: { origin: "http://127.0.0.1:4174", pathname: "/", search: "", hash: "" },
+    sessionStorage: storage,
+    localStorage: storage,
+  };
+  const card = renderToStaticMarkup(
+    createElement(ConnectorSetupCard, {
+      group: lane!,
+      approvalGate: gate,
+      activeRequestId: null,
+      onOpenRequest: () => undefined,
+    }),
+  );
+  assert(card.includes("Needs setup") && card.includes("lanectl"), "the card names the connector");
+  assert(card.includes("4 calls waiting on this"), "the card shows how many calls wait on setup");
+  assert(card.includes("Running lanectl to check the local lane"), "the card shows what the agent was doing");
+  assert(card.includes("sample-project"), "the card shows the workspace label");
+  assert(card.includes("lanectl status --port 1") && card.includes("lanectl listen ./notes.txt"), "every row stays listed as evidence");
+  assert(card.includes("<details"), "evidence rows are expandable from Review details");
+  assert(!card.includes("destructive or touch"), "no caution banner without a caution row");
+  const cautionCard = renderToStaticMarkup(
+    createElement(ConnectorSetupCard, {
+      group: cautionGroups[0],
+      approvalGate: gate,
+      activeRequestId: null,
+      onOpenRequest: () => undefined,
+    }),
+  );
+  assert(cautionCard.includes("destructive or touch"), "a caution row shows the caution banner on the card");
+  assert(card.includes('href="/extensions/local-cli/local-cli.lanectl"'), "Set up deep-links into the Protect flow");
+  const ungatedCard = renderToStaticMarkup(
+    createElement(ConnectorSetupCard, {
+      group: lane!,
+      approvalGate: null,
+      activeRequestId: null,
+      onOpenRequest: () => undefined,
+    }),
+  );
+  assert(
+    ungatedCard.includes("Set up approval password") && !ungatedCard.includes("Block on this device"),
+    "without an approval gate the card links to approval setup first",
+  );
+  (globalThis as { window?: unknown }).window = originalWindow;
+
+  const cardSource = readFileSync(fileURLToPath(new URL("./connector-setup-card.tsx", import.meta.url)), "utf8");
+  assert(!/applyLocalCliMutation|previewLocalCliMutation|onResolve|"allowed"/.test(cardSource), "the card never writes grants itself");
+}
 
 console.log("approval-center-layout.test.ts: all tests passed");

@@ -39,6 +39,8 @@ import { useQueueBulkApprove } from "./use-queue-bulk-approve";
 import { ReviewDecisionCard } from "./review-decision-card";
 import { ReviewHeader, ReviewQueueList } from "./review-queue-list";
 import { ReviewEmptyState } from "./review-states";
+import { ConnectorSetupCards, useConnectorSetupClis } from "./connector-setup-card";
+import { buildConnectorSetupGroups, countConnectorSetupGroups, isConnectorSetupItem } from "./connector-setup-groups";
 
 export type ReviewViewModel = {
   item: GuardApprovalRequest;
@@ -86,6 +88,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const [categoryFilter, setCategoryFilter] = useState<QueueCategoryId | "all">("all");
   const [sortDirection, setSortDirection] = useState<QueueSortDirection>("newest");
   const [semanticFilter, setSemanticFilter] = useState<SemanticGroupId>("all");
+  const [setupFilter, setSetupFilter] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [mobileQueueOpen, setMobileQueueOpen] = useState(false);
@@ -105,8 +108,12 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     setMobileQueueOpen((v) => !v);
   }, []);
 
+  const setupGroupCount = useMemo(() => countConnectorSetupGroups(requests), [requests]);
+  const setupClis = useConnectorSetupClis(setupGroupCount > 0);
+  const setupGroups = useMemo(() => buildConnectorSetupGroups(requests, setupClis), [requests, setupClis]);
+
   const filteredRequests = useMemo(() => {
-    let items = requests;
+    let items = setupFilter ? requests.filter(isConnectorSetupItem) : requests;
     if (semanticFilter !== "all") {
       const group = REVIEW_SEMANTIC_GROUPS.find((g) => g.id === semanticFilter);
       if (group && group.matches.length > 0) {
@@ -118,11 +125,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     items = filterQueueByDateRange(items, { from: dateFrom, to: dateTo });
     const searched = searchQueue(items, searchTerm);
     return sortQueue(searched, sortDirection);
-  }, [categoryFilter, dateFrom, dateTo, requests, searchTerm, sortDirection, semanticFilter]);
+  }, [categoryFilter, dateFrom, dateTo, requests, searchTerm, setupFilter, sortDirection, semanticFilter]);
 
   useEffect(() => {
     setPage(1);
-  }, [searchTerm, categoryFilter, sortDirection, semanticFilter, dateFrom, dateTo]);
+  }, [searchTerm, categoryFilter, sortDirection, semanticFilter, setupFilter, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRequests.length / QUEUE_PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -288,6 +295,13 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       )}
       <QueueBulkDrawer {...bulkApprove.drawer} />
 
+      <ConnectorSetupCards
+        groups={setupGroups}
+        approvalGate={props.approvalGate ?? null}
+        activeRequestId={activeItem.request_id}
+        onOpenRequest={handleOpenRequest}
+      />
+
       <div className="md:hidden">
         <button
           onClick={handleToggleMobileQueue}
@@ -312,6 +326,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             searchTerm={searchTerm}
             sortDirection={sortDirection}
             semanticFilter={semanticFilter}
+            setupFilter={setupFilter}
+            setupGroupCount={setupGroupCount}
             dateFrom={dateFrom}
             dateTo={dateTo}
             page={currentPage}
@@ -320,6 +336,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             onSearchTermChange={setSearchTerm}
             onSortDirectionChange={setSortDirection}
             onSemanticFilterChange={setSemanticFilter}
+            onSetupFilterChange={setSetupFilter}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
             onPageChange={setPage}
