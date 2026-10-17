@@ -51,6 +51,9 @@ pub(super) fn execution_free_paging(
             | "diff"
             | "log"
             | "show"
+            | "blame"
+            | "describe"
+            | "reflog"
             | "grep"
             | "branch"
             | "hash-object"
@@ -76,6 +79,11 @@ pub(super) fn execution_free_paging(
         return None;
     }
     if operation == "rev-list" && !super::git_rev_list::read_form(&remaining[1..]) {
+        return None;
+    }
+    if matches!(operation, "blame" | "describe" | "reflog")
+        && !super::git_history_reads::read_form(operation, &remaining[1..])
+    {
         return None;
     }
     // A plain configuration write is no read; its own proof decides it.
@@ -270,7 +278,7 @@ fn probe(
     // config pages by default only for its listing forms.
     let pages_by_default = match operation {
         "status" | "hash-object" | "merge-base" | "ls-tree" | "cat-file" | "show-ref"
-        | "for-each-ref" | "rev-list" => false,
+        | "for-each-ref" | "rev-list" | "describe" => false,
         "config" => super::git_config_reads::pages_by_default(&remaining[1..]),
         _ => true,
     };
