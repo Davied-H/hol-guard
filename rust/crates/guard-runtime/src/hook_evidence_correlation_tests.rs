@@ -205,7 +205,7 @@ fn one_key_is_created_once_and_read_back() {
     let leftovers: Vec<_> = fs::read_dir(&home)
         .expect("listing")
         .filter_map(Result::ok)
-        .filter(|entry| entry.file_name() != std::ffi::OsString::from(CORRELATION_KEY_FILE))
+        .filter(|entry| entry.file_name() != CORRELATION_KEY_FILE)
         .collect();
     assert!(leftovers.is_empty());
     let _ = fs::remove_dir_all(&home);
