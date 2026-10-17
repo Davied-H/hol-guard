@@ -82,6 +82,17 @@ pub(super) fn custom_rule_response(
     }
 }
 
+/// Whether the daemon would read a custom grant for this `PreToolUse`: the
+/// payload names a command and a launch directory, and the command launches a
+/// local CLI. `Err` is any failure the daemon could still resolve to a launch.
+pub(super) fn launches_local_cli(
+    payload: &Map<String, Value>,
+    workspace: &str,
+    home_dir: &str,
+) -> Result<bool, ()> {
+    launch_for(payload, workspace, home_dir).map(|launched| launched.is_some())
+}
+
 /// A local CLI launch with the invocation the daemon derives its command
 /// tokens from.
 struct Launched<'a> {
