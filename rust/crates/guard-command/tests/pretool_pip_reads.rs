@@ -149,16 +149,29 @@ fn inherited_pip_configuration_returns_a_listing_to_review() {
         "PIP_LOG",
         "PIP_OUTDATED",
         "PIP_INDEX_URL",
+        // Each of these moves a directory pip resolves its configuration
+        // files through, so none leaves the file check looking at the files
+        // pip would actually read.
         "XDG_CONFIG_HOME",
+        "XDG_CONFIG_DIRS",
+        "XDG_DATA_HOME",
+        "XDG_DATA_DIRS",
     ] {
         assert_ne!(decide_with(&home, "pip list", &[name]), "allow", "{name}");
     }
-    // Options that only change how pip prints leave the listing admitted.
+    // Options that only change how pip prints leave the listing admitted, and
+    // so do the session variables that name no directory pip reads
+    // configuration from.
     assert_eq!(
         decide_with(
             &home,
             "pip list",
-            &["PIP_DISABLE_PIP_VERSION_CHECK", "PIP_REQUIRE_VIRTUALENV"],
+            &[
+                "PIP_DISABLE_PIP_VERSION_CHECK",
+                "PIP_REQUIRE_VIRTUALENV",
+                "XDG_RUNTIME_DIR",
+                "XDG_SESSION_TYPE",
+            ],
         ),
         "allow"
     );
@@ -184,6 +197,21 @@ fn a_user_configuration_file_that_adds_an_option_returns_a_listing_to_review() {
             ".pip",
             "pip.conf",
             "[global]\nindex-url = https://example.invalid/simple\n",
+            false,
+        ),
+        // The user configuration directory pip asks platformdirs for is this
+        // one on macOS, so a listing is admitted only when it holds nothing
+        // either.
+        (
+            "Library/Application Support/pip",
+            "pip.conf",
+            "[global]\nquiet = 1\n",
+            true,
+        ),
+        (
+            "Library/Application Support/pip",
+            "pip.conf",
+            "[list]\noutdated = true\n",
             false,
         ),
     ] {

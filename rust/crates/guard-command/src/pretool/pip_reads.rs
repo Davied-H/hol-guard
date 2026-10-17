@@ -25,10 +25,12 @@
 //! never named. So the proof also needs pip's environment and the user
 //! configuration file to leave the command alone.
 //!
-//! The site configuration beside the interpreter, and `/etc/pip.conf`, are
-//! not checked: writing either one already means controlling the `pip` the
-//! command runs, which is the larger capability. See [`super::npm_reads`] for
-//! the same proof over `.npmrc`.
+//! The site configuration beside the interpreter, and the global files under
+//! `/etc` and `/Library`, are not checked: writing any of them already means
+//! controlling the `pip` the command runs, which is the larger capability.
+//! The `XDG_` variables that would move the global files somewhere a user can
+//! write are rejected with the rest of pip's environment. See
+//! [`super::npm_reads`] for the same proof over `.npmrc`.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -77,9 +79,12 @@ pub(super) fn safe_pip_segment(
         && configuration_inert(context)
 }
 
-/// pip reads `~/.config/pip/pip.conf` and the legacy `~/.pip/pip.conf`.
-/// `XDG_CONFIG_HOME`, which moves the first, is already part of
-/// [`super::PathContext::pip_config_inert`].
+/// pip reads the legacy `~/.pip/pip.conf` and the file under whichever
+/// configuration directory platformdirs hands the running interpreter:
+/// `~/.config/pip/pip.conf` on Linux, `~/Library/Application Support/pip/
+/// pip.conf` on macOS. Both are checked on every platform, since the proof
+/// cannot see which interpreter the command reaches. The `XDG_` names that
+/// move them are already part of [`super::PathContext::pip_config_inert`].
 fn configuration_inert(context: super::PathContext<'_>) -> bool {
     let Some(home) = context.home_dir.map(Path::new) else {
         return false;
@@ -88,6 +93,10 @@ fn configuration_inert(context: super::PathContext<'_>) -> bool {
         && [
             home.join(".config").join("pip").join("pip.conf"),
             home.join(".pip").join("pip.conf"),
+            home.join("Library")
+                .join("Application Support")
+                .join("pip")
+                .join("pip.conf"),
         ]
         .iter()
         .all(|path| pip_conf_inert(path))

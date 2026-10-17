@@ -448,9 +448,19 @@ fn rustup_selector(name: &str) -> bool {
 /// command cannot set the hook's environment.
 /// Variables pip reads before any option on the command line, beyond the ones
 /// that only change how it prints.
+///
+/// pip asks platformdirs where its user and global configuration files live,
+/// so the four names platformdirs resolves those directories from move a
+/// `pip.conf` out of the directories the file check reads: the config names
+/// on Linux, and the data names on macOS, where a configuration directory is
+/// a data directory. The remaining `XDG_` names, `XDG_RUNTIME_DIR` among
+/// them, name no directory pip reads configuration from.
 fn pip_selector(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
-    if upper == "XDG_CONFIG_HOME" {
+    if matches!(
+        upper.as_str(),
+        "XDG_CONFIG_HOME" | "XDG_CONFIG_DIRS" | "XDG_DATA_HOME" | "XDG_DATA_DIRS"
+    ) {
         return true;
     }
     upper.starts_with("PIP_")
