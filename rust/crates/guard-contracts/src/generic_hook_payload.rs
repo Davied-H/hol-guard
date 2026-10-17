@@ -188,6 +188,54 @@ const GENERIC_HOOK_NON_CONTENT_FIELDS: &[&str] = &[
     "user_override",
 ];
 
+/// `cursor_observer_event_for_blocking`
+/// (`adapters/cursor_native_approval.py:169-170`): the after-observer event
+/// that answers a blocking Cursor event, if any.
+pub fn cursor_observer_event_for_blocking(blocking_event: &str) -> Option<&'static str> {
+    match blocking_event.trim() {
+        "beforeShellExecution" => Some("afterShellExecution"),
+        "beforeMCPExecution" => Some("afterMCPExecution"),
+        _ => None,
+    }
+}
+
+/// `cursor_observer_event_for_payload`
+/// (`adapters/cursor_native_approval.py:173-183`): which observer event this
+/// payload is attested under.
+///
+/// The answer is a field of the message the after-observer proof is computed
+/// over, and the side that issues a proof and the side that checks it both
+/// derive it from a payload the harness supplies. Two copies of this
+/// selection would silently invalidate every proof the moment they disagreed,
+/// so the resident answers for both. A key naming an event that is neither an
+/// observer event nor a blocking event it answers is passed over rather than
+/// taken, and a payload naming none of them is attested under
+/// `afterShellExecution`.
+pub fn cursor_observer_event_for_payload(payload: &Map<String, Value>) -> &'static str {
+    for key in [
+        "hook_event_name",
+        "hookEventName",
+        "cursor_source_hook_event",
+    ] {
+        let Some(text) = payload.get(key).and_then(Value::as_str) else {
+            continue;
+        };
+        let normalized = text.trim();
+        if normalized.is_empty() {
+            continue;
+        }
+        match normalized {
+            "afterShellExecution" => return "afterShellExecution",
+            "afterMCPExecution" => return "afterMCPExecution",
+            _ => {}
+        }
+        if let Some(mapped) = cursor_observer_event_for_blocking(normalized) {
+            return mapped;
+        }
+    }
+    "afterShellExecution"
+}
+
 /// `_cursor_after_shell_observed`
 /// (`commands_support_hook_state.py:443-453`): whether this Cursor payload is
 /// a report that the command already ran.
@@ -668,5 +716,48 @@ mod tests {
         assert!(!observed(json!({"event": "afterShellExecution"})));
         assert!(!observed(json!({"output": 3})));
         assert!(!observed(json!({})));
+    }
+
+    #[test]
+    fn observer_event_is_what_the_proof_message_is_attested_under() {
+        let event = |value: Value| {
+            let Value::Object(payload) = value else {
+                unreachable!("test payloads are objects");
+            };
+            cursor_observer_event_for_payload(&payload)
+        };
+
+        assert_eq!(
+            event(json!({"hook_event_name": "afterMCPExecution"})),
+            "afterMCPExecution"
+        );
+        assert_eq!(
+            event(json!({"hookEventName": " beforeMCPExecution "})),
+            "afterMCPExecution"
+        );
+        assert_eq!(
+            event(json!({"cursor_source_hook_event": "beforeShellExecution"})),
+            "afterShellExecution"
+        );
+
+        // A key naming neither an observer event nor a blocking event it
+        // answers is passed over, so a later key still decides.
+        assert_eq!(
+            event(json!({"hook_event_name": "stop", "hookEventName": "beforeMCPExecution"})),
+            "afterMCPExecution"
+        );
+        assert_eq!(
+            event(json!({"hook_event_name": "   "})),
+            "afterShellExecution"
+        );
+        assert_eq!(event(json!({"hook_event_name": 7})), "afterShellExecution");
+        assert_eq!(event(json!({})), "afterShellExecution");
+
+        // The map is exact: the blocking names are not matched case-insensitively.
+        assert_eq!(
+            event(json!({"hook_event_name": "beforeshellexecution"})),
+            "afterShellExecution"
+        );
+        assert_eq!(cursor_observer_event_for_blocking("stop"), None);
     }
 }

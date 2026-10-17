@@ -136,6 +136,38 @@ def native_evaluation_has_terminal_policy_action(
     return value if isinstance(value, bool) else None
 
 
+# The payload fields the observer-event rule reads to name an attested event.
+_OBSERVER_EVENT_PAYLOAD_FIELDS = (
+    "hook_event_name",
+    "hookEventName",
+    "cursor_source_hook_event",
+)
+
+
+def native_cursor_observer_event(
+    payload: Mapping[str, object],
+    *,
+    guard_home: Path | None = None,
+) -> str | None:
+    """Which observer event this Cursor payload is attested under; ``None`` when unavailable.
+
+    The event is a field of the message an after-observer proof is computed
+    over, and the side that issues a proof and the side that checks it both
+    derive it from the same harness-supplied payload. A second copy of the
+    selection would invalidate every proof the moment the two disagreed, so
+    the resident answers for both.
+    """
+
+    params: dict[str, object] = {
+        "payload": {key: payload[key] for key in _OBSERVER_EVENT_PAYLOAD_FIELDS if key in payload}
+    }
+    rendered = native_render_cli("cursor_observer_event", "cursor", params, guard_home=guard_home)
+    if rendered is None or rendered[1] is None:
+        return None
+    value = rendered[1].get("value")
+    return value if isinstance(value, str) and value else None
+
+
 # The payload fields the after-shell rule reads to judge a Cursor report.
 _AFTER_SHELL_PAYLOAD_FIELDS = (
     "duration",
@@ -258,6 +290,7 @@ __all__ = [
     "native_artifact_id_from_event",
     "native_claude_approval_copy",
     "native_cursor_after_shell_observed",
+    "native_cursor_observer_event",
     "native_evaluation_has_terminal_policy_action",
     "native_render_cli",
     "native_render_pre_tool",

@@ -16,8 +16,9 @@ use guard_command::hook_responses::cli_documents::{
 };
 use guard_command::hook_responses::{pre_tool, pre_tool_review, recording_only_pre_tool, Object};
 use guard_contracts::{
-    artifact_id_from_event, cursor_after_shell_observed, evaluation_has_terminal_policy_action,
-    HookRenderRequestV1, HookRenderResultV1, HOOK_RENDER_MAX_BYTES, HOOK_RENDER_RESULT_SCHEMA,
+    artifact_id_from_event, cursor_after_shell_observed, cursor_observer_event_for_payload,
+    evaluation_has_terminal_policy_action, HookRenderRequestV1, HookRenderResultV1,
+    HOOK_RENDER_MAX_BYTES, HOOK_RENDER_RESULT_SCHEMA,
 };
 use serde_json::{json, Value};
 
@@ -105,6 +106,20 @@ fn render(request: &HookRenderRequestV1) -> Result<Value, &'static str> {
         document.insert(
             "value".into(),
             Value::Bool(evaluation_has_terminal_policy_action(evaluation)),
+        );
+        return Ok(cli_payload(CliOutcome::Document(document)));
+    }
+    if request.kind == "cursor_observer_event" {
+        // The event names a field of the message an after-observer proof is
+        // computed over, and the side that issues a proof and the side that
+        // checks it both derive it from the same harness-supplied payload.
+        // One answer keeps them from drifting apart.
+        let params = object_of(request.cli.as_ref()).ok_or("native_hook_render_invalid")?;
+        let payload = object_of(params.get("payload")).ok_or("native_hook_render_invalid")?;
+        let mut document = Object::new();
+        document.insert(
+            "value".into(),
+            Value::String(cursor_observer_event_for_payload(payload).to_string()),
         );
         return Ok(cli_payload(CliOutcome::Document(document)));
     }

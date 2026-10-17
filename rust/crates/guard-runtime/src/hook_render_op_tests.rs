@@ -281,3 +281,29 @@ fn cursor_after_shell_observed_kind_requires_a_payload_object() {
     assert_eq!(result.status, "error");
     assert_eq!(result.code, "native_hook_render_invalid");
 }
+
+#[test]
+fn cursor_observer_event_kind_answers_what_a_proof_is_attested_under() {
+    let mut req = request("cursor_observer_event");
+    req.cli = Some(json!({"payload": {"hook_event_name": "beforeMCPExecution"}}));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], "afterMCPExecution");
+
+    // A payload naming no event Guard observes falls back to the shell event.
+    req.cli = Some(json!({"payload": {}}));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], "afterShellExecution");
+}
+
+#[test]
+fn cursor_observer_event_kind_requires_a_payload_object() {
+    let mut req = request("cursor_observer_event");
+    req.cli = Some(json!({"payload": "beforeMCPExecution"}));
+    let result = decode(evaluate_hook_render_request(&req).expect("encoded"));
+    assert_eq!(result.status, "error");
+    assert_eq!(result.code, "native_hook_render_invalid");
+}
