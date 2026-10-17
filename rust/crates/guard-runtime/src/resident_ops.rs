@@ -318,6 +318,11 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::PackageEvaluationCompose(request) => {
                 crate::package_evaluation_compose_op::evaluate_package_evaluation_compose(&request)
             }
+            ResidentOperationV1::PolicyDocumentDecide(request) => {
+                crate::policy_document_decide_op::evaluate_policy_document_decision_request(
+                    &request,
+                )
+            }
             ResidentOperationV1::PolicyDecisionLookup(request) => {
                 crate::policy_decision_lookup_op::evaluate_policy_decision_lookup_request(&request)
             }

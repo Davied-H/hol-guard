@@ -18,6 +18,7 @@ from typing import Any, TextIO, cast
 from ..approval_gate import ApprovalGateError
 from ..business_policy_document_import import has_business_rules
 from ..native_policy_document import NativePolicyDocumentError
+from ..native_policy_document_decision import PolicyDocumentDecisionUnavailableError
 from ..native_policy_snapshot_constants import NativePolicySnapshotError
 from ..policy_authority import PolicyAuthorityError
 from ..policy_decision_engine import PolicyEventError, compile_local_rows, decide_command, decide_rows, parse_event
@@ -197,6 +198,14 @@ def _test_once(args: Any, file: str, output_stream: TextIO | None) -> int:
         return 4
     try:
         run = run_policy_tests(document, now=_now())
+    except PolicyDocumentDecisionUnavailableError as error:
+        # The runtime ranks the rules; without it there is no second opinion to fall back on.
+        _emit(
+            output_stream,
+            {"error": str(error), "message": "The native runtime is unavailable, so this cannot be decided here."},
+            as_json=as_json,
+        )
+        return 4
     except PolicyTestsInvalidError as error:
         payload: dict[str, object] = {
             "error": error.code,
@@ -298,6 +307,14 @@ def _run_check(args: Any, output_stream: TextIO | None, input_text: str | None) 
             except ValueError as error:
                 raise PolicyEventError("event_invalid_json", "The event is not valid JSON.") from error
             decision = decide_rows(compile_local_rows(document), parse_event(value), now=_now())
+    except PolicyDocumentDecisionUnavailableError as error:
+        # The runtime ranks the rules; without it there is no second opinion to fall back on.
+        _emit(
+            output_stream,
+            {"error": str(error), "message": "The native runtime is unavailable, so this cannot be decided here."},
+            as_json=as_json,
+        )
+        return 4
     except PolicyEventError as error:
         _emit(output_stream, {"error": error.code, "message": str(error)}, as_json=as_json)
         return 4
