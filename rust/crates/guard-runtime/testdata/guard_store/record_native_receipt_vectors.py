@@ -20,16 +20,14 @@ import json
 import sqlite3
 import sys
 import tempfile
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
-from datetime import datetime
+from collections.abc import Mapping
 from pathlib import Path
 
-from codex_plugin_scanner.guard import store_native_decision_receipts
-
-from codex_plugin_scanner.guard.native_decision_receipt import canonical_receipt_bytes
+from codex_plugin_scanner.guard.native_decision_receipt import (
+    canonical_receipt_bytes,
+    validate_native_decision_receipt,
+)
 from codex_plugin_scanner.guard.store_native_decision_receipts import (
-    StoreNativeDecisionReceiptsMixin,
     native_decision_receipt_schema_statements,
 )
 
@@ -38,21 +36,107 @@ TABLES = ("native_hook_decision_receipts", "native_prompt_decision_receipts")
 DIGEST_A, DIGEST_B = "a" * 64, "b" * 64
 
 
-class _PinnedDatetime(datetime):
-    @classmethod
-    def now(cls, tz: object = None) -> datetime:  # type: ignore[override]
-        return datetime.fromisoformat(RECORDED_AT)
+COLUMNS = (
+    "decision_id",
+    "schema",
+    "version",
+    "authority",
+    "request_id",
+    "request_digest",
+    "harness",
+    "event_name",
+    "payload_kind",
+    "policy_generation",
+    "policy_digest",
+    "rule_digest",
+    "runtime_identity",
+    "decision",
+    "model_output_action",
+    "policy_action",
+    "observed_policy_action",
+    "reason_code",
+    "workspace_bound",
+    "source_ref_external_allowed",
+    "reviewed_output_sha256",
+    "observe_mode",
+    "deadline_budget_ms",
+    "command_extensions_json",
+    "recorded_at",
+)
 
 
-class _Store(StoreNativeDecisionReceiptsMixin):
+def compact(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def flag(value: object) -> int:
+    if not isinstance(value, bool):
+        raise ValueError("native decision receipt boolean is invalid")
+    return int(value)
+
+
+def bound_values(receipt: Mapping[str, object]) -> tuple[object, ...]:
+    """The bound values, in the order ``COLUMNS`` names them."""
+    return (
+        receipt["decision_id"],
+        receipt["schema"],
+        receipt["version"],
+        receipt["authority"],
+        receipt["request_id"],
+        receipt["request_digest"],
+        receipt["harness"],
+        receipt["event_name"],
+        receipt["payload_kind"],
+        receipt["policy_generation"],
+        receipt["policy_digest"],
+        receipt["rule_digest"],
+        receipt["runtime_identity"],
+        receipt["decision"],
+        receipt["model_output_action"],
+        receipt["policy_action"],
+        receipt["observed_policy_action"],
+        receipt["reason_code"],
+        flag(receipt["workspace_bound"]),
+        flag(receipt["source_ref_external_allowed"]),
+        receipt["reviewed_output_sha256"],
+        flag(receipt["observe_mode"]),
+        receipt["deadline_budget_ms"],
+        compact(receipt["command_extensions"]) if "command_extensions" in receipt else None,
+        RECORDED_AT,
+    )
+
+
+class _Store:
+    """The Python write path these vectors pin, kept here as the reference.
+
+    The shipping store now hands the receipt text to the resident, so the rows
+    a vector expects have to come from an implementation that does not call the
+    code under test.
+    """
+
     def __init__(self, path: Path) -> None:
         self._path = path
 
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
+    def record_native_decision_receipt(self, receipt: Mapping[str, object]) -> None:
+        validated = validate_native_decision_receipt(receipt)
+        if validated is None:
+            raise ValueError("native decision receipt is invalid")
+        # The command binding is nested. Detach it before writing so a caller
+        # cannot mutate that mapping after validation and change the stored
+        # binding without changing the receipt identity.
+        detached = validate_native_decision_receipt(json.loads(compact(validated)))
+        if detached is None:
+            raise ValueError("native decision receipt changed during capture")
+        prompt = detached["event_name"] == "UserPromptSubmit"
+        columns = COLUMNS + (("prompt_risk_classes_json",) if prompt else ())
+        values = bound_values(detached) + ((compact(detached.get("prompt_risk_classes", [])),) if prompt else ())
+        table = "native_prompt_decision_receipts" if prompt else "native_hook_decision_receipts"
         connection = sqlite3.connect(self._path)
         try:
-            yield connection
+            connection.execute(
+                f"insert or ignore into {table} ({', '.join(columns)}) values ({', '.join('?' * len(columns))})",
+                values,
+            )
             connection.commit()
         finally:
             connection.close()
@@ -145,9 +229,7 @@ SCENARIOS: list[dict[str, object]] = [
     },
     {
         "name": "prompt_with_risk_classes",
-        "receipts": [
-            prompt_receipt(prompt_risk_classes=["local_env_read", "exfil_intent", "guard_bypass_intent"])
-        ],
+        "receipts": [prompt_receipt(prompt_risk_classes=["local_env_read", "exfil_intent", "guard_bypass_intent"])],
     },
     {"name": "prompt_without_risk_classes", "receipts": [prompt_receipt()]},
     {
@@ -249,8 +331,7 @@ def schema_sql() -> list[str]:
             return [
                 str(row[0])
                 for row in connection.execute(
-                    "select sql from sqlite_master where tbl_name in "
-                    f"{TABLES} and sql is not null order by rowid"
+                    f"select sql from sqlite_master where tbl_name in {TABLES} and sql is not null order by rowid"
                 )
             ]
         finally:
@@ -258,7 +339,6 @@ def schema_sql() -> list[str]:
 
 
 def main(output: Path) -> None:
-    store_native_decision_receipts.datetime = _PinnedDatetime  # type: ignore[misc]
     document = {
         "schema": "guard-store-native-receipt-vectors.v1",
         "recorded_at": RECORDED_AT,

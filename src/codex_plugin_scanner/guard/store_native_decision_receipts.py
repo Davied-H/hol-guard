@@ -126,13 +126,9 @@ class StoreNativeDecisionReceiptsMixin:
         # The decision ID commits to a canonical encoding of the receipt's own
         # fields, so the resident validates the wire text rather than a shape
         # this process has already rebuilt.
-        try:
-            wire = json.dumps(receipt, ensure_ascii=False, allow_nan=False)
-        except (TypeError, ValueError) as error:
-            raise ValueError("native decision receipt is invalid") from error
         self._native_store_call(
             "record_native_decision_receipt",
-            {"receipt": wire, "now": datetime.now(timezone.utc).isoformat()},
+            {"receipt": _receipt_wire(receipt), "now": datetime.now(timezone.utc).isoformat()},
         )
         return True
 
@@ -153,6 +149,24 @@ class StoreNativeDecisionReceiptsMixin:
         if row is None:
             return None
         return validate_stored_native_decision_receipt(dict(row))
+
+
+def _receipt_wire(receipt: Mapping[str, object]) -> str:
+    """Encode one receipt as the JSON text the resident validates."""
+    try:
+        return json.dumps(receipt, ensure_ascii=False, allow_nan=False, default=_mapping_as_object)
+    except (TypeError, ValueError) as error:
+        raise ValueError("native decision receipt is invalid") from error
+
+
+def _mapping_as_object(value: object) -> dict[str, object]:
+    # Callers hand us any mapping, and the command binding nested inside one is
+    # a mapping of its own. JSON only knows how to write a dict, and a receipt
+    # that reads like an object has always been storable whatever type carried
+    # it, so keep that true rather than rejecting the carrier.
+    if isinstance(value, Mapping):
+        return dict(value)
+    raise TypeError("native decision receipt is not JSON data")
 
 
 def validate_stored_native_decision_receipt(row: Mapping[str, object]) -> dict[str, object] | None:
