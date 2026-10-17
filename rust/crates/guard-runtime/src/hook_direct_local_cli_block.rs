@@ -14,7 +14,7 @@ use guard_contracts::{
     LocalCliIdentitySourceV1, LocalCliIdentityV1, PackageJsonScriptsV1, UnlistedCliV1,
     HOOK_RENDER_MAX_BYTES,
 };
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 const ROOT_COMMAND_ID: &str = "root";
 const OTHER_COMMAND_ID: &str = "other";
@@ -27,6 +27,8 @@ const UNVERIFIED_REASON: &str =
     "Guard could not check this command against your custom extension rules.";
 /// The keys of a grant answer, as `_decode_payload` requires them.
 const ANSWER_KEYS: [&str; 3] = ["state", "cli_id", "identity_hash"];
+/// The optional answer key `_decode_payload` accepts beside `ANSWER_KEYS`.
+const CAPABILITIES_KEY: &str = "capabilities";
 const WATCH_REASON: &str = "Watch recorded this action without stopping it.";
 /// The worst-case growth of a verdict on the daemon's render wire, where
 /// every byte may become a six-byte escape, plus room for the envelope.
@@ -106,14 +108,38 @@ pub(super) fn review_verdict(launch: &Launch, answer: Option<&Value>) -> ReviewV
 /// `_decode_payload` requires, for the identity the daemon derived.
 fn grant_state<'a>(launch: &Launch, answer: Option<&'a Value>) -> Option<&'a str> {
     let answer = answer.and_then(Value::as_object)?;
-    if answer.len() != ANSWER_KEYS.len()
+    let with_capabilities = usize::from(answer.contains_key(CAPABILITIES_KEY));
+    if answer.len() != ANSWER_KEYS.len() + with_capabilities
         || !ANSWER_KEYS.iter().all(|key| answer.contains_key(*key))
+        || !capabilities_valid(answer)
         || answer["cli_id"].as_str() != Some(launch.cli_id.as_str())
         || answer["identity_hash"].as_str() != Some(launch.identity_hash.as_str())
     {
         return None;
     }
     answer["state"].as_str()
+}
+
+/// `_decode_payload`'s capability rule: absent, or a sorted list of distinct
+/// known names that is empty unless the grant is allowed.
+fn capabilities_valid(answer: &Map<String, Value>) -> bool {
+    let Some(raw) = answer.get(CAPABILITIES_KEY) else {
+        return true;
+    };
+    let Some(names) = raw.as_array() else {
+        return false;
+    };
+    let mut previous: Option<&str> = None;
+    for name in names {
+        let Some(name) = name.as_str() else {
+            return false;
+        };
+        if !crate::local_cli_grant_op::is_capability(name) || previous.is_some_and(|p| p >= name) {
+            return false;
+        }
+        previous = Some(name);
+    }
+    names.is_empty() || answer["state"].as_str() == Some("allowed")
 }
 
 /// The launch identity the daemon reads a grant for.

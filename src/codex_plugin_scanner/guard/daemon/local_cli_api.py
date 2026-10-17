@@ -79,8 +79,14 @@ from ..runtime.package_json_script_memory import (
     refresh_package_script_catalogs,
 )
 from ..runtime.package_json_scripts import looks_like_package_script_paste
+from ..store_local_cli_capabilities import LocalCliCapabilityError
 from .local_cli_api_contract import LOCAL_CLI_API_SCHEMA as _LOCAL_CLI_API_SCHEMA
 from .local_cli_api_contract import LocalCliApiError
+from .local_cli_capability_api import (
+    capability_api_error,
+    capability_choices_from_payload,
+    capability_subject_suffix,
+)
 from .local_cli_connector_group import connector_group_request_id, resolve_connector_group
 from .local_cli_continuity_api import decorate_local_cli_continuity
 from .local_cli_mcp_store import bound_mcp_observation, stored_mcp_recognition
@@ -953,6 +959,7 @@ class LocalCliApiService:
         identity, state = self._mutation_from_payload(payload)
         connector_group_request_id(payload, state)
         self._provider_updates_from_payload(payload)
+        capabilities = capability_choices_from_payload(self._store, payload, cli_id=identity.cli_id, state=state)
         current = self._store.read_local_cli_revision()
         expected = self._required_int(payload, "previous_revision")
         if expected != current:
@@ -965,6 +972,7 @@ class LocalCliApiService:
             "cli_id": identity.cli_id,
             "identity_hash": identity.identity_hash,
             "state": state,
+            "capabilities": capabilities,
             "summary": summary,
         }
 
@@ -972,6 +980,7 @@ class LocalCliApiService:
         identity, state = self._mutation_from_payload(payload)
         group_request_id = connector_group_request_id(payload, state)
         provider_updates = self._provider_updates_from_payload(payload)
+        capabilities = capability_choices_from_payload(self._store, payload, cli_id=identity.cli_id, state=state)
         expected = self._required_int(payload, "previous_revision")
         session_nonce = self._required_string(payload, "session_nonce")
         action = f"local-cli-{state}"
@@ -980,6 +989,7 @@ class LocalCliApiService:
             from ..store_mcp_provider_permissions import provider_choices_digest
 
             subject += ":" + provider_choices_digest(provider_updates)
+        subject += capability_subject_suffix(capabilities)
         try:
             grant = require_local_cli_trust(
                 self._store.guard_home,
@@ -1014,7 +1024,10 @@ class LocalCliApiService:
                 now=utc_now(),
                 provider_updates=provider_updates,
                 catalog_seed=catalog_seed,
+                capabilities=capabilities,
             )
+        except LocalCliCapabilityError as exc:
+            raise capability_api_error(exc) from exc
         except ValueError as exc:
             if str(exc) == "local_cli_revision_conflict":
                 raise LocalCliApiError(409, "revision_conflict") from exc
@@ -1030,6 +1043,7 @@ class LocalCliApiService:
             "native_publication": local_cli_publication_status(self._store.guard_home, revision),
             "cli_id": identity.cli_id,
             "state": state,
+            "capabilities": self._store.read_local_cli_capabilities(identity.cli_id),
         }
         if group_request_id is not None:
             # Only after the proof-bound write saved `allowed`; it checks the gate again.

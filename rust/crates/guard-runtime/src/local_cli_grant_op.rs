@@ -22,6 +22,14 @@ const ROOT_COMMAND_ID: &str = "root";
 const OTHER_COMMAND_ID: &str = "other";
 const PACKAGE_SCRIPT_SURFACE: &str = "package-scripts";
 const MAX_COMMAND_ID_BYTES: usize = 256;
+const CLI_SURFACE: &str = "cli";
+/// Grant capabilities a local CLI connector can hold; a missing row is off.
+const CAPABILITIES: [&str; 3] = ["loopback-network", "state-dir-read", "state-dir-write"];
+
+/// Whether `name` is a grant capability this build knows.
+pub(crate) fn is_capability(name: &str) -> bool {
+    CAPABILITIES.contains(&name)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GrantState {
@@ -91,18 +99,25 @@ fn decide(request: &LocalCliGrantRequestV1) -> Result<Value, &'static str> {
     let Some(identity) = crate::context_digest_local_cli::local_cli_identity(&request.source)
         .map_err(|_| "native_local_cli_grant_identity_invalid")?
     else {
-        return Ok(outcome(GrantState::None, None, None));
+        return Ok(outcome(GrantState::None, None, None, Vec::new()));
     };
-    let reply = |state| outcome(state, Some(&identity.cli_id), Some(&identity.identity_hash));
+    let reply = |state, capabilities| {
+        outcome(
+            state,
+            Some(&identity.cli_id),
+            Some(&identity.identity_hash),
+            capabilities,
+        )
+    };
     if !matches!(
         request.current_action.as_str(),
         "allow" | "review" | "require-reapproval" | "warn"
     ) {
-        return Ok(reply(GrantState::None));
+        return Ok(reply(GrantState::None, Vec::new()));
     }
     let Some(connection) = local_store_read::open_read_only(&store_path).map_err(store_error)?
     else {
-        return Ok(reply(GrantState::None));
+        return Ok(reply(GrantState::None, Vec::new()));
     };
     let registry_package = matches!(
         request.source,
@@ -115,7 +130,12 @@ fn decide(request: &LocalCliGrantRequestV1) -> Result<Value, &'static str> {
         registry_package,
         request.command_id.as_deref().unwrap_or(OTHER_COMMAND_ID),
     )?;
-    Ok(reply(state))
+    let capabilities = if state == GrantState::Allowed {
+        enabled_capabilities(&connection, &identity.cli_id)?
+    } else {
+        Vec::new()
+    };
+    Ok(reply(state, capabilities))
 }
 
 /// The grant answer the daemon reads for an allowed `PreToolUse` that
@@ -218,12 +238,49 @@ pub(crate) fn command_catalog(
     Ok(catalog)
 }
 
-fn outcome(state: GrantState, cli_id: Option<&str>, identity_hash: Option<&str>) -> Value {
+fn outcome(
+    state: GrantState,
+    cli_id: Option<&str>,
+    identity_hash: Option<&str>,
+    capabilities: Vec<String>,
+) -> Value {
     json!({
         "state": state.as_str(),
         "cli_id": cli_id,
         "identity_hash": identity_hash,
+        "capabilities": capabilities,
     })
+}
+
+/// The sorted capabilities switched on for an allowed CLI connector. Other
+/// surfaces, unknown names and non-text cells never count.
+fn enabled_capabilities(
+    connection: &Connection,
+    cli_id: &str,
+) -> Result<Vec<String>, &'static str> {
+    if !table_exists(connection, "local_cli_grant_capability")?
+        || observation_surface(connection, cli_id)? != CLI_SURFACE
+    {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection
+        .prepare(
+            "select capability from local_cli_grant_capability \
+             where cli_id = ?1 and typeof(capability) = 'text' \
+             and typeof(state) = 'text' and state = 'on'",
+        )
+        .map_err(|_| STORE_UNAVAILABLE)?;
+    let rows = statement
+        .query_map(params![cli_id], |row| row.get::<_, String>(0))
+        .map_err(|_| STORE_UNAVAILABLE)?;
+    let mut enabled = BTreeSet::new();
+    for row in rows {
+        let name = row.map_err(|_| STORE_UNAVAILABLE)?;
+        if is_capability(&name) {
+            enabled.insert(name);
+        }
+    }
+    Ok(enabled.into_iter().collect())
 }
 
 fn store_error(error: StoreReadError) -> &'static str {

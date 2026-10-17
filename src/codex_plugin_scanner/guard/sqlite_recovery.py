@@ -336,6 +336,7 @@ _LOCAL_CLI_SALVAGE_TABLES = (
     "local_cli_grant",
     "local_cli_command",
     "local_cli_command_grant",
+    "local_cli_grant_capability",
 )
 _REQUIRED_LOCAL_CLI_SALVAGE_TABLES = (
     "local_cli_grant",
@@ -347,6 +348,8 @@ _PARTIAL_COPY_OK_TABLES = frozenset(
         "local_cli_authority",
         "local_cli_observation",
         "local_cli_grant",
+        # Losing a capability row only narrows an allowed grant.
+        "local_cli_grant_capability",
     }
 )
 
@@ -379,6 +382,11 @@ def salvage_local_cli_state(*, source: Path, destination: Path) -> bool:
             if not all(copied.get(table) for table in _REQUIRED_LOCAL_CLI_SALVAGE_TABLES):
                 dst.rollback()
                 return False
+            # A capability row without its allowed grant must never ride along.
+            _ = dst.execute(
+                "delete from local_cli_grant_capability where cli_id not in "
+                "(select cli_id from local_cli_grant where state = 'allowed')"
+            )
             dst.commit()
             return True
     except sqlite3.Error:

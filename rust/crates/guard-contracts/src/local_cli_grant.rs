@@ -53,8 +53,11 @@ pub struct LocalCliGrantResultV1 {
     pub status: String,
     /// `ok`, or a `native_local_cli_grant_*` failure code.
     pub code: String,
-    /// `{state, cli_id, identity_hash}` on success. `state` is `allowed`,
-    /// `blocked`, or `none`.
+    /// `{state, cli_id, identity_hash, capabilities}` on success. `state` is
+    /// `allowed`, `blocked`, or `none`. `capabilities` is the sorted list of
+    /// grant capabilities switched on for an allowed `surface='cli'`
+    /// connector (`loopback-network`, `state-dir-read`, `state-dir-write`);
+    /// it is empty for every other answer, and an absent row is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<Value>,
 }
