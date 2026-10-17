@@ -271,13 +271,33 @@ fn worktree_packages(main: &Path, tree: &Path) -> PathBuf {
 fn a_home_spelled_sibling_root_runs_contained_from_that_root() {
     let (home, main, tree) = fixture();
     worktree_packages(&main, &tree);
-    for command in [
-        "cd ~/projects/app-report && ./tools/report 2>&1 | tail -15",
-        "cd ~/projects/app-report/scripts && ./report.sh 2>&1 | tail -15",
-        "cd ~/projects/app-report/web && ./node_modules/.bin/report build",
+    for (written, spelled) in [
+        (
+            "cd ~/projects/app-report && ./tools/report 2>&1 | tail -15",
+            format!("cd {} && ./tools/report 2>&1 | tail -15", tree.display()),
+        ),
+        (
+            "cd ~/projects/app-report/scripts && ./report.sh 2>&1 | tail -15",
+            format!(
+                "cd {}/scripts && ./report.sh 2>&1 | tail -15",
+                tree.display()
+            ),
+        ),
+        (
+            "cd ~/projects/app-report/web && ./node_modules/.bin/report build",
+            format!(
+                "cd {}/web && ./node_modules/.bin/report build",
+                tree.display()
+            ),
+        ),
     ] {
-        let reason = home_reason("omp", &home, &main, command);
-        assert_eq!(contained(&reason), host(), "{command}: {reason}");
+        let absolute = home_reason("omp", &home, &main, &spelled);
+        assert_eq!(contained(&absolute), host(), "{spelled}: {absolute}");
+        assert_eq!(
+            home_reason("omp", &home, &main, written),
+            absolute,
+            "{written}"
+        );
     }
     let _ = std::fs::remove_dir_all(home.parent().unwrap());
 }
