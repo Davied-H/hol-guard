@@ -14261,6 +14261,9 @@ function searchQueue(items, term) {
 function retryCannotReuseApproval(item) {
   return item.scope_restrictions?.includes("retry_cannot_reuse_approval") === true;
 }
+function approvalCannotUnlock(item) {
+  return retryCannotReuseApproval(item) && item.exact_action_persistence_eligible !== true;
+}
 function oneTimeRetryWindowMinutes(item) {
   return item.artifact_id.includes(":native-pretool:") ? 5 : 15;
 }
@@ -31801,6 +31804,33 @@ function ApprovalExtensionRecommendationCard(props) {
     }
   );
 }
+function ReviewRunYourself(props) {
+  const command = bulkLineCommand(props.item);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "section",
+    {
+      "aria-label": "Run this yourself",
+      "data-testid": "review-run-yourself",
+      className: "mt-5 rounded-xl border border-brand-blue/25 bg-brand-blue/[0.04] p-4",
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniInformationCircle, { className: "mt-0.5 h-5 w-5 shrink-0 text-brand-blue", "aria-hidden": "true" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 flex-1", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-sm font-semibold text-brand-dark", children: "Run this yourself" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-1 text-sm leading-6 text-brand-dark", children: [
+              "Guard cannot let ",
+              props.harnessName,
+              " run this command, even if you approve it, so approving would change nothing and ",
+              props.harnessName,
+              " would be blocked again. Run it in your own terminal if you want it done, or keep it blocked."
+            ] })
+          ] })
+        ] }),
+        command !== null ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx(LoggedActionPanel, { label: "Command", text: command }) }) : null
+      ]
+    }
+  );
+}
 function resolvedStateForItem(state, item) {
   return item !== null && state?.requestId === item.request_id ? state : null;
 }
@@ -31990,9 +32020,11 @@ function useReviewDecisionResolve(params) {
       hasAllowScope
     ]
   );
+  const approvalUnavailable = item !== null && !watchOnlyObservation && item.native_business_review_display_only !== true && approvalCannotUnlock(item);
   const handleRequestResolve = reactExports.useCallback(
     (action) => {
       if (resolutionBlockReason !== null || decisionBusy) return;
+      if (action === "allow" && approvalUnavailable) return;
       if (action === "allow" && !hasAllowScope) {
         setErrorMessage("This action has no eligible approval scope.");
         return;
@@ -32068,6 +32100,7 @@ function useReviewDecisionResolve(params) {
     },
     [
       allowScope,
+      approvalUnavailable,
       blockScope,
       blockScopeOptions.length,
       decisionBusy,
@@ -32313,6 +32346,7 @@ function ReviewDecisionCard(props) {
   const topAlertItems = nativeDisplayOnly ? [] : buildTopAlertItems(item);
   const evidenceItems = nativeDisplayOnly ? [] : buildEvidenceItems(item);
   const actionPresentation = guardActionPresentation(item.policy_action);
+  const runYourself = !watchOnlyObservation && !nativeDisplayOnly && approvalCannotUnlock(item);
   let sectionLabel = "Paused action";
   let badgeLabel = actionPresentation.label;
   if (nativeDisplayOnly) {
@@ -32369,7 +32403,7 @@ function ReviewDecisionCard(props) {
       ] }),
       !nativeDisplayOnly && /* @__PURE__ */ jsxRuntimeExports.jsx(PrimaryActionCard, { item }),
       nativeDisplayOnly && /* @__PURE__ */ jsxRuntimeExports.jsx(BusinessReviewSummaryPanel, { requestId: item.request_id }, item.request_id),
-      resolved === null && retryCannotReuseApproval(item) && !rememberExactAction ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-sm leading-6 text-brand-dark", children: retryCannotReuseApprovalHint(item, harnessName) }) : null,
+      resolved === null && !runYourself && retryCannotReuseApproval(item) && !rememberExactAction ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-sm leading-6 text-brand-dark", children: retryCannotReuseApprovalHint(item, harnessName) }) : null,
       item.scope_restrictions?.includes("provider_account_unverified_once_only") ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-sm leading-6 text-brand-dark", children: "Guard cannot verify this provider account. Approval applies once to this exact call; remembered approvals are unavailable." }) : null,
       resolutionBlockReason !== null && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-5 rounded-xl border border-brand-attention/30 bg-brand-attention/[0.06] p-4", role: "alert", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -32410,7 +32444,8 @@ function ReviewDecisionCard(props) {
         ),
         showConsequences && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-3 rounded-xl border border-slate-200/70 bg-slate-50 p-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-brand-dark", children: whatWouldHappen }) })
       ] }),
-      resolutionBlockReason === null && resolved === null && !watchOnlyObservation && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      resolutionBlockReason === null && resolved === null && runYourself && /* @__PURE__ */ jsxRuntimeExports.jsx(ReviewRunYourself, { item, harnessName }),
+      resolutionBlockReason === null && resolved === null && !watchOnlyObservation && !runYourself && /* @__PURE__ */ jsxRuntimeExports.jsx(
         ApprovalExtensionRecommendationCard,
         {
           item,
@@ -32424,7 +32459,7 @@ function ReviewDecisionCard(props) {
         },
         item.request_id
       ),
-      resolutionBlockReason === null && resolved === null && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      resolutionBlockReason === null && resolved === null && !runYourself && /* @__PURE__ */ jsxRuntimeExports.jsx(
         ReviewScopeControls,
         {
           commonScopeOptions,
@@ -32459,8 +32494,8 @@ function ReviewDecisionCard(props) {
           )
         ] })
       ] }) }),
-      resolutionBlockReason === null && resolved === null && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2", children: [
-        hasAllowScope && /* @__PURE__ */ jsxRuntimeExports.jsx(
+      resolutionBlockReason === null && resolved === null && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: `mt-6 grid grid-cols-1 gap-3 ${runYourself ? "" : "sm:grid-cols-2"}`, children: [
+        hasAllowScope && !runYourself && /* @__PURE__ */ jsxRuntimeExports.jsx(
           ActionButton,
           {
             ref: allowButtonRef,

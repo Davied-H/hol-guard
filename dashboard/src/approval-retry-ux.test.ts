@@ -2,6 +2,7 @@ import { normalizeApprovalRequest } from "./guard-api";
 import { normalizeApprovalExtensionRecommendation } from "./approval-extension-recommendation";
 import { buildBulkApproveConsequenceCopy, buildRetryAfterApprovalCopy, summarizeBulkApproveSelection } from "./approval-center-utils";
 import {
+  approvalCannotUnlock,
   bulkApproveConsequenceCopyForSelection,
   countRetryBlockedActions,
   receiptDescribesRequest,
@@ -14,6 +15,7 @@ import { bulkApprovalRiskTier, groupDuplicates } from "./queue-state";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { approvalGateRefreshNeeded, resolvedStateForItem } from "./review-decision-state";
+import { ReviewRunYourself } from "./review-run-yourself";
 import { ReviewScopeControls } from "./review-scope-controls";
 import { buildDecisionPayload, requestSupportsScope } from "./approval-scopes";
 import { buildBulkRiskDisclosure } from "./queue-bulk-risk-disclosure";
@@ -317,5 +319,21 @@ const [pythonGroup] = groupDuplicates([unbound]);
 assert(bulkApprovalRiskTier(pythonGroup) === "elevated", "uncategorized shell command is elevated, not low");
 const [line] = summarizeBulkApproveSelection([pythonGroup]);
 assert(line.command === pythonChain, "bulk approval line carries the command text");
+
+// An approval that can neither be reused by the retry nor remembered cannot unlock the command,
+// so the review says to run it yourself instead of offering Approve.
+const envPrefixed = nativeBashRequest("66666666666666666666666666666666", "FOO=1 ./scripts/release.sh production", [
+  "retry_cannot_reuse_approval",
+]);
+assert(approvalCannotUnlock(envPrefixed), "a review the retry can never match cannot be unlocked by approving");
+assert(!approvalCannotUnlock(bound), "an action-bound review can still be approved");
+assert(
+  !approvalCannotUnlock({ ...envPrefixed, exact_action_persistence_eligible: true }),
+  "a review that can be remembered as an exact action can still be approved",
+);
+const runYourselfMarkup = renderToStaticMarkup(createElement(ReviewRunYourself, { item: envPrefixed, harnessName: "Oh My Pi" }));
+assert(runYourselfMarkup.includes("Run this yourself"), "the review names the action the user should take");
+assert(runYourselfMarkup.includes("FOO=1 ./scripts/release.sh production"), "the review shows the command to run");
+assert(!/>\s*Approve/.test(runYourselfMarkup), "the run-yourself panel offers no approval button");
 
 console.log("approval-retry-ux tests passed");

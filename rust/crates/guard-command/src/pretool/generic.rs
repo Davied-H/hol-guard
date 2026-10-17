@@ -10,6 +10,7 @@ mod command_rewrite;
 pub(crate) mod contained_publish;
 #[path = "env_prefix_projection.rs"]
 mod env_prefix_projection;
+pub use env_prefix_projection::bindable_setting;
 #[path = "generic_extract.rs"]
 mod extract;
 #[path = "generic_omp.rs"]

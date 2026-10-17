@@ -8,6 +8,15 @@ export function retryCannotReuseApproval(item: GuardApprovalRequest): boolean {
   return item.scope_restrictions?.includes("retry_cannot_reuse_approval") === true;
 }
 
+/**
+ * True when no decision can let the agent run this command: the retry never matches a one-time
+ * approval and "Always allow exact action" is not offered. Approving would only record a
+ * decision the agent never sees, so the review asks the user to run the command themselves.
+ */
+export function approvalCannotUnlock(item: GuardApprovalRequest): boolean {
+  return retryCannotReuseApproval(item) && item.exact_action_persistence_eligible !== true;
+}
+
 /** Native one-time approvals are honoured for 5 minutes (store_native_review_approvals.py); others for 15. */
 export function oneTimeRetryWindowMinutes(item: GuardApprovalRequest): number {
   return item.artifact_id.includes(":native-pretool:") ? 5 : 15;
