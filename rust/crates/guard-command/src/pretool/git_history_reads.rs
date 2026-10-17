@@ -297,3 +297,32 @@ fn split_option(argument: &str) -> (&str, Option<&str>) {
 #[cfg(test)]
 #[path = "git_history_reads_tests.rs"]
 mod tests;
+
+/// Whether the read turns a working-tree file into its stored form, which
+/// runs the repository's clean filters and can start `core.fsmonitor`.
+/// `git blame` annotates the working-tree copy through a fake commit, and
+/// `--dirty` and `--broken` make `git describe` refresh the index first.
+pub(super) fn cleans_working_tree(subcommand: &str, rest: &[String]) -> bool {
+    subcommand == "blame" || refreshes_the_index(subcommand, rest)
+}
+
+/// Whether the read refreshes the index, which runs the repository's
+/// `post-index-change` hook. Only `git describe` does so among these reads,
+/// and only when asked whether the tree is dirty or broken.
+pub(super) fn refreshes_the_index(subcommand: &str, rest: &[String]) -> bool {
+    subcommand == "describe"
+        && rest.iter().take_while(|value| *value != "--").any(|value| {
+            value == "--broken"
+                || value.starts_with("--broken=")
+                || value == "--dirty"
+                || value.starts_with("--dirty=")
+        })
+}
+
+/// Whether the read walks commits, so that a `%G` placeholder, a `pretty.*`
+/// alias carrying one or `log.showSignature` asks for a signature and runs
+/// the configured verification program. `git reflog` is the reflog walk of
+/// `git log` and reads the same configuration.
+pub(super) fn verifies_signatures(subcommand: &str) -> bool {
+    matches!(subcommand, "log" | "show" | "reflog")
+}

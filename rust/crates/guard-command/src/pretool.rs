@@ -60,6 +60,7 @@ pub(crate) mod git_branch_listing;
 pub(crate) mod git_clone_local;
 mod git_config;
 pub(crate) mod git_config_reads;
+mod git_config_trust;
 pub(crate) mod git_grep;
 pub(crate) mod git_hash_object;
 mod git_init_chain;
