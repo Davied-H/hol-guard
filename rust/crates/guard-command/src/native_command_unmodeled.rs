@@ -37,6 +37,8 @@ use super::{rank, rule_floor, CompiledNativeCommandControls};
 use crate::pretool::generic::workspace_redirects;
 use crate::CanonicalCommandV1;
 
+#[path = "native_command_unmodeled_expansion.rs"]
+mod expansion;
 #[path = "native_command_link_makers.rs"]
 mod link_makers;
 #[path = "native_command_unmodeled_redirections.rs"]
@@ -255,7 +257,7 @@ impl CompiledNativeCommandControls {
                 // launch such as `python3 -m http.server` looks like a script
                 // that was never read. The module name is already in the
                 // command.
-                None if !interpreter_launch_reads_a_file(&bare) => {}
+                None if !prefix::interpreter_launch_reads_a_file(&bare) => {}
                 None => return None,
             }
         }
@@ -433,6 +435,17 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
     if command.path_overridden || command.confidence != "uncertain" {
         return false;
     }
+    // The parser's scan stops at the first construct it cannot model, so which
+    // reason a command carries depends on where that construct sits in the
+    // text: `echo "${ pwd; }"` is a substitution, while the same brace behind a
+    // `(` is a compound shell. A brace the shell runs owns whatever it runs
+    // whichever reason won that race, so refuse it before the reasons are read
+    // rather than in the one arm it happened to reach.
+    if crate::parser_brace_command::brace_runs_a_command_unquoted(&without_lookups(
+        &command.normalized_text,
+    )) {
+        return false;
+    }
     match command.uncertainty_reason.as_deref() {
         // Backgrounding runs the same programs the foreground text names, so
         // `npm start &` owns exactly what `npm start` owns. Without this arm a
@@ -464,6 +477,33 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
                 && (input_heredoc(&text)
                     || literal_redirects_only(&text)
                     || data_heredocs(&text).is_some_and(|(shell, _)| plain_after_heredocs(&shell)))
+        }
+        // A scheduling or buffering prefix runs the program this text already
+        // names, as this user and in this directory. `nice cargo build` and
+        // `timeout -k 5 30 npm test` left a wrapper the parser does not model
+        // yet, so they reached an evaluation failure and blocked outright,
+        // with no approval left to give them, while `timeout 30 npm test`
+        // modelled exactly. A prefix that changes who runs the program, and an
+        // interpreter standing behind one, are refused before any floor is
+        // read.
+        Some("transparent_wrapper_not_yet_supported") => {
+            let literal = unquoted_literal(&command.normalized_text);
+            prefix::launch_only(&literal)
+                && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
+        }
+        // An unquoted `${NAME}` expands to a value the shell splits into
+        // words. Splitting makes operands, never operators, so the text still
+        // names every program it runs, exactly as the `$NAME` and `"${NAME}"`
+        // spellings of the same value do: those two model exactly, while this
+        // one reached an evaluation failure and blocked outright. A command
+        // word built from an expansion, `${ cmd; }` among them, is refused
+        // before any floor is read, and so is a brace form the shell
+        // evaluates rather than substitutes (see `expansion`).
+        Some("parameter_expansion_not_yet_supported") => {
+            let literal = unquoted_literal(&command.normalized_text);
+            expansion::expansions_are_inert(&command.normalized_text)
+                && !expansion_builds_a_word(&command.normalized_text)
+                && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
         }
         // A lookup in a substitution is the only one that does not run a
         // program, so a command whose substitutions are all lookups reads
@@ -733,74 +773,11 @@ pub(crate) fn unread_file_interpreter(shell: &str) -> bool {
         })
 }
 
-/// Whether a backgrounded interpreter still names a program file this scan
-/// did not read. A `python -m` module launch does not: the module is an
-/// argument, same as the foreground command.
-fn interpreter_launch_reads_a_file(shell: &str) -> bool {
-    without_redirections(shell)
-        .split(|character: char| {
-            matches!(
-                character,
-                ';' | '&' | '|' | '(' | ')' | '{' | '}' | '\n' | '`'
-            )
-        })
-        .any(command_reads_a_program_file)
-}
-
-fn command_reads_a_program_file(piece: &str) -> bool {
-    let words: Vec<&str> = piece
-        .split_whitespace()
-        .map(|word| word.trim_matches(['\'', '"']))
-        .filter(|word| !word.is_empty() && !is_assignment(word))
-        .skip_while(|word| SHELL_PREFIXES.contains(word))
-        .collect();
-    let Some(program) = words.first() else {
-        return false;
-    };
-    let program = command_basename(program);
-    if !is_python(program.as_str()) {
-        return INTERPRETERS.contains(&program.as_str());
-    }
-    !python_module_launch(&words[1..])
-}
-
 fn command_basename(word: &str) -> String {
     let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
     base.strip_suffix(".exe")
         .unwrap_or(base)
         .to_ascii_lowercase()
-}
-
-fn is_python(name: &str) -> bool {
-    name.strip_prefix("python").is_some_and(|version| {
-        version
-            .split('.')
-            .all(|part| part.is_empty() || part.bytes().all(|byte| byte.is_ascii_digit()))
-    })
-}
-
-/// `python -m module` before any script path, inline source, or stdin.
-fn python_module_launch(arguments: &[&str]) -> bool {
-    let mut index = 0;
-    while index < arguments.len() {
-        let argument = arguments[index];
-        if argument == "-m" {
-            return arguments.get(index + 1).is_some();
-        }
-        if argument == "-c" || argument == "-" || argument == "--" {
-            return false;
-        }
-        if matches!(argument, "-W" | "-X" | "--check-hash-based-pycs") {
-            index += 2;
-            continue;
-        }
-        if argument.starts_with('-') {
-            index += 1;
-            continue;
-        }
-        return false;
-    }
-    false
 }
 
 /// Whether a sourced file's own words name every program it runs.
@@ -884,6 +861,43 @@ fn parameter_expansion_runs_a_command(characters: &[char]) -> bool {
     false
 }
 
+/// An expansion glued to the characters beside it spells a word the text does
+/// not hold. `find . -exec ${X}er ps {} +` runs docker when `X` is `dock`, and
+/// nothing a floor can read names it, so a command carrying one keeps its
+/// evaluation failure. An expansion standing as its own word, or beside a
+/// separator such as `/` or `=`, names no program the text is hiding.
+fn expansion_builds_a_word(text: &str) -> bool {
+    let characters: Vec<char> = text.chars().collect();
+    for (at, _) in text.match_indices("${") {
+        let start = text[..at].chars().count();
+        if start > 0 && glues_a_word(characters[start - 1]) {
+            return true;
+        }
+        let Some(close) = characters[start..]
+            .iter()
+            .position(|character| *character == '}')
+        else {
+            return true;
+        };
+        if characters
+            .get(start + close + 1)
+            .copied()
+            .is_some_and(glues_a_word)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// A character the shell joins to the expansion beside it. Quotes and a
+/// backslash join too: `"dock"${X}`, `${X}"er"` and `${X}\er` are each one
+/// word, so the program they name is not in the text either.
+fn glues_a_word(character: char) -> bool {
+    character.is_alphanumeric()
+        || matches!(character, '_' | '-' | '.' | '$' | '}' | '"' | '\'' | '\\')
+}
+
 fn synthesizes_program(literal: &str, sourced: bool) -> bool {
     let masked = mask_double_quoted_separators(literal);
     let mut words = command_words(&masked).filter(|word| !is_assignment(word));
@@ -938,12 +952,7 @@ fn mask_double_quoted_separators(literal: &str) -> String {
 fn span_runs_a_command(quoted: &str) -> bool {
     quoted.contains("$(")
         || quoted.contains('`')
-        || quoted.match_indices("${").any(|(at, _)| {
-            quoted[at + 2..]
-                .chars()
-                .next()
-                .is_some_and(|character| character.is_whitespace() || character == '|')
-        })
+        || crate::parser_brace_command::brace_runs_a_command(quoted)
 }
 
 fn mask_span(quoted: &str) -> String {
@@ -1005,6 +1014,9 @@ fn is_assignment(word: &str) -> bool {
     })
 }
 
+#[path = "native_command_unmodeled_prefix.rs"]
+mod prefix;
+
 #[cfg(test)]
 #[path = "native_command_unmodeled_tests.rs"]
 mod tests;
@@ -1016,3 +1028,19 @@ mod sourced_tests;
 #[cfg(test)]
 #[path = "native_command_unmodeled_bounded_tests.rs"]
 mod bounded_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_ansi_c_tests.rs"]
+mod ansi_c_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_funsub_tests.rs"]
+mod funsub_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_prefix_tests.rs"]
+mod prefix_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_expansion_tests.rs"]
+mod expansion_tests;

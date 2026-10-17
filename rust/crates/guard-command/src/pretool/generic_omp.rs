@@ -97,7 +97,8 @@ pub(super) fn bounded_delegation_metadata(payload: &Value) -> bool {
         && signals.path_values.is_empty()
 }
 
-/// `learn` stores one memory note and returns the store's acknowledgement.
+/// `learn` stores one memory note, optionally with one managed skill, and
+/// returns the store's acknowledgement.
 /// Its PreToolUse stays an unknown-tool review, so under enforce the call has
 /// run only after a person approved it, and the result it returns has nothing
 /// left to approve. Withholding it would leave Oh My Pi without the
