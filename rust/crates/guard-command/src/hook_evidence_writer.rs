@@ -202,8 +202,9 @@ pub trait SqliteTimeoutApi {
 /// Bundled dependency seams for [`RuntimeHookEvidenceWriter`].
 pub struct EvidenceWriterDeps {
     pub correlation: Box<dyn CorrelationApi + Send + Sync>,
-    pub receipts: Box<dyn ReceiptValidationApi + Send + Sync>,
-    pub composio: Box<dyn ComposioApi + Send + Sync>,
+    /// Shared with the journal, which decides what a rewrite keeps.
+    pub receipts: Arc<dyn ReceiptValidationApi + Send + Sync>,
+    pub composio: Arc<dyn ComposioApi + Send + Sync>,
     pub journal: Box<dyn EvidenceJournalApi + Send + Sync>,
     pub sqlite_timeout: Box<dyn SqliteTimeoutApi + Send + Sync>,
 }
@@ -836,8 +837,15 @@ fn _command_activity_record_from_json(value: &Map<String, Value>) -> Option<Comm
         invocation_preview: None,
     };
     let payload_bytes = record.serialized().len();
+    // `_attach_invocation_previews`: a recovered record carries the preview
+    // its sidecar kept. The journal never writes the key inline, so the
+    // serialized bytes this count measures are unaffected.
+    let invocation_preview = journal_fs::validated_sidecar_preview(
+        value.get("invocation_preview").and_then(Value::as_str),
+    );
     Some(CommandActivityRecord {
         payload_bytes,
+        invocation_preview,
         ..record
     })
 }
@@ -1982,3 +1990,8 @@ pub type EvidenceJournalFileMode = u32;
 pub const fn journal_file_mode() -> u32 {
     JOURNAL_FILE_MODE
 }
+
+#[path = "hook_evidence_journal_fs.rs"]
+mod journal_fs;
+
+pub use journal_fs::NativeEvidenceJournal;
