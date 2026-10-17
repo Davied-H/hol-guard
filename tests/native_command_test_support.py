@@ -58,6 +58,17 @@ def native_test_guard_home(*, seed_key_only: bool = False) -> Path:
         home = Path(tempfile.mkdtemp(prefix="hol-guard-native-test-")).resolve()
         atexit.register(shutil.rmtree, home, ignore_errors=True)
         if seed_key_only:
+            if os.name == "nt":
+                # POSIX creation modes do not establish the protected Windows
+                # owner+SYSTEM DACL required by the native key reader. Reuse
+                # the production provisioner without importing a real store.
+                from codex_plugin_scanner.guard.native_policy_snapshot_windows_key import (
+                    provision_native_policy_verifier_key,
+                )
+
+                provision_native_policy_verifier_key(home, os.urandom(32))
+                _NATIVE_TEST_GUARD_HOME = home
+                return home
             from codex_plugin_scanner.guard.native_policy_snapshot_constants import (
                 NATIVE_POLICY_VERIFIER_KEY_NAME,
                 NATIVE_RUNTIME_STATE_DIRECTORY,
