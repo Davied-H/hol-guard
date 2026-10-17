@@ -7,7 +7,10 @@ fn listing_inspections_are_proven_reads() {
     let session = session("listing-reads");
     for cwd in [&session.primary, &session.worktree] {
         for command in [
+            // Git reads `-sn` as `-s -n`, so a bundle is the same read as the
+            // letters spelled apart and is proven the same way.
             "git shortlog -sn",
+            "git check-ignore -vz src",
             "git shortlog",
             "git shortlog --summary --numbered --email",
             "git shortlog -s -n HEAD",
@@ -32,6 +35,8 @@ fn listing_inspections_are_proven_reads() {
             "git shortlog --format=%G? -s",
             "git shortlog --pretty=%GK",
             "git shortlog --unknown-option",
+            // A bundle is only a bundle when every letter is a known flag.
+            "git shortlog -sx",
             "git check-ignore --unknown-option src",
             // The command needs a path or the pipe it reads them from.
             "git check-ignore",

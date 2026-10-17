@@ -41,6 +41,20 @@ pub(super) fn read_form(subcommand: &str, rest: &[String]) -> bool {
     }
 }
 
+/// Whether a one-dash spelling is a bundle of single-letter flags. Git's
+/// option parser reads `-sn` as `-s -n`, so a bundle prints exactly what the
+/// same letters spelled apart print, and the read grammar has to admit both.
+/// `-w` carries an optional inline width, so it is matched before this and
+/// never appears in a bundle here.
+fn short_bundle(argument: &str, letters: &str) -> bool {
+    match argument.strip_prefix('-') {
+        Some(rest) if rest.len() > 1 && !rest.starts_with('-') => {
+            rest.chars().all(|letter| letters.contains(letter))
+        }
+        _ => false,
+    }
+}
+
 /// Whether the width a `-w` spelling carries inline is a plain comma-separated
 /// count. An empty rest means the bare flag.
 fn inline_width(rest: &str) -> bool {
@@ -70,6 +84,9 @@ fn shortlog_read_form(rest: &[String]) -> bool {
                 continue;
             }
             return false;
+        }
+        if short_bundle(argument, "nsec") {
+            continue;
         }
         if let Some((name, _)) = argument.split_once('=') {
             if SHORTLOG_VALUES.contains(&name) {
@@ -105,7 +122,7 @@ fn check_ignore_read_form(rest: &[String]) -> bool {
             names += 1;
             continue;
         }
-        if CHECK_IGNORE_FLAGS.contains(&argument.as_str()) {
+        if CHECK_IGNORE_FLAGS.contains(&argument.as_str()) || short_bundle(argument, "qvz") {
             continue;
         }
         // `--stdin` takes the paths from the pipe the command already has,
