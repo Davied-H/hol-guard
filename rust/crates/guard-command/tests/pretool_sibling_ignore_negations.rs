@@ -161,3 +161,41 @@ fn an_anchored_negation_decides_only_its_own_path() {
     // The search that reaches the root does meet the re-included file.
     assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", false);
 }
+
+#[test]
+fn probe_a_nested_document_without_any_negation() {
+    let layout = layout("rg-sibling-probe-plain-nested");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join("docs/team/notes.md"), "fixture\n");
+    let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
+}
+
+#[test]
+fn probe_a_bare_negation_of_a_nested_document() {
+    let layout = layout("rg-sibling-probe-bare-nested");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join(".gitignore"), "!notes.md\n");
+    write(sibling.join("docs/team/notes.md"), "fixture\n");
+    let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
+}
+
+#[test]
+fn probe_a_double_star_negation_of_a_root_document() {
+    let layout = layout("rg-sibling-probe-double-star-root");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join(".gitignore"), "!**/notes.md\n");
+    write(sibling.join("notes.md"), "fixture\n");
+    let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
+}
+
+#[test]
+fn probe_a_double_star_negation_with_no_matching_file() {
+    let layout = layout("rg-sibling-probe-double-star-absent");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join(".gitignore"), "!**/notes.md\n");
+    let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
+}
