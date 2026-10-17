@@ -421,18 +421,21 @@ fn record_negation(pattern: &str, base: &Path, negations: &mut Negations) {
         && !pattern.split('/').any(|component| component.contains("**"));
     let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
     let mut components = Vec::new();
-    for component in pattern.split('/') {
+    let spelled: Vec<&str> = pattern.split('/').collect();
+    for (index, component) in spelled.iter().copied().enumerate() {
         if component.is_empty() || component.contains('\\') {
             negations.all.push("*".to_owned());
             components.push(("*".to_owned(), true));
             continue;
         }
-        // `**` names no entry of its own: it stands for the run of
-        // directories above the name that follows it, which is pushed here
-        // in its own turn. Pushed as a pattern it would match every pruned
-        // directory, so `dist/` beside `!**/notes.md` would read as a
-        // re-included `dist`.
-        if component != "**" {
+        // A `**` that a name follows stands for the run of directories above
+        // that name, which is pushed here in its own turn, and names no entry
+        // itself. Pushed as a pattern it would match every pruned directory,
+        // so `dist/` beside `!**/notes.md` would read as a re-included
+        // `dist`. A trailing `**` is the opposite: `!**` re-includes every
+        // entry there is, pruned directories among them, so it keeps the
+        // pattern that matches them.
+        if component != "**" || index + 1 == spelled.len() {
             negations.all.push(component.to_owned());
         }
         let screened = !super::sensitive_path_argument(component)

@@ -78,7 +78,7 @@ fn a_double_star_negation_naming_an_ordinary_file_is_allowed() {
 
 #[test]
 fn sibling_search_whose_negations_could_reach_a_secret_is_reviewed() {
-    let cases: [(&str, &[(&str, &str)]); 7] = [
+    let cases: [(&str, &[(&str, &str)]); 10] = [
         (
             "env-example",
             &[
@@ -102,6 +102,29 @@ fn sibling_search_whose_negations_could_reach_a_secret_is_reviewed() {
             ],
         ),
         ("pruned", &[(".gitignore", "target/\n!target\n")]),
+        // A trailing `**` re-includes every entry there is, the pruned
+        // directory among them, so the search reads whatever it holds.
+        (
+            "bare-double-star",
+            &[
+                (".gitignore", "dist/\n!**\n"),
+                ("dist/.env", "TOKEN=fixture\n"),
+            ],
+        ),
+        (
+            "trailing-slash-double-star",
+            &[
+                (".gitignore", "dist/\n!**/\n"),
+                ("dist/.env", "TOKEN=fixture\n"),
+            ],
+        ),
+        (
+            "rooted-double-star",
+            &[
+                (".gitignore", "dist/\n!/**\n"),
+                ("dist/.env", "TOKEN=fixture\n"),
+            ],
+        ),
         (
             "nested-pruned",
             &[
