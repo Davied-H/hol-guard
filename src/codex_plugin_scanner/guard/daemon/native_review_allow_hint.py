@@ -93,7 +93,11 @@ def _definite_review_binding(native_result: Mapping[str, object]) -> Mapping[str
 
 
 def _observed_risk_classes(native_result: Mapping[str, object]) -> list[str]:
-    """Risk classes of the catalog rules the native evidence observed in this command."""
+    """Risk classes of the catalog rules the native evidence observed in this command.
+
+    A critical rule or a destructive shell rule also records ``destructive`` so the
+    connector recommendation keeps its caution for a pending delete.
+    """
 
     evidence = native_result.get("command_extensions")
     observations = evidence.get("observations") if isinstance(evidence, Mapping) else None
@@ -103,7 +107,9 @@ def _observed_risk_classes(native_result: Mapping[str, object]) -> list[str]:
         rule = BUILT_IN_COMMAND_EXTENSION_REGISTRY.get_rule(rule_id) if isinstance(rule_id, str) else None
         if rule is not None:
             classes.extend(rule.risk_classes)
-    return classes
+            if rule.severity == "critical" or "destructive_shell" in rule.risk_classes:
+                classes.append("destructive")
+    return sorted(set(classes))
 
 
 def native_review_hint(

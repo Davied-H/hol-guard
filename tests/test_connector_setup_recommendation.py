@@ -146,7 +146,19 @@ def test_queue_time_hint_takes_risk_classes_from_observed_rules() -> None:
     hint = native_review_allow_hint.native_review_hint(object(), {}, native_result, None, None, None, _CONNECTOR)
 
     assert hint is not None
-    assert hint["risk_classes"] == ["destructive_shell", "network_egress"]
+    assert hint["risk_classes"] == ["destructive", "destructive_shell", "network_egress"]
+
+
+def test_a_pending_delete_keeps_caution_through_the_full_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    _items(monkeypatch)
+    native_result = {"command_extensions": {"observations": [{"rule_id": "command.api-gateway.delete"}]}}
+    hint = native_review_allow_hint.native_review_hint(object(), {}, native_result, None, None, None, _CONNECTOR)
+    assert hint is not None
+
+    result = _build(_approval(hint))
+
+    assert result is not None
+    assert result["caution"] is True
 
 
 def test_queue_time_hint_without_a_connector_is_the_extension_hint(monkeypatch: pytest.MonkeyPatch) -> None:
