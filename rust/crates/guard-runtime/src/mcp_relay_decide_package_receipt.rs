@@ -90,9 +90,9 @@ pub(super) fn record(
         "artifact_id": artifact.artifact_id,
         "artifact_hash": answer.artifact_hash,
         "workspace": workspace,
-        // The gate reads no `PATH` out of an absent or empty one, and both are
-        // stated the same way so the drain rebuilds the call under the empty
-        // search path the gate resolved under.
+        // The gate binds no environment for an absent or empty `PATH`, and
+        // resolves the manager under the resident's own. Both are stated the
+        // same way so the drain rebuilds the call the same unbound way.
         "path": request.path.as_deref().filter(|path| !path.is_empty()),
         "evaluation": Value::Object(answer.evaluation.clone()),
         "evidence": Value::Array(answer.evidence.clone()),

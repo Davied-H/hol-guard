@@ -349,10 +349,15 @@ def _package_artifact(
 
     ``path`` is the relay's own search path, bound here so the resident
     resolves the command's manager exactly as it did for the decision. A relay
-    that ran without a ``PATH`` states ``None``, and the resolution is bound to
-    an empty search path, which is what the gate resolved under. Leaving the
-    key out instead would hand the resident the daemon's own ``PATH``
-    (``_resident_environment``), which is no part of the call being rebuilt.
+    that ran without a ``PATH`` states ``None``, and the gate resolved that call
+    under no bound environment at all, which the resident reads as its own
+    (``normalized_command_segments`` falls back to the process environment, as
+    the Python baseline fell back to ``os.environ``). Stating no environment
+    here reproduces that: ``_resident_environment`` binds the ambient ``PATH``,
+    which is the one the resident was spawned with. Binding an empty ``PATH``
+    instead would resolve the manager against the workspace alone, an execution
+    context the decision never had, and the ``artifact_id`` check below drops
+    whatever the two sides disagree on.
     """
 
     from ..proxy.runtime_mcp import _command_argument  # pyright: ignore[reportPrivateUsage]
@@ -365,7 +370,7 @@ def _package_artifact(
         action_envelope_command=_command_argument(arguments),
         workspace=workspace,
         guard_home=guard_home,
-        environment={"PATH": "" if path is None else path},
+        environment=None if path is None else {"PATH": path},
     )
     if intent is None:
         return None
