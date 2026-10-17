@@ -439,6 +439,20 @@ fn nearest_present(path: &Path) -> Option<(PathBuf, Vec<String>)> {
     }
 }
 
+/// Whether the operand, as it was spelled, crosses only names a walk admits.
+///
+/// The screens below read the resolved path, so a link's own name never
+/// reaches them: `service-api/.private` is screened as whatever it points at,
+/// and a hidden name would be laundered through the link. The spelling is
+/// held to the same hidden-name screen first, before anything is resolved.
+fn spelling_allowed(value: &str) -> bool {
+    value
+        .trim_start_matches('~')
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != "." && *part != "..")
+        .all(|part| !part.starts_with('.') || tree::hidden_allowed(part))
+}
+
 /// True when `value` names a directory inside a git working tree below home
 /// that a `grep -r` walk may take as its root.
 ///
@@ -470,12 +484,23 @@ pub(in crate::pretool) fn grep_walk_root(
     {
         return false;
     }
+    if !spelling_allowed(value) {
+        return false;
+    }
     let Some(operand) =
         tree::expanded_operand(value, context).and_then(|path| std::fs::canonicalize(path).ok())
     else {
         return false;
     };
-    if !operand.is_dir() || tree::inside_agent_state(&operand, context) {
+    if !operand.is_dir()
+        || tree::inside_agent_state(&operand, context)
+        // The walk measures its descendants against the operand, so a store
+        // named as the root has its own name stripped before any of them is
+        // screened: `grep -rn pat ~/Code/org/service-api/secrets` would read
+        // the store one file at a time. The directories on the way to the
+        // root are screened on their own.
+        || guard_secure_fs::credential_directory_path(&operand)
+    {
         return false;
     }
     let Some(root) = operand

@@ -87,3 +87,30 @@ fn a_missing_sibling_root_a_peer_segment_would_create_keeps_its_review() {
         false,
     );
 }
+
+#[test]
+fn a_hidden_link_or_a_store_named_as_the_root_keeps_its_review() {
+    let layout = layout("grep-sibling-store-root");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join("docs/guide.md"), "fixture\n");
+    write(sibling.join("secrets/prod.json"), "{}\n");
+    write(sibling.join("ops/api-tokens/prod.json"), "{}\n");
+    // A hidden name that resolves to an ordinary directory: the walk reads
+    // where the link lands, so the spelling is what carries the name.
+    std::os::unix::fs::symlink(sibling.join("docs"), sibling.join(".private")).unwrap();
+    let cwd = layout.org.join("app-portal");
+    for command in [
+        "grep -rn fixture ~/Code/org/service-api/.private",
+        "grep -rn fixture ../service-api/.private",
+        "grep -rn fixture ~/Code/org/service-api/secrets",
+        "grep -rn fixture ~/Code/org/service-api/ops/api-tokens",
+    ] {
+        assert_decision(&cwd, &layout.home, command, false);
+    }
+    assert_decision(
+        &cwd,
+        &layout.home,
+        "grep -rn fixture ~/Code/org/service-api/docs",
+        true,
+    );
+}

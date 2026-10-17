@@ -277,7 +277,7 @@ fn real_allowed_directory(path: &Path, context: ReadContext<'_>) -> Option<PathB
         .then(|| path.to_path_buf())
 }
 
-fn hidden_allowed(name: &str) -> bool {
+pub(super) fn hidden_allowed(name: &str) -> bool {
     BENIGN_HIDDEN_NAMES.contains(&name.to_ascii_lowercase().as_str())
 }
 
