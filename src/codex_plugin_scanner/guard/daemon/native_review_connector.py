@@ -22,6 +22,7 @@ from .hook_native_exact_action import launch_cwd
 from .hook_request_parsing import pre_tool_command
 
 if TYPE_CHECKING:
+    from ..connector_setup_context import ConnectorSetupAdvice
     from ..local_cli_hook import SetupConnector
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,6 +34,11 @@ NON_RECOGNITION_REASON_CODES = frozenset(
     {"native_command_review_required", "native_workspace_containment_executable_outside_roots"}
 )
 _SAFE_NAME = re.compile(r"[A-Za-z0-9@][A-Za-z0-9._@+/-]{0,63}")
+# What first stopped the connector, by the review reason that queued it.
+_FIRST_CAUSE_BY_REASON_CODE = {
+    "native_workspace_containment_executable_outside_roots": "exec_outside_roots",
+    "native_command_review_required": "unrecognised_tool",
+}
 
 
 def native_review_setup_connector(
@@ -66,6 +72,52 @@ def native_review_setup_connector(
         return None
 
 
+def record_native_review_connector_context(
+    store: object,
+    *,
+    connector: SetupConnector,
+    native_result: Mapping[str, object],
+    stored: Mapping[str, object],
+    harness: str,
+    workspace: Path | None,
+) -> ConnectorSetupAdvice | None:
+    """Keep the queued review's context with the connector, and read back what is already allowed.
+
+    Best effort: the review is already queued, so a failure here only leaves the
+    connector without context. The resident scrubs and caps every field, and
+    nothing here writes a grant or a capability.
+    """
+
+    from ..connector_setup_context import record_connector_setup_context
+
+    reason_code = native_result.get("reason_code")
+    cause = _FIRST_CAUSE_BY_REASON_CODE.get(reason_code) if isinstance(reason_code, str) else None
+    command = stored.get("raw_command_text")
+    try:
+        return record_connector_setup_context(
+            store,  # pyright: ignore[reportArgumentType]
+            cli_id=connector.cli_id,
+            identity_hash=connector.identity_hash,
+            first_blocked_cause=cause,
+            trigger_summary=_without_operands(stored.get("trigger_summary"), command),
+            why_now=_without_operands(stored.get("why_now"), command),
+            harness=harness,
+            workspace_label=workspace.name if workspace is not None else None,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
+        _LOGGER.warning("Connector setup context not recorded (%s)", type(error).__name__)
+        return None
+
+
+def _without_operands(text: object, command: object) -> str | None:
+    """Review wording that repeats no argument of the command, which is never kept."""
+
+    if not isinstance(text, str) or not text.strip():
+        return None
+    operands = command.split()[1:] if isinstance(command, str) else []
+    return None if any(operand in text for operand in operands) else text
+
+
 def connector_display_name(connector: SetupConnector) -> str:
     """The CLI name for agent text, or a generic one when it is not a plain name."""
 
@@ -94,4 +146,5 @@ __all__ = [
     "connector_display_name",
     "native_review_setup_connector",
     "raise_connector_setup_notice",
+    "record_native_review_connector_context",
 ]

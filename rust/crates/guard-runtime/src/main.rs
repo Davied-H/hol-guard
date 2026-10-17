@@ -164,6 +164,7 @@ mod compound_git_inspection_vectors_tests;
 mod compound_git_paths;
 mod compound_git_segments;
 mod connector_setup;
+mod connector_setup_context_op;
 mod consumer_artifact_compose_op;
 mod consumer_artifact_compose_runtime;
 mod consumer_artifact_project_op;
@@ -300,6 +301,7 @@ mod guard_store_connect;
 mod guard_store_connect_effective;
 #[cfg(test)]
 mod guard_store_connect_vectors_tests;
+mod guard_store_connector_context;
 mod guard_store_db;
 mod guard_store_guard_event;
 #[cfg(test)]

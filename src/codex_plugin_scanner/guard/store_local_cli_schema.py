@@ -7,8 +7,10 @@ import sqlite3
 from typing import Final, cast
 
 from .store_local_cli_capabilities import ensure_local_cli_capability_table
+from .store_local_cli_context import ensure_local_cli_context_columns
+from .store_local_cli_regroup import regroup_pending_connector_reviews
 
-LOCAL_CLI_SCHEMA_VERSION: Final = 13
+LOCAL_CLI_SCHEMA_VERSION: Final = 14
 _V1_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v1").hexdigest()
 _V2_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v2").hexdigest()
 _V3_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v3").hexdigest()
@@ -21,7 +23,8 @@ _V9_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v9")
 _V10_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v10").hexdigest()
 _V11_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v11").hexdigest()
 _V12_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v12").hexdigest()
-_SCHEMA_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v13").hexdigest()
+_V13_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v13").hexdigest()
+_SCHEMA_CHECKSUM: Final = hashlib.sha256(b"hol-guard.local-cli-allowlist.schema.v14").hexdigest()
 
 
 class LocalCliSchemaError(ValueError):
@@ -135,9 +138,20 @@ def ensure_local_cli_schema(connection: sqlite3.Connection, *, for_read: bool = 
             ensure_local_cli_capability_table(connection)
             connection.execute(
                 "update local_cli_schema_migration set version = ?, checksum = ? where singleton = 1",
-                (13, _SCHEMA_CHECKSUM),
+                (13, _V13_CHECKSUM),
             )
-            version, checksum = 13, _SCHEMA_CHECKSUM
+            version, checksum = 13, _V13_CHECKSUM
+        if version == 13 and checksum == _V13_CHECKSUM:
+            # Setup context columns start null. Pending setup reviews that tie to
+            # one undecided CLI move to its connector group; the regroup is best
+            # effort and never blocks the schema bump.
+            ensure_local_cli_context_columns(connection)
+            _ = regroup_pending_connector_reviews(connection)
+            connection.execute(
+                "update local_cli_schema_migration set version = ?, checksum = ? where singleton = 1",
+                (14, _SCHEMA_CHECKSUM),
+            )
+            version, checksum = 14, _SCHEMA_CHECKSUM
         if version != LOCAL_CLI_SCHEMA_VERSION or checksum != _SCHEMA_CHECKSUM:
             if version > LOCAL_CLI_SCHEMA_VERSION:
                 raise LocalCliSchemaError(
@@ -200,6 +214,7 @@ def ensure_local_cli_schema(connection: sqlite3.Connection, *, for_read: bool = 
     _ensure_mcp_catalog_table(connection)
     _ensure_mcp_provider_catalog_table(connection)
     ensure_local_cli_capability_table(connection)
+    ensure_local_cli_context_columns(connection)
 
 
 def _migrate_v1_to_v2(connection: sqlite3.Connection) -> None:

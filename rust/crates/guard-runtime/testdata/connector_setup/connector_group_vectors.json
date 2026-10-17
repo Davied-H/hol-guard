@@ -1,0 +1,81 @@
+{
+  "schema": "hol-guard.connector-group-vectors.v1",
+  "comment": "queue_group_id for ASCII commands; the resident and the Python migration must agree.",
+  "vectors": [
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl status",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:f6b34710e59e7af6"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl   status",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:f6b34710e59e7af6"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "  lanectl status  ",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:f6b34710e59e7af6"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl ping",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:fa379d7f08c31918"
+    },
+    {
+      "identity_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "command": "lanectl status",
+      "queue_group_id": "connector:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef:f6b34710e59e7af6"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl status --port 8080",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:c8158e217a58ba75"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl status -p 9090",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:c8158e217a58ba75"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl sync 2026-01-02",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:8fa473cfc65e1b45"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl sync 2026-01-02T03:04:05Z",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:8fa473cfc65e1b45"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl run 123e4567-e89b-12d3-a456-426614174000",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:50c2dbe35c92ef5f"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl run req-abcd1234",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:97496e93e8f1bfae"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl run request_9f8e7d6c",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:97496e93e8f1bfae"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl \u001b[31mred\u001b[0m",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:d9ecc6f2c6788493"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "./bin/lanectl serve",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:808495d6b678fd04"
+    },
+    {
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "command": "lanectl list\tall",
+      "queue_group_id": "connector:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:44edea3d8a7960f9"
+    }
+  ]
+}

@@ -69,7 +69,7 @@ def _apply(service: LocalCliApiService, payload: dict) -> dict:
     return service.apply({**payload, "approval_password": _PASSWORD})
 
 
-def test_v12_store_migrates_to_v13_with_capability_table(tmp_path: Path) -> None:
+def test_v12_store_gains_capability_table_on_migration(tmp_path: Path) -> None:
     with sqlite3.connect(tmp_path / "guard.db") as connection:
         ensure_local_cli_schema(connection)
         connection.execute("drop table local_cli_grant_capability")
@@ -78,7 +78,7 @@ def test_v12_store_migrates_to_v13_with_capability_table(tmp_path: Path) -> None
         )
         ensure_local_cli_schema(connection)
         version = connection.execute("select version from local_cli_schema_migration").fetchone()[0]
-        assert version == LOCAL_CLI_SCHEMA_VERSION == 13
+        assert version == LOCAL_CLI_SCHEMA_VERSION == 14
         columns = [row[1] for row in connection.execute("pragma table_info(local_cli_grant_capability)")]
         assert columns == ["cli_id", "capability", "state", "revision", "updated_at"]
         with pytest.raises(sqlite3.IntegrityError):
