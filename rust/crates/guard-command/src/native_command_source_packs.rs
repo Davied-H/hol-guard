@@ -7,11 +7,49 @@ use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::{Read, Write},
+    sync::Arc,
 };
 
 #[path = "native_command_pack_objects.rs"]
 pub mod objects;
 use objects::{ObjectRef, ObjectWriter};
+
+/// Only results produced by this compiler instance can enter this cache. Disk
+/// objects and caller-supplied JSON cannot be promoted to validated policy.
+pub struct PackCompiler {
+    cache: BTreeMap<String, (String, Arc<catalog::CompiledSourceCatalog>, usize)>,
+    bytes: usize,
+    limit: usize,
+}
+
+#[derive(Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub struct CompilationStats {
+    pub compiled: usize,
+    pub reused: usize,
+    pub retained_encoded_bytes: usize,
+}
+
+const CACHE_BYTES: usize = 64 * 1024 * 1024;
+
+impl Default for PackCompiler {
+    fn default() -> Self {
+        Self {
+            cache: BTreeMap::new(),
+            bytes: 0,
+            limit: CACHE_BYTES,
+        }
+    }
+}
+
+impl PackCompiler {
+    pub fn compile(
+        &mut self,
+        reader: impl Read,
+        output: impl Write,
+    ) -> Result<(Value, CompilationStats), &'static str> {
+        compile(reader, output, self)
+    }
+}
 
 fn frame(reader: &mut impl Read) -> Result<Vec<u8>, &'static str> {
     let mut length = [0; 4];
@@ -76,10 +114,20 @@ fn references(document: &SourceDocument, owners: &BTreeMap<&str, &str>) -> BTree
 /// Emits bounded object records followed by one complete root record. This
 /// compiler API grants no activation authority and accepts no filesystem paths.
 /// An interrupted stream never emits a root and cannot replace a release.
-pub fn compile_pack_stream(
+pub fn compile_pack_stream(reader: impl Read, output: impl Write) -> Result<Value, &'static str> {
+    PackCompiler {
+        limit: 0,
+        ..PackCompiler::default()
+    }
+    .compile(reader, output)
+    .map(|(root, _)| root)
+}
+
+fn compile(
     mut reader: impl Read,
     output: impl Write,
-) -> Result<Value, &'static str> {
+    compiler: &mut PackCompiler,
+) -> Result<(Value, CompilationStats), &'static str> {
     let mut magic = [0; 5];
     reader
         .read_exact(&mut magic)
@@ -211,6 +259,9 @@ pub fn compile_pack_stream(
     drop(documents);
     let mut writer = ObjectWriter::new(output);
     let mut entries = Vec::new();
+    let mut stats = CompilationStats::default();
+    compiler.cache.retain(|id, _| inputs.contains_key(id));
+    compiler.bytes = compiler.cache.values().map(|(_, _, size)| size).sum();
     for (id, input) in &inputs {
         let commands = if input.server {
             vec![]
@@ -231,13 +282,45 @@ pub fn compile_pack_stream(
             &json!({"input":input.fingerprint,
             "interfaces":related_interfaces, "engine":env!("GUARD_COMMAND_SOURCE_IMPLEMENTATION"), "semantic_profile":"cpython-3.12-ucd15"}),
         )?;
-        let compiled = catalog::compile_pack(
-            &commands,
-            &servers,
-            &serde_json::to_vec(&input.trust).map_err(|_| "command_pack_encoding_failed")?,
-            (&extension_interfaces, &permission_interfaces),
-        )?;
-        let mut program = compiled.program;
+        let cached = compiler
+            .cache
+            .get(id)
+            .filter(|(key, _, _)| key == &cache_key);
+        let compiled = if let Some((_, value, _)) = cached {
+            stats.reused += 1;
+            Arc::clone(value)
+        } else {
+            stats.compiled += 1;
+            let value = Arc::new(catalog::compile_pack(
+                &commands,
+                &servers,
+                &serde_json::to_vec(&input.trust).map_err(|_| "command_pack_encoding_failed")?,
+                (&extension_interfaces, &permission_interfaces),
+            )?);
+            let bytes = if compiler.limit > 0 {
+                serde_json::to_vec(&*value)
+                    .map_err(|_| "command_pack_encoding_failed")?
+                    .len()
+            } else {
+                0
+            };
+            if let Some((_, _, size)) = compiler.cache.remove(id) {
+                compiler.bytes -= size;
+            }
+            // A bounded cache is an optimization. Oversized working sets still
+            // compile correctly, without increasing policy admission budgets.
+            if compiler.limit > 0
+                && bytes <= compiler.limit
+                && compiler.bytes + bytes <= compiler.limit
+            {
+                compiler
+                    .cache
+                    .insert(id.clone(), (cache_key.clone(), Arc::clone(&value), bytes));
+                compiler.bytes += bytes;
+            }
+            value
+        };
+        let mut program = compiled.program.clone();
         let nodes = program["nodes"]
             .as_object()
             .unwrap()
@@ -259,13 +342,15 @@ pub fn compile_pack_stream(
         entries.push((id.clone(), writer.json(&manifest)?));
     }
     let index = writer.index(&entries)?;
-    Ok(
+    stats.retained_encoded_bytes = compiler.bytes;
+    Ok((
         json!({"kind":"root", "schema":"guard.command-pack-release.v1",
         "engine":env!("GUARD_COMMAND_SOURCE_IMPLEMENTATION"), "index":index,
         "extensions":entries.len(), "objects":writer.objects, "object_bytes":writer.bytes,
         "object_bytes_limit":objects::OBJECT_BYTES, "index_fanout":objects::FANOUT,
         "authority":"requires-authenticated-release-binding"}),
-    )
+        stats,
+    ))
 }
 
 #[cfg(test)]

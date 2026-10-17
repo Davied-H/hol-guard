@@ -37,10 +37,10 @@ pub use catalog::{
 pub use contract::{descriptor_schema, source_schema};
 pub use evaluation_batch::evaluate_batch;
 pub use fixtures::run_fixtures;
-pub use packs::compile_pack_stream;
 pub use packs::objects::{
     lookup as lookup_pack, read_blob as read_pack_blob, ObjectRef as PackObjectRef,
 };
+pub use packs::{compile_pack_stream, CompilationStats, PackCompiler};
 pub use parity::compare_programs;
 pub use stream::{compile_source_stream, validate_and_compact_source, SourceStreamError};
 

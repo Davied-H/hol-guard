@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 import build_native_command_program as legacy
+from command_pack_compiler_session import PackCompilerSession
 from command_pack_store import PackReader, durable_directory, publish_object
 
 MAX_OBJECT_BYTES = 64 * 1024
@@ -94,7 +95,7 @@ def safe_directory(path: Path) -> None:
         raise ValueError("pack output must be a directory")
 
 
-def stage(compiler: Path, destination: Path) -> dict:
+def stage(compiler: Path, destination: Path, *, session: PackCompilerSession | None = None) -> dict:
     safe_directory(destination)
     objects = destination / "objects"
     safe_directory(objects)
@@ -102,10 +103,13 @@ def stage(compiler: Path, destination: Path) -> dict:
     expected_engine = legacy.implementation_digest()
     identities: set[str] = set()
     reused = created = changed_bytes = 0
+    compilation = None
     with tempfile.TemporaryFile() as source, tempfile.TemporaryFile() as errors:
         count = input_stream(legacy.ROOT, source, identities)
-        process = subprocess.Popen(
-            [str(compiler), "compile-packs"], stdin=source, stdout=subprocess.PIPE, stderr=errors
+        process = (
+            session.submit(compiler, source)
+            if session
+            else subprocess.Popen([str(compiler), "compile-packs"], stdin=source, stdout=subprocess.PIPE, stderr=errors)
         )
         try:
             assert process.stdout is not None
@@ -113,6 +117,19 @@ def stage(compiler: Path, destination: Path) -> dict:
                 if len(line) > MAX_OUTPUT_LINE or not line.endswith(b"\n"):
                     raise ValueError("native pack output exceeds record budget")
                 row = json.loads(line)
+                if session and row.get("kind") == "compilation":
+                    stats = row.get("stats")
+                    if (
+                        compilation is not None
+                        or not isinstance(stats, dict)
+                        or set(stats) != {"compiled", "reused", "retained_encoded_bytes"}
+                        or any(type(value) is not int or value < 0 for value in stats.values())
+                        or stats["compiled"] + stats["reused"] != count
+                        or stats["retained_encoded_bytes"] > 64 * 1024 * 1024
+                    ):
+                        raise ValueError("native compilation report is invalid")
+                    compilation = stats
+                    continue
                 if row.get("kind") == "root":
                     if (
                         root is not None
@@ -121,6 +138,8 @@ def stage(compiler: Path, destination: Path) -> dict:
                     ):
                         raise ValueError("native pack root is incomplete")
                     root = row
+                    if session:
+                        break
                     continue
                 if root is not None or row.get("kind") != "object":
                     raise ValueError(f"native pack compilation failed: {row.get('code', 'invalid output')}")
@@ -138,17 +157,19 @@ def stage(compiler: Path, destination: Path) -> dict:
                     changed_bytes += len(data)
                 else:
                     reused += 1
-            status = process.wait()
+            status = process.poll() if session else process.wait()
+            if session and (compilation is None or root is None):
+                raise ValueError(f"native compiler session failed: {session.error()}")
             if status or root is None:
                 errors.seek(0)
                 raise ValueError(
                     f"native pack compiler failed ({status}): {errors.read(2048).decode(errors='replace')}"
                 )
         finally:
-            if process.poll() is None:
+            if not session and process.poll() is None:
                 process.terminate()
                 process.wait()
-            if process.stdout is not None:
+            if not session and process.stdout is not None:
                 process.stdout.close()
     # A failed build can leave immutable unreferenced objects, but never a new
     # root. Reused objects are byte checked; the cache supplies no policy authority.
@@ -180,16 +201,41 @@ def stage(compiler: Path, destination: Path) -> dict:
         "created_objects": created,
         "reused_objects": reused,
         "changed_object_bytes": changed_bytes,
-        "compilation": "all sources revalidated; immutable objects reused",
+        "compilation": compilation or "all sources revalidated; immutable objects reused",
     }
+
+
+def bootstrap_compiler() -> Path:
+    """Build the maintainer tool without admitting the contribution catalog."""
+    subprocess.run(
+        [
+            "cargo",
+            "+1.88.0",
+            "build",
+            "--locked",
+            "--release",
+            "--manifest-path",
+            str(legacy.ROOT / "rust/Cargo.toml"),
+            "-p",
+            "guard-pack-compiler",
+        ],
+        cwd=legacy.ROOT,
+        check=True,
+    )
+    target = Path(os.environ.get("CARGO_TARGET_DIR", "rust/target"))
+    if not target.is_absolute():
+        target = legacy.ROOT / target
+    executable = "guard-pack-compiler.exe" if os.name == "nt" else "guard-pack-compiler"
+    return target / "release" / executable
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--compiler", required=True, type=Path)
+    parser.add_argument("--compiler", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
-    print(json.dumps(stage(args.compiler.resolve(), args.output), sort_keys=True))
+    compiler = args.compiler or bootstrap_compiler()
+    print(json.dumps(stage(compiler.resolve(), args.output), sort_keys=True))
 
 
 if __name__ == "__main__":

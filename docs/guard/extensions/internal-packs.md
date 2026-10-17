@@ -45,8 +45,26 @@ are recorded in `contracts/catalog-delivery/packs.v1.json`.
 `scripts/build_native_command_packs.py` stages these outputs. It verifies emitted
 object bytes, rejects poisoned cached objects, and atomically replaces the root
 only after successful compiler completion. Interrupted builds may leave
-unreferenced immutable objects. The current compiler still revalidates every
-source; storage reuse is not compilation-cache qualification.
+unreferenced immutable objects. Every build still decodes all original sources
+and validates global ownership and relationships.
+
+The maintainer-only `guard-pack-compiler` builds the same native implementation
+without an embedded catalog. The script builds this tool automatically when
+`--compiler` is omitted. Contribution changes do not invalidate its Cargo inputs.
+It cannot export or evaluate a packaged program.
+
+For a sequence of builds, `PackCompilerSession` retains one native process. Each
+request starts with an eight-byte big-endian stream length followed by the HGPS
+stream; individual records keep their original limits. Object records and a
+compilation-count record precede the unchanged release root. Closing stdin drops
+the process and all cached values. Truncated or invalid requests end the session.
+
+Only results compiled by that process may enter its cache. A hit requires the
+current native source/trust/interface build key after global validation. The cache
+retains at most 64 MiB of encoded projections; this is not a measurement of heap
+use. Larger working sets compile normally with partial reuse. Disk objects cannot
+seed the compilation cache, and storage reuse alone proves no compilation reuse.
+Authenticated reuse across separate build processes remains separate work.
 
 Integrity is not publisher authority. A root must be bound to an authenticated
 release before runtime use; an arbitrary directory or a matching hash alone is

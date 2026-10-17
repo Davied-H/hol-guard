@@ -208,3 +208,17 @@ def test_interrupted_object_publication_can_be_retried(generator, monkeypatch, t
     assert not list(tmp_path.glob(".obj-*"))
     monkeypatch.setattr(store.os, "link", link)
     assert store.publish_object(tmp_path, digest, data)
+
+
+@pytest.mark.parametrize("target", ["relative-target", "/absolute-target"])
+def test_bootstrap_target_is_resolved_from_repository_not_calling_directory(generator, monkeypatch, tmp_path, target):
+    calls = []
+    monkeypatch.setenv("CARGO_TARGET_DIR", target)
+    monkeypatch.setattr(generator.subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
+    expected = Path(target) if Path(target).is_absolute() else tmp_path / target
+    executable = "guard-pack-compiler.exe" if generator.os.name == "nt" else "guard-pack-compiler"
+    assert generator.bootstrap_compiler() == expected / "release" / executable
+    command, options = calls[0]
+    assert command[-2:] == ["-p", "guard-pack-compiler"]
+    assert "--locked" in command and "+1.88.0" in command
+    assert options == {"cwd": tmp_path, "check": True}
