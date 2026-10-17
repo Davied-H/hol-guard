@@ -107,7 +107,7 @@ impl Launched<'_> {
 
 /// The local CLI the daemon reads a grant for, or `None` when the payload
 /// names no command or launch directory or the command launches none.
-pub(super) fn launch_for<'a>(
+fn launch_for<'a>(
     payload: &'a Map<String, Value>,
     workspace: &str,
     home_dir: &str,
