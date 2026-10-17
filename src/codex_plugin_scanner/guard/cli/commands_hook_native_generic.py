@@ -137,69 +137,6 @@ from .commands_support_runtime_policy import _runtime_hook_effective_policy_conf
 # Bump when generic-hook classification or action-composition semantics change.
 _GENERIC_HOOK_EVALUATOR_POLICY_VERSION = "generic-hook-evaluation-v3"
 
-_GENERIC_HOOK_NON_CONTENT_FIELDS = frozenset(
-    {
-        "action_id",
-        "approval_center_url",
-        "approval_delivery",
-        "approval_request_id",
-        "approval_requests",
-        "call_id",
-        "daemon_status",
-        "event_id",
-        "event_time",
-        "fail_mode",
-        "hook_id",
-        "invocation_id",
-        "message_id",
-        "permission_decision_reason",
-        "policy_action",
-        "received_at",
-        "request_id",
-        "review_hint",
-        "session_id",
-        "thread_id",
-        "timestamp",
-        "tool_call_id",
-        "tool_use_id",
-        "trace_id",
-        "turn_id",
-        "user_override",
-    }
-)
-
-
-def _generic_hook_payload_digest(payload: Mapping[str, object]) -> str:
-    """Return a stable action digest without delivery metadata or policy hints.
-
-    Hook transports assign fresh request, session, tool-use, and timestamp fields
-    when an otherwise identical action is retried.  Those top-level delivery
-    fields are not part of the action the user reviewed.  Nested fields remain
-    intact because, for an opaque tool, a value such as
-    ``tool_input.request_id`` can be a real action argument.
-    """
-
-    content_payload = {
-        key: value
-        for key, value in payload.items()
-        if _generic_hook_content_key(key) not in _GENERIC_HOOK_NON_CONTENT_FIELDS
-        and _generic_hook_content_key(key) != "artifact_hash"
-    }
-    encoded = json.dumps(
-        content_payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _generic_hook_content_key(key: str) -> str:
-    """Canonicalize top-level hook keys across snake/camel/kebab transports."""
-
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", key).replace("-", "_").lower()
-
 
 def _generic_hook_approval_context_inputs(
     *,
@@ -233,7 +170,6 @@ def _generic_hook_approval_context_inputs(
         home_dir=home_dir,
         runtime_workspace=runtime_workspace,
         payload=payload,
-        payload_digest=_generic_hook_payload_digest(payload),
         tool_command=tool_command,
         config=config,
         policy_config=_runtime_hook_effective_policy_config(config),
