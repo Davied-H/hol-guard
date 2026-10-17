@@ -5,7 +5,8 @@ import { connectorSetupCopy } from "./local-cli-panel-copy";
 /** Shown on Protect when it was opened from a request held on this connector. */
 export function ConnectorSetupBanner(props: {
   name: string;
-  identityHash: string;
+  heldIdentityHash: string;
+  currentIdentityHash: string;
   match: ConnectorSetupMatch;
   busy: boolean;
   outcome: string | null;
@@ -23,8 +24,13 @@ export function ConnectorSetupBanner(props: {
       <h2 id="connector-setup-heading" className="text-sm font-semibold text-brand-dark">{copy.title}</h2>
       {copy.body ? <p className="mt-1 text-sm leading-6 text-slate-700">{copy.body}</p> : null}
       <p className="mt-2 text-xs text-slate-600">
-        Bound identity <code className="rounded bg-slate-100 px-1 font-mono text-brand-dark">{shortIdentity(props.identityHash)}</code>
+        Held identity <code className="rounded bg-slate-100 px-1 font-mono text-brand-dark">{shortIdentity(props.heldIdentityHash)}</code>
       </p>
+      {props.currentIdentityHash !== props.heldIdentityHash ? (
+        <p className="mt-1 text-xs text-slate-600">
+          Current identity <code className="rounded bg-slate-100 px-1 font-mono text-brand-dark">{shortIdentity(props.currentIdentityHash)}</code>
+        </p>
+      ) : null}
       {props.outcome ? (
         <p role="status" className="mt-2 text-sm font-medium text-emerald-800">{props.outcome}</p>
       ) : ready ? (

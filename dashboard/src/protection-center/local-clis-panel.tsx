@@ -65,10 +65,13 @@ export function LocalCliDetail(props: {
   const added = props.item.state !== "unset";
   const commandChanges = commandPermissionChanges(props.item.commands, commands);
   const commandsDirty = commandChanges.length > 0;
+  const [recommended, setRecommended] = useState(false);
+  const [setupOutcome, setSetupOutcome] = useState<string | null>(null);
   useEffect(() => {
     const previous = previousItem.current;
     if (previous.cli_id !== props.item.cli_id || previous.identity_hash !== props.item.identity_hash) {
       setPending(null);
+      setSetupOutcome(null);
       setProviderDrafts({});
       setCatalogError(null);
       setError(previous.cli_id === props.item.cli_id ? "This extension changed. Review its permissions again." : null);
@@ -83,15 +86,17 @@ export function LocalCliDetail(props: {
     });
     previousItem.current = props.item;
   }, [props.item]);
-  const [recommended, setRecommended] = useState(false);
-  const [setupOutcome, setSetupOutcome] = useState<string | null>(null);
   const setupMatch = props.setupLink ? connectorSetupMatch(props.item, props.setupLink) : null;
   const openPending = useCallback(async (state: LocalCliState, fromSetupLink = false) => {
     await refreshApprovalGate();
     setRecommended(fromSetupLink);
     setPending(state);
   }, [refreshApprovalGate]);
-  const requestRecommended = useCallback(() => openPending("allowed", true), [openPending]);
+  const requestRecommended = useCallback(() => {
+    // The recommended setup is the suggested command states, never an unsaved draft.
+    setCommands(prefillSuggestedStates(props.item));
+    return openPending("allowed", true);
+  }, [openPending, props.item]);
   const requestAdd = useCallback(() => openPending("allowed"), [openPending]);
   const requestAllow = useCallback(() => openPending("allowed"), [openPending]);
   const requestBlock = useCallback(() => openPending("blocked"), [openPending]);
@@ -150,7 +155,7 @@ export function LocalCliDetail(props: {
         state: pending,
         previous_revision: props.revision,
         session_nonce: randomToken(),
-        commands: commandStatesPayload(commands),
+        commands: commandStatesPayload(recommended ? prefillSuggestedStates(props.item) : commands),
         ...(pending !== "unset" && Object.keys(providerDrafts).length > 0
           ? { provider_actions: Object.values(providerDrafts) } : {}),
         // Same endpoint and proof as any other change; the daemon re-checks the request belongs to this connector.
@@ -160,7 +165,8 @@ export function LocalCliDetail(props: {
       };
       await previewLocalCliMutation(payload);
       const outcome = connectorGroupOutcome(await applyLocalCliMutation(payload));
-      if (outcome) setSetupOutcome(connectorGroupOutcomeCopy(outcome));
+      // Only the apply that resolved the group keeps its outcome; any later change clears it.
+      setSetupOutcome(outcome ? connectorGroupOutcomeCopy(outcome) : null);
       setProviderDrafts({});
       await props.onRefresh();
       await refreshApprovalGate();
@@ -199,7 +205,8 @@ export function LocalCliDetail(props: {
           ) : null}
         </p>
         {props.setupLink && setupMatch ? (
-          <ConnectorSetupBanner name={customExtensionDisplayName(props.item)} identityHash={props.item.identity_hash}
+          <ConnectorSetupBanner name={customExtensionDisplayName(props.item)} heldIdentityHash={props.setupLink.identityHash}
+            currentIdentityHash={props.item.identity_hash}
             match={setupMatch} busy={busy} outcome={setupOutcome} onSetUp={requestRecommended} />
         ) : null}
         {continuityCopy(props.item) ? (

@@ -4139,9 +4139,13 @@ function ConnectorSetupBanner(props) {
         /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "connector-setup-heading", className: "text-sm font-semibold text-brand-dark", children: copy.title }),
         copy.body ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-slate-700", children: copy.body }) : null,
         /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2 text-xs text-slate-600", children: [
-          "Bound identity ",
-          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded bg-slate-100 px-1 font-mono text-brand-dark", children: shortIdentity(props.identityHash) })
+          "Held identity ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded bg-slate-100 px-1 font-mono text-brand-dark", children: shortIdentity(props.heldIdentityHash) })
         ] }),
+        props.currentIdentityHash !== props.heldIdentityHash ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-1 text-xs text-slate-600", children: [
+          "Current identity ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded bg-slate-100 px-1 font-mono text-brand-dark", children: shortIdentity(props.currentIdentityHash) })
+        ] }) : null,
         props.outcome ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "status", className: "mt-2 text-sm font-medium text-emerald-800", children: props.outcome }) : ready ? /* @__PURE__ */ jsxRuntimeExports.jsx(
           "button",
           {
@@ -5681,10 +5685,13 @@ function LocalCliDetail(props) {
   const added = props.item.state !== "unset";
   const commandChanges = commandPermissionChanges(props.item.commands, commands);
   const commandsDirty = commandChanges.length > 0;
+  const [recommended, setRecommended] = reactExports.useState(false);
+  const [setupOutcome, setSetupOutcome] = reactExports.useState(null);
   reactExports.useEffect(() => {
     const previous = previousItem.current;
     if (previous.cli_id !== props.item.cli_id || previous.identity_hash !== props.item.identity_hash) {
       setPending(null);
+      setSetupOutcome(null);
       setProviderDrafts({});
       setCatalogError(null);
       setError(previous.cli_id === props.item.cli_id ? "This extension changed. Review its permissions again." : null);
@@ -5698,15 +5705,16 @@ function LocalCliDetail(props) {
     });
     previousItem.current = props.item;
   }, [props.item]);
-  const [recommended, setRecommended] = reactExports.useState(false);
-  const [setupOutcome, setSetupOutcome] = reactExports.useState(null);
   const setupMatch = props.setupLink ? connectorSetupMatch(props.item, props.setupLink) : null;
   const openPending = reactExports.useCallback(async (state, fromSetupLink = false) => {
     await refreshApprovalGate();
     setRecommended(fromSetupLink);
     setPending(state);
   }, [refreshApprovalGate]);
-  const requestRecommended = reactExports.useCallback(() => openPending("allowed", true), [openPending]);
+  const requestRecommended = reactExports.useCallback(() => {
+    setCommands(prefillSuggestedStates(props.item));
+    return openPending("allowed", true);
+  }, [openPending, props.item]);
   const requestAdd = reactExports.useCallback(() => openPending("allowed"), [openPending]);
   const requestAllow = reactExports.useCallback(() => openPending("allowed"), [openPending]);
   const requestBlock = reactExports.useCallback(() => openPending("blocked"), [openPending]);
@@ -5763,7 +5771,7 @@ function LocalCliDetail(props) {
         state: pending,
         previous_revision: props.revision,
         session_nonce: randomToken$2(),
-        commands: commandStatesPayload(commands),
+        commands: commandStatesPayload(recommended ? prefillSuggestedStates(props.item) : commands),
         ...pending !== "unset" && Object.keys(providerDrafts).length > 0 ? { provider_actions: Object.values(providerDrafts) } : {},
         // Same endpoint and proof as any other change; the daemon re-checks the request belongs to this connector.
         ...recommended && pending === "allowed" && props.setupLink && setupMatch === "ready" ? { connector_group_request_id: props.setupLink.requestId } : {},
@@ -5771,7 +5779,7 @@ function LocalCliDetail(props) {
       };
       await previewLocalCliMutation(payload);
       const outcome = connectorGroupOutcome(await applyLocalCliMutation(payload));
-      if (outcome) setSetupOutcome(connectorGroupOutcomeCopy(outcome));
+      setSetupOutcome(outcome ? connectorGroupOutcomeCopy(outcome) : null);
       setProviderDrafts({});
       await props.onRefresh();
       await refreshApprovalGate();
@@ -5804,7 +5812,8 @@ function LocalCliDetail(props) {
         ConnectorSetupBanner,
         {
           name: customExtensionDisplayName(props.item),
-          identityHash: props.item.identity_hash,
+          heldIdentityHash: props.setupLink.identityHash,
+          currentIdentityHash: props.item.identity_hash,
           match: setupMatch,
           busy,
           outcome: setupOutcome,
