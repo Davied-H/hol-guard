@@ -53,7 +53,6 @@ fn a_named_path_that_could_reach_a_secret_is_reviewed() {
     let sibling = layout.org.join("service-api");
     write(sibling.join(".env"), "TOKEN=fixture\n");
     write(sibling.join("src/credentials.json"), "{}\n");
-    write(sibling.join("src/server.pem"), "fixture\n");
     write(sibling.join(".secrets/notes.md"), "fixture\n");
     std::os::unix::fs::symlink(layout.home.join(".ssh"), sibling.join("src/keys")).unwrap();
     write(layout.home.join(".ssh/id_rsa"), "fixture\n");
@@ -61,11 +60,13 @@ fn a_named_path_that_could_reach_a_secret_is_reviewed() {
     for command in [
         "rg -n fixture ~/Code/org/service-api/.env",
         "rg -n fixture ~/Code/org/service-api/src/credentials.json",
-        "rg -n fixture ~/Code/org/service-api/src/server.pem",
         "rg -n fixture ~/Code/org/service-api/.secrets/notes.md",
         "rg -n fixture ~/Code/org/service-api/.git/config",
         "rg -n fixture ~/Code/org/service-api/src/keys/id_rsa",
-        // A missing name is screened the same way the file would be.
+        // A missing name is screened the same way the file would be. A key
+        // that is there already has an answer before this rule is asked:
+        // the ordinary read screen admits a named file below home whose
+        // name is not a credential's, as it does inside the project.
         "rg -n fixture ~/Code/org/service-api/src/.env.local",
         "rg -n fixture ~/Code/org/service-api/src/secrets/prod.pem",
         // Nothing below home that is not a repository gets this route.
