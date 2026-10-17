@@ -13,6 +13,7 @@ use guard_contracts::{
 };
 use serde_json::{json, Value};
 
+use crate::local_mcp_grant_identity::{normalized_hash, observed_mcp_tool};
 use crate::local_store_read;
 
 type Decided = (String, String, String);
@@ -58,15 +59,8 @@ fn decided(action: &str, source: &str, summary: &str) -> Option<Decided> {
     Some((action.to_owned(), source.to_owned(), summary.to_owned()))
 }
 
-/// `Err` means the resident has no answer for the grant state, and says why.
-fn local_grant(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided>, Code> {
-    if !GRANT_REFINABLE.contains(&action) {
-        return Ok(None);
-    }
-    if ext.local_unavailable {
-        return Err("local_unavailable");
-    }
-    let request = LocalMcpGrantRequestV1 {
+fn grant_request(ext: &McpExtensionInputV1, action: &str) -> LocalMcpGrantRequestV1 {
+    LocalMcpGrantRequestV1 {
         schema: LOCAL_MCP_GRANT_REQUEST_SCHEMA.to_owned(),
         request_id: String::new(),
         store_path: ext.store_path.clone(),
@@ -79,8 +73,18 @@ fn local_grant(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided
         tool_authority_hash: ext.tool_authority_hash.clone(),
         launcher_path: ext.launcher_path.clone(),
         launcher_home: ext.launcher_home.clone(),
-    };
-    let payload = crate::local_mcp_grant_op::decide(&request)?;
+    }
+}
+
+/// `Err` means the resident has no answer for the grant state, and says why.
+fn local_grant(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided>, Code> {
+    if !GRANT_REFINABLE.contains(&action) {
+        return Ok(None);
+    }
+    if ext.local_unavailable {
+        return Err("local_unavailable");
+    }
+    let payload = crate::local_mcp_grant_op::decide(&grant_request(ext, action))?;
     Ok(match payload.get("state").and_then(Value::as_str) {
         Some("blocked") => decided(
             "block",
@@ -219,6 +223,43 @@ fn may_hold_mcp_grants(ext: &McpExtensionInputV1) -> bool {
         unanswered("grant_probe", code);
         true
     })
+}
+
+/// The connector a call waits on when this device has no answer for it at all:
+/// no grant row (allowed or blocked) for the server, no catalog contribution
+/// deciding the tool, and nothing left unverified. `None` keeps the generic
+/// review. A stdio server keeps its launch identity (executable + arguments);
+/// a remote or observed server is named by harness and namespace, so no URL,
+/// query or credential ever enters the identity.
+pub(crate) fn unset_connector(ext: &McpExtensionInputV1) -> Option<String> {
+    if ext.local_unavailable || ext.layers_unavailable {
+        return None;
+    }
+    let unbound = ext
+        .server
+        .env_values_hash
+        .as_deref()
+        .is_some_and(|hash| hash.starts_with("guard-context-unbound:"));
+    if unbound {
+        return None;
+    }
+    let identity = if ext.server.transport.as_deref() == Some("stdio") {
+        normalized_hash(ext.server.identity_hash.as_deref())?
+    } else {
+        observed_mcp_tool(&ext.harness, &ext.tool_name)?.identity_hash
+    };
+    // A grant row in any state (or an unreadable store) is an answer: only
+    // "no row at all" is a setup decision.
+    let grant = crate::local_mcp_grant_op::decide(&grant_request(ext, "review")).ok()?;
+    if grant.get("state").and_then(Value::as_str) != Some("none") || !grant["cli_id"].is_null() {
+        return None;
+    }
+    for action in ["review", "allow"] {
+        if !matches!(contributed_once(ext, action), Ok(None)) {
+            return None;
+        }
+    }
+    Some(identity)
 }
 
 #[cfg(test)]
