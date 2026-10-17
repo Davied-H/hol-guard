@@ -145,6 +145,9 @@ fn read_only_plumbing(arguments: &[String]) -> bool {
     match command.as_str() {
         "rev-parse" | "merge-base" | "show-ref" | "ls-tree" | "for-each-ref" => true,
         "cat-file" => crate::pretool::git_object_reads::read_form(command, rest),
+        // Both listings only print, and their grammars already exclude the
+        // forms that run a configured program; the read proof still decides.
+        "shortlog" | "check-ignore" => crate::pretool::git_listing_reads::read_form(command, rest),
         "rev-list" => !rest.iter().any(|argument| {
             matches!(argument.as_str(), "--output" | "-o") || argument.starts_with("--output=")
         }),

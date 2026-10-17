@@ -33,7 +33,7 @@ const SHORTLOG_VALUES: [&str; 2] = ["--group", "--max-count"];
 const CHECK_IGNORE_FLAGS: [&str; 6] = ["-q", "--quiet", "-v", "--verbose", "-z", "--no-index"];
 
 /// Whether `subcommand rest...` is a proven listing read.
-pub(super) fn read_form(subcommand: &str, rest: &[String]) -> bool {
+pub(crate) fn read_form(subcommand: &str, rest: &[String]) -> bool {
     match subcommand {
         "shortlog" => shortlog_read_form(rest),
         "check-ignore" => check_ignore_read_form(rest),
