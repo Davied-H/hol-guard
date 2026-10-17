@@ -8,6 +8,8 @@
 //! proposals, or proposals naming actions that were never stored, would let a
 //! reader resolve a requirement against a catalog the proposal never saw.
 
+use std::collections::HashMap;
+
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -124,12 +126,18 @@ pub(crate) fn record_composio_discovery(
 
     let mut prepared = Vec::with_capacity(actions.len());
     let mut authority_changed = false;
+    // Python reads a slug's stored row inside the same loop that writes it, so
+    // a slug repeated in one batch is measured against the copy before it, not
+    // against the row the batch started from. The revisions are settled here
+    // before any write so the barrier answer can come first, which means the
+    // earlier copy has to be carried rather than read back.
+    let mut staged: HashMap<&str, StoredAction> = HashMap::new();
     for action in &actions {
         let authority_hash = action.authority_hash()?;
-        let previous = previous_revision(connection, cli_id, identity_hash, action.tool_slug)?;
-        // A repeated slug inside one batch cannot change this answer: either an
-        // earlier copy already moved the authority, or it stored exactly what
-        // the row already held, which is what this lookup reads.
+        let previous = match staged.get(action.tool_slug) {
+            Some(staged) => Some(staged.clone()),
+            None => previous_revision(connection, cli_id, identity_hash, action.tool_slug)?,
+        };
         let revision = match &previous {
             None => 1,
             Some(previous) => {
@@ -141,6 +149,14 @@ pub(crate) fn record_composio_discovery(
             }
         };
         authority_changed |= previous.is_none_or(|previous| previous.revision != revision);
+        staged.insert(
+            action.tool_slug,
+            StoredAction {
+                revision,
+                authority_hash: authority_hash.clone(),
+                full_schema: action.full_schema,
+            },
+        );
         prepared.push((action, action.schema_text()?, authority_hash, revision));
     }
     if authority_changed && !args.flag("barrier_closed")? {
@@ -205,6 +221,7 @@ fn require_matching_observation(
     Ok(())
 }
 
+#[derive(Clone)]
 struct StoredAction {
     revision: i64,
     authority_hash: String,
