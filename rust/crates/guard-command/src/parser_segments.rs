@@ -1,5 +1,24 @@
 use super::*;
 
+/// Bash 5.3 runs the commands in `${ cmd; }` and `${| cmd; }`. What tells
+/// those apart from an ordinary `${NAME}` is the character right after the
+/// brace: a parameter name cannot begin with a space or a `|`. Unquoted, the
+/// brace is already refused as a parameter expansion; inside double quotes
+/// only `$(` and a backtick were read as running a command, so a `${| gh pr
+/// merge --squash; }` written there ran with nothing to answer for it.
+pub(super) fn brace_runs_a_command(text: &str) -> bool {
+    text.match_indices("${").any(|(at, _)| {
+        text[at + 2..]
+            .chars()
+            .next()
+            .is_some_and(opens_brace_command)
+    })
+}
+
+fn opens_brace_command(character: char) -> bool {
+    character.is_whitespace() || character == '|'
+}
+
 pub(super) fn split_execution_segments(
     command: &str,
     preserve_unquoted_backslash: bool,
@@ -51,7 +70,15 @@ fn split_execution_segments_inner(
                     quote = Quote::None;
                 } else if current == '\\' {
                     escaped = true;
-                } else if current == '`' || (current == '$' && chars.get(index + 1) == Some(&'(')) {
+                } else if current == '`'
+                    || (current == '$' && chars.get(index + 1) == Some(&'('))
+                    || (current == '$'
+                        && chars.get(index + 1) == Some(&'{')
+                        && chars
+                            .get(index + 2)
+                            .copied()
+                            .is_some_and(opens_brace_command))
+                {
                     return Err("command_substitution_not_yet_supported");
                 }
                 index += 1;

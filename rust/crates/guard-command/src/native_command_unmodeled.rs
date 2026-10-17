@@ -473,6 +473,7 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
             !text.contains("$(")
                 && !text.contains('`')
                 && !text.contains("<<")
+                && !crate::parser_segments::brace_runs_a_command(&text)
                 && plain_after_heredocs(&text)
         }
         _ => false,
@@ -938,12 +939,7 @@ fn mask_double_quoted_separators(literal: &str) -> String {
 fn span_runs_a_command(quoted: &str) -> bool {
     quoted.contains("$(")
         || quoted.contains('`')
-        || quoted.match_indices("${").any(|(at, _)| {
-            quoted[at + 2..]
-                .chars()
-                .next()
-                .is_some_and(|character| character.is_whitespace() || character == '|')
-        })
+        || crate::parser_segments::brace_runs_a_command(quoted)
 }
 
 fn mask_span(quoted: &str) -> String {
@@ -1016,3 +1012,7 @@ mod sourced_tests;
 #[cfg(test)]
 #[path = "native_command_unmodeled_bounded_tests.rs"]
 mod bounded_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_funsub_tests.rs"]
+mod funsub_tests;
