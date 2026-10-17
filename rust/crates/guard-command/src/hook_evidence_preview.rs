@@ -8,7 +8,7 @@
 
 use std::sync::LazyLock;
 
-use fancy_regex::{Captures as FancyCaptures, Regex as FancyRegex};
+use fancy_regex::Regex as FancyRegex;
 use guard_contracts::command_text_from_tool_payload;
 use regex::Regex;
 use serde_json::{Map, Value};
@@ -205,20 +205,27 @@ fn scrub_residual_private_text(value: &str) -> String {
 
 /// `_HEREDOC_RE.sub(r"\g<op>…\g<end>", value)` — the body never survives.
 fn fold_heredoc_bodies(value: &str) -> String {
-    rewrite(&HEREDOC_RE, value, |captures| {
-        let op = captures.name("op").map_or("", |group| group.as_str());
-        let end = captures.name("end").map_or("", |group| group.as_str());
-        format!("{op}…{end}")
+    rewrite(&HEREDOC_RE, value, &["op", "end"], |groups| {
+        format!("{}…{}", groups[0], groups[1])
     })
 }
 
 /// A whole-match replacement for a lookaround pattern.
 fn replace_fancy(pattern: &FancyRegex, value: &str) -> String {
-    rewrite(pattern, value, |_| REDACTED.to_owned())
+    rewrite(pattern, value, &[], |_| REDACTED.to_owned())
 }
 
 /// Non-overlapping left-to-right substitution, as `re.sub` scans.
-fn rewrite(pattern: &FancyRegex, value: &str, render: impl Fn(&FancyCaptures) -> String) -> String {
+///
+/// The named groups the caller asks for are resolved here rather than handing
+/// the match back, because `fancy_regex::Captures` is spelled differently
+/// across the versions `guard-command` and `guard-command-build` pin.
+fn rewrite(
+    pattern: &FancyRegex,
+    value: &str,
+    groups: &[&str],
+    render: impl Fn(&[&str]) -> String,
+) -> String {
     let mut out = String::with_capacity(value.len());
     let mut cursor = 0;
     for captures in pattern.captures_iter(value) {
@@ -230,8 +237,12 @@ fn rewrite(pattern: &FancyRegex, value: &str, render: impl Fn(&FancyCaptures) ->
         let Some(whole) = captures.get(0) else {
             continue;
         };
+        let resolved: Vec<&str> = groups
+            .iter()
+            .map(|name| captures.name(name).map_or("", |group| group.as_str()))
+            .collect();
         out.push_str(&value[cursor..whole.start()]);
-        out.push_str(&render(&captures));
+        out.push_str(&render(&resolved));
         cursor = whole.end();
     }
     out.push_str(&value[cursor..]);
