@@ -63,8 +63,26 @@ hol-guard settings set fleet-posture on
 ```
 
 With `off`, Guard still reports its version, each tool's protection state and the policy status, which
-Cloud needs to show whether a machine is protected. It stops sending the OS version, blind-spot detail and
-per-item inventory, and sends `digest_only`. Turn it back on to resume full reporting.
+Cloud needs to show whether a machine is protected. The minimal report is:
+
+- `client`: unchanged.
+- `machine`: OS name, CPU architecture and the host-name hash, without the OS version.
+- `aiTools`: the same rows as a full report (protection state, hook coverage, artifact count, last activity,
+  inventory digest), but with empty `blindSpots`.
+- `inventory`: the digest only, in `digest_only` mode. No item rows are sent.
+- `policy`: unchanged.
+
+Turn the setting back on to resume full reporting.
+
+### Full inventory requests from Guard Cloud
+
+Guard Cloud can ask for a full inventory by answering a sync with `fleetPostureRequest: {"inventory": "full"}`.
+Guard records the request and sends a `full` inventory on its next sync. The request is cleared only after
+Guard Cloud accepts a report that was not `digest_only`, so a failed sync keeps it pending.
+
+The opt-out wins over the request. While `fleet-posture` is `off`, Guard keeps the request queued but still
+sends `digest_only`; the full inventory goes out the first time reporting is turned back on. Installs managed
+by an organization cannot opt out, so they honour the request on the next sync.
 
 Installs managed by an organization (MDM-installed Guard) cannot opt out. `settings set fleet-posture off`
 exits with status 2 and explains why, and `hol-guard cloud status` shows the install as managed.
@@ -85,6 +103,19 @@ hol-guard inventory --json --sync
 ```
 
 Prints the local inventory and queues a full inventory for the next sync.
+
+```bash
+hol-guard extensions list [--json]
+hol-guard mcp list [--json]
+```
+
+Print the installed plugins and extensions, or the installed MCP servers, from the same local inventory that
+fleet posture reads. They show name, harness, type, scope, last policy verdict and last-seen time as a table,
+or the full records with `--json` (`generated_at`, `kind`, `count` and `items`, where each item also carries
+`config_path`, `artifact_hash`, and `first_seen_at`). `extensions list` covers the items reported as the
+`plugin` kind (plugins, plugin files and extensions); `mcp list` covers MCP servers. Items Guard has marked
+removed, and items from tools that fleet posture does not report on, are left out. Both commands are
+read-only: they do not send anything and do not queue an inventory request.
 
 ## Policy acknowledgement
 
