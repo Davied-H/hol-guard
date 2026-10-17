@@ -254,7 +254,16 @@ def _fake_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, summaries: list
     monkeypatch.setattr(qualify, "prepare_candidate", fake_candidate)
     monkeypatch.setattr(qualify, "_remove_candidate", lambda *_a: True)
 
-    def fake_attempt(argv: list[str], *, cwd: Path, env: dict, log: Path) -> int:
+    def fake_attempt(
+        argv: list[str],
+        *,
+        cwd: Path,
+        env: dict,
+        log: Path,
+        on_started: Any | None = None,
+    ) -> int:
+        if on_started is not None:
+            on_started()
         evidence = Path(argv[argv.index("--output") + 1])
         summary = summaries.pop(0)
         if summary is not None:
@@ -560,3 +569,40 @@ def test_run_cli_rejects_non_finite_load_bounds(tmp_path: Path, flag: str, value
     result = subprocess.run(argv, cwd=qualify.REPO, env=env, capture_output=True, text=True, timeout=60)
     assert result.returncode == 2
     assert "finite" in result.stderr
+
+
+def test_attempt_reports_started_before_it_finishes(tmp_path: Path) -> None:
+    started: list[int] = []
+    rc = qualify.run_attempt(
+        [sys.executable, "-c", "pass"],
+        cwd=qualify.REPO,
+        env=dict(os.environ),
+        log=tmp_path / "attempt.log",
+        on_started=lambda: started.append(1),
+    )
+    assert (rc, started) == (0, [1])
+
+
+def test_an_interrupted_attempt_still_counts_as_driven(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An interrupt leaves no attempt record, and the lane was still driven."""
+
+    class Interrupting(subprocess.Popen):
+        _raised = False
+
+        def wait(self, timeout: float | None = None) -> int:
+            if not self._raised:
+                self._raised = True
+                raise KeyboardInterrupt
+            return super().wait(timeout=timeout)
+
+    monkeypatch.setattr(qualify.subprocess, "Popen", Interrupting)
+    started: list[int] = []
+    with pytest.raises(KeyboardInterrupt):
+        qualify.run_attempt(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            cwd=qualify.REPO,
+            env=dict(os.environ),
+            log=tmp_path / "attempt.log",
+            on_started=lambda: started.append(1),
+        )
+    assert started == [1]
