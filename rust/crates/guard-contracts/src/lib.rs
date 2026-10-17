@@ -130,6 +130,8 @@ mod command_effect;
 pub use command_effect::*;
 mod command_policy_decision;
 pub use command_policy_decision::*;
+mod reviewed_invocation_bindings;
+pub use reviewed_invocation_bindings::*;
 mod canonical_json;
 pub use canonical_json::*;
 

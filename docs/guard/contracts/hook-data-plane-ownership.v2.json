@@ -368,6 +368,7 @@
     "src/codex_plugin_scanner/guard/native_policy_document_decision.py",
     "src/codex_plugin_scanner/guard/native_command_policy_decision.py",
     "src/codex_plugin_scanner/guard/native_command_expression_validation.py",
+    "src/codex_plugin_scanner/guard/native_reviewed_invocation_bindings.py",
     "src/codex_plugin_scanner/guard/native_cisco_preflight.py",
     "src/codex_plugin_scanner/guard/native_hook_decision.py",
     "src/codex_plugin_scanner/guard/native_daemon_route.py",

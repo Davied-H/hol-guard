@@ -334,6 +334,11 @@ pub(crate) fn evaluate_resident_bytes(
                     &request,
                 )
             }
+            ResidentOperationV1::ReviewedInvocationBindingsValidate(request) => {
+                crate::reviewed_invocation_bindings_op::evaluate_reviewed_invocation_bindings_request(
+                    &request,
+                )
+            }
             ResidentOperationV1::PolicyDecisionLookup(request) => {
                 crate::policy_decision_lookup_op::evaluate_policy_decision_lookup_request(&request)
             }

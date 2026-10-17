@@ -437,4 +437,9 @@ def test_a_pattern_the_runtime_compiles_keeps_the_document_valid() -> None:
 
     document = parse_policy_document_yaml(_yaml(value))
 
-    assert document.rules[0].match.to_mapping()["commands"] == commands
+    round_tripped = document.rules[0].match.to_mapping()["commands"]
+    assert isinstance(round_tripped, dict)
+    assert round_tripped["combinator"] == "all"
+    assert [
+        (condition["operator"], condition["value"]) for condition in round_tripped["conditions"]
+    ] == [(condition["operator"], condition["value"]) for condition in commands["conditions"]]

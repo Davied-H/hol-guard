@@ -163,6 +163,7 @@ mod powershell_parser;
 mod powershell_reads;
 pub mod protect_request;
 mod read_only_fanout;
+pub mod reviewed_invocation_bindings;
 pub mod rich_command_model_api;
 use parser_executables::*;
 use parser_segments::*;

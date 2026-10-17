@@ -189,6 +189,7 @@ def _resident_request(
             "policy_document_decide",
             "command_policy_decide",
             "command_expression_validate",
+            "reviewed_invocation_bindings_validate",
         }:
             accepted = frozenset({"ok", "error"})
         elif operation == "mcp_tool_policy_decide":

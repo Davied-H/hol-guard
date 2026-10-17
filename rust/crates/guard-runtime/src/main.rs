@@ -588,6 +588,7 @@ mod resident_update_lock;
 mod restricted_linux_launch;
 mod restricted_process_ceiling;
 mod restricted_pytest_op;
+mod reviewed_invocation_bindings_op;
 mod rich_command_model_op;
 mod runner_authority_detector;
 mod runner_authority_evaluation;
