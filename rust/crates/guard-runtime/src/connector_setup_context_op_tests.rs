@@ -353,6 +353,25 @@ fn a_connector_without_a_catalog_snapshot_applies_no_snapshot_check() {
 }
 
 #[test]
+fn a_tool_the_live_decision_always_reviews_is_not_listed_as_allowed() {
+    let fixture = Fixture::new();
+    fixture.observe(MCP_ID, "mcp");
+    fixture.command(MCP_ID, "list_items", "list_items", Some("allow"));
+    fixture.command(
+        MCP_ID,
+        "composio_multi_execute_tool",
+        "composio_multi_execute_tool",
+        Some("allow"),
+    );
+    fixture.grant(MCP_ID, "allowed", HASH);
+    let payload = fixture.payload(MCP_ID, json!({}));
+    assert_eq!(
+        payload["allowed_alternatives"]["tools"],
+        json!(["list_items"])
+    );
+}
+
+#[test]
 fn allowed_subcommands_are_listed_for_a_cli() {
     let fixture = Fixture::new();
     fixture.observe(CLI_ID, "cli");

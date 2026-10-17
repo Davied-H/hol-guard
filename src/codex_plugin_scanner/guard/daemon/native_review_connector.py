@@ -13,9 +13,10 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from ..blocked_request_mode import connector_setup_reason
 from .hook_native_exact_action import launch_cwd
@@ -33,6 +34,10 @@ CONNECTOR_SETUP_REQUIRED = "connector_setup_required"
 NON_RECOGNITION_REASON_CODES = frozenset(
     {"native_command_review_required", "native_workspace_containment_executable_outside_roots"}
 )
+# The context write is optional, so it runs only while the hook has time to
+# spare: it keeps a margin for the response and skips a nearly spent budget.
+_CONTEXT_SAFETY_MARGIN_SECONDS: Final = 0.35
+_MIN_CONTEXT_BUDGET_SECONDS: Final = 0.25
 _SAFE_NAME = re.compile(r"[A-Za-z0-9@][A-Za-z0-9._@+/-]{0,63}")
 # What first stopped the connector, by the review reason that queued it.
 _FIRST_CAUSE_BY_REASON_CODE = {
@@ -80,12 +85,14 @@ def record_native_review_connector_context(
     stored: Mapping[str, object],
     harness: str,
     workspace: Path | None,
+    deadline: float | None = None,
 ) -> ConnectorSetupAdvice | None:
     """Keep the queued review's context with the connector, and read back what is already allowed.
 
     Best effort: the review is already queued, so a failure here only leaves the
-    connector without context. The resident scrubs and caps every field, and
-    nothing here writes a grant or a capability.
+    connector without context. It is skipped when the hook's ``deadline`` (a
+    monotonic time) leaves too little time. The resident scrubs and caps every
+    field, and nothing here writes a grant or a capability.
     """
 
     from ..connector_setup_context import record_connector_setup_context
@@ -93,6 +100,9 @@ def record_native_review_connector_context(
     reason_code = native_result.get("reason_code")
     cause = _FIRST_CAUSE_BY_REASON_CODE.get(reason_code) if isinstance(reason_code, str) else None
     command = stored.get("raw_command_text")
+    budget = None if deadline is None else deadline - time.monotonic() - _CONTEXT_SAFETY_MARGIN_SECONDS
+    if budget is not None and budget < _MIN_CONTEXT_BUDGET_SECONDS:
+        return None
     try:
         return record_connector_setup_context(
             store,  # pyright: ignore[reportArgumentType]
@@ -103,6 +113,7 @@ def record_native_review_connector_context(
             why_now=_without_operands(stored.get("why_now"), command),
             harness=harness,
             workspace_label=workspace.name if workspace is not None else None,
+            budget_seconds=budget,
         )
     except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
         _LOGGER.warning("Connector setup context not recorded (%s)", type(error).__name__)

@@ -26,7 +26,7 @@ use crate::guard_store_connector_context::{
     is_first_blocked_cause, MAX_IDENTITY_HASH_BYTES, MAX_RAW_FIELD_BYTES,
 };
 use crate::guard_store_observed_mcp::is_local_cli_id;
-use crate::local_mcp_grant_identity::slug_command_id;
+use crate::local_mcp_grant_identity::{composio_requires_action_review, slug_command_id};
 use crate::local_store_read::{self, StoreReadError};
 
 const STORE_UNAVAILABLE: &str = "native_connector_setup_context_store_unavailable";
@@ -211,9 +211,14 @@ fn record_context(request: &ConnectorSetupContextRequestV1) -> Result<(), &'stat
         busy_timeout_ms: request.busy_timeout_ms,
         args,
     })
-    .map(|_| ())
     // The store's own code keeps the SQLite failure class.
     .map_err(|error| error.code())
+    .and_then(|(changed, _)| match changed.as_i64() {
+        // The observation vanished or changed identity after it was checked:
+        // no context was kept, so no advice is given for it.
+        Some(0) => Err("native_connector_setup_context_observation_missing"),
+        _ => Ok(()),
+    })
 }
 
 /// Derived from the grant each time, never stored: `allowed` or `blocked` while
@@ -287,7 +292,9 @@ impl Commands {
 /// The commands the connector has been seen with, and those this device
 /// allows. Nothing is allowed unless the connector's grant is allowed for this
 /// identity and the command's own state is `allow`. An MCP tool must also be
-/// in the connector's current catalog snapshot, as the live decision requires.
+/// in the connector's current catalog snapshot, and not one the live decision
+/// always reviews per call, as the live decision requires. Checks that need
+/// the live call (its action and authority digest) are not claimed here.
 fn load_commands(
     connection: &Connection,
     request: &ConnectorSetupContextRequestV1,
@@ -309,10 +316,12 @@ fn load_commands(
     let states = allowed_command_ids(connection, &request.cli_id)?;
     let allowed = seen
         .iter()
-        .map(|(id, _)| id)
-        .filter(|id| states.contains(*id))
-        .filter(|id| listed.as_ref().is_none_or(|ids| ids.contains(*id)))
-        .cloned()
+        .filter(|(id, name)| {
+            states.contains(id)
+                && listed.as_ref().is_none_or(|ids| ids.contains(id))
+                && !(surface == MCP_SURFACE && composio_requires_action_review(name))
+        })
+        .map(|(id, _)| id.clone())
         .collect();
     Ok(Commands { seen, allowed })
 }

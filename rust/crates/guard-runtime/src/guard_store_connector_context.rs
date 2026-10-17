@@ -99,9 +99,10 @@ fn scrubbed(value: Option<&str>, cap: usize) -> StoreResult<Value> {
 }
 
 /// Records the context of one observed connector and returns how many rows
-/// changed. The first cause sticks: it is set only while the observation has
-/// none. The review wording and labels replace what was kept, and an absent
-/// field leaves its column as it was.
+/// changed (`0` when no observation matches the id and identity), or `null`
+/// when the call carries nothing to write. The first cause sticks: it is set
+/// only while the observation has none. The review wording and labels replace
+/// what was kept, and an absent field leaves its column as it was.
 pub(crate) fn record_context(connection: &Connection, args: &Args) -> StoreResult<Value> {
     let cli_id = args.str("cli_id")?;
     if !is_local_cli_id(cli_id) {
@@ -132,7 +133,7 @@ pub(crate) fn record_context(connection: &Connection, args: &Args) -> StoreResul
         scrubbed(args.opt_str("workspace_label")?, MAX_LABEL_CHARS)?,
     ];
     if cause.is_null() && fields.iter().all(Value::is_null) {
-        return Ok(Value::from(0));
+        return Ok(Value::Null);
     }
     let [summary, why_now, harness, workspace] = fields;
     let changed = exec(

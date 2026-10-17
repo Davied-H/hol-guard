@@ -143,6 +143,24 @@ def test_an_unknown_cause_is_refused_before_any_call(store: SimpleNamespace, mon
     assert resident.calls == []
 
 
+def test_the_wait_never_exceeds_the_callers_budget(store: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    resident = _Resident()
+    monkeypatch.setattr(context, "_resident_request", resident)
+
+    assert _call(store, budget_seconds=0.75) is not None
+
+    assert resident.calls[0]["timeout_seconds"] == 0.75
+
+
+@pytest.mark.parametrize("budget", [0.0, -1.0])
+def test_a_spent_budget_makes_no_call(store: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, budget: float) -> None:
+    resident = _Resident()
+    monkeypatch.setattr(context, "_resident_request", resident)
+
+    assert _call(store, budget_seconds=budget) is None
+    assert resident.calls == []
+
+
 def test_without_a_resident_there_is_no_advice(store: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
     resident = _Resident()
     monkeypatch.setattr(context, "_resident_request", resident)
@@ -306,6 +324,7 @@ def _record(
     reason_code: object = "native_command_review_required",
     stored: Mapping[str, object] | None = None,
     workspace: Path | None = Path("/work/app"),
+    deadline: float | None = None,
 ) -> list[dict[str, object]]:
     calls: list[dict[str, object]] = []
 
@@ -320,6 +339,7 @@ def _record(
         stored=_stored() if stored is None else stored,
         harness="codex",
         workspace=workspace,
+        deadline=deadline,
     )
     return calls
 
@@ -359,6 +379,20 @@ def test_a_review_without_a_workspace_has_no_workspace_label(monkeypatch: pytest
     (call,) = _record(monkeypatch, workspace=None)
 
     assert call["workspace_label"] is None
+
+
+def test_the_hook_deadline_caps_the_context_write(monkeypatch: pytest.MonkeyPatch) -> None:
+    (call,) = _record(monkeypatch, deadline=time.monotonic() + 3.0)
+
+    budget = call["budget_seconds"]
+    assert isinstance(budget, float) and 0.0 < budget < 3.0
+
+
+@pytest.mark.parametrize("remaining", [0.0, 0.3, -2.0])
+def test_a_nearly_spent_hook_deadline_skips_the_context_write(
+    monkeypatch: pytest.MonkeyPatch, remaining: float
+) -> None:
+    assert _record(monkeypatch, deadline=time.monotonic() + remaining) == []
 
 
 @pytest.mark.parametrize("error", [OSError("x"), RuntimeError("x"), ValueError("x"), TimeoutError("x")])
@@ -401,7 +435,7 @@ class _ApprovalStore:
 
 
 def _queue(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, connector: SetupConnector | None
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, connector: SetupConnector | None, deadline: float | None = None
 ) -> tuple[dict[str, object] | None, list[dict[str, object]]]:
     recorded: list[dict[str, object]] = []
 
@@ -424,6 +458,7 @@ def _queue(
         review_binding="binding",
         approval_center_url="http://guard.example.test",
         connector=connector,
+        deadline=deadline,
     )
     return queued, recorded
 
@@ -437,6 +472,14 @@ def test_a_queued_connector_review_records_its_context(tmp_path: Path, monkeypat
     assert call["harness"] == "codex" and call["workspace"] == tmp_path
     stored = call["stored"]
     assert isinstance(stored, dict) and stored["request_id"] == queued["request_id"]
+
+
+def test_a_queued_connector_review_passes_the_hook_deadline_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    deadline = time.monotonic() + 5.0
+
+    _queued, recorded = _queue(tmp_path, monkeypatch, _CONNECTOR, deadline)
+
+    assert [call["deadline"] for call in recorded] == [deadline]
 
 
 def test_an_ordinary_review_records_no_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

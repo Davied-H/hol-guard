@@ -391,7 +391,13 @@ def queue_native_pre_tool_review(
         return None
     if connector is not None and isinstance(stored, dict):
         record_native_review_connector_context(
-            store, connector=connector, native_result=native_result, stored=stored, harness=harness, workspace=workspace
+            store,
+            connector=connector,
+            native_result=native_result,
+            stored=stored,
+            harness=harness,
+            workspace=workspace,
+            deadline=deadline,
         )
     raise_connector_setup_notice(store, stored, connector)
     return stored if isinstance(stored, dict) else None

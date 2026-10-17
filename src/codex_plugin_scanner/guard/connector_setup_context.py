@@ -83,15 +83,19 @@ def record_connector_setup_context(
     why_now: str | None = None,
     harness: str | None = None,
     workspace_label: str | None = None,
+    budget_seconds: float | None = None,
 ) -> ConnectorSetupAdvice | None:
     """Record a connector's setup context and return the resident's advice, or ``None`` without one.
 
-    A store failure raises, as a store call would. The call never writes a grant
-    or a capability.
+    ``budget_seconds`` is what the caller can still spend: the wait never
+    exceeds it, and no budget left means no call. A store failure raises, as a
+    store call would. The call never writes a grant or a capability.
     """
 
     cause = validated_first_blocked_cause(first_blocked_cause)
-    timeout_seconds = _TIMEOUT_SECONDS
+    timeout_seconds = _TIMEOUT_SECONDS if budget_seconds is None else min(_TIMEOUT_SECONDS, budget_seconds)
+    if timeout_seconds <= 0:
+        return None
     operation_deadline = sqlite_operation_deadline_monotonic()
     if operation_deadline is not None:
         timeout_seconds = min(timeout_seconds, operation_deadline - time.monotonic())

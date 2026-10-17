@@ -18,6 +18,7 @@ from codex_plugin_scanner.guard.store_local_cli_context import (
 from codex_plugin_scanner.guard.store_local_cli_regroup import (
     NON_RECOGNITION_RISK_SUMMARIES,
     connector_program_name,
+    connector_program_path,
     connector_queue_group_id,
     regroup_pending_connector_reviews,
 )
@@ -44,12 +45,19 @@ def _marker(connection: sqlite3.Connection) -> tuple[int, str]:
     return int(row[0]), str(row[1])
 
 
-def _observe(connection: sqlite3.Connection, name: str, identity_hash: str = _HASH, *, suffix: str = "1") -> str:
+def _observe(
+    connection: sqlite3.Connection,
+    name: str,
+    identity_hash: str = _HASH,
+    *,
+    suffix: str = "1",
+    source_path: str | None = None,
+) -> str:
     cli_id = f"local-cli.{name}-{suffix}"
     connection.execute(
         "insert into local_cli_observation (cli_id, identity_hash, kind, name, example_label, observed_count, "
-        "last_seen_at) values (?, ?, 'executable', ?, ?, 1, '2026-01-01T00:00:00Z')",
-        (cli_id, identity_hash, name, name),
+        "last_seen_at, source_path) values (?, ?, 'executable', ?, ?, 1, '2026-01-01T00:00:00Z', ?)",
+        (cli_id, identity_hash, name, name, source_path),
     )
     return cli_id
 
@@ -200,7 +208,7 @@ def test_resolution_state_without_a_grant_table_is_unset() -> None:
 def test_pending_unrecognised_reviews_regroup_under_the_connector(tmp_path: Path) -> None:
     connection = _v13_store(tmp_path)
     _approvals(connection)
-    _observe(connection, "lanectl")
+    _observe(connection, "lanectl", source_path="/usr/local/bin/lanectl")
     _queue(connection, "r1", "lanectl status")
     _queue(connection, "r2", "/usr/local/bin/lanectl ping --verbose", reason=_OUTSIDE_ROOTS)
     connection.commit()
@@ -276,6 +284,33 @@ def test_regroup_skips_what_it_cannot_tie_to_one_undecided_cli(tmp_path: Path) -
     connection.close()
 
 
+@pytest.mark.parametrize(
+    ("source_path", "command", "moves"),
+    [
+        ("/opt/tools/lanectl", "lanectl status", True),
+        ("/opt/tools/lanectl", "/opt/tools/lanectl status", True),
+        ("/opt/tools/lanectl", "/elsewhere/lanectl status", False),
+        ("/opt/tools/lanectl", "./lanectl status", False),
+        (None, "lanectl status", True),
+        (None, "/opt/tools/lanectl status", False),
+    ],
+)
+def test_a_program_written_with_a_path_must_be_the_observed_executable(
+    tmp_path: Path, source_path: str | None, command: str, moves: bool
+) -> None:
+    connection = _v13_store(tmp_path)
+    _approvals(connection)
+    _observe(connection, "lanectl", source_path=source_path)
+    _queue(connection, "r1", command)
+    connection.commit()
+
+    ensure_local_cli_schema(connection)
+
+    expected = connector_queue_group_id(_HASH, command) if moves else "action:old"
+    assert _groups(connection) == {"r1": expected}
+    connection.close()
+
+
 def test_regroup_leaves_the_rows_of_a_non_plain_observation(tmp_path: Path) -> None:
     connection = _v13_store(tmp_path)
     _approvals(connection)
@@ -334,6 +369,13 @@ def test_the_regroup_is_idempotent(tmp_path: Path) -> None:
     assert regroup_pending_connector_reviews(connection) == 0
     assert _groups(connection) == groups
     connection.close()
+
+
+def test_program_paths() -> None:
+    assert connector_program_path("lanectl status") is None
+    assert connector_program_path("/opt/tools/lanectl --json") == "/opt/tools/lanectl"
+    assert connector_program_path("./lanectl") == "./lanectl"
+    assert connector_program_path("") is None
 
 
 def test_plain_program_names() -> None:

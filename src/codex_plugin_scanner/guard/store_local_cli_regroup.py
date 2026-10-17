@@ -12,9 +12,11 @@ The tie is deliberately narrow. The stored command must be a plain
 ``program [argument ...]`` of safe ASCII tokens (no quoting, expansion,
 redirection or compound operators), the program's name must match exactly one
 plain executable observation, and that CLI must not already be allowed or
-blocked. Anything else keeps the group it has. ``connector_queue_group_id``
-mirrors ``connector_setup::queue_group_id`` in the resident; the shared vectors
-in ``connector_group_vectors.json`` pin both.
+blocked. A program written with a path must be that observation's own recorded
+executable path, so two binaries that share a name are never merged; a bare
+name carries no path to contradict. Anything else keeps the group it has.
+``connector_queue_group_id`` mirrors ``connector_setup::queue_group_id`` in the
+resident; the shared vectors in ``connector_group_vectors.json`` pin both.
 """
 
 from __future__ import annotations
@@ -86,6 +88,13 @@ def connector_program_name(command: str) -> str | None:
     return name
 
 
+def connector_program_path(command: str) -> str | None:
+    """The program token when it is written with a path, else ``None`` for a bare name."""
+
+    program = command.split()[0] if command.split() else ""
+    return program if "/" in program else None
+
+
 def regroup_pending_connector_reviews(connection: sqlite3.Connection) -> int:
     """Regroup the pending reviews that tie to one undecided CLI; returns how many moved.
 
@@ -121,16 +130,17 @@ def _regroup(connection: sqlite3.Connection) -> int:
         NON_RECOGNITION_RISK_SUMMARIES,
     ).fetchall()
     moved = 0
-    identities: dict[str, str | None] = {}
+    identities: dict[tuple[str, str | None], str | None] = {}
     for request_id, command, group in ((row[0], row[1], row[2]) for row in rows):
         if not isinstance(command, str):
             continue
         name = connector_program_name(command)
         if name is None:
             continue
-        if name not in identities:
-            identities[name] = _undecided_identity(connection, name)
-        identity_hash = identities[name]
+        program_path = connector_program_path(command)
+        if (name, program_path) not in identities:
+            identities[(name, program_path)] = _undecided_identity(connection, name, program_path)
+        identity_hash = identities[(name, program_path)]
         target = None if identity_hash is None else connector_queue_group_id(identity_hash, command)
         if target is None or target == group:
             continue
@@ -139,12 +149,16 @@ def _regroup(connection: sqlite3.Connection) -> int:
     return moved
 
 
-def _undecided_identity(connection: sqlite3.Connection, name: str) -> str | None:
-    """The identity hash of the one plain executable called ``name``, while it has no decision."""
+def _undecided_identity(connection: sqlite3.Connection, name: str, program_path: str | None) -> str | None:
+    """The identity hash of the one plain executable called ``name``, while it has no decision.
+
+    A program written with a path ties only to the observation recorded at that
+    exact path; an observation without a path cannot vouch for one.
+    """
 
     found = connection.execute(
         """
-        select cli_id, identity_hash from local_cli_observation
+        select cli_id, identity_hash, source_path from local_cli_observation
         where name = ? and kind = 'executable' and surface = 'cli'
           and interpreter_name is null and example_label = name
         limit 2
@@ -153,8 +167,10 @@ def _undecided_identity(connection: sqlite3.Connection, name: str) -> str | None
     ).fetchall()
     if len(found) != 1:
         return None
-    cli_id, identity_hash = found[0][0], found[0][1]
+    cli_id, identity_hash, source_path = found[0][0], found[0][1], found[0][2]
     if not isinstance(cli_id, str) or not isinstance(identity_hash, str):
+        return None
+    if program_path is not None and source_path != program_path:
         return None
     if _has_columns(connection, "local_cli_grant", {"cli_id", "identity_hash", "state"}):
         decided = connection.execute(
@@ -175,6 +191,7 @@ __all__ = [
     "ACTION_DIGEST_HEX",
     "NON_RECOGNITION_RISK_SUMMARIES",
     "connector_program_name",
+    "connector_program_path",
     "connector_queue_group_id",
     "normalize_command_identity",
     "regroup_pending_connector_reviews",

@@ -230,7 +230,7 @@ fn nothing_to_write_changes_nothing() {
     let home = Home::new();
     assert_eq!(
         home.record(args(json!({"trigger_summary": "  "}))).unwrap(),
-        json!(0)
+        Value::Null
     );
     assert!(home.columns().iter().all(Option::is_none));
 }
