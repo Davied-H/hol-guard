@@ -3543,6 +3543,7 @@ class GuardDaemonServer:
             if self._shutdown_started.is_set():
                 stop_reason = "requested_shutdown"
         except KeyboardInterrupt:
+            self._record_lifecycle("shutdown_requested", reason="keyboard_interrupt")
             self._shutdown_started.set()
             stop_reason = "requested_shutdown"
         except BaseException as error:
@@ -3846,6 +3847,7 @@ class GuardDaemonServer:
                 if idle:
                     self._server.idle_shutdown_claimed = True
             if idle:
+                self._record_lifecycle("shutdown_requested", reason="idle_timeout")
                 self._shutdown_started.set()
                 self._server.shutdown()
                 return

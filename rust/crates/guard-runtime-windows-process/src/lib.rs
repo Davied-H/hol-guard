@@ -18,6 +18,8 @@ mod drives;
 #[cfg(windows)]
 mod known_folders;
 #[cfg(windows)]
+mod registry;
+#[cfg(windows)]
 mod secure_storage;
 #[cfg(windows)]
 mod windows;
@@ -48,6 +50,9 @@ pub use drives::local_drive_letters;
 
 #[cfg(windows)]
 pub use known_folders::{trusted_install_roots, windows_directory};
+
+#[cfg(windows)]
+pub use registry::{read_machine_registry_string, MachineRegistryString};
 
 #[cfg(windows)]
 pub use secure_storage::{
