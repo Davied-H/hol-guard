@@ -3,7 +3,9 @@
 //! The note names what the sandbox blocked: a write outside the workspace,
 //! starting a program outside the allowed roots, a network connection, or a
 //! read outside the workspace. The first output line that names one of those
-//! picks it; a denial with no clearer cause gets the generic note. Python
+//! picks it; a denial with no clearer cause gets the generic note. Markers
+//! match whole words, so a path such as `/usr/libexec` or `rewrite.log` names
+//! no cause, and only errors a sandbox denial produces name one alone. Python
 //! keeps the same notes and markers in `contained_denial_note.py`, byte for
 //! byte, in the same order.
 
@@ -29,15 +31,14 @@ type Cause = (
 const CAUSES: [Cause; 4] = [
     (
         EXEC_NOTE,
-        &[b"spawn eperm", b"spawn eacces", b"cannot execute"],
-        &[b"exec"],
+        &[b"spawn eperm", b"spawn eacces"],
+        &[b"exec", b"execve", b"posix_spawn"],
     ),
     (
         CONNECT_NOTE,
         &[
             b"connect eperm",
             b"connect eacces",
-            b"econnrefused",
             b"network is unreachable",
             b"enetunreach",
             b"getaddrinfo enotfound",
@@ -75,8 +76,24 @@ const CAUSES: [Cause; 4] = [
     ),
 ];
 
+/// Whether `marker` appears in `line` with no word or path characters joined
+/// to either end.
 fn holds(line: &[u8], marker: &[u8]) -> bool {
-    line.windows(marker.len()).any(|window| window == marker)
+    let (Some(&first), Some(&last)) = (marker.first(), marker.last()) else {
+        return false;
+    };
+    line.windows(marker.len())
+        .enumerate()
+        .any(|(start, window)| {
+            let end = start + marker.len();
+            window == marker
+                && (start == 0 || !(word_byte(first) && word_byte(line[start - 1])))
+                && (end == line.len() || !(word_byte(last) && word_byte(line[end])))
+        })
+}
+
+fn word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"/._-".contains(&byte)
 }
 
 fn line_note(line: &[u8]) -> Option<&'static str> {

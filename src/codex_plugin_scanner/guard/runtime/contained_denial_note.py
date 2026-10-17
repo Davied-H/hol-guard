@@ -3,7 +3,9 @@
 The note names what the sandbox blocked: a write outside the workspace,
 starting a program outside the allowed roots, a network connection, or a
 read outside the workspace. The first output line that names one of those
-picks it; a denial with no clearer cause gets the generic note. Rust keeps
+picks it; a denial with no clearer cause gets the generic note. Markers
+match whole words, so a path such as `/usr/libexec` or `rewrite.log` names
+no cause, and only errors a sandbox denial produces name one alone. Rust keeps
 the same notes and markers in `contained_workspace_sink_denial.rs`, byte for
 byte, in the same order.
 """
@@ -30,13 +32,12 @@ DENIAL_WORDS = (b"eperm", b"eacces", b"operation not permitted", b"permission de
 # Per cause, in order: markers that name the cause alone, then words that name
 # it on a line that also holds a denial word.
 CAUSES = (
-    (EXEC_NOTE, (b"spawn eperm", b"spawn eacces", b"cannot execute"), (b"exec",)),
+    (EXEC_NOTE, (b"spawn eperm", b"spawn eacces"), (b"exec", b"execve", b"posix_spawn")),
     (
         CONNECT_NOTE,
         (
             b"connect eperm",
             b"connect eacces",
-            b"econnrefused",
             b"network is unreachable",
             b"enetunreach",
             b"getaddrinfo enotfound",
@@ -54,10 +55,29 @@ CAUSES = (
 )
 
 
+def _word_byte(byte: int) -> bool:
+    return chr(byte).isalnum() or chr(byte) in "/._-"
+
+
+def _holds(line: bytes, marker: bytes) -> bool:
+    """Whether `marker` appears in `line` with no word or path characters joined to either end."""
+    start = line.find(marker)
+    while start >= 0:
+        end = start + len(marker)
+        clear_start = start == 0 or not (_word_byte(marker[0]) and _word_byte(line[start - 1]))
+        clear_end = end == len(line) or not (_word_byte(marker[-1]) and _word_byte(line[end]))
+        if clear_start and clear_end:
+            return True
+        start = line.find(marker, start + 1)
+    return False
+
+
 def _line_note(line: bytes) -> str | None:
-    denial = any(word in line for word in DENIAL_WORDS)
+    denial = any(_holds(line, word) for word in DENIAL_WORDS)
     for note, alone, with_denial in CAUSES:
-        if any(marker in line for marker in alone) or (denial and any(word in line for word in with_denial)):
+        if any(_holds(line, marker) for marker in alone) or (
+            denial and any(_holds(line, word) for word in with_denial)
+        ):
             return note
     return None
 
@@ -70,5 +90,5 @@ def denial_note(outputs: Iterable[bytes]) -> str | None:
             note = _line_note(line)
             if note is not None:
                 return note
-            denied = denied or any(word in line for word in DENIAL_WORDS)
+            denied = denied or any(_holds(line, word) for word in DENIAL_WORDS)
     return GENERIC_NOTE if denied else None

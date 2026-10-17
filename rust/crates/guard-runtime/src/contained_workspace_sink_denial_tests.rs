@@ -16,7 +16,7 @@ fn each_cause_gets_its_own_note() {
     );
     assert_eq!(note("Error: spawn EACCES"), Some(EXEC_NOTE));
     assert_eq!(
-        note("sh: /opt/lanectl/bin/lanectl: cannot execute binary file"),
+        note("Error: EACCES: permission denied, posix_spawn '/opt/lanectl/bin/lanectl'"),
         Some(EXEC_NOTE)
     );
     assert_eq!(
@@ -35,7 +35,7 @@ fn each_cause_gets_its_own_note() {
 
 #[test]
 fn the_first_line_with_a_cause_picks_the_note() {
-    let output = b"Error: connect ECONNREFUSED 127.0.0.1:8080\nError: EROFS: read-only file system";
+    let output = b"Error: connect EPERM 127.0.0.1:8080\nError: EROFS: read-only file system";
     assert_eq!(denial_note(&[&output[..]]), Some(CONNECT_NOTE));
     assert_eq!(
         denial_note(&[
@@ -44,6 +44,23 @@ fn the_first_line_with_a_cause_picks_the_note() {
         ]),
         Some(EXEC_NOTE)
     );
+}
+
+#[test]
+fn markers_match_whole_words_and_sandbox_errors_only() {
+    assert_eq!(
+        note("Error: EPERM: operation not permitted, mkdir '/usr/libexec/lanectl'"),
+        Some(WRITE_NOTE)
+    );
+    assert_eq!(
+        note("Error: EACCES: permission denied, open '/opt/exec-cache/rewrite.log'"),
+        Some(GENERIC_NOTE)
+    );
+    assert_eq!(
+        note("sh: /opt/lanectl/bin/lanectl: cannot execute binary file"),
+        None
+    );
+    assert_eq!(note("Error: connect ECONNREFUSED 127.0.0.1:8080"), None);
 }
 
 #[test]

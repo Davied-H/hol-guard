@@ -175,8 +175,10 @@ pub(super) fn run_backend(
         ));
     }
     let code = status.map_or(1, exit_code);
-    let note = denial_note(&[stdout_text.as_slice(), stderr_text.as_slice()]);
-    if let Some(note) = note.filter(|_| code != 0) {
+    let note = (code != 0)
+        .then(|| denial_note(&[stdout_text.as_slice(), stderr_text.as_slice()]))
+        .flatten();
+    if let Some(note) = note {
         let mut stderr = std::io::stderr().lock();
         let _ = writeln!(stderr, "\n[HOL Guard] {note}");
         let _ = stderr.flush();

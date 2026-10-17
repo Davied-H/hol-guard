@@ -20,7 +20,11 @@ _NOTE_NAMES = ("WRITE_NOTE", "EXEC_NOTE", "CONNECT_NOTE", "READ_NOTE", "GENERIC_
         (b"Error: EPERM: operation not permitted, mkdir '/opt/lanectl/cache'", notes.WRITE_NOTE),
         (b"OSError: [Errno 30] Read-only file system: 'out'", notes.WRITE_NOTE),
         (b"Error: spawn EACCES", notes.EXEC_NOTE),
-        (b"sh: /opt/lanectl/bin/lanectl: cannot execute binary file", notes.EXEC_NOTE),
+        (b"Error: EACCES: permission denied, posix_spawn '/opt/lanectl/bin/lanectl'", notes.EXEC_NOTE),
+        (b"Error: EPERM: operation not permitted, mkdir '/usr/libexec/lanectl'", notes.WRITE_NOTE),
+        (b"Error: EACCES: permission denied, open '/opt/exec-cache/rewrite.log'", notes.GENERIC_NOTE),
+        (b"sh: /opt/lanectl/bin/lanectl: cannot execute binary file", None),
+        (b"Error: connect ECONNREFUSED 127.0.0.1:8080", None),
         (b"Error: connect EPERM 203.0.113.7:443", notes.CONNECT_NOTE),
         (b"curl: (6) Could not resolve host: echo-mcp.invalid", notes.CONNECT_NOTE),
         (b"Error: EPERM: operation not permitted, scandir '/home/dev'", notes.READ_NOTE),
@@ -28,14 +32,29 @@ _NOTE_NAMES = ("WRITE_NOTE", "EXEC_NOTE", "CONNECT_NOTE", "READ_NOTE", "GENERIC_
         (b"PermissionError: [Errno 13] Permission denied: 'data'", notes.GENERIC_NOTE),
         (b"AssertionError: expected 2, got 3", None),
     ],
-    ids=["mkdir", "erofs", "spawn", "cannot-execute", "connect", "resolve", "scandir", "eperm", "eacces", "none"],
+    ids=[
+        "mkdir",
+        "erofs",
+        "spawn",
+        "posix-spawn",
+        "libexec-path",
+        "exec-path",
+        "exec-format",
+        "refused",
+        "connect",
+        "resolve",
+        "scandir",
+        "eperm",
+        "eacces",
+        "none",
+    ],
 )
 def test_each_cause_gets_its_own_note(output: bytes, expected: str | None) -> None:
     assert denial_note([output]) == expected
 
 
 def test_the_first_line_with_a_cause_picks_the_note() -> None:
-    output = b"Error: connect ECONNREFUSED 127.0.0.1:8080\nError: EROFS: read-only file system"
+    output = b"Error: connect EPERM 127.0.0.1:8080\nError: EROFS: read-only file system"
     assert denial_note([output]) == notes.CONNECT_NOTE
     assert denial_note([b"PermissionError: [Errno 13] Permission denied", b"spawn EPERM"]) == notes.EXEC_NOTE
     assert denial_note([]) is None

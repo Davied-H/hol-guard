@@ -277,8 +277,12 @@ def _run_backend_process(
                 stdout_capture.extend(stdout_file.read(_MAX_REPLAY_BYTES))
             if not merge_stderr:
                 _replay_sandbox_output(stderr_file, sys.stderr)
-        note = _denial_note(write_denial_note, stdout_file, None if merge_stderr else stderr_file)
-        if note is not None and return_code != 0:
+        note = (
+            _denial_note(write_denial_note, stdout_file, None if merge_stderr else stderr_file)
+            if return_code != 0
+            else None
+        )
+        if note is not None:
             destination = sys.stdout if merge_stderr else sys.stderr
             destination.write(f"\n[HOL Guard] {note}\n")
             destination.flush()
