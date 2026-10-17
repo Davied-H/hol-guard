@@ -7,7 +7,6 @@
 
 use std::collections::BTreeSet;
 
-use guard_command::approval_reuse::enforced_policy_action;
 use guard_command::mcp_tool_catalog::normalized_tools_catalog_page;
 use guard_contracts::{
     GuardAction, McpCatalogCursorV1, McpCatalogEventQueryV1, McpCatalogEventV1, McpCatalogStateV1,
@@ -15,7 +14,7 @@ use guard_contracts::{
 };
 use serde_json::{json, Map, Value};
 
-use crate::mcp_proxy_actions::{norm, truthy_or, TOOL_CATALOG_INCOMPLETE};
+use crate::mcp_proxy_actions::{enforcement_of, norm, truthy_or, TOOL_CATALOG_INCOMPLETE};
 
 const SAVED_ALLOW_SUMMARY: &str = "Guard cannot reuse a saved MCP approval until the current server process has advertised a complete tool catalog.";
 
@@ -235,7 +234,7 @@ pub(crate) fn saved_allow_gate(query: &McpSavedAllowGateQueryV1) -> Value {
     );
     // The gate rejects the saved authority, so the action it leaves on the
     // decision is not always the one the call enforces.
-    let policy = enforced_policy_action(action, Some("rejected"), Some(TOOL_CATALOG_INCOMPLETE));
+    let policy = enforcement_of(action, Some("rejected"), Some(TOOL_CATALOG_INCOMPLETE));
     json!({
         "disable": true,
         "action": action.as_str(),
