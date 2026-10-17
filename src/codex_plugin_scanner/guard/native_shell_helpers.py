@@ -256,6 +256,7 @@ def _valid(action: str, value: Any) -> bool:
         "flags_all",
         "long_flag",
         "has_embedded_script",
+        "invokes_executable",
     }:
         return type(value) is bool
     if action == "embedded_script_evidence":

@@ -701,6 +701,9 @@ mod local_supply_chain_stale_policy_tests;
 pub mod package_approval;
 pub mod package_policy_override;
 pub mod package_protect_projection;
+mod package_shim_invocation;
+#[cfg(test)]
+mod package_shim_invocation_tests;
 pub mod prompt_analysis;
 pub mod redacted_command_tokens;
 pub mod supply_chain_package_eval;
