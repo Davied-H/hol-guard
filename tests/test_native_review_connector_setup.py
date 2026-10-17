@@ -111,6 +111,8 @@ def test_ask_mode_gives_no_link_to_a_row_approval_cannot_release(
     text, queued = _pause(tmp_path, monkeypatch, ask=True, connector=_CONNECTOR, binding=None)
 
     assert "has not been set up for `lanectl`" in text
+    assert SAFE_ALTERNATIVE_GUIDANCE in text
+    assert "inbox" not in text.lower()
     assert _URL not in text
     assert queued[0]["connector"] == _CONNECTOR
 

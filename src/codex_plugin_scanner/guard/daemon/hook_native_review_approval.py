@@ -192,8 +192,11 @@ def pause_native_pre_tool_for_approval(
     connector = native_review_setup_connector(
         store, payload=payload, native_result=native_result, workspace=workspace, home_dir=home_dir
     )
+    # Approving a row bound to neither the retry nor an exact-action Always
+    # cannot let the agent run the action, so the reason never sends the user there.
+    approval_can_unblock = identity is not None or exact_token is not None
     # The row keeps the native reason as evidence; only the agent text changes.
-    setup_reason = None if connector is None else connector_agent_reason(connector, ask=ask)
+    setup_reason = None if connector is None else connector_agent_reason(connector, ask=ask and approval_can_unblock)
     if not ask or (identity is None and exact_token is None):
         # The agent stays on the silent block. The inbox row is a separate record.
         queued = queue_native_pre_tool_review(
@@ -225,12 +228,9 @@ def pause_native_pre_tool_for_approval(
             retry_reuses_approval=identity is not None,
             exact_action_allowable=exact_token is not None,
         )
-        # Approving a row that is neither bound to the retry nor eligible
-        # for an exact-action Always cannot let the agent run the action,
-        # so the reason does not send the user to approve it. A setup review
-        # also never links in the default mode.
-        approval_can_unblock = (identity is not None or exact_token is not None) and (ask or setup_reason is None)
-        raw_url = queued.get("approval_url") if queued is not None and approval_can_unblock else None
+        # A setup review never links in the default mode.
+        link = approval_can_unblock and (ask or setup_reason is None)
+        raw_url = queued.get("approval_url") if queued is not None and link else None
         if isinstance(raw_url, str) and raw_url.strip():
             # The agent passes the link on, so the user can open the queued row.
             reason = native_review_reason(canonical_harness(harness), reason, raw_url.strip(), guard_home=guard_home)
