@@ -88,3 +88,7 @@ pub(super) fn as_absolute_cd(
         text,
     })
 }
+
+#[cfg(test)]
+#[path = "workspace_contained_home_cd_tests.rs"]
+mod tests;
