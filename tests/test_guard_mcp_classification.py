@@ -160,6 +160,8 @@ def test_a_declaration_too_large_to_send_is_left_undescribed(monkeypatch: pytest
         pytest.param({"default": float("inf")}, id="non-finite-number"),
         pytest.param({"default": float("nan")}, id="not-a-number"),
         pytest.param({"enum": [0] * (_MAX_JSON_COLLECTION_ITEMS + 1)}, id="array-past-the-collection-cap"),
+        pytest.param({"description": "\ud800"}, id="lone-surrogate-in-a-value"),
+        pytest.param({"\ud800": {"type": "string"}}, id="lone-surrogate-in-a-field-name"),
     ],
 )
 def test_a_declaration_the_resident_parser_refuses_costs_only_itself(

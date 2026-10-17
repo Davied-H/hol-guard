@@ -58,14 +58,28 @@ def _item(definition: Mapping[str, object]) -> dict[str, object]:
     }
 
 
+def _utf8_length(text: str) -> int | None:
+    """Byte length of ``text``, or ``None`` when it has no UTF-8 encoding.
+
+    A provider schema may carry an escaped lone surrogate, which survives
+    ``json.loads`` and ``json.dumps`` but cannot be encoded. The resident's
+    parser refuses it too, so it travels nowhere.
+    """
+
+    try:
+        return len(text.encode("utf-8"))
+    except UnicodeEncodeError:
+        return None
+
+
 def _transportable(value: object, depth: int = 0) -> bool:
     """Whether the resident's parser would accept this declaration.
 
-    A provider-controlled schema can carry a megabyte-long description, an
-    integer outside the JSON number range or a non-finite float. The resident
-    refuses the whole frame over any of them, so a single such declaration
-    would cost every other tool in the batch its classification. Those are
-    left undescribed instead.
+    A provider-controlled schema can carry a megabyte-long description, a
+    lone surrogate, an integer outside the JSON number range or a non-finite
+    float. The resident refuses the whole frame over any of them, so a single
+    such declaration would cost every other tool in the batch its
+    classification. Those are left undescribed instead.
     """
 
     if depth > _MAX_ITEM_DEPTH:
@@ -73,7 +87,8 @@ def _transportable(value: object, depth: int = 0) -> bool:
     if value is None or isinstance(value, bool):
         return True
     if isinstance(value, str):
-        return len(value.encode("utf-8")) <= _MAX_JSON_STRING_BYTES
+        length = _utf8_length(value)
+        return length is not None and length <= _MAX_JSON_STRING_BYTES
     if isinstance(value, int):
         return _MIN_JSON_INT <= value <= _MAX_JSON_INT
     if isinstance(value, float):
@@ -82,9 +97,7 @@ def _transportable(value: object, depth: int = 0) -> bool:
         if len(value) > _MAX_JSON_COLLECTION_ITEMS:
             return False
         return all(
-            isinstance(key, str)
-            and len(key.encode("utf-8")) <= _MAX_JSON_STRING_BYTES
-            and _transportable(item, depth + 1)
+            isinstance(key, str) and _transportable(key, depth) and _transportable(item, depth + 1)
             for key, item in value.items()
         )
     if isinstance(value, (list, tuple)):
