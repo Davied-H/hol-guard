@@ -146,6 +146,7 @@ def build_approval_connector_recommendation(
         status = "approval_gate_required"
     else:
         status = "available"
+    setup_query = urlencode({"setup": approval.get("request_id"), "identity": identity_hash})
     return {
         "schema": CONNECTOR_RECOMMENDATION_SCHEMA,
         "status": status,
@@ -155,7 +156,7 @@ def build_approval_connector_recommendation(
         "display_name": hint["display_name"],
         "deep_link": hint["deep_link"],
         # Protect page opened on this request; the page re-checks the identity.
-        "setup_href": f"{hint['deep_link']}?{urlencode({'setup': approval.get('request_id'), 'identity': identity_hash})}",
+        "setup_href": f"{hint['deep_link']}?{setup_query}",
         # Recomputed from the stored connector, never trusted from the queue time.
         "card_recommendation": {"state": "allowed", "capabilities": []},
         # Pre-filled body for the same local-CLI preview/apply endpoint as
