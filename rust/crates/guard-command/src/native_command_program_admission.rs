@@ -7,9 +7,7 @@ mod direct_mcp;
 #[path = "native_command_program_pack_validation.rs"]
 mod pack_validation;
 
-pub(super) fn valid_direct_mcp_command(value: &str) -> bool {
-    direct_mcp::valid_direct_mcp_command(value)
-}
+pub(super) use direct_mcp::valid_direct_mcp_command;
 
 fn valid_mcp_server_name(value: &str) -> bool {
     !value.is_empty()
