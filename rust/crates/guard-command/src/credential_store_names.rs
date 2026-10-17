@@ -216,11 +216,11 @@ fn documentation_name(name: &str) -> bool {
 /// asks there, which is whether the tool is installed. The install roots this
 /// screen would otherwise open (`~/.cargo/bin`, `~/.local/bin`) are also where
 /// a link can point somewhere else entirely, so the directory keeps its review
-/// and the metadata screen keeps the benign half.
+/// and the metadata screen keeps the benign half. A subdirectory of one holds
+/// the same thing a level down (`~/.local/bin/helpers/run`), so every parent
+/// is read rather than only the one the file sits in.
 fn program_directory(parents: &[String]) -> bool {
-    parents
-        .last()
-        .is_some_and(|name| name == "bin" || name == "sbin")
+    parents.iter().any(|name| name == "bin" || name == "sbin")
 }
 
 /// How deep the directory a tool owns sits below the home directory.

@@ -37,6 +37,7 @@ fn home(name: &str) -> PathBuf {
         ".codex/sessions/2026-10-16",
         ".codex/skills/release-check",
         ".bun/bin",
+        ".local/bin/helpers",
         ".config/doctl",
         ".config/gcloud",
         ".config/gh",
@@ -65,6 +66,7 @@ fn home(name: &str) -> PathBuf {
             "pub fn parse() {}\n",
         ),
         (".bun/bin/bun", "\u{7f}ELF\n"),
+        (".local/bin/helpers/run", "#!/bin/sh\n"),
         (".certs/server.pem", "-----BEGIN CERTIFICATE-----\n"),
         (".claude/.credentials.json", "{}\n"),
         (".claude/settings.json", "{\"env\": {}}\n"),
@@ -249,6 +251,25 @@ fn a_tools_program_directory_keeps_review() {
     for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
         assert_ne!(
             native_action(&home, harness, tool, ".bun/bin/bun"),
+            "allow",
+            "{harness} {tool}"
+        );
+    }
+}
+
+/// A program directory holds the same thing one level further down. A helper
+/// under `~/.local/bin/helpers` is still an executable, so nesting it does not
+/// move it out of the directory's review.
+#[test]
+fn a_nested_program_directory_keeps_review() {
+    let home = home("nested-programs");
+    assert_ne!(
+        action(&home, "codex", "cat ~/.local/bin/helpers/run"),
+        "allow"
+    );
+    for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+        assert_ne!(
+            native_action(&home, harness, tool, ".local/bin/helpers/run"),
             "allow",
             "{harness} {tool}"
         );
