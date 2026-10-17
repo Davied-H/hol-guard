@@ -267,6 +267,7 @@ pub(crate) enum ResidentOperationV1 {
     McpClassify(McpClassificationRequestV1),
     NativeExactAction(NativeExactActionRequestV1),
     SkillDirectoryIdentity(SkillDirectoryIdentityRequestV1),
+    SkillWorkflowPreflight(guard_contracts::SkillWorkflowPreflightRequestV1),
     #[cfg(unix)]
     CodexBindingCapture(crate::binding_capture_op::CodexBindingCaptureRequestV1),
     #[allow(dead_code)]

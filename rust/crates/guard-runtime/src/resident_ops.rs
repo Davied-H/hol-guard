@@ -257,6 +257,11 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::ComposioRole(request) => {
                 crate::composio_role_op::evaluate_composio_role_request(&request)
             }
+            ResidentOperationV1::SkillWorkflowPreflight(request) => {
+                crate::skill_workflow_preflight_op::evaluate_skill_workflow_preflight_request(
+                    &request,
+                )
+            }
             ResidentOperationV1::GithubCliClassify(request) => {
                 crate::github_cli_classify_op::evaluate_github_cli_classify_request(&request)
             }

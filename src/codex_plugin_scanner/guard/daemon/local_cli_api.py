@@ -25,6 +25,10 @@ from ..approval_gate import (
 )
 from ..local_cli_errors import LocalCliCatalogLimitError
 from ..local_cli_trust import utc_now
+from ..native_skill_workflow_preflight import (
+    NativeSkillWorkflowPreflightError,
+    native_skill_preflight,
+)
 from ..runtime.custom_extension_continuity import (
     record_local_custom_extension_mutation,
 )
@@ -72,7 +76,6 @@ from ..runtime.package_json_script_memory import (
     refresh_package_script_catalogs,
 )
 from ..runtime.package_json_scripts import looks_like_package_script_paste
-from ..runtime.skill_workflow_preflight import preflight_skill_dependencies
 from .local_cli_api_contract import LOCAL_CLI_API_SCHEMA as _LOCAL_CLI_API_SCHEMA
 from .local_cli_api_contract import LocalCliApiError
 from .local_cli_continuity_api import decorate_local_cli_continuity
@@ -321,11 +324,16 @@ class LocalCliApiService:
         revision = items[0].get("authority_revision") if items else self._store.read_local_cli_revision()
         if type(revision) is not int:
             raise LocalCliApiError(503, "workflow_authority_unavailable")
-        result = preflight_skill_dependencies(
-            dependencies if isinstance(dependencies, dict) else {},
-            items,
-            revision=revision,
-        )
+        try:
+            result = native_skill_preflight(
+                dependencies if isinstance(dependencies, dict) else {},
+                items,
+                revision=revision,
+            )
+        except NativeSkillWorkflowPreflightError as error:
+            # The resident owns the plan; without it there is no requirement
+            # list to show, and an empty one would read as nothing to review.
+            raise LocalCliApiError(503, "workflow_authority_unavailable") from error
         result["native_publication"] = local_cli_publication_status(self._store.guard_home, revision)
         return result
 

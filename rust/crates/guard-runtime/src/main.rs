@@ -621,6 +621,7 @@ mod skill_identity_discovery;
 mod skill_identity_inspect;
 mod skill_identity_platform;
 mod skill_identity_walk;
+mod skill_workflow_preflight_op;
 #[cfg(unix)]
 mod state_directory_lock;
 #[cfg(test)]
