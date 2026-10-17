@@ -52,6 +52,11 @@ fn report_scripts_only_read() {
         "import re\nfrom pathlib import Path\nWORD = re.compile(r'\\w+')\nwith open(Path('notes.md'), encoding='ascii') as f:\n    print(len(WORD.findall(f.read())))\n",
     );
     assert!(read_only(Language::Python, &pattern));
+    let (_appendix, appendix) = script(
+        "appendix.py",
+        "from pathlib import Path\nprint(open('appendix.txt').read())\nprint(Path('a.txt').open('r').read())\n",
+    );
+    assert!(read_only(Language::Python, &appendix));
 }
 
 #[test]
@@ -70,6 +75,10 @@ fn writes_launches_and_packages_keep_review() {
         "import os, \\\n    subprocess\n",
         "open('out.txt', mode='a')\n",
         "__builtins__.exec('1')\n",
+        "import sys\nsys.modules['builtins'].exec('1')\n",
+        "from pathlib import Path\nPath('out.txt').open('w')\n",
+        "open(mode='w', file='out.txt')\n",
+        "open('out.txt', 'r+')\n",
     ] {
         let (_directory, path) = script("report.py", source);
         assert!(!read_only(Language::Python, &path), "{source}");

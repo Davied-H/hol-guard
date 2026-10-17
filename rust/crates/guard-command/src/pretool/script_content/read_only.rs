@@ -88,8 +88,13 @@ static PYTHON_EFFECTS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
         r"\.\s*(?:write_text|write_bytes|touch|mkdir|unlink|rmdir|rename|symlink_to|hardlink_to|link_to|chmod|lchmod)\s*\(",
         r"|\bos\s*\.\s*(?:system|popen|exec\w*|spawn\w*|posix_spawn\w*|fork\w*|kill\w*|remove|unlink|rmdir|removedirs|mkdir|makedirs|rename|renames|replace|chmod|chown|lchown|link|symlink|truncate|ftruncate|write|open|mkfifo|mknod|utime|startfile|putenv|unsetenv)\b",
-        r"|(?:^|[^.\w])(?:eval|exec|compile|__import__|breakpoint)\s*\(|\b__builtins__\b",
-        r#"|\bopen\s*\([^)\n]*,\s*(?:mode\s*=\s*)?["'][rbtU]*[wax+]"#,
+        // `compile` alone is also `re.compile`; the others stay blocked as
+        // attributes too, such as `sys.modules['builtins'].exec`.
+        r"|\b(?:eval|exec|__import__|breakpoint)\s*\(|(?:^|[^.\w])compile\s*\(",
+        r"|\b__builtins__\b|\bsys\s*\.\s*modules\b",
+        // A whole write-mode literal, first, after a comma, or as `mode=`.
+        r#"|\bopen\s*\((?:[^)\n]*,)?\s*(?:mode\s*=\s*)?["'][rbtU]*[wax+][rbtU+]*["']"#,
+        r#"|\bmode\s*=\s*["'][rbtU]*[wax+][rbtU+]*["']"#,
     ))
     .unwrap()
 });
