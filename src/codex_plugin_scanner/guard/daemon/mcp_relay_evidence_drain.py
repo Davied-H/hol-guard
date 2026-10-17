@@ -393,6 +393,7 @@ def _decision(value: object) -> Any:
         pending_approval_reuse_decision=payload["pending_approval_reuse_decision"],
         approval_reuse_claim_disposition=payload["approval_reuse_claim_disposition"],
         post_claim_revalidated=payload["post_claim_revalidated"],
+        policy_action=payload["policy_action"],
     )
 
 
