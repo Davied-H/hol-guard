@@ -72,6 +72,7 @@ from ..runtime.approval_context import (
     resolved_runtime_launch_executable,
     runtime_launch_identity_matches,
 )
+from ..runtime.composio_contract import composio_names_a_wrapper
 from ..runtime.harness_attribution import origin_harness_env
 from ..runtime.mcp_protection import McpServerIdentity, build_mcp_server_identity
 from ..runtime.package_intent_common import build_package_request_artifact
@@ -779,7 +780,11 @@ class RuntimeMcpGuardProxy:
             },
             server_identity=self._session_server_identity(),
             tool_definition=public_tool_definition,
-            provider_catalog_hash=self.store.read_mcp_provider_authority_hash(),
+            provider_catalog_hash=(
+                self.store.read_mcp_provider_authority_hash()
+                if composio_names_a_wrapper(tool_name)
+                else None
+            ),
         )
         artifact, artifact_hash = identity.artifact, identity.artifact_hash
         if artifact_hash is None:

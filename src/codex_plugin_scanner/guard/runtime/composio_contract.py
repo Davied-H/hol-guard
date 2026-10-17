@@ -6,9 +6,11 @@ selectors cannot be interpreted as an account identity by Guard.
 
 The native runtime owns the contract. These helpers only ask it and fall back
 to the stricter answer when it cannot be reached: no role at all, and the
-provider review a tool the contract cannot place would draw. Neither helper
-recomputes a role in Python, so an absent resident can never route a call the
-way a reachable one would have.
+provider review a wrapper would draw. Neither helper recomputes a role in
+Python, so an absent resident can never route a call the way a reachable one
+would have. The fallback is bounded by the name shape every role shares, so an
+unreachable resident cannot turn a tool that was never Composio's into a
+provider action.
 """
 
 from __future__ import annotations
@@ -35,11 +37,27 @@ def composio_tool_role(tool_name: str) -> ComposioToolRole | None:
     return cast("ComposioToolRole | None", native.role)
 
 
+def composio_names_a_wrapper(tool_name: str) -> bool:
+    """Whether this name could route to a Composio wrapper at all.
+
+    A superset of the contract's own routing rather than a copy of it: every
+    role the runtime places sits in a trailing ``composio_`` segment, so a name
+    without one carries no provider action whatever the resident would answer.
+    The contract still decides which wrapper a matching name is and whether the
+    call is reviewed; this only bounds what an unreachable resident, or a
+    provider-catalog read taken ahead of one, is allowed to reach.
+    """
+    return tool_name.rsplit("__", 1)[-1].casefold().startswith("composio_")
+
+
 def composio_requires_action_review(tool_name: str) -> bool:
     """Whether a call to this tool is reviewed as a provider action.
 
-    An unreachable resident answers ``True``: the call then draws the review a
-    wrapper that could carry a provider action draws, never the quiet path.
+    An unreachable resident answers ``True`` for a name shaped like a wrapper:
+    the call then draws the review a wrapper that could carry a provider action
+    draws, never the quiet path. Any other name keeps the answer it has when
+    the resident is reachable, so an outage does not move an ordinary tool's
+    approval identity or refuse to remember its approval.
     """
     native = composio_role_native(tool_name)
-    return True if native is None else native.requires_action_review
+    return composio_names_a_wrapper(tool_name) if native is None else native.requires_action_review
