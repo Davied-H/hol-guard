@@ -7,16 +7,14 @@ with synthetic names only:
 * a local CLI, ``lanectl``, installed as an executable ``#!/bin/sh`` script in
   ``~/.local/bin`` beside its ``~/.lanectl`` state directory. ``lanectl-ready``
   is a second install of the same shape that the local admin has allowed;
-* a harness MCP config naming a stdio server, ``echo-mcp``, and a remote one,
-  ``https://mcp.example.test/mcp``, in the place the Codex adapter reads it.
+* a harness MCP config naming two stdio servers, ``echo-mcp`` and ``echo-ready`` (the
+  one the local admin has allowed), and a remote one, ``https://mcp.example.test/mcp``, in
+  the place the Codex adapter reads it. ``tests.benign_fp_gate_mcp`` replays their calls.
 
 The cases pass a path under ``~/.lanectl``. A bare ``lanectl status`` stays in the
 workspace, where hosts with a sandbox run it contained and never review it; a command that
 reaches the connector's state outside the workspace is the one that needs a decision.
-No case replays an MCP call: connector setup groups local CLIs and package scripts only,
-so the MCP config is written for the day it groups servers too.
-
-Nothing here runs: the gate only decides on the commands it replays.
+Nothing here runs a connector: the gate only decides on the calls it replays.
 """
 
 from __future__ import annotations
@@ -33,6 +31,7 @@ from codex_plugin_scanner.guard.local_cli_trust import utc_now
 from codex_plugin_scanner.guard.native_context import bound_context_digest_home
 from codex_plugin_scanner.guard.runtime.local_cli_identity import UnlistedCliIdentity, identify_unlisted_cli
 from codex_plugin_scanner.guard.store import GuardStore
+from tests.benign_fp_gate_mcp import FORBIDDEN_WORDING, mcp_config, write_server
 from tests.benign_fp_gate_projects import _write
 
 UNSET_CLI = "lanectl"
@@ -41,16 +40,6 @@ REMOTE_MCP_URL = "https://mcp.example.test/mcp"
 
 # A review held only because Guard does not recognise the command carries this reason on its row.
 SETUP_ROW_REASON = "native_command_review_required"
-# Default mode neither links to the review nor tells the agent to ask the user for anything.
-_FORBIDDEN_WORDING = ("http", "inbox", "approv", "ask the user", "ask your", "ask them")
-
-_MCP_CONFIG = f"""[mcp_servers.echo-mcp]
-command = "node"
-args = ["echo-mcp.js"]
-
-[mcp_servers.remote-example]
-url = "{REMOTE_MCP_URL}"
-"""
 
 
 def write_connectors(home: Path) -> None:
@@ -61,7 +50,8 @@ def write_connectors(home: Path) -> None:
         program.chmod(0o755)
     _write(home / ".lanectl" / "state.json", '{"lane": "example", "ready": true}\n')
     _write(home / ".lanectl" / "config.toml", 'endpoint = "local"\n')
-    _write(home / ".codex" / "config.toml", _MCP_CONFIG)
+    write_server(home)
+    _write(home / ".codex" / "config.toml", mcp_config(home, REMOTE_MCP_URL))
 
 
 def _identify(name: str, home: Path, guard_home: Path) -> UnlistedCliIdentity | None:
@@ -119,7 +109,7 @@ def connector_setup_failure(rows: list[dict[str, object]], result: dict[str, obj
         return "not worded as setup"
     if SAFE_ALTERNATIVE_GUIDANCE not in text:
         return "setup lost the safe-alternative guidance"
-    leaked = [word for word in _FORBIDDEN_WORDING if word in text.lower()]
+    leaked = [word for word in FORBIDDEN_WORDING if word in text.lower()]
     if leaked:
         return f"default-mode setup text carries {leaked}"
     if len(rows) != 1:

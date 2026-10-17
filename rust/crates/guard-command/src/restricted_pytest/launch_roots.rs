@@ -11,7 +11,7 @@ use super::*;
 use crate::pretool::workspace_git_config::linked_git_dirs;
 
 /// What looking a program up came to.
-enum Lookup {
+pub(super) enum Lookup {
     Found(PathBuf),
     /// Nothing to run: a builtin, a function or a name the shell expands.
     Missing,
@@ -92,7 +92,7 @@ fn unreachable_from(
 }
 
 /// Directories the sandbox may execute from on this platform.
-fn executable_roots(workspace: &Path, exec_roots: Vec<PathBuf>) -> Vec<PathBuf> {
+pub(super) fn executable_roots(workspace: &Path, exec_roots: Vec<PathBuf>) -> Vec<PathBuf> {
     let system: &[&str] = if cfg!(target_os = "macos") {
         &["/bin", "/usr/bin"]
     } else {
@@ -124,7 +124,7 @@ fn linked_checkout(workspace: &Path, home: Option<&Path>) -> Option<PathBuf> {
 /// `place`, or a bare name on `search_path`, where an empty or relative entry
 /// is a directory below `place` too. Names a shell would expand are not
 /// resolved.
-fn locate(program: &str, search_path: &str, place: Option<&Path>) -> Lookup {
+pub(super) fn locate(program: &str, search_path: &str, place: Option<&Path>) -> Lookup {
     if program.is_empty() || program.contains(['$', '~', '`', '*', '?', '[', '\\', '\n']) {
         return Lookup::Missing;
     }

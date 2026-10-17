@@ -37,6 +37,7 @@ pub(crate) fn benign_command_segments(
         cdpath_unset: context.cdpath_unset,
         rustup_override_absent: context.rustup_override_absent,
         npm_config_inert: context.npm_config_inert,
+        pip_config_inert: context.pip_config_inert,
         shell_home_matches: context.shell_home_matches,
         ripgrep_config_absent: context.ripgrep_config_absent,
         psql_environment: context.psql_environment,
@@ -348,6 +349,7 @@ pub(super) fn exact_safe_segment_with_context(
             super::npm_reads::read_only_neighbors(model)
                 && super::npm_reads::safe_npm_read(&segment.arguments, context)
         }
+        "pip" | "pip3" => super::pip_reads::safe_pip_segment(model, segment, context),
         "hol-guard" => super::guard_diagnostics::safe_hol_guard_segment(
             &segment.arguments,
             context.cwd,

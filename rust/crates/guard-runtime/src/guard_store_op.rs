@@ -43,6 +43,7 @@ use crate::guard_store_cmd_lifecycle as lifecycle;
 use crate::guard_store_cmd_maintenance as maintenance;
 use crate::guard_store_cmd_privacy as privacy;
 use crate::guard_store_connect as connect;
+use crate::guard_store_connector_context as connector_context;
 use crate::guard_store_db::{exec, query_all, query_one, text, StoreError, StoreResult};
 use crate::guard_store_inventory as inventory;
 use crate::guard_store_local_cli as local_cli;
@@ -384,6 +385,7 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "record_local_cli_observation"
         | "replace_local_cli_commands"
         | "forget_local_cli_observation"
+        | "record_connector_setup_context"
         | "local_cli_replay_allowed"
         | "prune_inactive_local_cli_observations"
         | "cache_advisories" => Kind::Write,
@@ -511,6 +513,7 @@ fn dispatch(
         "record_local_cli_observation" => local_cli::record_observation(connection, args),
         "replace_local_cli_commands" => local_cli::replace_commands(connection, args),
         "forget_local_cli_observation" => local_cli::forget_observation(connection, args),
+        "record_connector_setup_context" => connector_context::record_context(connection, args),
         "local_cli_replay_allowed" => local_cli::replay_allowed_op(connection, args),
         "prune_inactive_local_cli_observations" => local_cli::prune_inactive(connection, args),
         "find_local_mcp_observation" => local_mcp::find_observation(connection, args),

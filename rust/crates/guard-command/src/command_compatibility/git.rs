@@ -185,35 +185,22 @@ pub(super) fn inspection_arguments<'a>(
     context: crate::pretool::PathContext<'_>,
 ) -> Option<&'a [String]> {
     let remaining = routed(arguments, context, true)?;
-    matches!(
-        remaining.first().map(String::as_str),
+    let subcommand = remaining.first().map(String::as_str);
+    let admitted = match subcommand {
         Some(
-            "status"
-                | "diff"
-                | "log"
-                | "show"
-                | "blame"
-                | "describe"
-                | "reflog"
-                | "branch"
-                | "hash-object"
-                | "rev-parse"
-                | "merge-base"
-                | "ls-files"
-                | "remote"
-                | "worktree"
-                | "config"
-                | "grep"
-                | "ls-tree"
-                | "cat-file"
-                | "show-ref"
-                | "for-each-ref"
-                | "rev-list"
-                | "shortlog"
-                | "check-ignore"
-        )
-    )
-    .then_some(remaining)
+            "status" | "diff" | "log" | "show" | "blame" | "describe" | "reflog" | "branch"
+            | "hash-object" | "rev-parse" | "merge-base" | "ls-files" | "remote" | "worktree"
+            | "config" | "grep" | "ls-tree" | "cat-file" | "show-ref" | "for-each-ref" | "rev-list"
+            | "shortlog" | "check-ignore",
+        ) => true,
+        // A tag listing and a clean preview only print, but the same two
+        // subcommands also write a tag and remove a file, so each is admitted
+        // only in the spelling its own grammar proves.
+        Some("tag") => crate::pretool::git_tag_listing::is_listing(&remaining[1..]),
+        Some("clean") => crate::pretool::git_clean_preview::is_dry_run(&remaining[1..]),
+        _ => false,
+    };
+    admitted.then_some(remaining)
 }
 
 pub(super) fn fetch_origin_shaped(arguments: &[String]) -> bool {

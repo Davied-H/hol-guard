@@ -2,8 +2,6 @@
 
 use super::*;
 
-const MAX_SOURCE_CATALOG_BYTES: usize = 8 * 1024 * 1024;
-
 #[path = "native_command_source_capabilities.rs"]
 mod capabilities;
 #[path = "native_command_source_catalog.rs"]
@@ -26,6 +24,8 @@ mod matcher;
 mod mcp;
 #[path = "native_command_source_parity.rs"]
 mod parity;
+#[path = "native_command_source_stream.rs"]
+mod stream;
 #[path = "native_command_source_validation.rs"]
 mod validation;
 pub use catalog::{
@@ -36,6 +36,7 @@ pub use contract::{descriptor_schema, source_schema};
 pub use evaluation_batch::evaluate_batch;
 pub use fixtures::run_fixtures;
 pub use parity::compare_programs;
+pub use stream::{compile_source_stream, validate_and_compact_source, SourceStreamError};
 
 pub const MAX_SOURCE_INPUT_BYTES: usize = json::MAX_SOURCE_BYTES;
 

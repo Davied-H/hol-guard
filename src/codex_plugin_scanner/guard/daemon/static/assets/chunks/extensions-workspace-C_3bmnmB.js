@@ -28,6 +28,36 @@ function initialAddCommand(search) {
   const value = new URLSearchParams(search).get(PROFILE_COMMAND_PARAM);
   return value !== null && Object.values(PROFILE_SETUP_COMMANDS).includes(value) ? value : "";
 }
+const SETUP_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+const SETUP_IDENTITY = /^[0-9a-f]{64}$/;
+function connectorSetupLinkFromSearch(search) {
+  const params = new URLSearchParams(search);
+  const requestId = params.get("setup");
+  const identityHash = params.get("identity");
+  if (requestId === null || identityHash === null) return null;
+  if (!SETUP_REQUEST_ID.test(requestId) || !SETUP_IDENTITY.test(identityHash)) return null;
+  return { requestId, identityHash };
+}
+function connectorSetupMatch(item, link) {
+  if (item.identity_hash !== link.identityHash) return "identity_changed";
+  return item.state === "unset" ? "ready" : "decided";
+}
+function shortIdentity(identityHash) {
+  return identityHash.slice(0, 12);
+}
+function connectorGroupOutcome(body) {
+  if (typeof body !== "object" || body === null) return null;
+  const group = body.connector_group;
+  if (typeof group !== "object" || group === null) return null;
+  const record2 = group;
+  const continuation = record2.continuation;
+  const retryHint = typeof continuation === "object" && continuation !== null ? continuation.retry_hint : null;
+  return {
+    status: typeof record2.status === "string" ? record2.status : "failed",
+    resolvedCount: typeof record2.resolved_count === "number" ? record2.resolved_count : 0,
+    retryHint: typeof retryHint === "string" && retryHint.trim() ? retryHint.trim() : null
+  };
+}
 const FOCUSABLE_SELECTOR = [
   "a[href]",
   "button:not([disabled])",
@@ -2020,6 +2050,36 @@ function continuityCopy(item) {
   if (status === "stale") return customExtensionContinuityView("stale");
   return null;
 }
+function connectorSetupCopy(match, name) {
+  if (match === "identity_changed") {
+    return {
+      title: "This connector changed since the request was held",
+      body: `The ${name} Guard sees now has a different identity from the one an agent was held on. Review it before you allow it. The held request stays in the Inbox.`
+    };
+  }
+  if (match === "decided") {
+    return {
+      title: `${name} already has a decision`,
+      body: "Requests held on it stay in the Inbox for a normal decision."
+    };
+  }
+  return {
+    title: `Set up ${name} for the held request`,
+    body: "Guard held an agent action because it does not know this connector yet. Setting it up with the recommended settings allows its commands on this device, then approves the requests held on it once. Detector floors and sensitive-file reviews still apply, and nothing changes until you confirm."
+  };
+}
+function heldRequests(count) {
+  return `${count} held request${count === 1 ? "" : "s"}`;
+}
+function connectorGroupOutcomeCopy(outcome) {
+  const hint = outcome.retryHint ? ` ${outcome.retryHint.replace(/\.?$/, ".")}` : "";
+  if (outcome.status === "resolved") return `Set up. Guard approved ${heldRequests(outcome.resolvedCount)} once.${hint}`;
+  if (outcome.status === "partial") {
+    return `Set up. Guard approved ${heldRequests(outcome.resolvedCount)} once; the rest still need a decision in the Inbox.${hint}`;
+  }
+  if (outcome.status === "not_in_group") return "Set up. The held request is no longer waiting on this connector.";
+  return "Set up. Guard could not approve the held requests here, so they are still in the Inbox.";
+}
 function CustomExtensionCommandBrowser(props) {
   const copy = commandBrowserCopy(props.surface);
   const searchId = reactExports.useId();
@@ -3361,6 +3421,40 @@ function ProviderWorkflows({ cliId }) {
       ] }) : null
     ] }) : null
   ] });
+}
+function ConnectorSetupBanner(props) {
+  const copy = props.outcome ? { title: `${props.name} is set up`, body: "" } : connectorSetupCopy(props.match, props.name);
+  const ready = props.outcome !== null || props.match === "ready";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "section",
+    {
+      "data-testid": "connector-setup-banner",
+      "aria-labelledby": "connector-setup-heading",
+      className: `mt-4 max-w-2xl rounded-xl border p-4 ${ready ? "border-brand-blue/30 bg-brand-blue/5" : "border-amber-300 bg-amber-50"}`,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "connector-setup-heading", className: "text-sm font-semibold text-brand-dark", children: copy.title }),
+        copy.body ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-slate-700", children: copy.body }) : null,
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2 text-xs text-slate-600", children: [
+          "Held identity ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded bg-slate-100 px-1 font-mono text-brand-dark", children: shortIdentity(props.heldIdentityHash) })
+        ] }),
+        props.currentIdentityHash !== props.heldIdentityHash ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-1 text-xs text-slate-600", children: [
+          "Current identity ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded bg-slate-100 px-1 font-mono text-brand-dark", children: shortIdentity(props.currentIdentityHash) })
+        ] }) : null,
+        props.outcome ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "status", className: "mt-2 text-sm font-medium text-emerald-800", children: props.outcome }) : ready ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            className: "mt-3 min-h-11 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white disabled:opacity-60",
+            disabled: props.busy,
+            onClick: props.onSetUp,
+            children: "Set up with recommended"
+          }
+        ) : null
+      ]
+    }
+  );
 }
 function CustomExtensionReviewModal(props) {
   const [password, setPassword] = reactExports.useState("");
@@ -4887,10 +4981,13 @@ function LocalCliDetail(props) {
   const added = props.item.state !== "unset";
   const commandChanges = commandPermissionChanges(props.item.commands, commands);
   const commandsDirty = commandChanges.length > 0;
+  const [recommended, setRecommended] = reactExports.useState(false);
+  const [setupOutcome, setSetupOutcome] = reactExports.useState(null);
   reactExports.useEffect(() => {
     const previous = previousItem.current;
     if (previous.cli_id !== props.item.cli_id || previous.identity_hash !== props.item.identity_hash) {
       setPending(null);
+      setSetupOutcome(null);
       setProviderDrafts({});
       setCatalogError(null);
       setError(previous.cli_id === props.item.cli_id ? "This extension changed. Review its permissions again." : null);
@@ -4904,10 +5001,16 @@ function LocalCliDetail(props) {
     });
     previousItem.current = props.item;
   }, [props.item]);
-  const openPending = reactExports.useCallback(async (state) => {
+  const setupMatch = props.setupLink ? connectorSetupMatch(props.item, props.setupLink) : null;
+  const openPending = reactExports.useCallback(async (state, fromSetupLink = false) => {
     await refreshApprovalGate();
+    setRecommended(fromSetupLink);
     setPending(state);
   }, [refreshApprovalGate]);
+  const requestRecommended = reactExports.useCallback(() => {
+    setCommands(prefillSuggestedStates(props.item));
+    return openPending("allowed", true);
+  }, [openPending, props.item]);
   const requestAdd = reactExports.useCallback(() => openPending("allowed"), [openPending]);
   const requestAllow = reactExports.useCallback(() => openPending("allowed"), [openPending]);
   const requestBlock = reactExports.useCallback(() => openPending("blocked"), [openPending]);
@@ -4964,12 +5067,15 @@ function LocalCliDetail(props) {
         state: pending,
         previous_revision: props.revision,
         session_nonce: randomToken$2(),
-        commands: commandStatesPayload(commands),
+        commands: commandStatesPayload(recommended ? prefillSuggestedStates(props.item) : commands),
         ...pending !== "unset" && Object.keys(providerDrafts).length > 0 ? { provider_actions: Object.values(providerDrafts) } : {},
+        // Same endpoint and proof as any other change; the daemon re-checks the request belongs to this connector.
+        ...recommended && pending === "allowed" && props.setupLink && setupMatch === "ready" ? { connector_group_request_id: props.setupLink.requestId } : {},
         ...credentials
       };
       await previewLocalCliMutation(payload);
-      await applyLocalCliMutation(payload);
+      const outcome = connectorGroupOutcome(await applyLocalCliMutation(payload));
+      setSetupOutcome(outcome ? connectorGroupOutcomeCopy(outcome) : null);
       setProviderDrafts({});
       await props.onRefresh();
       await refreshApprovalGate();
@@ -4979,7 +5085,7 @@ function LocalCliDetail(props) {
     } finally {
       setBusy(false);
     }
-  }, [commands, providerDrafts, pending, props, refreshApprovalGate]);
+  }, [commands, providerDrafts, pending, props, recommended, refreshApprovalGate, setupMatch]);
   reactExports.useEffect(() => {
     void resolveApprovalGate({ failClosed: true }).catch(() => {
       setError("Guard could not load the local approval settings yet.");
@@ -4998,6 +5104,18 @@ function LocalCliDetail(props) {
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: customExtensionStateLabel(props.item) }),
         lastSeenCopy(props.item.last_seen_at) ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-500", children: lastSeenCopy(props.item.last_seen_at) }) : null
       ] }),
+      props.setupLink && setupMatch ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+        ConnectorSetupBanner,
+        {
+          name: customExtensionDisplayName(props.item),
+          heldIdentityHash: props.setupLink.identityHash,
+          currentIdentityHash: props.item.identity_hash,
+          match: setupMatch,
+          busy,
+          outcome: setupOutcome,
+          onSetUp: requestRecommended
+        }
+      ) : null,
       continuityCopy(props.item) ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-3 max-w-2xl rounded-xl border border-slate-200 bg-slate-50 p-3", "data-testid": "custom-extension-continuity", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: continuityCopy(props.item)?.title }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-slate-600", children: continuityCopy(props.item)?.description })
@@ -9766,6 +9884,10 @@ function ProtectionCenterWorkspace(props) {
   const localCliRoute = routeState.route.kind === "local-cli" ? routeState.route : null;
   const selectedLocalCli = localCliRoute ? localClis.data?.items.find((item) => item.cli_id === localCliRoute.cliId) ?? null : null;
   const showLocalCli = localCliRoute !== null;
+  const setupLink = reactExports.useMemo(
+    () => localCliRoute ? connectorSetupLinkFromSearch(window.location.search) : null,
+    [localCliRoute]
+  );
   const showDetail = routeState.route.kind === "detail" && selectedExtension !== null;
   const showNotFound = routeState.route.kind === "invalid" || routeState.route.kind === "detail" && selectedExtension === null && state.kind === "ready" || showLocalCli && localClis.data !== null && selectedLocalCli === null;
   const handlePrimaryStatusAction = reactExports.useCallback(() => {
@@ -9844,6 +9966,7 @@ function ProtectionCenterWorkspace(props) {
         revision: localClis.data.revision,
         continuity: localClis.data.cloud,
         nativePublication: localClis.data.native_publication,
+        setupLink,
         onBack: closeExtension,
         onRefresh: localClis.load
       }

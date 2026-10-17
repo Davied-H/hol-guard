@@ -224,6 +224,8 @@ mod user_site;
 mod validation;
 mod venv;
 mod workspace;
+mod workspace_grant;
+mod workspace_grant_launch;
 mod workspace_linked;
 mod workspace_linux;
 mod workspace_overlay;

@@ -12,6 +12,7 @@ pub(super) struct Launch<'a> {
     pub(super) plan: &'a Plan,
     pub(super) workspace: &'a Path,
     pub(super) workspace_text: &'a str,
+    pub(super) home: &'a str,
     pub(super) private: &'a PrivateRoot,
     pub(super) exec_roots: &'a [String],
     pub(super) write_denials: &'a [String],
@@ -87,7 +88,9 @@ impl Launch<'_> {
         let profile = native(
             "macos_profile",
             json!({
-                "profile_version": WORKSPACE_PROFILE,
+                "profile_version": self.plan.profile_version,
+                "capabilities": self.plan.capabilities,
+                "home": self.home,
                 "workspace": self.workspace_text,
                 "cwd": self.workspace_text,
                 "private_root": private_root,

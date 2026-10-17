@@ -22,8 +22,9 @@ import { customExtensionContinuityView } from "../managed-controls/custom-extens
 import { commandPermissionChanges, mcpCatalogCopy, mcpToolCanReceiveDirectAllow, rebaseCommandDraft } from "./mcp-catalog-state";
 import { McpProviderActions, type ProviderActionDraft } from "./mcp-provider-actions";
 import { ProviderWorkflows } from "./provider-workflows";
-import { bulkPolicyCopy, continuityCopy, customExtensionStateLabel, detailCatalogHeading, detailCatalogHelper, detailPolicyCopy, mcpPermissionStatusLabel, nativePublicationMessage, randomToken, SUGGESTED_RULES_NOTICE } from "./local-cli-panel-copy";
-import { customExtensionDisplayName, hasSuggestedRules, prefillSuggestedStates } from "./custom-extension-profile";
+import { bulkPolicyCopy, connectorGroupOutcomeCopy, continuityCopy, customExtensionStateLabel, detailCatalogHeading, detailCatalogHelper, detailPolicyCopy, mcpPermissionStatusLabel, nativePublicationMessage, randomToken, SUGGESTED_RULES_NOTICE } from "./local-cli-panel-copy";
+import { connectorGroupOutcome, connectorSetupMatch, customExtensionDisplayName, hasSuggestedRules, prefillSuggestedStates, type ConnectorSetupLink } from "./custom-extension-profile";
+import { ConnectorSetupBanner } from "./connector-setup-banner";
 import { CustomExtensionReviewModal } from "./local-cli-review-modal";
 import { canForgetLocalCli, ForgetLocalCliButton, lastSeenCopy } from "./local-cli-forget";
 
@@ -46,6 +47,7 @@ export function LocalCliDetail(props: {
   revision: number;
   continuity: LocalCliListResponse["cloud"];
   nativePublication?: LocalCliListResponse["native_publication"];
+  setupLink?: ConnectorSetupLink | null;
   onBack: () => void;
   onRefresh: () => Promise<void>;
 }) {
@@ -63,10 +65,13 @@ export function LocalCliDetail(props: {
   const added = props.item.state !== "unset";
   const commandChanges = commandPermissionChanges(props.item.commands, commands);
   const commandsDirty = commandChanges.length > 0;
+  const [recommended, setRecommended] = useState(false);
+  const [setupOutcome, setSetupOutcome] = useState<string | null>(null);
   useEffect(() => {
     const previous = previousItem.current;
     if (previous.cli_id !== props.item.cli_id || previous.identity_hash !== props.item.identity_hash) {
       setPending(null);
+      setSetupOutcome(null);
       setProviderDrafts({});
       setCatalogError(null);
       setError(previous.cli_id === props.item.cli_id ? "This extension changed. Review its permissions again." : null);
@@ -81,10 +86,17 @@ export function LocalCliDetail(props: {
     });
     previousItem.current = props.item;
   }, [props.item]);
-  const openPending = useCallback(async (state: LocalCliState) => {
+  const setupMatch = props.setupLink ? connectorSetupMatch(props.item, props.setupLink) : null;
+  const openPending = useCallback(async (state: LocalCliState, fromSetupLink = false) => {
     await refreshApprovalGate();
+    setRecommended(fromSetupLink);
     setPending(state);
   }, [refreshApprovalGate]);
+  const requestRecommended = useCallback(() => {
+    // The recommended setup is the suggested command states, never an unsaved draft.
+    setCommands(prefillSuggestedStates(props.item));
+    return openPending("allowed", true);
+  }, [openPending, props.item]);
   const requestAdd = useCallback(() => openPending("allowed"), [openPending]);
   const requestAllow = useCallback(() => openPending("allowed"), [openPending]);
   const requestBlock = useCallback(() => openPending("blocked"), [openPending]);
@@ -143,13 +155,18 @@ export function LocalCliDetail(props: {
         state: pending,
         previous_revision: props.revision,
         session_nonce: randomToken(),
-        commands: commandStatesPayload(commands),
+        commands: commandStatesPayload(recommended ? prefillSuggestedStates(props.item) : commands),
         ...(pending !== "unset" && Object.keys(providerDrafts).length > 0
           ? { provider_actions: Object.values(providerDrafts) } : {}),
+        // Same endpoint and proof as any other change; the daemon re-checks the request belongs to this connector.
+        ...(recommended && pending === "allowed" && props.setupLink && setupMatch === "ready"
+          ? { connector_group_request_id: props.setupLink.requestId } : {}),
         ...credentials,
       };
       await previewLocalCliMutation(payload);
-      await applyLocalCliMutation(payload);
+      const outcome = connectorGroupOutcome(await applyLocalCliMutation(payload));
+      // Only the apply that resolved the group keeps its outcome; any later change clears it.
+      setSetupOutcome(outcome ? connectorGroupOutcomeCopy(outcome) : null);
       setProviderDrafts({});
       await props.onRefresh();
       await refreshApprovalGate();
@@ -159,7 +176,7 @@ export function LocalCliDetail(props: {
     } finally {
       setBusy(false);
     }
-  }, [commands, providerDrafts, pending, props, refreshApprovalGate]);
+  }, [commands, providerDrafts, pending, props, recommended, refreshApprovalGate, setupMatch]);
 
   useEffect(() => {
     void resolveApprovalGate({ failClosed: true }).catch(() => {
@@ -187,6 +204,11 @@ export function LocalCliDetail(props: {
             <span className="text-xs text-slate-500">{lastSeenCopy(props.item.last_seen_at)}</span>
           ) : null}
         </p>
+        {props.setupLink && setupMatch ? (
+          <ConnectorSetupBanner name={customExtensionDisplayName(props.item)} heldIdentityHash={props.setupLink.identityHash}
+            currentIdentityHash={props.item.identity_hash}
+            match={setupMatch} busy={busy} outcome={setupOutcome} onSetUp={requestRecommended} />
+        ) : null}
         {continuityCopy(props.item) ? (
           <div className="mt-3 max-w-2xl rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="custom-extension-continuity">
             <p className="text-sm font-semibold text-brand-dark">{continuityCopy(props.item)?.title}</p>

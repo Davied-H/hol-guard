@@ -33,6 +33,10 @@ pub(super) fn safe_git_arguments(
             Some((subcommand, rest)) if subcommand == "branch" => {
                 return leading_safe && super::git_branch_listing::is_listing(rest);
             }
+            // Tag patterns are ref names too, and a listing prints names only.
+            Some((subcommand, rest)) if subcommand == "tag" => {
+                return leading_safe && super::git_tag_listing::is_listing(rest);
+            }
             // The pattern is search text, not a path: only the revisions and
             // pathspecs pass the path screen. Grep pages by default, so the
             // configuration probe has to clear the pager first.
@@ -125,6 +129,12 @@ pub(super) fn safe_git_arguments(
         // Only the configuration probe can prove what the read prints.
         return allow_helper_context
             && super::git_config_reads::read_form(&arguments[1..]).is_some();
+    }
+    if subcommand == "clean" {
+        // A dry run prints the untracked paths it would remove and removes
+        // nothing, but reading the index to find them can start a configured
+        // `core.fsmonitor`, so the configuration probe clears it first.
+        return allow_helper_context && super::git_clean_preview::is_dry_run(&arguments[1..]);
     }
     if !matches!(
         subcommand,

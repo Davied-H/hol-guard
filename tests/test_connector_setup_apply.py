@@ -307,6 +307,7 @@ def test_recommended_setup_is_a_body_for_the_same_endpoint(monkeypatch: pytest.M
     body = built["setup_request"]
     assert isinstance(body, dict)
     assert body["state"] == "allowed" and body["connector_group_request_id"] == "req-1"
+    assert built["setup_href"] == f"{built['deep_link']}?setup=req-1&identity={_HASH}"
     # Exactly what Protect's preview/apply accepts; no proof, nonce or revision is pre-filled.
     service = LocalCliApiService.__new__(LocalCliApiService)
     identity, state = service._mutation_from_payload(dict(body))

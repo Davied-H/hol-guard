@@ -34,6 +34,7 @@ from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_e
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_connectors import allow_ready_cli, assert_connector_setup, connector_groups
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
+from tests.benign_fp_gate_mcp import McpCase, mcp_cases, mcp_failure, replay
 from tests.benign_fp_gate_projects import host_tool_path
 from tests.gauntlet_replay import OMP_CONTAINED, cursor_hook_fields
 from tests.native_gate_retry import UNAVAILABLE_REASON, review_with_unavailable_retry
@@ -416,6 +417,16 @@ def test_one_connector_groups_its_setup_reviews_by_action(gate_environment: tupl
     assert len(groups) == 1, f"one connector must queue under one identity, got {len(groups)}"
     assert len(next(iter(groups.values()))) == len(commands), "distinct actions must keep distinct action digests"
     assert len(rows) == len(commands) * 2, "every harness call keeps its own evidence row"
+
+
+@pytest.mark.parametrize("case", mcp_cases(_DOCUMENT), ids=lambda case: case.case_id)
+def test_mcp_connectors_are_set_up_before_they_are_reviewed(
+    case: McpCase, gate_environment: tuple[BenignFixture, HookWorker]
+) -> None:
+    """A stdio MCP server the admin never decided on is held as setup; one they decided on is not."""
+    fixture, worker = gate_environment
+    failure = mcp_failure(case, *replay(case, fixture, worker.store))
+    assert failure is None, f"{failure}: {case.case_id}"
 
 
 def test_pending_fix_entries_name_real_benign_cases() -> None:

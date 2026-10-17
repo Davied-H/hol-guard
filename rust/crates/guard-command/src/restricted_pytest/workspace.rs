@@ -27,6 +27,8 @@ struct Input {
     /// The receipt runs the checks contained and the trailing Git steps after
     /// them, outside the sandbox, once Guard proves those steps again.
     publish_suffix: bool,
+    /// The local CLI grant that widens the plan to `workspace-contained-grant-v1`.
+    grant: Option<super::workspace_grant::GrantInput>,
 }
 
 fn invalid(message: &str) -> RestrictedPytestError {
@@ -145,7 +147,8 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         }
         linked => linked.map(|(common, admin)| json!({"common": common, "admin": admin})),
     };
-    Ok(json!({
+    let whole = runs_whole(&shape);
+    let mut plan = json!({
         "profile_version": WORKSPACE_PROFILE,
         "backend": backend,
         "backend_executable": backend_executable,
@@ -167,7 +170,56 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
             "network", "host-home-read", "host-secret-environment", "docker-socket",
             "workspace-credential-read", "git-execution-config-write", "privileged-operation"
         ],
-    }))
+        "grant_identity_hash": null,
+        "capabilities": [],
+    });
+    if let Some(grant) = &input.grant {
+        // A grant widens only a command that runs whole and is one plain
+        // invocation of the granted program: another program in the same
+        // shell would run with the capabilities granted for the first.
+        let program = whole
+            .then(|| sole_program(&text))
+            .flatten()
+            .ok_or_else(|| invalid("The granted command is not eligible for the sandbox."))?;
+        super::workspace_grant::widen(
+            &mut plan,
+            grant,
+            &program,
+            &input.search_path,
+            input.home.as_deref(),
+            &workspace,
+            &input.platform,
+        )?;
+    }
+    Ok(plan)
+}
+
+/// The program `text` runs when it is exactly one plain invocation: a single
+/// top-level segment with no wrapper, environment assignment or `PATH`
+/// override, from a command the parser reads exactly. Anything else, such as
+/// a chain, a pipeline, a substitution or a wrapped program, names no sole
+/// program.
+fn sole_program(text: &str) -> Option<String> {
+    let model = parse_command(&CommandModelRequestV1 {
+        command: text.to_owned(),
+        dialect: "posix".into(),
+        transport: "shell_string".into(),
+        extraction_provenance: "pre-tool-generic".into(),
+    })
+    .ok()?;
+    let [segment] = model.segments.as_slice() else {
+        return None;
+    };
+    (model.confidence == "exact"
+        && !model.path_overridden
+        && model.wrapper_chain.is_empty()
+        && segment.execution_context == "top:0"
+        && segment.pipeline_index == 0
+        && segment.environment_names.is_empty()
+        && segment.wrapper_chain.is_empty()
+        && !segment.path_overridden)
+        .then(|| segment.executable.clone())
+        .flatten()
 }
 
 /// The scripts outside `workspace` that `text` runs and the sandbox may read,
@@ -189,3 +241,7 @@ pub(super) fn evaluate(operation: &str, input: &Value) -> Option<Value> {
         Err(error) => crate::restricted_command::error_reply(error),
     })
 }
+
+#[cfg(test)]
+#[path = "workspace_sole_tests.rs"]
+mod sole_tests;
