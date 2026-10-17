@@ -52,6 +52,7 @@ class ExtensionControlAuthorityCatalogMixin:
         registry: CommandSafetyExtensionRegistry,
         *,
         key: bytes,
+        allow_migration: bool = True,
     ) -> tuple[ExtensionControlAuthorityView, dict[str, str] | None]:
         current = self._catalog_target_manifest(registry)
         with self._connect() as connection:
@@ -60,6 +61,11 @@ class ExtensionControlAuthorityCatalogMixin:
                 (registry.catalog_digest,),
             ).fetchone()
         if existing is None:
+            if not allow_migration:
+                # Nothing to compare against yet, and a read-only caller holds
+                # the shared lock. Recording the manifest is the next writer's
+                # job; serving the view is this one's.
+                return view, None
             self._write_catalog_manifest(registry, key=key, manifest=current)
             return view, None
         persisted = self._load_catalog_manifest(registry.catalog_digest, key=key)
@@ -87,6 +93,10 @@ class ExtensionControlAuthorityCatalogMixin:
             for layer in view.layers
         )
         if rebound != view.layers:
+            if not allow_migration:
+                # A read-only caller holds the shared lock. Show the rebound
+                # controls without committing the revision that records them.
+                return replace(view, layers=rebound), persisted
             view = self._migrate_extension_control_catalog(view, registry=registry, key=key)
         return view, persisted
 

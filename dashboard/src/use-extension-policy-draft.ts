@@ -300,11 +300,17 @@ export function useExtensionPolicyDraft(props: {
     }
   }, [baseEffective, commitDraft, dirty, draftLayers, handleApiError, identity, onRefresh, preview, repairedBase, stale]);
 
-  const rebaseDraft = useCallback(async (oldExtensions: readonly ExtensionCatalogItem[]) => {
+  const rebaseDraft = useCallback(async (
+    touched: readonly ExtensionCatalogItem[] | (() => Promise<readonly ExtensionCatalogItem[]>),
+  ) => {
     const generation = draftGeneration.current;
     setPreviewBusy(true);
     setError(null);
     try {
+      // Read the touched extensions inside the try: a detail request that fails
+      // must leave the draft exactly as the operator left it, not rebase the
+      // extensions that did resolve and drop the edits for the one that did not.
+      const oldExtensions = typeof touched === "function" ? await touched() : touched;
       const [latestCatalog, latestEffective] = await Promise.all([loadCatalogReadModel(), fetchEffectiveExtensionControls()]);
       // Match on index rows, then read details only for the affected extensions.
       const matches = oldExtensions
@@ -332,7 +338,8 @@ export function useExtensionPolicyDraft(props: {
           latestEffective,
           oldExtension,
           latestExtension,
-          result ? result.draft_layers : draftLayers,
+          draftLayers,
+          result?.draft_layers,
         );
         return {
           draft_layers: next.draft_layers,

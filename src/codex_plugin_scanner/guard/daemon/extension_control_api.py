@@ -120,9 +120,12 @@ class ExtensionControlApiService:
         return payload
 
     def effective(self) -> dict[str, object]:
-        return effective_controls_payload(self._registry, self._live_snapshot(), self._store)
+        # Reading the controls must stay a read. Committing a catalog migration
+        # here would move the stored revision under every draft the dashboard
+        # has open, which is the conflict this endpoint is polled to report.
+        return effective_controls_payload(self._registry, self._live_snapshot(read_only=True), self._store)
 
-    def _live_snapshot(self) -> ExtensionControlRuntimeSnapshot:
+    def _live_snapshot(self, *, read_only: bool = False) -> ExtensionControlRuntimeSnapshot:
         """The snapshot a draft is built on, re-read from durable authority.
 
         The in-process snapshot only advances when this daemon commits, so a
@@ -136,11 +139,15 @@ class ExtensionControlApiService:
         snapshot. A read that comes back unenrolled, degraded, or behind this
         process must not take protection away from a running daemon; refreshing
         is here to catch up with another writer, not to downgrade.
+
+        `read_only` keeps the read on the shared lock and off the write path, so
+        a caller that only renders the controls cannot settle a pending catalog
+        migration on the operator's behalf.
         """
 
         current = self._runtime.current()
         try:
-            view = self._store.read_extension_control_authority_for_registry(self._registry)
+            view = self._store.read_extension_control_authority_for_registry(self._registry, read_only=read_only)
             if view.health is not AuthorityHealth.PROTECTED or view.revision <= current.revision:
                 return current
             return self._runtime.refresh(view)
@@ -362,6 +369,7 @@ class ExtensionControlApiService:
                 idempotency_key=mutation.idempotency_key,
                 nonce=mutation.nonce,
                 proof=pending.proof,
+                migration_registry=self._registry,
             )
         except ExtensionControlProofError as exc:
             raise ExtensionControlApiError(409, "proof_invalid") from exc

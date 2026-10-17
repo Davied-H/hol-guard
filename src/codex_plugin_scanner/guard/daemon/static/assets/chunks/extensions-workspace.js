@@ -1268,8 +1268,9 @@ function latestPermissionId(original, oldExtension, latestExtension) {
   }
   return null;
 }
-function rebaseExtensionPolicyDraft(oldEffective, latestEffective, oldExtension, latestExtension, draftLayers) {
-  let rebased = latestEffective.layers.map((layer) => ({ ...layer, controls: layer.controls.map((control) => ({ ...control })) }));
+function rebaseExtensionPolicyDraft(oldEffective, latestEffective, oldExtension, latestExtension, draftLayers, rebasedLayers) {
+  const onto = rebasedLayers ?? latestEffective.layers;
+  let rebased = onto.map((layer) => ({ ...layer, controls: layer.controls.map((control) => ({ ...control })) }));
   const conflicts = [];
   const remapped = {};
   for (const permission of oldExtension.permissions) {
@@ -1521,11 +1522,12 @@ function useExtensionPolicyDraft(props) {
       setApplyBusy(false);
     }
   }, [baseEffective, commitDraft, dirty, draftLayers, handleApiError, identity, onRefresh, preview, repairedBase, stale]);
-  const rebaseDraft = reactExports.useCallback(async (oldExtensions) => {
+  const rebaseDraft = reactExports.useCallback(async (touched) => {
     const generation = draftGeneration.current;
     setPreviewBusy(true);
     setError(null);
     try {
+      const oldExtensions = typeof touched === "function" ? await touched() : touched;
       const [latestCatalog, latestEffective] = await Promise.all([loadCatalogReadModel(), fetchEffectiveExtensionControls()]);
       const matches = oldExtensions.map((oldExtension) => {
         const exact = latestCatalog.extensions.find((item) => item.extension_id === oldExtension.extension_id);
@@ -1548,7 +1550,8 @@ function useExtensionPolicyDraft(props) {
           latestEffective,
           oldExtension,
           latestExtension,
-          result2 ? result2.draft_layers : draftLayers
+          draftLayers,
+          result2?.draft_layers
         );
         return {
           draft_layers: next.draft_layers,
@@ -9178,16 +9181,7 @@ function PatternSearchConsole(props) {
   const involvedPermissions = reactExports.useMemo(() => allMatches.map((match) => match.permission), [allMatches]);
   const handleRebase = reactExports.useCallback(async () => {
     const extensionIds = touchedExtensionIds.current.size ? [...touchedExtensionIds.current] : grouped.map((group) => group.extension.extension_id);
-    const details = await Promise.all(
-      extensionIds.map(async (extensionId) => {
-        try {
-          return await props.readModel.detail(extensionId);
-        } catch {
-          return null;
-        }
-      })
-    );
-    await rebaseDraft(details.filter((detail) => detail !== null));
+    await rebaseDraft(() => Promise.all(extensionIds.map((extensionId) => props.readModel.detail(extensionId))));
   }, [grouped, props.readModel, rebaseDraft]);
   const changeCount = changedPermissionCount;
   const showResults = query.trim().length > 0;

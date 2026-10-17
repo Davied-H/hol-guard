@@ -9,7 +9,7 @@ import {
   managedPermissionState,
 } from "../../extension-control-center-model";
 import type { CatalogReadModel } from "../../extension-catalog-v2";
-import type { EffectiveExtensionControls, ExtensionCatalogItem, ExtensionCatalogSummary, ExtensionPermission } from "../../extension-controls-api";
+import type { EffectiveExtensionControls, ExtensionCatalogSummary, ExtensionPermission } from "../../extension-controls-api";
 import { type ExtensionPolicyRebaseConflict } from "../../extension-policy-rebase";
 import {
   PermissionPolicyRow,
@@ -145,18 +145,11 @@ export function PatternSearchConsole(props: {
     const extensionIds = touchedExtensionIds.current.size
       ? [...touchedExtensionIds.current]
       : grouped.map((group) => group.extension.extension_id);
-    const details = await Promise.all(
-      extensionIds.map(async (extensionId) => {
-        try {
-          return await props.readModel.detail(extensionId);
-        } catch {
-          // A tool the catalog no longer carries cannot be rebased; the hook
-          // reports the draft as unrecoverable when none of them resolve.
-          return null;
-        }
-      }),
-    );
-    await rebaseDraft(details.filter((detail): detail is ExtensionCatalogItem => detail !== null));
+    // Every touched tool has to resolve. Dropping the ones whose detail read
+    // failed would rebase the rest onto the latest authority and quietly take
+    // the missing tool's unsaved edits with it, so let the failure reach the
+    // hook, which reports it and leaves the draft alone.
+    await rebaseDraft(() => Promise.all(extensionIds.map((extensionId) => props.readModel.detail(extensionId))));
   }, [grouped, props.readModel, rebaseDraft]);
   const changeCount = changedPermissionCount;
   const showResults = query.trim().length > 0;
