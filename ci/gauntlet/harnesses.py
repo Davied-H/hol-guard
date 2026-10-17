@@ -25,6 +25,7 @@ from typing import Any
 
 from .catalog import Scenario
 from .claude_tools import claude_tools
+from .connector_judge import final_message
 
 HARNESSES = ("omp", "claude-code", "codex", "cursor")
 
@@ -386,6 +387,7 @@ def read_transcript(name: str, path: Path) -> dict[str, Any]:
     terminal = False
     failed = False
     errors: list[str] = []
+    final_text = ""
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line.startswith("{"):
@@ -398,6 +400,7 @@ def read_transcript(name: str, path: Path) -> dict[str, Any]:
         if not isinstance(event, dict):
             continue
         kind = event.get("type")
+        final_text = final_message(name, event) or final_text
         if name == "claude-code":
             terminal, failed = _claude_event(event, kind, calls, order, terminal, failed)
         elif name == "codex":
@@ -409,7 +412,13 @@ def read_transcript(name: str, path: Path) -> dict[str, Any]:
     for call_id in order:
         call = calls[call_id]
         normalized.append({**call, "id": call_id, "tool": names.get(call["name"], call["name"])})
-    return {"calls": normalized, "terminal": terminal, "failed": failed, "errors": sorted(set(errors))}
+    return {
+        "calls": normalized,
+        "terminal": terminal,
+        "failed": failed,
+        "errors": sorted(set(errors)),
+        "final_text": final_text,
+    }
 
 
 def _remember(calls: dict, order: list, call_id: Any, name: Any, args: Any) -> None:

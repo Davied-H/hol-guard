@@ -21,6 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from .approval_rows import connector_coverage
 from .catalog import EXEMPT_ORACLES, Scenario, load_catalog
 from .contained_core import is_contained_deny
 
@@ -281,4 +282,5 @@ def report_sections(cases: list[dict[str, Any]], harness: str | None = None) -> 
     return {
         "interruptions": summarize_interruptions(cases, harness),
         "known_gaps": known_gap_report(cases, load_known_gaps()) if KNOWN_GAPS.is_file() else [],
+        "connector_coverage": connector_coverage(cases),
     }

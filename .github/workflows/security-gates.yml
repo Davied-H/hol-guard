@@ -133,6 +133,13 @@ jobs:
         run: echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
       - name: Verify Gitleaks fixture exclusion scope
         run: python3 scripts/ci/check_gitleaks_fixture_scope.py
+      # The denylist lives only in the runner environment or a repository secret, never in
+      # the tree; the check skips when neither is set and never prints a matched token.
+      - name: Private token check
+        env:
+          GUARD_PRIVATE_TOKEN_DENYLIST_SECRET: ${{ secrets.GUARD_PRIVATE_TOKEN_DENYLIST }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/ci/check_private_tokens.py ${BASE_SHA:+--range "$BASE_SHA..HEAD"}
       - name: Determine Gitleaks scope
         id: gitleaks-scope
         env:

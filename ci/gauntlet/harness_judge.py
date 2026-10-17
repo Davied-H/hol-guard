@@ -15,6 +15,7 @@ from typing import Any
 
 from .approval_retry import retry_assessment
 from .catalog import Scenario
+from .connector_judge import connector_setup_outcome, reason_text
 from .interruptions import case_interruptions, describe
 from .mixed_reads import PUBLIC_READS
 from .proofs import BLOCK_REASONS, block_reasons, required_checks
@@ -132,6 +133,7 @@ def guard_decisions(rows: list[dict[str, Any]], events: frozenset[str] = _PRE_EV
                 "receipt_decision": receipt.get("decision"),
                 "receipt_harness": receipt.get("harness"),
                 "observe_mode": receipt.get("observe_mode"),
+                "reason_text": reason_text(response),
             }
         )
     return decisions
@@ -223,6 +225,8 @@ def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
     if len(decisions) < len(hooked):
         return "harness-error", f"{len(hooked) - len(decisions)} of {len(hooked)} tool calls ran without a Guard review"
     stops = [d for d in decisions if d["decision"] != "allow"]
+    if scenario.expectation == "setup":
+        return connector_setup_outcome(scenario, case, decisions, calls)
     if scenario.expectation == "block":
         return _block_outcome(scenario, case, decisions, calls)
     if scenario.oracle == "approved-retry":
