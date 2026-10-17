@@ -515,10 +515,16 @@ mod tests {
         assert_eq!(first, stdin_digest(command, &directory));
         std::fs::write(&script, "console.log(2)\n").unwrap();
         assert_ne!(first, stdin_digest(command, &directory));
+        // The canonical path drops an 8.3 short name such as `RUNNER~1`,
+        // whose `~` the shape refuses. The shell reads `\` as an escape;
+        // `C:/...` is still absolute.
+        let canonical = script.canonicalize().unwrap();
         let absolute = format!(
             "kubectl exec -i api-0 -- node - < {}",
-            // The shell reads `\` as an escape; `C:/...` is still absolute.
-            script.to_string_lossy().replace('\\', "/")
+            canonical
+                .to_string_lossy()
+                .trim_start_matches(r"\\?\")
+                .replace('\\', "/")
         );
         assert!(payload_reuse(&absolute, None).is_some());
         assert!(payload_reuse(
