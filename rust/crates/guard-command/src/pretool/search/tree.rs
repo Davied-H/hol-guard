@@ -184,6 +184,43 @@ pub(in crate::pretool) fn safe_glob_operand(
     })
 }
 
+/// A content search of a path whose bracket class matches nothing.
+///
+/// Framework routes are spelled with brackets: `app/blog/[slug]/page.tsx` is
+/// one file in a Next.js application, and `rg -n useRouter app/[locale]` is
+/// an ordinary search of one directory. The shell finds nothing for the class
+/// and hands `rg` the word as typed, so what is searched is the path spelled
+/// out, and it is screened exactly as the same path without brackets would
+/// be: the whole tree below it is walked, and an Oh My Pi agent-state tree is
+/// refused as for a literal search root.
+pub(in crate::pretool) fn safe_literal_bracket_search_target(
+    value: &str,
+    context: ReadContext<'_>,
+) -> bool {
+    value.contains('[')
+        && !value.contains(['*', '?', '!'])
+        && !super::glob_class::bracket_fallback_unsafe(value)
+        && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
+        && literal_bracket_walk(value, context)
+}
+
+fn literal_bracket_walk(value: &str, context: ReadContext<'_>) -> bool {
+    if parent_component(value)
+        || !super::super::read_paths::bounded_literal_bracket_target(
+            value,
+            context.home_dir,
+            context.cwd,
+            true,
+        )
+    {
+        return false;
+    }
+    let Some(root) = expanded_operand(value, context) else {
+        return false;
+    };
+    !inside_agent_state(&root, context) && walk(root, &[], &[], false, false)
+}
+
 /// An unquoted bracket operand that matches nothing. Bash passes such a word
 /// through literally, so `ls app/[slug]` lists the Next.js route directory
 /// named `[slug]`; zsh's `nomatch` fails the command instead. The literal

@@ -114,6 +114,20 @@ pub(super) fn bounded_structured_file_read_target(
     bounded_read_target_with_brackets(value, home_dir, cwd, false, true, false)
 }
 
+/// A shell word whose bracket class matches nothing reaches the program
+/// exactly as it was typed, so `app/blog/[slug]/page.tsx` names that Next.js
+/// route rather than a pattern. The caller proves the class cannot match
+/// before asking for this screen; every other glob metacharacter, and any
+/// bracketed path that does not resolve, stays rejected.
+pub(super) fn bounded_literal_bracket_target(
+    value: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+    allow_directory: bool,
+) -> bool {
+    bounded_read_target_with_brackets(value, home_dir, cwd, allow_directory, true, true)
+}
+
 fn bounded_read_target_with_brackets(
     value: &str,
     home_dir: Option<&str>,
