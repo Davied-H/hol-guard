@@ -378,10 +378,8 @@ def test_fresh_process_report_is_environment_independent_and_bounded(
     metrics = cast(dict[str, object], value)
     assert metrics["report_framed_sha256"] == expected_digest
     assert float(str(metrics["elapsed_seconds"])) < evaluation_budget_seconds + spawn_overhead_seconds, metrics
-    assert float(str(metrics["rss_mib"])) < int(str(manifest["evaluation_rss_budget_mib"])), (
-        metrics,
-        completed.stderr.decode(errors="replace")[-4000:],
-    )
+    if not float(str(metrics["rss_mib"])) < int(str(manifest["evaluation_rss_budget_mib"])):
+        pytest.fail(f"{metrics}\n{completed.stderr.decode(errors='replace')[-4000:]}")
 
 
 @pytest.mark.parametrize("enabled", [False, True])
