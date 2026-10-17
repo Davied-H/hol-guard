@@ -209,6 +209,20 @@ fn documentation_name(name: &str) -> bool {
         .any(|suffix| name.ends_with(suffix))
 }
 
+/// Whether the file sits in a directory a tool keeps its programs in.
+///
+/// `~/.bun/bin/bun` is an executable, not content a task reads: its bytes are
+/// a program, and a listing already answers the question an agent actually
+/// asks there, which is whether the tool is installed. The install roots this
+/// screen would otherwise open (`~/.cargo/bin`, `~/.local/bin`) are also where
+/// a link can point somewhere else entirely, so the directory keeps its review
+/// and the metadata screen keeps the benign half.
+fn program_directory(parents: &[String]) -> bool {
+    parents
+        .last()
+        .is_some_and(|name| name == "bin" || name == "sbin")
+}
+
 /// How deep the directory a tool owns sits below the home directory.
 ///
 /// Usually it is the hidden directory itself (`~/.ngrok2`). Below `~/.config`
@@ -248,6 +262,7 @@ fn tool_configuration_slot(parents: &[String], name: &str) -> bool {
 ///   own configuration rather than a directory of content;
 /// - a hidden component below the first, which is private state of the tool
 ///   that owns the directory, the same rule the listing screen applies;
+/// - a program directory, per [`program_directory`];
 /// - a credential store at any depth, and a file named the way a token, key
 ///   or settings file conventionally is;
 /// - a tool's own configuration, per [`tool_configuration_slot`];
@@ -261,6 +276,7 @@ pub(crate) fn hidden_content_read_allowed(lowered: &[String]) -> bool {
         && !name.starts_with('.')
         && !curated_tree_owns(parents)
         && !tool_configuration_slot(parents, name)
+        && !program_directory(parents)
         && !names_hold_credential_store(lowered)
         && !secret_bearing_file_name(name)
 }

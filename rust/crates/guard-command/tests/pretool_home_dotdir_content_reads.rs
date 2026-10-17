@@ -36,6 +36,7 @@ fn home(name: &str) -> PathBuf {
         ".codex/plans/order-intake",
         ".codex/sessions/2026-10-16",
         ".codex/skills/release-check",
+        ".bun/bin",
         ".config/doctl",
         ".config/gcloud",
         ".config/gh",
@@ -63,6 +64,7 @@ fn home(name: &str) -> PathBuf {
             ".cargo/registry/src/index.crates.io/serde-1.0.0/src/lib.rs",
             "pub fn parse() {}\n",
         ),
+        (".bun/bin/bun", "\u{7f}ELF\n"),
         (".certs/server.pem", "-----BEGIN CERTIFICATE-----\n"),
         (".claude/.credentials.json", "{}\n"),
         (".claude/settings.json", "{\"env\": {}}\n"),
@@ -232,6 +234,24 @@ fn a_tools_own_configuration_keeps_review() {
                 "{harness} {tool} {target}"
             );
         }
+    }
+}
+
+/// A tool's program directory holds executables. `cat ~/.bun/bin/bun` prints a
+/// binary, which is not a read a task makes; what an agent wants there is
+/// whether the tool is installed, and the listing screen already answers that.
+/// The same directories are where a link points away from the home directory,
+/// so the content side keeps its review.
+#[test]
+fn a_tools_program_directory_keeps_review() {
+    let home = home("programs");
+    assert_ne!(action(&home, "codex", "cat ~/.bun/bin/bun"), "allow");
+    for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+        assert_ne!(
+            native_action(&home, harness, tool, ".bun/bin/bun"),
+            "allow",
+            "{harness} {tool}"
+        );
     }
 }
 
