@@ -393,6 +393,11 @@ pub(crate) fn invocation_command_tokens(
     kind: &str,
     runner: Option<&str>,
 ) -> Vec<String> {
+    // The daemon reads an invocation only for a command its own rule found,
+    // which is never blank; the model refuses blank text outright.
+    if command.trim().is_empty() {
+        return Vec::new();
+    }
     let model = parse_shell_command(
         command,
         Some(std::path::Path::new(cwd)),
