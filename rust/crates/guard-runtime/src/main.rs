@@ -411,6 +411,8 @@ mod hook_env_stamp;
 // Wired into the evidence writer when the Python seams retire; the
 // readers are already exercised by their own tests.
 #[allow(dead_code)]
+mod hook_evidence_activity;
+#[allow(dead_code)]
 mod hook_evidence_composio;
 #[allow(dead_code)]
 mod hook_evidence_correlation;
