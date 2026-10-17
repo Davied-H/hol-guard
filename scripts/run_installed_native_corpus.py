@@ -44,8 +44,12 @@ def _install_worker_diagnostics() -> None:
 
 
 def _failure_detail(stderr: str) -> str:
-    progress = [line for line in stderr.splitlines() if line.startswith("corpus_phase ")]
-    return f"{progress[-1] if progress else 'no corpus phase completed'}\n{stderr[-1200:]}"
+    lines = stderr.splitlines()
+    progress = [line for line in lines if line.startswith("corpus_phase ")]
+    traceback = "\n".join(line for line in lines if not line.startswith("corpus_phase "))
+    # Faulthandler prints the most recent frame first. Later progress must
+    # neither displace that frame nor fill the bounded traceback excerpt.
+    return f"{progress[-1] if progress else 'no corpus phase completed'}\n{traceback[:1200]}"
 
 
 def _require_installed_evaluator() -> None:
