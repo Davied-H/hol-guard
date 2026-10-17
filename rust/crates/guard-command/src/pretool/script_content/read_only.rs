@@ -87,6 +87,8 @@ const NODE_MODULES: &[&str] = &[
 static PYTHON_EFFECTS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
         r"\.\s*(?:write_text|write_bytes|touch|mkdir|unlink|rmdir|rename|symlink_to|hardlink_to|link_to|chmod|lchmod)\s*\(",
+        // `Path.replace` takes one argument; `str.replace` takes two.
+        r"|\.\s*replace\s*\(\s*[^,()\n]*\)",
         r"|\bos\s*\.\s*(?:system|popen|exec\w*|spawn\w*|posix_spawn\w*|fork\w*|kill\w*|remove|unlink|rmdir|removedirs|mkdir|makedirs|rename|renames|replace|chmod|chown|lchown|link|symlink|truncate|ftruncate|write|open|mkfifo|mknod|utime|startfile|putenv|unsetenv)\b",
         // `compile` alone is also `re.compile`; the others stay blocked as
         // attributes too, such as `sys.modules['builtins'].exec`.

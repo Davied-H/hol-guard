@@ -71,6 +71,7 @@ fn writes_launches_and_packages_keep_review() {
         "exec(open('x.py').read())\n",
         "import yaml\n",
         "from pathlib import Path\nPath('a').rename('b')\n",
+        "from pathlib import Path\nPath('a').replace('b')\n",
         "from yaml \\\nimport safe_load\n",
         "import os, \\\n    subprocess\n",
         "open('out.txt', mode='a')\n",
