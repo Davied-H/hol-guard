@@ -92,6 +92,7 @@ mod lookup_reads;
 mod metadata_reads;
 mod npm_environment;
 mod npm_reads;
+mod pip_reads;
 mod postgres_reads;
 mod process_stops;
 mod pytest_contained;

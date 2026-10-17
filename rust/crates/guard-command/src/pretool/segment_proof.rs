@@ -348,6 +348,7 @@ pub(super) fn exact_safe_segment_with_context(
             super::npm_reads::read_only_neighbors(model)
                 && super::npm_reads::safe_npm_read(&segment.arguments, context)
         }
+        "pip" | "pip3" => super::pip_reads::safe_pip_segment(model, segment),
         "hol-guard" => super::guard_diagnostics::safe_hol_guard_segment(
             &segment.arguments,
             context.cwd,
