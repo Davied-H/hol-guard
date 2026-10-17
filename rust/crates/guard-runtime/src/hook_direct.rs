@@ -445,7 +445,6 @@ fn answer(
         home_dir: &request_home,
         guard_home: &guard_home,
         recording_only,
-        own_shape: cursor_harness,
     };
     // The daemon's custom block replaces the edge response before it routes
     // a sandbox requirement, so a block also drops any routed snapshot.

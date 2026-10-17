@@ -8,9 +8,8 @@
 //! renders the same block, including the unverified block when the grant
 //! answer cannot be trusted. The command id comes from the package script
 //! tokens, else from the same shell model the daemon reads the invocation
-//! with. A launch the daemon rejects as malformed, a catalog read failure,
-//! and a block for a harness whose answer the resident shapes itself, still
-//! defer.
+//! with. A launch the daemon rejects as malformed and a catalog read failure
+//! still defer.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -37,8 +36,6 @@ pub(super) struct RuleCheck<'a> {
     pub(super) home_dir: &'a str,
     pub(super) guard_home: &'a str,
     pub(super) recording_only: bool,
-    /// The resident shapes this harness's answer itself, so a block defers.
-    pub(super) own_shape: bool,
 }
 
 /// The harness response the daemon returns for `answered` once it checked
@@ -64,7 +61,6 @@ pub(super) fn custom_rule_response(
     };
     match grant(&launched, check.home_dir, check.guard_home)? {
         Verdict::Unchanged => Ok(None),
-        Verdict::Unverified | Verdict::Blocked(_) if check.own_shape => Err(()),
         Verdict::Unverified => {
             let result = result.as_object().ok_or(())?;
             block::unverified_response(check.harness, result, check.recording_only)

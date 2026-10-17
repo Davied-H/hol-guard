@@ -106,11 +106,15 @@ impl Case {
         }
     }
 
-    fn check(
+    fn check(&self, command: &str, recording_only: bool) -> Result<Option<Value>, ()> {
+        self.check_harness("codex", command, recording_only)
+    }
+
+    fn check_harness(
         &self,
+        harness: &str,
         command: &str,
         recording_only: bool,
-        own_shape: bool,
     ) -> Result<Option<Value>, ()> {
         let payload = object(json!({ "tool_input": { "command": command } }));
         let answered = json!({ "result": { "decision": "allow", "minimum_action": "allow" } });
@@ -118,12 +122,11 @@ impl Case {
             &answered,
             &RuleCheck {
                 payload: Some(&payload),
-                harness: "codex",
+                harness,
                 workspace: &self.workspace,
                 home_dir: &self.workspace,
                 guard_home: &self.guard_home,
                 recording_only,
-                own_shape,
             },
         )
     }
@@ -138,8 +141,8 @@ insert into local_cli_command values ('{cli}', 'db.migrate', 'migrate', 'db:migr
 #[test]
 fn a_launch_without_a_blocking_grant_keeps_the_edge_response() {
     let none = Case::new("none", "");
-    assert_eq!(none.check("npm run build", false, false), Ok(None));
-    assert_eq!(none.check("pwd", false, false), Ok(None));
+    assert_eq!(none.check("npm run build", false), Ok(None));
+    assert_eq!(none.check("pwd", false), Ok(None));
     let allowed = Case::new(
         "allowed",
         &format!(
@@ -147,7 +150,7 @@ fn a_launch_without_a_blocking_grant_keeps_the_edge_response() {
              insert into local_cli_command_grant values ('{{cli}}', 'db.migrate', 'block');"
         ),
     );
-    assert_eq!(allowed.check("npm run build", false, false), Ok(None));
+    assert_eq!(allowed.check("npm run build", false), Ok(None));
     let stale = Case::new(
         "stale",
         &format!(
@@ -155,7 +158,7 @@ fn a_launch_without_a_blocking_grant_keeps_the_edge_response() {
             "f".repeat(64)
         ),
     );
-    assert_eq!(stale.check("npm run build", false, false), Ok(None));
+    assert_eq!(stale.check("npm run build", false), Ok(None));
 }
 
 #[test]
@@ -223,20 +226,21 @@ fn a_blocking_grant_answers_with_the_daemon_block() {
         "blocked",
         "insert into local_cli_grant values ('{cli}', '{hash}', 'blocked');",
     );
-    let response = blocked
-        .check("npm run build", false, false)
-        .unwrap()
-        .unwrap();
+    let response = blocked.check("npm run build", false).unwrap().unwrap();
     assert_eq!(response["approval_reuse_status"], "blocked");
     assert!(response
         .to_string()
         .contains("Your custom extension rules block this"));
-    let watch = blocked
-        .check("npm run build", true, false)
+    let watch = blocked.check("npm run build", true).unwrap().unwrap();
+    assert!(watch.get("approval_reuse_status").is_none());
+    // Cursor's answer is shaped by the same renderer the daemon calls, so
+    // its custom block is the resident's too.
+    let cursor = blocked
+        .check_harness("cursor", "npm run build", false)
         .unwrap()
         .unwrap();
-    assert!(watch.get("approval_reuse_status").is_none());
-    assert_eq!(blocked.check("npm run build", false, true), Err(()));
+    assert_eq!(cursor["policy_action"], "block");
+    assert_eq!(cursor["reason_code"], "local_cli_extension_blocked");
 
     let command = Case::new(
         "command",
@@ -245,10 +249,7 @@ fn a_blocking_grant_answers_with_the_daemon_block() {
              insert into local_cli_command_grant values ('{{cli}}', 'build', 'block');"
         ),
     );
-    let response = command
-        .check("npm run build", false, false)
-        .unwrap()
-        .unwrap();
+    let response = command.check("npm run build", false).unwrap().unwrap();
     assert_eq!(response["approval_reuse_status"], "blocked");
 }
 
@@ -294,7 +295,6 @@ fn gated(
             home_dir: &case.workspace,
             guard_home: &case.guard_home,
             recording_only,
-            own_shape: false,
         },
     )
 }
@@ -307,7 +307,7 @@ fn an_unreadable_store_defers() {
         b"not a database",
     )
     .unwrap();
-    assert_eq!(broken.check("npm run build", false, false), Err(()));
+    assert_eq!(broken.check("npm run build", false), Err(()));
 }
 
 #[test]
@@ -318,22 +318,21 @@ fn a_grant_the_resident_cannot_read_answers_as_unverified() {
         "damaged",
         "insert into local_cli_grant values ('{cli}', x'00', 'blocked');",
     );
-    let response = damaged
-        .check("npm run build", false, false)
-        .unwrap()
-        .unwrap();
+    let response = damaged.check("npm run build", false).unwrap().unwrap();
     assert_eq!(response["approval_reuse_status"], "blocked");
     let text = response.to_string();
     assert!(
         text.contains("Guard could not check this command against your custom extension rules.")
     );
     assert!(text.contains("local_cli_extension_unverified"));
-    let watch = damaged
-        .check("npm run build", true, false)
-        .unwrap()
-        .unwrap();
+    let watch = damaged.check("npm run build", true).unwrap().unwrap();
     assert!(watch.get("approval_reuse_status").is_none());
     assert!(!watch.to_string().contains("local_cli_extension_unverified"));
-    assert_eq!(damaged.check("npm run build", false, true), Err(()));
-    assert_eq!(damaged.check("pwd", false, false), Ok(None));
+    let cursor = damaged
+        .check_harness("cursor", "npm run build", false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(cursor["policy_action"], "block");
+    assert_eq!(cursor["reason_code"], "local_cli_extension_unverified");
+    assert_eq!(damaged.check("pwd", false), Ok(None));
 }
