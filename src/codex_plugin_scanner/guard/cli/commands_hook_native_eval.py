@@ -200,11 +200,6 @@ def _stamp_runtime_posture_metadata(artifact: object, signals: object) -> None:
         ]
         if any(getattr(signal, "confidence", None) == "strong" for signal in signals):
             metadata["risk_confidence"] = "strong"
-    action_class = metadata.get("action_class")
-    if isinstance(action_class, str):
-        lowered = action_class.lower()
-        if any(token in lowered for token in ("launch agent", "login item", "launchctl", "cron", "systemd", "launchd")):
-            metadata["persistence_writes_launch_agent"] = True
 
 
 def _embedded_script_evidence(command_text: str) -> list[dict[str, object]]:

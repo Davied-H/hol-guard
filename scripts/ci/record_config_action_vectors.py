@@ -215,6 +215,7 @@ def record() -> list[dict[str, object]]:
                 "confidence_text": str(confidence or ""),
                 "confidence_strong": is_high_confidence(confidence),
                 "writes_launch_agent": runtime_policy._artifact_writes_launch_agent(artifact),
+                "action_class": runtime_policy._artifact_action_class(artifact),
                 "skill_is_known_bad": runtime_policy._artifact_skill_is_known_bad(artifact),
             },
         }

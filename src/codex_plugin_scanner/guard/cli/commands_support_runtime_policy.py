@@ -508,13 +508,22 @@ def _artifact_skill_is_known_bad(artifact: GuardArtifact) -> bool:
 
 
 def _artifact_writes_launch_agent(artifact: GuardArtifact) -> bool:
-    if artifact.metadata.get("persistence_writes_launch_agent") is True:
-        return True
+    """Whether a producer already asserted the artifact installs a boot item.
+
+    Reading the mechanism out of ``action_class`` is the resident's, which is
+    why that label travels beside this flag rather than being folded into it
+    here: a second copy of the mechanism table could withhold a stop the
+    protected posture asked for.
+    """
+
+    return artifact.metadata.get("persistence_writes_launch_agent") is True
+
+
+def _artifact_action_class(artifact: GuardArtifact) -> str | None:
+    """The artifact's ``action_class`` label, or ``None`` when it has none."""
+
     action_class = artifact.metadata.get("action_class")
-    if not isinstance(action_class, str):
-        return False
-    lowered = action_class.lower()
-    return any(token in lowered for token in ("launch agent", "login item", "launchctl", "cron", "systemd", "launchd"))
+    return action_class if isinstance(action_class, str) else None
 
 
 def _runtime_action_data_flow_signals(

@@ -519,6 +519,7 @@ mod package_policy_resolve_op;
 mod package_posture_op;
 mod package_protect_finalize_op;
 mod package_protect_projection_op;
+mod persistence_action_class;
 mod pi_detect;
 mod pi_glob;
 mod pi_hook_bridge;
