@@ -42,11 +42,18 @@ pub(crate) fn build_artifact(
     };
     let mut metadata = Map::new();
     metadata.insert("server_name".to_owned(), json!(build.server_name));
-    if let Some(hash) = &build.provider_catalog_hash {
-        if hash.len() != 64 || !hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
-            return Err(ERR_PROVIDER_HASH);
+    // The provider catalog hash binds the operator's provider authority into
+    // the artifact, and only a wrapper call that can carry a provider action
+    // is bound to it. Which calls those are follows from the Composio routing
+    // contract, so the runtime reads it here: a caller that decided for itself
+    // would be recomputing a contract it does not own.
+    if crate::mcp_tool_policy_composio::requires_action_review(&build.tool_name) {
+        if let Some(hash) = &build.provider_catalog_hash {
+            if hash.len() != 64 || !hash.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+                return Err(ERR_PROVIDER_HASH);
+            }
+            metadata.insert("mcp_provider_catalog_hash".to_owned(), json!(hash));
         }
-        metadata.insert("mcp_provider_catalog_hash".to_owned(), json!(hash));
     }
     if let Some(server_id) = &build.server_id {
         metadata.insert("server_id".to_owned(), json!(server_id));
