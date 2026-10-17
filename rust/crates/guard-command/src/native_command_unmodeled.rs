@@ -435,6 +435,17 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
     if command.path_overridden || command.confidence != "uncertain" {
         return false;
     }
+    // The parser's scan stops at the first construct it cannot model, so which
+    // reason a command carries depends on where that construct sits in the
+    // text: `echo "${ pwd; }"` is a substitution, while the same brace behind a
+    // `(` is a compound shell. A brace the shell runs owns whatever it runs
+    // whichever reason won that race, so refuse it before the reasons are read
+    // rather than in the one arm it happened to reach.
+    if crate::parser_brace_command::brace_runs_a_command_unquoted(&without_lookups(
+        &command.normalized_text,
+    )) {
+        return false;
+    }
     match command.uncertainty_reason.as_deref() {
         // Backgrounding runs the same programs the foreground text names, so
         // `npm start &` owns exactly what `npm start` owns. Without this arm a
@@ -502,7 +513,6 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
             !text.contains("$(")
                 && !text.contains('`')
                 && !text.contains("<<")
-                && !crate::parser_brace_command::brace_runs_a_command_unquoted(&text)
                 && plain_after_heredocs(&text)
         }
         _ => false,
