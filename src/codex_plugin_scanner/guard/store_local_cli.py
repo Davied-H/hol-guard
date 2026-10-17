@@ -5,8 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .local_cli_errors import LocalCliCatalogLimitError
 from .runtime.local_cli_commands import (
@@ -35,10 +34,12 @@ from .store_local_cli_schema import ensure_local_cli_schema
 from .store_mcp_catalog import load_mcp_catalogs, review_catalog_changes, write_mcp_catalog
 from .store_mcp_provider_catalog import load_provider_catalog_summaries
 
+if TYPE_CHECKING:
+    from .store import GuardStore
+
 
 class StoreLocalCliMixin:
     if TYPE_CHECKING:
-        guard_home: Path
 
         def _connect(self) -> AbstractContextManager[sqlite3.Connection]: ...
 
@@ -168,7 +169,7 @@ class StoreLocalCliMixin:
                 }
                 for _, definition in undescribed
             ],
-            guard_home=self.guard_home,
+            guard_home=cast("GuardStore", self).guard_home,
         )
         for (command, _), classification in zip(undescribed, described, strict=True):
             command["classification"] = classification
