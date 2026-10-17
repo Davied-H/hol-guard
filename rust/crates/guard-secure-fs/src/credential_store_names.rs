@@ -10,10 +10,49 @@
 
 use std::path::{Component, Path};
 
+/// Directories a harness, editor or git hook runner auto-loads from.
+pub const HARNESS_DIRECTORIES: &[&str] = &[
+    ".agent",
+    ".agents",
+    ".amazonq",
+    ".antigravity",
+    ".augment",
+    ".claude",
+    ".cline",
+    ".clinerules",
+    ".codex",
+    ".continue",
+    ".copilot",
+    ".crush",
+    ".cursor",
+    ".devin",
+    ".gemini",
+    ".githooks",
+    ".goose",
+    ".grok",
+    ".hermes",
+    ".husky",
+    ".junie",
+    ".kimi",
+    ".kiro",
+    ".omp",
+    ".openclaw",
+    ".opencode",
+    ".openhands",
+    ".paseo",
+    ".pi",
+    ".qwen",
+    ".roo",
+    ".trae",
+    ".windsurf",
+    ".zcode",
+    ".zed",
+];
+
 /// Hidden directories that hold credentials, keys, wallets, browser profiles
 /// or Guard's own state. Their entry names alone reveal which accounts, hosts
 /// and keys exist.
-pub(crate) const CREDENTIAL_STORE_NAMES: [&str; 18] = [
+pub const CREDENTIAL_STORE_NAMES: [&str; 18] = [
     ".aws",
     ".azure",
     ".bitcoin",
@@ -38,14 +77,14 @@ pub(crate) const CREDENTIAL_STORE_NAMES: [&str; 18] = [
 /// agent login. Every other harness directory (`~/.gemini`, `~/.omp`,
 /// `~/.copilot`) may hold login tokens under names Guard does not know, so it
 /// keeps review.
-pub(crate) const HARNESS_SHARED_NAMES: [&str; 5] =
+pub const HARNESS_SHARED_NAMES: [&str; 5] =
     [".agent", ".agents", ".clinerules", ".githooks", ".husky"];
 
 /// Harness homes whose login and secret-bearing config live in files the
 /// credential and hidden-name screens already refuse to read
 /// (`auth.json`, `.credentials.json`, `config.toml`, `settings.json`).
 /// Listing them prints plan, memory and session names, never a secret.
-pub(crate) const HARNESS_HOME_NAMES: [&str; 2] = [".claude", ".codex"];
+pub const HARNESS_HOME_NAMES: [&str; 2] = [".claude", ".codex"];
 
 /// Credential, password-manager, keyring, browser-profile and agent-login
 /// stores kept directly below `~/.config` or `~/.local/share`. A tool whose
@@ -53,7 +92,7 @@ pub(crate) const HARNESS_HOME_NAMES: [&str; 2] = [".claude", ".codex"];
 /// with its tokens inside the file) is not listed: its entry names reveal no
 /// account, host or key, and content reads of the file stay guarded by
 /// [`secret_bearing_file_name`].
-pub(crate) const NESTED_CREDENTIAL_STORE_NAMES: [&str; 16] = [
+pub const NESTED_CREDENTIAL_STORE_NAMES: [&str; 16] = [
     "1password",
     "bravesoftware",
     "chromium",
@@ -123,7 +162,7 @@ const SECRET_BEARING_SUFFIXES: [&str; 8] = [
 /// code rather than the login, so listings below it are screened like any
 /// other dot-directory.
 fn harness_login_store(name: &str) -> bool {
-    crate::harness_config_names::HARNESS_DIRECTORIES.contains(&name)
+    HARNESS_DIRECTORIES.contains(&name)
         && !HARNESS_SHARED_NAMES.contains(&name)
         && !HARNESS_HOME_NAMES.contains(&name)
 }
@@ -131,7 +170,7 @@ fn harness_login_store(name: &str) -> bool {
 /// Whether any component of `names` is a credential store, where `names` is
 /// already lowercased. Shared by the listing and content screens so a store
 /// added to one list is refused by both.
-pub(crate) fn names_hold_credential_store(names: &[String]) -> bool {
+pub fn names_hold_credential_store(names: &[String]) -> bool {
     names.iter().enumerate().any(|(index, name)| {
         let parent = index.checked_sub(1).map(|at| names[at].as_str());
         let grandparent = index.checked_sub(2).map(|at| names[at].as_str());
@@ -146,12 +185,12 @@ pub(crate) fn names_hold_credential_store(names: &[String]) -> bool {
 
 /// No component below the home directory is a credential store, and no store
 /// sits directly below `.config` or `.local/share` on the way.
-pub(crate) fn clears_store_screen(path: &Path) -> bool {
+pub fn clears_store_screen(path: &Path) -> bool {
     !names_hold_credential_store(&lowered_names(path))
 }
 
 /// The lowercased ordinary components of `path`.
-pub(crate) fn lowered_names(path: &Path) -> Vec<String> {
+pub fn lowered_names(path: &Path) -> Vec<String> {
     path.components()
         .filter_map(|component| match component {
             Component::Normal(name) => Some(name.to_string_lossy().to_ascii_lowercase()),
@@ -163,7 +202,7 @@ pub(crate) fn lowered_names(path: &Path) -> Vec<String> {
 /// Whether `name`, a lowercased file name, is one a secret is normally written
 /// under. A content read below a hidden directory refuses these; a listing does
 /// not need to, because it never returns what is inside them.
-pub(crate) fn secret_bearing_file_name(name: &str) -> bool {
+pub fn secret_bearing_file_name(name: &str) -> bool {
     if SECRET_BEARING_SUFFIXES
         .iter()
         .any(|suffix| name.ends_with(suffix))
@@ -195,9 +234,10 @@ fn download_cache(name: &str) -> bool {
 /// bounds a target screen cannot see, so this rule stands aside rather than
 /// giving the same path a second, looser answer.
 fn curated_tree_owns(parents: &[String]) -> bool {
-    parents.first().is_some_and(|first| {
-        crate::harness_config_names::HARNESS_DIRECTORIES.contains(&first.as_str())
-    }) || parents.iter().any(|name| download_cache(name))
+    parents
+        .first()
+        .is_some_and(|first| HARNESS_DIRECTORIES.contains(&first.as_str()))
+        || parents.iter().any(|name| download_cache(name))
 }
 
 /// Names prose is written under. A token is not written in Markdown, so a
@@ -267,7 +307,7 @@ fn tool_configuration_slot(parents: &[String], name: &str) -> bool {
 ///   or settings file conventionally is;
 /// - a tool's own configuration, per [`tool_configuration_slot`];
 /// - a tree a narrower rule already owns, per [`curated_tree_owns`].
-pub(crate) fn hidden_content_read_allowed(lowered: &[String]) -> bool {
+pub fn hidden_content_read_allowed(lowered: &[String]) -> bool {
     let Some((name, parents)) = lowered.split_last() else {
         return false;
     };

@@ -12,6 +12,7 @@ use thiserror::Error;
 use std::os::unix::fs::MetadataExt;
 
 mod credential_path;
+pub mod credential_store_names;
 mod secure_open;
 mod source_path;
 
