@@ -22,7 +22,7 @@
 //! Byte-parity: severity ranks, alias, reason strings, and the upgrade /
 //! downgrade decision branches match the Python source line-for-line.
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::signal_contract::{
     RiskConfidenceLabel, RiskSeverityLabel, RiskSignalCategory, RiskSignalV2,
