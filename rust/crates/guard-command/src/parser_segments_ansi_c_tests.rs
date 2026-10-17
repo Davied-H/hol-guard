@@ -35,6 +35,7 @@ fn an_escape_this_reader_does_not_decode_stays_uncertain() {
         "echo $'\\u0041'",
         "echo $'\\cA'",
         "echo $'\\x00'",
+        "echo $'a\u{0}b'",
         "echo $'open",
     ] {
         assert!(
@@ -44,4 +45,23 @@ fn an_escape_this_reader_does_not_decode_stays_uncertain() {
         assert!(shell_tokens(command, false).is_err(), "{command}");
     }
     assert!(split_execution_segments("echo $\"hello\"", false).is_err());
+}
+
+/// A shell that keeps an unquoted backslash literal spells no ANSI-C word:
+/// there `\$'x\'` is a literal `$` and then a plain single-quoted word, so
+/// reading it as one word would swallow the separator behind it and model a
+/// command the shell does not run.
+#[test]
+fn a_shell_that_keeps_a_backslash_literal_reads_no_ansi_c_word() {
+    for command in [
+        "echo \\$'x\\' ; docker ps ; $''",
+        "grep -n $'\\t' src/main.rs",
+        "echo $'hello'",
+    ] {
+        assert!(
+            split_execution_segments(command, true).is_err(),
+            "{command}"
+        );
+        assert!(shell_tokens(command, true).is_err(), "{command}");
+    }
 }
