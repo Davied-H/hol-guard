@@ -21,6 +21,7 @@ pub(crate) const RESIDENT_OP_FEATURES: &[&str] = &[
     guard_contracts::APPROVAL_RESOLUTION_PLAN_FEATURE,
     guard_contracts::APPROVAL_SCOPE_FEATURE,
     guard_contracts::POLICY_DOCUMENT_DECISION_FEATURE,
+    guard_contracts::COMMAND_POLICY_DECISION_FEATURE,
     guard_contracts::HOOK_RENDER_FEATURE,
     guard_contracts::GUARD_STORE_FEATURE,
     guard_contracts::APPROVAL_GATE_FEATURE,

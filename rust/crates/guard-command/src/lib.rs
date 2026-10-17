@@ -25,6 +25,7 @@ pub mod command_action_risk_classes;
 mod command_ascii_comparison;
 mod command_candidate_common;
 mod command_common_cli_matchers;
+pub mod command_expression_match;
 mod compound_artifact;
 mod credential_store_names {
     //! The credential screen is shared with PostToolUse source review, so it

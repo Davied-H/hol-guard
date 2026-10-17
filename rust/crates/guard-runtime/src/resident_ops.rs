@@ -326,6 +326,9 @@ pub(crate) fn evaluate_resident_bytes(
                     &request,
                 )
             }
+            ResidentOperationV1::CommandPolicyDecide(request) => {
+                crate::command_policy_decide_op::evaluate_command_policy_decision_request(&request)
+            }
             ResidentOperationV1::PolicyDecisionLookup(request) => {
                 crate::policy_decision_lookup_op::evaluate_policy_decision_lookup_request(&request)
             }

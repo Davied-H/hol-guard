@@ -9,7 +9,6 @@ from codex_plugin_scanner.guard.runtime.command_expression import (
     CommandExpression,
     CommandExpressionError,
     command_expression_from_mapping,
-    matches_command_expression,
     validate_command_expression,
 )
 
@@ -18,49 +17,19 @@ def _expression(combinator: Literal["all", "any"], *conditions: CommandCondition
     return CommandExpression(combinator=combinator, conditions=tuple(conditions))
 
 
-def test_all_expression_requires_each_typed_condition() -> None:
-    expression = _expression(
-        "all",
-        CommandCondition("command", "startsWith", "docker compose"),
-        CommandCondition("command", "endsWith", "--detach"),
-    )
+def test_a_condition_keeps_its_spelling_and_loses_only_its_spacing() -> None:
+    condition = CommandCondition("command", "startsWith", "  docker   compose  ")
 
-    assert matches_command_expression(expression, "docker   compose up --detach")
-    assert not matches_command_expression(expression, "docker compose up")
+    assert condition.value == "docker compose"
 
 
-def test_any_expression_supports_exact_glob_and_case_flag() -> None:
-    expression = _expression(
-        "any",
-        CommandCondition("command", "exact", "git push", case_sensitive=False),
-        CommandCondition("command", "glob", "docker compose *"),
-    )
-
-    assert matches_command_expression(expression, "GIT PUSH")
-    assert matches_command_expression(expression, "docker compose up --detach")
-    assert not matches_command_expression(expression, "git commit -m ship")
-
-
-def test_omitted_case_flag_preserves_case_insensitive_legacy_exact_matching() -> None:
-    expression = command_expression_from_mapping(
-        {
-            "combinator": "all",
-            "conditions": [{"field": "command", "operator": "exact", "value": "git push"}],
-        }
-    )
-
-    assert matches_command_expression(expression, "GIT PUSH")
-
-
-def test_regex_validation_and_matching_share_runtime_dialect() -> None:
+def test_a_valid_regex_compiles_while_the_document_is_validated() -> None:
     expression = _expression(
         "all",
         CommandCondition("command", "regex", r"^docker\s+compose\s+(up|down)$"),
     )
 
     validate_command_expression(expression)
-    assert matches_command_expression(expression, "docker compose up")
-    assert not matches_command_expression(expression, "docker compose logs")
 
 
 def test_invalid_regex_is_rejected_before_evaluation() -> None:
@@ -68,6 +37,29 @@ def test_invalid_regex_is_rejected_before_evaluation() -> None:
 
     with pytest.raises(CommandExpressionError, match="invalid_command_regex"):
         validate_command_expression(expression)
+
+
+def test_an_unclosed_glob_class_is_rejected_before_evaluation() -> None:
+    expression = _expression("all", CommandCondition("command", "glob", "docker [compose"))
+
+    with pytest.raises(CommandExpressionError, match="glob_class_unclosed"):
+        validate_command_expression(expression)
+
+
+def test_an_operator_outside_the_dialect_is_refused() -> None:
+    with pytest.raises(CommandExpressionError, match="unsupported_command_pattern_operator"):
+        CommandCondition("command", "matches", "git push")  # type: ignore[arg-type]
+
+
+def test_omitted_case_flag_parses_as_case_insensitive() -> None:
+    expression = command_expression_from_mapping(
+        {
+            "combinator": "all",
+            "conditions": [{"field": "command", "operator": "exact", "value": "git push"}],
+        }
+    )
+
+    assert expression.conditions[0].case_sensitive is False
 
 
 def test_mapping_requires_explicit_boolean_combinator() -> None:

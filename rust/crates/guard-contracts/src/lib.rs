@@ -128,6 +128,8 @@ mod mcp_stdio_session;
 pub use mcp_stdio_session::*;
 mod command_effect;
 pub use command_effect::*;
+mod command_policy_decision;
+pub use command_policy_decision::*;
 mod canonical_json;
 pub use canonical_json::*;
 

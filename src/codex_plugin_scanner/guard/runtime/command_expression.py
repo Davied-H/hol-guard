@@ -1,7 +1,13 @@
 """Portable command-pattern policy expressions for HOL Guard 3.0.
 
-Expressions deliberately operate on normalized command text. Regex and glob operators
-use this module's bounded dialect, so policy validation and runtime evaluation cannot drift.
+Expressions deliberately operate on normalized command text. This module parses them and
+compiles their patterns once while a document is validated, so an author learns about a
+pattern outside the dialect when they write it.
+
+Matching belongs to the runtime. ``guard-command`` holds the one dialect that decides a
+command, so ``policy check`` and enforcement cannot answer differently; a pattern this
+validator accepts and the runtime's engine rejects is refused at decide time rather than
+matched a second way here.
 """
 
 from __future__ import annotations
@@ -17,7 +23,6 @@ CommandExpressionCombinator: TypeAlias = Literal["all", "any"]
 MAX_COMMAND_PATTERN_LENGTH: Final = 512
 MAX_COMMAND_CONDITIONS: Final = 64
 MAX_NORMALIZED_COMMAND_LENGTH: Final = 4096
-REGEX_TIMEOUT_SECONDS: Final = 0.05
 _COMMAND_PATTERN_OPERATORS: Final = frozenset({"exact", "startsWith", "contains", "endsWith", "glob", "regex"})
 _COMMAND_EXPRESSION_COMBINATORS: Final = frozenset({"all", "any"})
 
@@ -202,49 +207,16 @@ def validate_command_expression(expression: CommandExpression) -> None:
             _compile_pattern(condition)
 
 
-def matches_command_condition(condition: CommandCondition, command: str) -> bool:
-    normalized_command = normalize_command_text(command)
-    if condition.operator == "exact":
-        if condition.case_sensitive:
-            return normalized_command == condition.value
-        return normalized_command.casefold() == condition.value.casefold()
-    if condition.operator == "startsWith":
-        if condition.case_sensitive:
-            return normalized_command.startswith(condition.value)
-        return normalized_command.casefold().startswith(condition.value.casefold())
-    if condition.operator == "contains":
-        if condition.case_sensitive:
-            return condition.value in normalized_command
-        return condition.value.casefold() in normalized_command.casefold()
-    if condition.operator == "endsWith":
-        if condition.case_sensitive:
-            return normalized_command.endswith(condition.value)
-        return normalized_command.casefold().endswith(condition.value.casefold())
-    pattern = _compile_pattern(condition)
-    try:
-        return pattern.fullmatch(normalized_command, timeout=REGEX_TIMEOUT_SECONDS) is not None
-    except TimeoutError as error:
-        raise CommandExpressionError("command_pattern_timeout") from error
-
-
-def matches_command_expression(expression: CommandExpression, command: str) -> bool:
-    matches = (matches_command_condition(condition, command) for condition in expression.conditions)
-    return all(matches) if expression.combinator == "all" else any(matches)
-
-
 __all__ = [
     "MAX_COMMAND_CONDITIONS",
     "MAX_COMMAND_PATTERN_LENGTH",
     "MAX_NORMALIZED_COMMAND_LENGTH",
-    "REGEX_TIMEOUT_SECONDS",
     "CommandCondition",
     "CommandExpression",
     "CommandExpressionCombinator",
     "CommandExpressionError",
     "CommandPatternOperator",
     "command_expression_from_mapping",
-    "matches_command_condition",
-    "matches_command_expression",
     "normalize_command_text",
     "validate_command_expression",
 ]

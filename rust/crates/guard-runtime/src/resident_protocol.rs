@@ -229,6 +229,7 @@ pub(crate) enum ResidentOperationV1 {
     WorkspaceInventory(WorkspaceInventoryRequestV1),
     PolicyDecisionLookup(PolicyDecisionLookupRequestV1),
     PolicyDocumentDecide(guard_contracts::PolicyDocumentDecisionRequestV1),
+    CommandPolicyDecide(guard_contracts::CommandPolicyDecisionRequestV1),
     GitExecutionSafety(GitExecutionSafetyRequestV1),
     CompoundGitInspection(CompoundGitInspectionRequestV1),
     CodexToolOutput(CodexToolOutputRequestV1),
