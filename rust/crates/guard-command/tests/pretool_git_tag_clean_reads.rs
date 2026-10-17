@@ -169,7 +169,9 @@ fn apply_check_is_allowed_and_patching_stays_reviewed() {
     let _cleanup = FixtureCleanup(root);
     let config = repository.join(".git/config");
     for (settings, command, expected) in [
-        ("", "git apply --check feature.patch", "allow"),
+        // The bare three-word spelling is the contained patch-check
+        // operation's own, so it keeps that route rather than this proof.
+        ("", "git apply --check feature.patch", "review"),
         ("", "git apply --check -p1 feature.patch", "allow"),
         ("", "git apply --check --verbose feature.patch", "allow"),
         ("", "git apply --check --stat feature.patch", "allow"),
@@ -188,19 +190,19 @@ fn apply_check_is_allowed_and_patching_stays_reviewed() {
         // The check prints its report without a pager or a diff driver.
         (
             "[core]\npager = ./synthetic-never-execute\n",
-            "git apply --check feature.patch",
+            "git apply --check --verbose feature.patch",
             "allow",
         ),
         // Reading the files the patch names refreshes the index, which
         // starts a configured monitor.
         (
             "[core]\nfsmonitor = ./synthetic-never-execute\n",
-            "git apply --check feature.patch",
+            "git apply --check --verbose feature.patch",
             "review",
         ),
         (
             "[core]\nfsmonitor = false\n",
-            "git apply --check feature.patch",
+            "git apply --check --verbose feature.patch",
             "allow",
         ),
         // Every form that writes something, reaches outside the workspace or
