@@ -20,6 +20,7 @@ from ..cli.commands_support_command_activity import persist_deferred_post_hook_c
 from ..models import GuardAction
 from ..native_decision_receipt import validate_native_decision_receipt
 from ..native_hook_adapter import NativeHookAdapterError, hook_adapter_memo
+from ..native_resident_client import background_resident_requests
 from ..runtime.command_activity_contract import ActivityApprovalReuseStatus, CorrelationHandle
 from ..runtime.command_activity_correlation import (
     derive_proven_request_correlation,
@@ -43,6 +44,9 @@ from .runtime_hook_evidence_journal import (
     recover_journal_records,
     rewrite_journal,
 )
+
+# The name the resident request log writes for this thread's round trips.
+_BACKGROUND_REQUEST_LABEL = "hook_evidence_writer_drain"
 
 
 def persist_native_decision_receipt(*, store: GuardStore, receipt: Mapping[str, object]) -> bool:
@@ -343,6 +347,13 @@ class RuntimeHookEvidenceWriter:
         return replace(record, invocation_preview=preview, preview_source=None)
 
     def _run(self) -> None:
+        # Everything this thread persists was queued by a hook that already
+        # answered, so its resident round trips belong to the drain, not to
+        # any request's latency.
+        with background_resident_requests(_BACKGROUND_REQUEST_LABEL):
+            self._drain_until_stopped()
+
+    def _drain_until_stopped(self) -> None:
         while True:
             batch = self._next_batch()
             if not batch:

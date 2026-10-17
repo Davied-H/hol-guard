@@ -31,6 +31,16 @@ fn build_database(path: &Path, vectors: &Value) {
             .execute_batch(statement.as_str().unwrap())
             .unwrap();
     }
+    // Every store write commits through `finalize_and_commit`, which backfills
+    // the digests triggers leave empty on the review outbox. The recorder
+    // captured only the two receipt tables, so the outbox has to be declared
+    // here for the commit to reach them.
+    connection
+        .execute_batch(
+            "create table if not exists guard_review_outbox_events (\
+             stream_sequence integer primary key, payload_hash text not null default '')",
+        )
+        .unwrap();
 }
 
 fn record(home: &Path, receipt: &str, now: &str) -> Value {
