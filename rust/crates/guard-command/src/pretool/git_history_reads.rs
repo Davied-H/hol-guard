@@ -192,6 +192,49 @@ fn describe_read_form(rest: &[String]) -> bool {
     true
 }
 
+/// Positions in `rest`, the tokens after `describe`, that hold a ref
+/// pattern. `--match` and `--exclude` select tags by glob, and Git compares
+/// them against ref names rather than opening them, so `v*` names no file.
+/// An option outside the grammar above may take the next token as its value,
+/// so a spelling this does not know leaves every token its own screens.
+pub(super) fn describe_pattern_positions(rest: &[String]) -> Vec<usize> {
+    let mut positions = Vec::new();
+    let mut index = 0;
+    while let Some(argument) = rest.get(index) {
+        if argument == "--" {
+            break;
+        }
+        if !argument.starts_with('-') || DESCRIBE_FLAGS.contains(&argument.as_str()) {
+            index += 1;
+            continue;
+        }
+        let (name, inline) = split_option(argument);
+        if DESCRIBE_OPTIONAL.contains(&name) {
+            index += 1;
+            continue;
+        }
+        if !DESCRIBE_VALUES.contains(&name) {
+            return Vec::new();
+        }
+        let pattern = matches!(name, "--match" | "--exclude");
+        if inline.is_some() {
+            if pattern {
+                positions.push(index);
+            }
+            index += 1;
+            continue;
+        }
+        if index + 1 >= rest.len() {
+            return Vec::new();
+        }
+        if pattern {
+            positions.push(index + 1);
+        }
+        index += 2;
+    }
+    positions
+}
+
 fn reflog_read_form(rest: &[String]) -> bool {
     let mut arguments = rest.iter().peekable();
     // `git reflog` is `git reflog show`; any other operation name may write.
