@@ -38,7 +38,9 @@ use crate::guard_store_json::dumps_sorted;
 
 pub(crate) const LOCAL_ONCE_LEGACY_AUTHORITY_KIND: &str = "legacy";
 const LOCAL_ONCE_INTEGRITY_PURPOSE: &str = "guard-local-once-approval";
-const NON_CONSUMING_POLICY_MATCH_LIMIT: i64 = 256;
+/// The ceiling a non-consuming lookup stops fetching at. The document path
+/// reports the same ceiling, so both read it from the one contract constant.
+const NON_CONSUMING_POLICY_MATCH_LIMIT: i64 = guard_contracts::POLICY_DOCUMENT_MATCH_LIMIT as i64;
 pub(crate) const POLICY_LOOKUP_COLUMNS: &str = "decision_id, harness, scope, artifact_id, action, \
      artifact_hash, workspace, publisher, source, reason, owner, expires_at, updated_at, \
      integrity_version, integrity_generation, payload_hash, payload_mac, integrity_key_id, \

@@ -14,7 +14,8 @@
 use guard_contracts::{
     canonical_policy_timestamp_nanos, PolicyDocumentDecisionRequestV1,
     PolicyDocumentDecisionResultV1, PolicyDocumentEventV1, PolicyDocumentRowV1,
-    POLICY_DOCUMENT_DECISION_MAX_BYTES, POLICY_DOCUMENT_DECISION_MAX_ROWS,
+    APPROVAL_CONTEXT_TOKEN_PREFIX, POLICY_DOCUMENT_DECISION_MAX_BYTES,
+    POLICY_DOCUMENT_DECISION_MAX_ROWS, POLICY_DOCUMENT_DECISION_REQUEST_SCHEMA,
     POLICY_DOCUMENT_DECISION_RESULT_SCHEMA, POLICY_DOCUMENT_MATCH_LIMIT,
 };
 use serde_json::{json, Value};
@@ -30,7 +31,6 @@ use crate::policy_decision_lookup_op::{
 #[path = "policy_document_decide_op_tests.rs"]
 mod tests;
 
-const APPROVAL_CONTEXT_PREFIX: &str = "guard-approval-context:v1:";
 const SCOPES: [&str; 5] = ["artifact", "workspace", "publisher", "harness", "global"];
 
 /// The lookup keys one event probes with, derived once for the whole decision.
@@ -65,6 +65,11 @@ pub(crate) fn evaluate_policy_document_decision_request(
 }
 
 pub(crate) fn evaluate(request: &PolicyDocumentDecisionRequestV1) -> Result<Value, String> {
+    // A request that names another schema was built against another contract;
+    // deciding it anyway would answer a question nobody asked.
+    if request.schema != POLICY_DOCUMENT_DECISION_REQUEST_SCHEMA {
+        return Err("native_policy_document_decision_schema_mismatch".to_owned());
+    }
     if request.rows.len() > POLICY_DOCUMENT_DECISION_MAX_ROWS {
         return Err("native_policy_document_decision_too_large".to_owned());
     }
@@ -128,7 +133,7 @@ fn lookup_keys(event: &PolicyDocumentEventV1, now: &str) -> Result<Keys, String>
 fn legacy_hash(artifact_hash: Option<&str>) -> bool {
     match artifact_hash {
         None => true,
-        Some(value) => !value.starts_with(APPROVAL_CONTEXT_PREFIX),
+        Some(value) => !value.starts_with(APPROVAL_CONTEXT_TOKEN_PREFIX),
     }
 }
 

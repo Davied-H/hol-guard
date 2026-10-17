@@ -301,3 +301,16 @@ fn an_unreadable_evaluation_time_is_refused() {
     .expect_err("bad time");
     assert_eq!(error, "native_policy_document_decision_time_invalid");
 }
+
+#[test]
+fn a_request_naming_another_schema_decides_nothing() {
+    let error = evaluate(&PolicyDocumentDecisionRequestV1 {
+        schema: "guard-policy-decision-lookup-request.v1".to_owned(),
+        request_id: "policy-document-decision-test".to_owned(),
+        rows: vec![row("allow-all", "global", "allow")],
+        event: event(),
+        now: NOW.to_owned(),
+    })
+    .expect_err("schema mismatch");
+    assert_eq!(error, "native_policy_document_decision_schema_mismatch");
+}

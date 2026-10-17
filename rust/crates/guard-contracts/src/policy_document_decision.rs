@@ -23,9 +23,11 @@ pub const POLICY_DOCUMENT_DECISION_FEATURE: &str = "policy-document-decision-v1"
 /// Largest canonical request serialization the op will accept. It stays below
 /// `MAX_NATIVE_REQUEST_BYTES` so the resident envelope still fits one frame.
 pub const POLICY_DOCUMENT_DECISION_MAX_BYTES: usize = 6 * 1024 * 1024 - 64 * 1024;
-/// Most compiled rows one call may decide against. A document that compiles to
-/// more rows than this cannot be explained in one answer.
-pub const POLICY_DOCUMENT_DECISION_MAX_ROWS: usize = 4096;
+/// Most compiled rows one call may decide against. `guard explain` builds its
+/// document from every remembered decision on the device, and that table is
+/// unbounded, so this ceiling sits far above any hand-written document; the
+/// byte limit above is what a real request runs into first.
+pub const POLICY_DOCUMENT_DECISION_MAX_ROWS: usize = 16384;
 /// Matched rows above which the document is reported as too ambiguous to
 /// decide. The runtime store lookup applies the same ceiling.
 pub const POLICY_DOCUMENT_MATCH_LIMIT: usize = 256;
