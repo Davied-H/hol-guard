@@ -112,21 +112,28 @@ def test_explicit_git_stash_permission_allows_wrapped_shell_forms(
     )
 
 
-def test_explicit_git_stash_permission_does_not_unwrap_login_shells(tmp_path: Path) -> None:
+def test_explicit_git_stash_permission_does_not_unwrap_login_shells(
+    tmp_path: Path, native_approval_reuse_runtime
+) -> None:
     command = "zsh -lc 'git stash list'"
-    fixture = real_native_review_fixture(
+    fixture, canonical, evaluation = _native_fixture(
         command,
         controls=(("permission", "command.git.permission.stash", "enabled"),),
     )
-    extensions = fixture.payload["command_extensions"]
-    assert extensions["evaluation_error"] == "native_command_evaluation_failed"
-    assert extensions["observations"] == []
-    assert fixture.payload["command_model"]["uncertainty_reason"] == "transparent_wrapper_not_yet_supported"
+
+    # The script is modelled, so the command reaches its own rules, but the
+    # shell stays in front of it: a grant written for the bare command cannot
+    # cover the wrapped one, and the wrapped one never proves exact-safe.
+    assert fixture.payload["command_model"]["wrapper_chain"] == ["zsh"]
+    assert evaluation.minimum_action != "allow"
+
     request = extract_sensitive_tool_action_request(
         "Shell",
         {"command": command},
         cwd=tmp_path,
         home_dir=tmp_path,
+        canonical_command=canonical,
+        native_evaluation=evaluation,
     )
 
     assert request is not None
@@ -135,14 +142,24 @@ def test_explicit_git_stash_permission_does_not_unwrap_login_shells(tmp_path: Pa
         request,
         config_path="config.toml",
         source_scope="project",
+        extension_control_snapshot=fixture.snapshot,
+        native_extension_evidence=fixture.payload,
     )
 
-    assert artifact.metadata["command_action_floor"] == "review"
-    assert artifact.metadata["native_extension_evidence"] == "unavailable"
-    assert artifact.metadata["extension_control_resolution"] == {
-        "blocked": True,
-        "failures": ["native-evidence-unavailable"],
-    }
+    assert artifact.metadata["command_action_floor"] != "allow"
+    assert (
+        _runtime_artifact_policy_action(
+            GuardConfig(
+                guard_home=tmp_path / "guard",
+                workspace=tmp_path,
+                default_action="review",
+            ),
+            artifact,
+            "grok",
+            guard_home=native_approval_reuse_runtime,
+        )
+        != "allow"
+    )
 
 
 def test_explicit_permission_allow_keeps_harness_risk_blocks(tmp_path: Path, native_approval_reuse_runtime) -> None:

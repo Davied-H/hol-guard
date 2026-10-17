@@ -440,6 +440,9 @@ fn parse_command_unbound(request: &CommandModelRequestV1) -> Result<CanonicalCom
     if request.dialect == "powershell" && request.transport == "shell_string" && !raw.is_empty() {
         return Ok(parse_explicit_powershell(request, raw));
     }
+    if let Some(model) = parse_inline_shell_script(request, raw) {
+        return Ok(model);
+    }
     let posix = parse_posix_command(request)?;
     if request.dialect != "posix" || !powershell_reads::windows_powershell_host() {
         return Ok(posix);
@@ -460,6 +463,49 @@ fn parse_command_unbound(request: &CommandModelRequestV1) -> Result<CanonicalCom
         }
     }
     Ok(posix)
+}
+
+/// A shell whose whole script is in this same text, modelled from that script.
+///
+/// `sh -c 'npm run build'` runs the programs those words name, yet every `-c`
+/// form reached `transparent_wrapper_not_yet_supported` and blocked outright,
+/// with no approval left to give it, while the same words without the shell in
+/// front modelled exactly. The script is parsed as the command text it is, so
+/// it reaches the rules, proofs and floors its own words reach.
+///
+/// The shell stays in the wrapper chain, because it is still a shell: `-lc`
+/// runs the startup files first, and `-c` reads the startup file its
+/// environment names. So the command never proves exact-safe, never draws on
+/// an explicit permission grant, and needs fresh approval each time, exactly
+/// as a privileged wrapper does. A script the parser cannot model keeps the
+/// wrapper's own uncertainty.
+fn parse_inline_shell_script(
+    request: &CommandModelRequestV1,
+    raw: &str,
+) -> Option<CanonicalCommandV1> {
+    if request.dialect != "posix" || request.transport != "shell_string" {
+        return None;
+    }
+    let (shell, script) = parser_wrappers::inline_shell_script(raw)?;
+    let mut model = parse_posix_command(&CommandModelRequestV1 {
+        command: script,
+        ..request.clone()
+    })
+    .ok()?;
+    if model.confidence != "exact" || model.segments.is_empty() {
+        return None;
+    }
+    for segment in &mut model.segments {
+        segment.wrapper_chain.insert(0, shell.clone());
+    }
+    model.wrapper_chain = model
+        .segments
+        .iter()
+        .flat_map(|segment| segment.wrapper_chain.iter().cloned())
+        .collect();
+    model.parser_profile = "posix-bounded-wrappers-v2".to_owned();
+    model.exact_raw_text = false;
+    Some(model)
 }
 
 fn parse_explicit_powershell(request: &CommandModelRequestV1, raw: &str) -> CanonicalCommandV1 {

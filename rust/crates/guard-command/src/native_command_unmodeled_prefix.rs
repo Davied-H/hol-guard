@@ -143,51 +143,6 @@ pub(super) fn launch_only(literal: &str) -> bool {
 }
 
 fn command_reads_a_program_file(piece: &str) -> bool {
-    piece_program_file(piece, false)
-}
-
-/// Shells that take the program they run from their own `-c` argument. That
-/// argument is shell text, so the words in it name the programs the command
-/// runs, exactly as the same words without the shell in front do.
-const INLINE_SHELLS: &[&str] = &["ash", "bash", "dash", "sh", "zsh"];
-
-/// The script a shell takes from its own argument, when the text is that shell
-/// and nothing standing in front of it.
-///
-/// `sh -c 'npm run build'` carries `npm run build` here, while `sh deploy.sh`
-/// names a file this scan never opened and `./sh` is a program of the user's
-/// own that shares the name. A prefix, an assignment or a second wrapper in
-/// front leaves a program this cannot read, so each one is refused.
-pub(super) fn inline_shell_script(text: &str) -> Option<String> {
-    let parts = crate::parser_segments::shell_tokens(text, cfg!(windows)).ok()?;
-    let shell = parts.first()?;
-    if shell.contains(['/', '\\']) || !INLINE_SHELLS.contains(&shell.as_str()) {
-        return None;
-    }
-    let payload = crate::shell_command_wrappers::shell_interpreter_command_payload(&parts, 0)?;
-    Some(payload.script_text)
-}
-
-/// Whether a piece of shell text runs a file rather than a program on the
-/// path: a program spelled as a path, a script name, or an interpreter that
-/// reads its program from a file. The text of that file is not here, so the
-/// programs it runs are not named here either.
-pub(super) fn runs_a_program_file(shell: &str) -> bool {
-    without_redirections(shell)
-        .split(|character: char| {
-            matches!(
-                character,
-                ';' | '&' | '|' | '(' | ')' | '{' | '}' | '\n' | '`'
-            )
-        })
-        .any(|piece| piece_program_file(piece, true))
-}
-
-/// Whether a piece of shell text takes the program it runs from a file this
-/// scan never read. `files_run` also counts a file standing in the command
-/// position itself, the way a launcher's own program scan always counts one:
-/// `./deploy.sh` is a file where `npm` is a program on the path.
-fn piece_program_file(piece: &str, files_run: bool) -> bool {
     let words: Vec<&str> = piece
         .split_whitespace()
         .map(|word| word.trim_matches(['\'', '"']))
@@ -202,9 +157,6 @@ fn piece_program_file(piece: &str, files_run: bool) -> bool {
     };
     if is_launcher(program) {
         return prefix_reads_a_program_file(&words);
-    }
-    if files_run && (program.contains(['/', '\\']) || names_a_script(program)) {
-        return true;
     }
     reads_a_program_file(&words, 0)
 }

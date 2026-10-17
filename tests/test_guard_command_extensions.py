@@ -930,10 +930,13 @@ def test_discovery_artifact_cannot_authorize_unbound_permission_layers(tmp_path:
             "allow",
         ),
         ("gh repo sync example/project --force", (), "block"),
+        # A shell carrying its whole script is still a shell, so the grant
+        # written for the bare command does not cover it and the wrapped form
+        # keeps the floor the bare command reaches with no grant at all.
         (
             "sh -c 'gh pr merge 5115 --repo example/project --squash --auto'",
             ("command.github.permission.merge-remote",),
-            "block",
+            "require-reapproval",
         ),
     ),
 )
