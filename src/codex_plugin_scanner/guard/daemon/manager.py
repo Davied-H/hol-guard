@@ -2621,7 +2621,17 @@ def _guard_daemon_pid_is_spawned_launch(pid: int, expected_pid: int) -> bool:
         return False
     if pid == expected_pid:
         return True
-    return _guard_daemon_parent_pid(pid) == expected_pid and _guard_daemon_pid_is_running(expected_pid)
+    if not _guard_daemon_pid_is_running(expected_pid):
+        return False
+    if os.name == "nt":
+        # Windows does not prove a parent pid. The onefile bootloader that
+        # Desktop spawned and the daemon child that published state share one
+        # serve command for this home and port. That is the same attribution
+        # that keeps the child as still starting, so the first wait can adopt it.
+        from .start_classification import _pid_in_process_tree
+
+        return _pid_in_process_tree(pid, expected_pid)
+    return _guard_daemon_parent_pid(pid) == expected_pid
 
 
 def _guard_daemon_pid_is_proven_dead(pid: int) -> bool:
