@@ -368,7 +368,8 @@
           "src/codex_plugin_scanner/guard/cli/commands_dispatch_trust.py",
           "src/codex_plugin_scanner/guard/cli/render_*.py",
           "src/codex_plugin_scanner/guard/cli/commands_support_service.py",
-          "src/codex_plugin_scanner/guard/cli/approval_commands.py"
+          "src/codex_plugin_scanner/guard/cli/approval_commands.py",
+          "src/codex_plugin_scanner/guard/cli/inventory_list_commands.py"
         ]
       },
       {
@@ -995,6 +996,8 @@
           "_render_diff",
           "_render_receipts",
           "_render_inventory",
+          "_INVENTORY_LIST_TITLES",
+          "_render_inventory_list",
           "_render_policies",
           "_render_advisories",
           "_build_advisory_table",

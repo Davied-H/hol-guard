@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.cli import main
+from codex_plugin_scanner.cli import _build_parser, main
+from codex_plugin_scanner.guard.cli import run_guard_command
 from codex_plugin_scanner.guard.models import GuardArtifact
+from codex_plugin_scanner.guard.runtime.fleet_posture_inventory import inventory_items
 from codex_plugin_scanner.guard.store import GuardStore
 
 pytestmark = [pytest.mark.usefixtures("native_hook_force")]
@@ -23,7 +26,15 @@ def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]
     return rc, captured.out, captured.err
 
 
-def _record(store: GuardStore, *, harness: str, artifact_type: str, name: str, scope: str = "global") -> None:
+def _record(
+    store: GuardStore,
+    *,
+    harness: str,
+    artifact_type: str,
+    name: str,
+    scope: str = "global",
+    now: str = _NOW,
+) -> None:
     store.record_inventory_artifact(
         artifact=GuardArtifact(
             artifact_id=f"{harness}:{scope}:{artifact_type}:{name}",
@@ -36,7 +47,7 @@ def _record(store: GuardStore, *, harness: str, artifact_type: str, name: str, s
         artifact_hash="a" * 64,
         policy_action="allow",
         changed=False,
-        now=_NOW,
+        now=now,
         approved=True,
     )
 
@@ -127,7 +138,7 @@ def test_json_items_have_a_stable_shape(tmp_path: Path, capsys: pytest.CaptureFi
     }
     assert item["source_scope"] == "project"
     assert item["policy_action"] == "allow"
-    assert item["first_seen_at"] == _NOW
+    assert item["first_seen_at"] == "2026-10-16T12:00:00Z"
 
 
 def test_table_output_lists_each_item(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -196,3 +207,56 @@ def test_extension_authoring_and_mcp_serve_parsers_are_unchanged(capsys: pytest.
     help_text = capsys.readouterr().out
     for subcommand in ("generate", "validate", "diff", "apply", "handoff", "list"):
         assert subcommand in help_text
+
+
+def test_list_selection_matches_what_fleet_posture_reports(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    home = tmp_path / "home"
+    store = GuardStore(home)
+    _seed(home)
+    # Same kind, harness, name and path as the plugin above: fleet posture reports it once.
+    _record(store, harness="opencode", artifact_type="extension", name="notify")
+    # Not a harness fleet posture reports on, and a row with an unreadable timestamp.
+    _record(store, harness="not-a-harness", artifact_type="mcp_server", name="stray")
+    _record(store, harness="codex", artifact_type="mcp_server", name="bad-time", now="not-a-time")
+
+    reported = [
+        (item["harness"], item["name"], item["kind"])
+        for item in inventory_items(GuardStore(home), hash_key=b"k" * 32)
+        if item["kind"] in {"plugin", "mcp_server"}
+    ]
+
+    _, mcp_out, _ = _run(capsys, "mcp", "list", "--home", str(home), "--json")
+    _, ext_out, _ = _run(capsys, "extensions", "list", "--home", str(home), "--json")
+    mcp = json.loads(mcp_out)
+    extensions = json.loads(ext_out)
+    listed = [(item["harness"], item["name"]) for item in mcp["items"] + extensions["items"]]
+
+    assert sorted(listed) == sorted((harness, name) for harness, name, _ in reported)
+    assert mcp["count"] == 2
+    assert extensions["count"] == 3
+    assert "stray" not in mcp_out
+    assert "bad-time" not in mcp_out
+
+
+def test_table_shows_markup_in_names_literally(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    home = tmp_path / "home"
+    store = GuardStore(home)
+    _record(store, harness="codex", artifact_type="mcp_server", name="[bold red]loud[/bold red]")
+
+    rc, out, _ = _run(capsys, "mcp", "list", "--home", str(home))
+
+    assert rc == 0
+    assert "[bold" in out  # the cell may wrap, but the brackets must survive
+    assert "[/bold" in out
+
+
+def test_output_goes_to_the_callers_stream(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    home = tmp_path / "home"
+    _seed(home)
+    args = _build_parser("hol-guard", program_mode="guard").parse_args(["mcp", "list", "--home", str(home), "--json"])
+    stream = io.StringIO()
+
+    assert run_guard_command(args, output_stream=stream) == 0
+
+    assert json.loads(stream.getvalue())["count"] == 2
+    assert capsys.readouterr().out == ""

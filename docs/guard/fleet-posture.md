@@ -77,11 +77,13 @@ Turn the setting back on to resume full reporting.
 ### Full inventory requests from Guard Cloud
 
 Guard Cloud can ask for a full inventory by answering a sync with `fleetPostureRequest: {"inventory": "full"}`.
-Guard records the request and sends a `full` inventory on its next sync. The request is cleared only after
-Guard Cloud accepts a report that was not `digest_only`, so a failed sync keeps it pending.
+Guard records the request and starts a full refresh on its next sync. An inventory that fits one request goes
+out as a single `full` report. A larger one is refreshed as `delta` chunks over successive syncs, as described
+above, and the request stays pending until Guard Cloud accepts a report that is not `digest_only`, so a failed
+sync keeps it pending.
 
 The opt-out wins over the request. While `fleet-posture` is `off`, Guard keeps the request queued but still
-sends `digest_only`; the full inventory goes out the first time reporting is turned back on. Installs managed
+sends `digest_only`; the full refresh starts the first time reporting is turned back on. Installs managed
 by an organization cannot opt out, so they honour the request on the next sync.
 
 Installs managed by an organization (MDM-installed Guard) cannot opt out. `settings set fleet-posture off`

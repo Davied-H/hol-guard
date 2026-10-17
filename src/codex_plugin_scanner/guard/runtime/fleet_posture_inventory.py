@@ -57,15 +57,29 @@ def inventory_item_kind(artifact_type: object) -> str | None:
     return _ITEM_KINDS.get(str(artifact_type or ""))
 
 
-def inventory_items(store: GuardStore, *, hash_key: bytes) -> list[dict[str, object]]:
-    """Installed items from the local inventory table, in contract shape.
+@dataclass(frozen=True)
+class ReportableInventoryRow:
+    """A local inventory row that fleet posture reports, with its normalized fields."""
 
-    A failed read raises: an unreadable inventory must not look like an empty one,
-    or an accepted sync would tell Guard Cloud that everything was uninstalled.
+    row: Mapping[str, object]
+    kind: str
+    harness: str
+    name: str
+    first_seen_at: str
+    last_seen_at: str
+    config_path: str | None
+
+
+def reportable_inventory_rows(rows: Iterable[Mapping[str, object]]) -> list[ReportableInventoryRow]:
+    """Rows fleet posture reports: installed, known kind and harness, named, validly timestamped.
+
+    Rows that map to the same kind, harness, name (as sent, at most 200 characters) and config
+    path collapse to the first one.
+    ``inventory_items`` and the ``extensions list`` / ``mcp list`` commands both select through
+    this function, so the commands show exactly what Guard Cloud can receive.
     """
 
-    rows = store.list_inventory()
-    items: dict[str, dict[str, object]] = {}
+    selected: dict[tuple[str, str, str, str], ReportableInventoryRow] = {}
     for row in rows:
         if row.get("removed_at"):
             continue
@@ -80,17 +94,34 @@ def inventory_items(store: GuardStore, *, hash_key: bytes) -> list[dict[str, obj
         last_seen = normalized_timestamp(row.get("last_seen_at"))
         if first_seen is None or last_seen is None:
             continue
-        config_path = row.get("config_path")
+        raw_path = row.get("config_path")
+        config_path = raw_path if isinstance(raw_path, str) and raw_path else None
+        selected.setdefault(
+            (kind, harness, clip(name, 200), config_path or ""),
+            ReportableInventoryRow(row, kind, harness, name, first_seen, last_seen, config_path),
+        )
+    return list(selected.values())
+
+
+def inventory_items(store: GuardStore, *, hash_key: bytes) -> list[dict[str, object]]:
+    """Installed items from the local inventory table, in contract shape.
+
+    A failed read raises: an unreadable inventory must not look like an empty one,
+    or an accepted sync would tell Guard Cloud that everything was uninstalled.
+    """
+
+    items: dict[str, dict[str, object]] = {}
+    for selected in reportable_inventory_rows(store.list_inventory()):
         item: dict[str, object] = {
-            "kind": kind,
-            "name": clip(name, 200),
+            "kind": selected.kind,
+            "name": clip(selected.name, 200),
             "version": None,
-            "hash": normalized_hash(row.get("artifact_hash")),
-            "harness": harness,
-            "source": _ITEM_SOURCES.get(str(row.get("source_scope") or ""), "unknown"),
-            "pathHash": (keyed_digest(hash_key, config_path) if isinstance(config_path, str) and config_path else None),
-            "firstSeenAt": first_seen,
-            "lastSeenAt": last_seen,
+            "hash": normalized_hash(selected.row.get("artifact_hash")),
+            "harness": selected.harness,
+            "source": _ITEM_SOURCES.get(str(selected.row.get("source_scope") or ""), "unknown"),
+            "pathHash": keyed_digest(hash_key, selected.config_path) if selected.config_path else None,
+            "firstSeenAt": selected.first_seen_at,
+            "lastSeenAt": selected.last_seen_at,
         }
         items.setdefault(item_key(item), item)
     return [items[key] for key in sorted(items)]

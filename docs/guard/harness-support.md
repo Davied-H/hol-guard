@@ -173,11 +173,12 @@ harness, the reported kinds that Guard's detectors produce today. `hol-guard ext
 | `kimi` | `mcp_server`, `hook`, `skill` |
 | `grok` | `mcp_server`, `hook`, `skill` |
 | `pi` | `plugin`, `package`, `skill` |
+| `omp` (Oh My Pi) | `plugin`, `package`, `skill` |
 | `zcode` | `mcp_server`, `plugin`, `hook`, `skill` |
 | `devin` | `mcp_server`, `hook`, `skill` |
 | `paseo` | none |
 
-For `codex`, `claude-code`, `cursor`, `gemini`, `kimi`, `grok`, `opencode`, `pi`, `zcode` and `devin`, `skill`
+For `codex`, `claude-code`, `cursor`, `gemini`, `kimi`, `grok`, `opencode`, `pi`, `omp`, `zcode` and `devin`, `skill`
 rows also come from workspace skill discovery, which runs when Guard has a project workspace.
 
 Items are reported only while reporting is on. With `hol-guard settings set fleet-posture off`, Guard sends
