@@ -475,7 +475,8 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         // read.
         Some("transparent_wrapper_not_yet_supported") => {
             let literal = unquoted_literal(&command.normalized_text);
-            !moves_data(&literal) || literal_redirects_only(&command.normalized_text)
+            prefix_launch_only(&literal)
+                && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
         }
         // A lookup in a substitution is the only one that does not run a
         // program, so a command whose substitutions are all lookups reads
@@ -786,6 +787,20 @@ fn command_reads_a_program_file(piece: &str) -> bool {
         return INTERPRETERS.contains(&program.as_str());
     }
     !python_module_launch(&words[1..])
+}
+
+/// Whether the text is a scheduling prefix standing in front of the program it
+/// already names. Every other wrapper the parser leaves uncertain hides
+/// something the floor cannot read: a shell behind `-c` runs a program spelled
+/// in its own argument, `sudo` runs it as somebody else, and an `env` carrying
+/// a live assignment changes what it inherits. Those keep their failure.
+fn prefix_launch_only(literal: &str) -> bool {
+    let words: Vec<&str> = literal.split_whitespace().collect();
+    let Some(first) = words.first() else {
+        return false;
+    };
+    PREFIX_LAUNCHERS.contains(&command_basename(first).as_str())
+        && !interpreter_launch_reads_a_file(literal)
 }
 
 /// Prefixes that run the program the text names after them, changing how it is
