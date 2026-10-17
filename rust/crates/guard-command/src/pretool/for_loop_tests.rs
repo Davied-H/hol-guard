@@ -150,6 +150,12 @@ fn unsupported_loops_fall_back_to_review() {
         "for f in README.md; do mapfile -t f < list; cat $f; done",
         "for f in README.md; do getopts o f; cat $f; done",
         "for f in README.md; do let f=secret; cat $f; done",
+        "for f in README.md; do print -v f report; cat $f; done",
+        "for f in README.md; do getln f; cat $f; done",
+        "for f in README.md; do compgen -V f -W one; cat $f; done",
+        "for f in README.md; do zparseopts -A f; cat $f; done",
+        "for f in README.md; do zstyle -s :x key f; cat $f; done",
+        "for f in README.md; do zformat -a f : one; cat $f; done",
     ] {
         assert_eq!(decide(command).0, "review", "{command}");
     }

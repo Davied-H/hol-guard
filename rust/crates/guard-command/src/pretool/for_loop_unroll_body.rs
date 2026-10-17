@@ -214,11 +214,16 @@ fn assigns(text: &str, name: &str) -> bool {
 
 /// The builtins and keywords that bind the name written beside them.
 /// `command` and `builtin` are here because they run the builtins that do,
-/// and `set` because ksh spells an array assignment `set -A name`.
+/// and `set` because ksh spells an array assignment `set -A name`. The list
+/// is a shell's, not one shell's: zsh stores output in a name with
+/// `print -v`, reads a line with `getln`, and parses options with
+/// `zparseopts`, `zstyle -s` and `zformat -a`, and bash 5.3 fills an array
+/// with `compgen -V`.
 const BINDING_WORDS: &[&str] = &[
     ".",
     "builtin",
     "command",
+    "compgen",
     "coproc",
     "declare",
     "eval",
@@ -226,12 +231,14 @@ const BINDING_WORDS: &[&str] = &[
     "export",
     "float",
     "for",
+    "getln",
     "getopts",
     "integer",
     "let",
     "local",
     "mapfile",
     "nameref",
+    "print",
     "printf",
     "read",
     "readarray",
@@ -243,6 +250,9 @@ const BINDING_WORDS: &[&str] = &[
     "unset",
     "vared",
     "wait",
+    "zformat",
+    "zparseopts",
+    "zstyle",
 ];
 
 fn holds_a_binding_word(text: &str) -> bool {
