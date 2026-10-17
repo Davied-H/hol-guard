@@ -50,6 +50,43 @@ fn exported_values_cannot_change_behind_a_helpers_environment_proof() {
 }
 
 #[test]
+fn shell_state_variables_never_become_ordinary_data() {
+    for name in [
+        "POSIXLY_CORRECT",
+        "LC_COLLATE",
+        "LC_CTYPE",
+        "LANGUAGE",
+        "TZ",
+        "TMOUT",
+        "FUNCNEST",
+        "OPTERR",
+        "HISTFILE",
+        "HISTCONTROL",
+        "MAILPATH",
+        "PS1",
+    ] {
+        for source in [
+            format!("{name}=value; printf x"),
+            format!("for {name} in value; do printf x; done"),
+            format!("printf '%s' \"${name}\""),
+        ] {
+            let mut context = environment();
+            context.insert(name.into(), "value".into());
+            assert!(
+                analyze(&source, &["script.sh".into()], &context).is_err(),
+                "accepted {source}"
+            );
+        }
+    }
+    assert!(analyze(
+        "history_label=value; printf '%s' \"$history_label\"",
+        &["script.sh".into()],
+        &environment()
+    )
+    .is_ok());
+}
+
+#[test]
 fn realistic_dry_and_delete_have_distinct_reachable_operations() {
     let dry = analyze(
         SCRIPT,

@@ -13,6 +13,8 @@ pub(super) fn ordinary_variable(name: &str) -> bool {
         && !name.starts_with("BASH")
         && !name.starts_with("DYLD_")
         && !name.starts_with("LD_")
+        && !name.starts_with("LC_")
+        && !name.starts_with("HIST")
         && !name.starts_with("__HOL_GUARD_")
         && !matches!(
             name,
@@ -28,6 +30,7 @@ pub(super) fn ordinary_variable(name: &str) -> bool {
                 | "GROUPS"
                 | "OPTARG"
                 | "OPTIND"
+                | "OPTERR"
                 | "PIPESTATUS"
                 | "SHLVL"
                 | "PWD"
@@ -40,7 +43,18 @@ pub(super) fn ordinary_variable(name: &str) -> bool {
                 | "SHELLOPTS"
                 | "GLOBIGNORE"
                 | "LANG"
-                | "LC_ALL"
+                | "LANGUAGE"
+                | "TZ"
+                | "TMOUT"
+                | "FUNCNEST"
+                | "POSIXLY_CORRECT"
+                | "IGNOREEOF"
+                | "MAIL"
+                | "MAILPATH"
+                | "MAILCHECK"
+                | "PS1"
+                | "PS2"
+                | "PS3"
                 | "PS4"
                 | "PROMPT_COMMAND"
         )
