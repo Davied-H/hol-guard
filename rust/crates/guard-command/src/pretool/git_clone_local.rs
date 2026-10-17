@@ -138,16 +138,41 @@ fn resolved_source(value: &str, context: super::PathContext<'_>) -> Option<PathB
         Path::new(context.cwd?).join(supplied)
     };
     let source = std::fs::canonicalize(spelled).ok()?;
-    // Git clones a repository, not a directory: either a checkout with its
-    // own `.git`, or a bare repository.
-    let repository = source.join(".git").exists()
-        || (source.join("HEAD").is_file() && source.join("objects").is_dir());
-    let contained = source.starts_with(&home)
-        || source
-            .parent()
-            .is_some_and(|parent| super::git_routes::temporary_checkout_parent(parent, context));
-    (source.is_dir() && repository && contained && !guard_secure_fs::credential_named_path(&source))
-        .then_some(source)
+    // The source already exists, so every directory down to it has to be
+    // the owner's and writable by no one else. A fresh checkout's parent is
+    // enough for a directory being created, which is what
+    // `temporary_checkout_parent` answers for: a repository sitting in the
+    // sticky shared root is one another user may still be able to rewrite
+    // between this proof and the clone.
+    let contained =
+        source.starts_with(&home) || super::git_routes::owned_temporary_directory(&source, context);
+    (source.is_dir()
+        && own_repository_data(&source)
+        && contained
+        && !guard_secure_fs::credential_named_path(&source))
+    .then_some(source)
+}
+
+/// Whether the repository data `git clone` would read is the source's own:
+/// a `.git` directory, or the bare repository itself.
+///
+/// Git clones a repository, not a directory, and it follows whatever the
+/// repository points at. A `.git` file names another Git directory, which a
+/// linked worktree uses and which can sit anywhere; a link in its place does
+/// the same; and `objects/info/alternates` sends the object read to a store
+/// outside the copy. None of those is below the roots this proof bounds the
+/// source to, so each keeps its review.
+fn own_repository_data(source: &Path) -> bool {
+    let git = source.join(".git");
+    let objects = match std::fs::symlink_metadata(&git) {
+        Ok(metadata) if metadata.is_dir() => git.join("objects"),
+        Ok(_) => return false,
+        Err(_) if source.join("HEAD").is_file() => source.join("objects"),
+        Err(_) => return false,
+    };
+    std::fs::symlink_metadata(&objects).is_ok_and(|metadata| metadata.is_dir())
+        && !objects.join("info/alternates").exists()
+        && !objects.join("info/http-alternates").exists()
 }
 
 fn parse(segment: &CommandSegmentV1) -> Option<LocalClone<'_>> {
