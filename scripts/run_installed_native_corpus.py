@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import faulthandler
 import json
 import subprocess
 import sys
@@ -24,15 +25,21 @@ def _require_installed_evaluator() -> None:
 
 
 def _run_installed_worker(worker_index: int) -> runner.WorkerReport:
-    completed = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve()), "--worker", str(worker_index)],
-        check=False,
-        capture_output=True,
-        text=True,
-        # Installed Windows batches include process/ACL overhead absent from
-        # the source runner's POSIX budget; keep the full corpus and a hard cap.
-        timeout=180 if sys.platform == "win32" else runner.WORKER_TIMEOUT_SECONDS,
-    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--worker", str(worker_index)],
+            check=False,
+            capture_output=True,
+            text=True,
+            # Installed Windows batches include process/ACL overhead absent from
+            # the source runner's POSIX budget; keep the full corpus and a hard cap.
+            timeout=180 if sys.platform == "win32" else runner.WORKER_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as error:
+        tail = error.stderr or b""
+        if isinstance(tail, bytes):
+            tail = tail.decode("utf-8", errors="replace")
+        raise ValueError(f"installed native corpus worker {worker_index} timed out: {tail[-2000:]}") from error
     if completed.returncode != 0:
         raise ValueError(f"installed native corpus worker {worker_index} failed: {completed.stderr[-1200:]}")
     try:
@@ -53,7 +60,14 @@ def main() -> int:
     if len(sys.argv) == 1:
         report = runner._coordinator_report()
     elif len(sys.argv) == 3 and sys.argv[1] == "--worker":
-        report = runner._worker_report(int(sys.argv[2]), runner.EVALUATION_SHARD_COUNT)
+        # Stack frames contain no command payloads. Preserve where a worker is
+        # waiting before the unchanged parent deadline terminates it.
+        timeout = 180 if sys.platform == "win32" else runner.WORKER_TIMEOUT_SECONDS
+        faulthandler.dump_traceback_later(max(1, timeout - 10))
+        try:
+            report = runner._worker_report(int(sys.argv[2]), runner.EVALUATION_SHARD_COUNT)
+        finally:
+            faulthandler.cancel_dump_traceback_later()
     else:
         raise SystemExit("usage: run_installed_native_corpus.py [--worker INDEX]")
     print(json.dumps(report, sort_keys=True))
