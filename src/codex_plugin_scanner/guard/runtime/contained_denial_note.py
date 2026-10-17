@@ -56,7 +56,7 @@ CAUSES = (
 
 
 def _word_byte(byte: int) -> bool:
-    return chr(byte).isalnum() or chr(byte) in "/._-"
+    return byte < 0x80 and (chr(byte).isalnum() or chr(byte) in "/._-")
 
 
 def _holds(line: bytes, marker: bytes) -> bool:

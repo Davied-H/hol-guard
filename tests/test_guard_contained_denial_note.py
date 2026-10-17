@@ -31,6 +31,7 @@ _NOTE_NAMES = ("WRITE_NOTE", "EXEC_NOTE", "CONNECT_NOTE", "READ_NOTE", "GENERIC_
         (b"OSError: [Errno 1] Operation not permitted: 'data'", notes.GENERIC_NOTE),
         (b"PermissionError: [Errno 13] Permission denied: 'data'", notes.GENERIC_NOTE),
         (b"AssertionError: expected 2, got 3", None),
+        ("Error: \u201cEPERM\u201d returned".encode(), notes.GENERIC_NOTE),
     ],
     ids=[
         "mkdir",
@@ -47,6 +48,7 @@ _NOTE_NAMES = ("WRITE_NOTE", "EXEC_NOTE", "CONNECT_NOTE", "READ_NOTE", "GENERIC_
         "eperm",
         "eacces",
         "none",
+        "non-ascii-neighbour",
     ],
 )
 def test_each_cause_gets_its_own_note(output: bytes, expected: str | None) -> None:

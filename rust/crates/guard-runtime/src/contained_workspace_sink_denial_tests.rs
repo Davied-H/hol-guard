@@ -69,6 +69,10 @@ fn a_denial_with_no_clear_cause_gets_the_generic_note() {
         note("OSError: [Errno 1] Operation not permitted: 'data'"),
         Some(GENERIC_NOTE)
     );
+    assert_eq!(
+        note("Error: \u{201c}EPERM\u{201d} returned"),
+        Some(GENERIC_NOTE)
+    );
     assert_eq!(note("all tests passed"), None);
     assert_eq!(denial_note(&[]), None);
 }
