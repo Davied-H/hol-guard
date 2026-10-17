@@ -312,6 +312,29 @@ fn write_probe_removes_only_the_file_it_created() {
 }
 
 #[test]
+fn write_probe_removes_only_the_directory_it_created() {
+    let fixture = fixture("probe-directory");
+    check(
+        &fixture,
+        &[
+            "mkdir ~/code/sibling/probe-dir && echo ok; rm -rf ~/code/sibling/probe-dir",
+            "mkdir -p ~/code/sibling/probe-dir && rm -r -- ~/code/sibling/probe-dir",
+            "mkdir -p ~/code/sibling/src/probe && rm -rf ~/code/sibling/src/probe",
+        ],
+        &[
+            "mkdir -p ~/code/sibling/src && rm -rf ~/code/sibling/src",
+            "mkdir -p ~/code/sibling/probe-dir && rm -rf ~/code/sibling/src",
+            "mkdir -p ~/code/sibling/new/../src && rm -rf ~/code/sibling/new/../src",
+            "mkdir -p ~/code/sibling/probe-dir && rm -f ~/code/sibling/probe-dir",
+            "touch ~/code/sibling/probe.txt && rm -rf ~/code/sibling/probe.txt",
+            "mkdir -p ~/code/sibling/probe-dir && cat ~/code/sibling/.env; rm -rf ~/code/sibling/probe-dir",
+            "mkdir -p ~/code/sibling/probe-* && rm -rf ~/code/sibling/probe-*",
+            "rm -rf ~/code/sibling/probe-dir",
+        ],
+    );
+}
+
+#[test]
 fn cd_sequences_prove_reads_in_both_directories() {
     let fixture = fixture("cd-sequence");
     // A `~` operand to `cd` is proven only when the shell's HOME matches the
