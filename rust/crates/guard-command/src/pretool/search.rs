@@ -20,8 +20,9 @@ pub(super) use agent_root::{
 use options::unsafe_search_value;
 pub(super) use rg::{rg_hidden_whitelist_reason, safe_rg_stdin_arguments};
 pub(super) use tree::{
-    safe_glob_operand, safe_literal_bracket_tree, safe_recursive_search_target,
-    safe_recursive_target, safe_unmatched_glob_operand, SECRET_EXTENSIONS,
+    safe_dereferencing_recursive_target, safe_glob_operand, safe_literal_bracket_tree,
+    safe_recursive_search_target, safe_recursive_target, safe_unmatched_glob_operand,
+    SECRET_EXTENSIONS,
 };
 pub(super) use walk_memo::with_walk_memo;
 fn glob_matches(pattern: &[u8], value: &[u8]) -> bool {

@@ -71,6 +71,16 @@ pub(in crate::pretool) fn safe_recursive_search_target(
     safe_recursive_target_excluding(value, context, &[], &[], false, false)
 }
 
+/// Recursive comparison (`diff -r`). GNU diff reads through a link it meets
+/// while descending unless it is told not to, so the tree it walks has to be
+/// proven for what it dereferences, not only for what it lists.
+pub(in crate::pretool) fn safe_dereferencing_recursive_target(
+    value: &str,
+    context: ReadContext<'_>,
+) -> bool {
+    safe_recursive_target_excluding(value, context, &[], &[], false, true)
+}
+
 /// `git_metadata` lets a `grep -r` walk read a screened `.git` entry.
 /// `follow_links` is `grep -R`, which reads through every link it finds and so
 /// must prove what they point at; plain `-r` only follows a link named as an
