@@ -14,15 +14,20 @@ import logging
 import time
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..hook_execution_environment import HOOK_EXECUTION_ENVIRONMENT_KEY
 from ..runtime.command_extensions import BUILT_IN_COMMAND_EXTENSION_REGISTRY
-from ..runtime.extension_allow_hint import compute_extension_allow_hint
+from ..runtime.extension_allow_hint import compute_extension_allow_hint, connector_setup_hint
 from ..runtime.extension_control_authority import ExtensionControlAuthorityView
 from ..runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
 from ..runtime.native_command_evaluation import NativeCommandEvaluation, review_command_native
 from .hook_native_exact_action import launch_cwd as _launch_cwd
 from .hook_request_parsing import pre_tool_command, pre_tool_input
+from .native_review_connector import connector_display_name
+
+if TYPE_CHECKING:
+    from ..local_cli_hook import SetupConnector
 
 _LOGGER = logging.getLogger(__name__)
 # Approval persistence and the hook response still need time after the hint.
@@ -85,6 +90,39 @@ def _definite_review_binding(native_result: Mapping[str, object]) -> Mapping[str
     if not isinstance(binding.get("observations_digest"), str):
         return None
     return binding
+
+
+def native_review_hint(
+    store: object,
+    payload: Mapping[str, object],
+    native_result: Mapping[str, object],
+    workspace: Path | None,
+    home_dir: Path | None,
+    deadline: float | None,
+    connector: SetupConnector | None,
+) -> dict[str, object] | None:
+    """The queue-time hint for a paused review: the connector to set up, else the extension allow hint.
+
+    A setup review waits on a CLI Guard does not know, so no command extension
+    permission describes it; the connector hint is the only advice it carries.
+    """
+
+    if connector is not None:
+        return connector_setup_hint(
+            cli_id=connector.cli_id,
+            identity_hash=connector.identity_hash,
+            display_name=connector_display_name(connector),
+            surface=connector.surface,
+            risk_classes=native_result.get("risk_classes"),
+        )
+    return native_review_extension_allow_hint(
+        store,
+        payload=payload,
+        native_result=native_result,
+        workspace=workspace,
+        home_dir=home_dir,
+        deadline=deadline,
+    )
 
 
 def native_review_extension_allow_hint(
@@ -209,4 +247,4 @@ def hint_for_reviewed_command(
     )
 
 
-__all__ = ["hint_for_reviewed_command", "native_review_extension_allow_hint"]
+__all__ = ["hint_for_reviewed_command", "native_review_extension_allow_hint", "native_review_hint"]

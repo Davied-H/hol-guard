@@ -38,6 +38,15 @@ When Guard pauses a command that a built-in command extension already covers, su
 
 The same change is available from the terminal with `hol-guard command controls set <permission-id> --state allow`.
 
+### Connectors that need setup
+
+A request held only because Guard does not recognise the local CLI it launches (for example a user-installed `lanectl`) records which connector it waits on instead of an extension hint. The request page then carries a `connector_recommendation` (`guard.approval-connector-recommendation.v1`) naming the connector and its Protect page (`/extensions/local-cli/<cli-id>`).
+
+- The daemon re-checks it on every read: the request is still pending and in the connector's `connector:<identity-hash>:` group, the stored connector still has the same identity and is still `unset`, and Emergency Lockdown is off. Once the connector is allowed, blocked or forgotten, the recommendation disappears.
+- `status` is `available` only with healthy protection settings and a configured approval gate; otherwise it is `authority_unavailable` or `approval_gate_required`.
+- `caution` is set when any pending request in the same connector group carries a destructive, credential, exfiltration or similar risk class.
+- The recommendation is read-only. Setting the connector up goes through the same local-CLI preview, one-use proof and apply flow as Protect. Hosted dashboard origins never receive it, and agent-facing text never carries its link.
+
 ## Local and Cloud boundary
 
 Local Guard remains the enforcement authority on the device. Local interception, policy evaluation, approvals, local receipts, recovery, Test Lab evaluation, and current-device protection do not depend on a paid Cloud plan. Guard Cloud adds continuity, synchronization, durable history, advanced evidence/search, and team or organization coordination without redefining whether the local device is protected.

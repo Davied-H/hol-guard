@@ -35,7 +35,7 @@ from .hook_native_saved_approval import (
     native_saved_review_response,
 )
 from .hook_request_parsing import pre_tool_command, pre_tool_input
-from .native_review_allow_hint import native_review_extension_allow_hint
+from .native_review_allow_hint import native_review_hint
 from .native_review_connector import connector_agent_reason, native_review_setup_connector, raise_connector_setup_notice
 from .native_review_records import native_review_approval_center_url, record_silent_native_review_event
 
@@ -375,13 +375,8 @@ def queue_native_pre_tool_review(
         action_envelope_json=action_envelope,
         raw_command_text=pre_tool_command(payload),
         queue_group_id=None if connector is None else connector.queue_group_id,
-        extension_allow_hint=native_review_extension_allow_hint(
-            store,
-            payload=payload,
-            native_result=native_result,
-            workspace=workspace,
-            home_dir=home_dir,
-            deadline=deadline,
+        extension_allow_hint=native_review_hint(
+            store, payload, native_result, workspace, home_dir, deadline, connector
         ),
     )
     try:
