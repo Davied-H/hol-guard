@@ -179,6 +179,24 @@ pub(crate) fn secret_bearing_file_name(name: &str) -> bool {
     SECRET_BEARING_STEMS.contains(&bare.split('.').next().unwrap_or(bare))
 }
 
+/// Whether a search pattern can select a file a secret is kept in.
+///
+/// A pattern is not a file name: it selects whatever it matches, so a word the
+/// pattern merely contains is a word the printed names can carry, and
+/// `*config*` reaches `config.toml` as surely as `config.toml` does. The stems
+/// and suffixes [`secret_bearing_file_name`] reads as a whole name are
+/// therefore read here as substrings, and `env` with them, because an
+/// environment file is named for what it holds wherever it sits.
+pub(crate) fn pattern_can_select_secret(pattern: &str) -> bool {
+    let lowered = pattern.to_ascii_lowercase();
+    SECRET_BEARING_STEMS
+        .iter()
+        .chain(SECRET_BEARING_SUFFIXES.iter())
+        .any(|part| lowered.contains(part))
+        || lowered.contains("env")
+        || lowered.contains("id_")
+}
+
 /// Download caches. A cache holds third-party bytes a package manager
 /// fetched, which is not what this rule was opened for, and the package
 /// source rule already refuses to treat one as an install root.

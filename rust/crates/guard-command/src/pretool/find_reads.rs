@@ -145,7 +145,9 @@ const DOCUMENT_SUFFIXES: [&str; 3] = [".md", ".markdown", ".rst"];
 /// the name itself, read the way a file name is read, with the stems and
 /// suffixes a token, key or settings file is written under refused, along
 /// with anything aimed at a hidden entry, which is where a tool keeps its own
-/// login. `.env` files are refused by name rather than by stem, because an
+/// login. A stem or suffix is refused wherever it appears in the pattern, not
+/// only where the name begins with it, so a wildcard cannot be wrapped around
+/// one. `.env` files are refused by name rather than by stem, because an
 /// environment file is named for what it holds wherever it sits.
 ///
 /// The one glob that survives is a document suffix. `find ~/.codex -name
@@ -156,7 +158,7 @@ fn selects_ordinary_names(pattern: &str) -> bool {
     if lowered.starts_with('.')
         || lowered.contains(['/', '\\'])
         || lowered.contains("..")
-        || lowered.contains("env")
+        || crate::credential_store_names::pattern_can_select_secret(&lowered)
     {
         return false;
     }

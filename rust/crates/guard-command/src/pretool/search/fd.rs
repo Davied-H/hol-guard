@@ -61,11 +61,54 @@ fn unsafe_value(role: SearchValueRole, value: &str, context: ReadContext<'_>) ->
     }
 }
 
+/// Whether a names-only `fd` search may start at a home dot-directory.
+///
+/// `fd` refuses every option that would widen such a listing: `--hidden`,
+/// `--follow` and `--exec` are not among the options this screen accepts, so
+/// the search never prints a hidden entry, never leaves the tree through a
+/// link and never runs a program per match. What is left is a name walk whose
+/// output the pattern bounds, the same bound `find` carries where a depth
+/// bound would otherwise be required, under the same two conditions: the root
+/// clears the credential-store screen, and the pattern cannot select the file
+/// a tool keeps its own login in.
+///
+/// `--full-path` and `--absolute-path` match the whole path rather than the
+/// entry name, so a directory prefix satisfies the pattern and it bounds
+/// nothing.
+fn hidden_home_listing(
+    pattern: Option<&str>,
+    path_matching: bool,
+    value: &str,
+    context: ReadContext<'_>,
+) -> bool {
+    pattern.is_some_and(|pattern| {
+        !path_matching
+            && literal_word(pattern)
+            && !crate::credential_store_names::pattern_can_select_secret(pattern)
+            && super::super::read_paths::home_hidden_directory(value, context.home_dir, context.cwd)
+    })
+}
+
+/// A pattern of word characters alone. `fd` reads its pattern as a regular
+/// expression, and one carrying no metacharacter selects the names that hold
+/// that word rather than whatever the tree happens to contain.
+fn literal_word(pattern: &str) -> bool {
+    (3..=128).contains(&pattern.len())
+        && !pattern.starts_with('.')
+        && pattern.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+}
+
 pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) -> bool {
     let mut pending: Option<SearchValueRole> = None;
     let mut options_enabled = true;
-    let mut pattern_seen = false;
+    let mut pattern: Option<&str> = None;
     let mut root_seen = false;
+    let mut path_matching = false;
+    // A root the ordinary screens refuse may still be a home dot-directory the
+    // pattern bounds, which only the whole argument list can answer.
+    let mut deferred: Vec<&str> = Vec::new();
     for argument in arguments {
         if let Some(role) = pending.take() {
             if unsafe_value(role, argument, context) {
@@ -80,6 +123,7 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
         if options_enabled && argument.starts_with("--") {
             let (name, attached) = argument.split_once('=').unwrap_or((argument.as_str(), ""));
             if FLAGS.contains(&name) && attached.is_empty() {
+                path_matching |= matches!(name, "--full-path" | "--absolute-path");
                 continue;
             }
             let Some(role) = value_role(name) else {
@@ -101,6 +145,7 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
         if options_enabled && argument.starts_with('-') && argument.len() > 1 {
             for (offset, option) in argument[1..].char_indices() {
                 if SHORT_FLAGS.contains(&option) {
+                    path_matching |= matches!(option, 'p' | 'a');
                     continue;
                 }
                 let Some(role) = short_value_role(option) else {
@@ -116,16 +161,20 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
             }
             continue;
         }
-        if pattern_seen {
+        if pattern.is_some() {
             if unsafe_root(argument, context) {
-                return false;
+                deferred.push(argument.as_str());
             }
             root_seen = true;
         } else {
-            pattern_seen = true;
+            pattern = Some(argument.as_str());
         }
     }
     // Without a root fd lists the cwd, the same listing as an explicit `.`
     // root, so both spellings get the same decision.
-    pending.is_none() && (root_seen || !unsafe_root(".", context))
+    pending.is_none()
+        && (root_seen || !unsafe_root(".", context))
+        && deferred
+            .iter()
+            .all(|root| hidden_home_listing(pattern, path_matching, root, context))
 }
