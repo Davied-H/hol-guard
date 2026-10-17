@@ -38,6 +38,33 @@ fn reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String {
     .reason_code
 }
 
+/// The same evaluation for a command that spells its directory from home.
+/// A harness stamps the shell's HOME on the way in, and `~` proves only when
+/// that HOME is the declared one; no stamp leaves the runtime reading its own
+/// HOME, which is never a fixture's.
+fn home_reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String {
+    let controls = controls();
+    crate::pretool::evaluate_pre_tool_envelope_with_execution_context(
+        harness,
+        "PreToolUse",
+        &serde_json::json!({"tool_name": "bash", "tool_input": {"command": command}}),
+        Some(&controls),
+        None,
+        crate::pretool::PathContext {
+            home_dir: home.to_str(),
+            cwd: cwd.to_str(),
+            shell_home_matches: true,
+            cdpath_unset: false,
+            rustup_override_absent: false,
+            npm_config_inert: false,
+            ripgrep_config_absent: false,
+            psql_environment: Default::default(),
+        },
+        None,
+    )
+    .reason_code
+}
+
 /// A main checkout, a linked worktree beside it, an unrelated clone and a
 /// plain directory, all below a private home.
 fn fixture() -> (PathBuf, PathBuf, PathBuf) {
@@ -236,6 +263,28 @@ fn worktree_packages(main: &Path, tree: &Path) -> PathBuf {
     outside
 }
 
+/// Agents spell the same directory from home. The proof and the sink expand
+/// an unquoted leading `~` to the same root, so a build written that way is
+/// contained exactly as the absolute spelling of it is.
+#[cfg(unix)]
+#[test]
+fn a_home_spelled_sibling_root_runs_contained_from_that_root() {
+    let (home, main, tree) = fixture();
+    worktree_packages(&main, &tree);
+    for command in [
+        "cd ~/projects/app-report && ./tools/report 2>&1 | tail -15",
+        "cd ~/projects/app-report/scripts && ./report.sh 2>&1 | tail -15",
+        "cd ~/projects/app-report/web && ./node_modules/.bin/report build",
+    ] {
+        assert_eq!(
+            contained(&home_reason("omp", &home, &main, command)),
+            host(),
+            "{command}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(home.parent().unwrap());
+}
+
 #[cfg(unix)]
 #[test]
 fn one_command_below_a_sibling_root_runs_contained_from_that_root() {
@@ -263,11 +312,6 @@ fn one_command_below_a_sibling_root_runs_contained_from_that_root() {
             "cd {0}/web 2>/dev/null; {0}/web/node_modules/.bin/vite build",
             tree.display()
         ),
-        // Agents spell the same directory from home. The proof and the sink
-        // expand an unquoted leading `~` to the same root.
-        "cd ~/projects/app-report && ./tools/report 2>&1 | tail -15".to_owned(),
-        "cd ~/projects/app-report/scripts && ./report.sh 2>&1 | tail -15".to_owned(),
-        "cd ~/projects/app-report/web && ./node_modules/.bin/report build".to_owned(),
     ] {
         assert_eq!(
             contained(&reason("omp", &home, &main, &command)),
