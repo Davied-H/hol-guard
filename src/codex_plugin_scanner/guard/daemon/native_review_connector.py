@@ -75,10 +75,21 @@ def connector_agent_reason(connector: SetupConnector, *, ask: bool) -> str:
     return connector_setup_reason(connector_display_name(connector), connector.surface, ask=ask)
 
 
+def raise_connector_setup_notice(store: object, queued: object, connector: SetupConnector | None) -> None:
+    """The desktop notice for a queued native connector row; an ordinary review raises none here."""
+
+    if connector is None or not isinstance(queued, dict):
+        return
+    from ..approvals import notify_connector_setup
+
+    notify_connector_setup(store, queued, connector_name=connector_display_name(connector))
+
+
 __all__ = [
     "CONNECTOR_SETUP_REQUIRED",
     "NON_RECOGNITION_REASON_CODES",
     "connector_agent_reason",
     "connector_display_name",
     "native_review_setup_connector",
+    "raise_connector_setup_notice",
 ]
