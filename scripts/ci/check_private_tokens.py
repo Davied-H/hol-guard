@@ -20,14 +20,17 @@ MAX_FILE_BYTES = 4 * 1024 * 1024
 
 
 def load_denylist(environ: Mapping[str, str] | None = None) -> list[str]:
-    """Tokens from the first non-empty variable; short tokens are ignored to avoid noise."""
+    """Tokens from the first non-empty variable, in their listed order so entry numbers match the secret.
+
+    Short tokens are ignored to avoid noise.
+    """
     environ = os.environ if environ is None else environ
     for name in ENV_NAMES:
         raw = environ.get(name, "")
         tokens = [token.strip().lower() for token in raw.replace(",", "\n").splitlines()]
         tokens = [token for token in tokens if len(token) >= 3]
         if tokens:
-            return sorted(set(tokens))
+            return list(dict.fromkeys(tokens))
     return []
 
 

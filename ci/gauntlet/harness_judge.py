@@ -265,7 +265,9 @@ def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
     # Only this oracle is screened: ``lane_catalog`` admits it solely to a lane
     # that owns every tool it names, while the other oracles carry their
     # ``required_tools`` for Oh My Pi's grant list and leave the route open.
-    if scenario.oracle == "native-tools":
+    # A ``connector-tool`` case is about the named MCP tool, which no command
+    # list or hooked-tool count covers, so it has to have been called too.
+    if scenario.oracle in {"native-tools", "connector-tool"}:
         unused = sorted(set(scenario.required_tools) - {call.get("tool") for call in calls})
         if unused:
             return "not-exercised", "the model did not use the " + ", ".join(unused) + " tool(s) the case requires"

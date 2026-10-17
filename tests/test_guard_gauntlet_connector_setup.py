@@ -237,3 +237,8 @@ def test_private_token_check_skips_and_never_prints_tokens(tmp_path: Path, capsy
     captured = capsys.readouterr()
     assert "notes.txt:2: matches private denylist entry #1" in captured.out
     assert "secretcodename" not in (captured.out + captured.err).lower()
+
+
+def test_denylist_entry_numbers_follow_the_secret_order() -> None:
+    tokens = check_private_tokens.load_denylist({"GUARD_PRIVATE_TOKEN_DENYLIST": "zeta-name\nalpha-name, zeta-name"})
+    assert tokens == ["zeta-name", "alpha-name"]
