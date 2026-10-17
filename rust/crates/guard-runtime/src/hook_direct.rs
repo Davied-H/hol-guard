@@ -386,8 +386,7 @@ fn answer(
         },
         recording_only,
     };
-    let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
-        .map_err(|_| HookDirectDefer::EdgeFailed)?;
+    let edge = fence::evaluate(envelope, policy_store)?;
     // Removed again unless the answer that runs it is returned.
     let mut snapshot = None;
     let mut answered = match event {
@@ -483,6 +482,8 @@ pub(crate) mod contained;
 mod cursor;
 #[path = "hook_direct_edge.rs"]
 mod edge;
+#[path = "hook_direct_fence.rs"]
+mod fence;
 #[path = "hook_direct_lifecycle.rs"]
 mod lifecycle;
 #[path = "hook_direct_local_cli.rs"]
