@@ -22,18 +22,24 @@ def _install_worker_diagnostics() -> None:
 
     def observe(function, phase):
         count = 0
+        total = 0.0
 
         @wraps(function)
         def call(*args, **kwargs):
-            nonlocal count
+            nonlocal count, total
             count += 1
             started = time.perf_counter()
-            print(f"corpus_phase {phase} batch={count} started", file=sys.stderr, flush=True)
+            print(f"corpus_phase {phase} batch={count} started total={total:.3f}", file=sys.stderr, flush=True)
             try:
                 return function(*args, **kwargs)
             finally:
                 elapsed = time.perf_counter() - started
-                print(f"corpus_phase {phase} batch={count} elapsed={elapsed:.3f}", file=sys.stderr, flush=True)
+                total += elapsed
+                print(
+                    f"corpus_phase {phase} batch={count} elapsed={elapsed:.3f} total={total:.3f}",
+                    file=sys.stderr,
+                    flush=True,
+                )
 
         return call
 
@@ -45,11 +51,15 @@ def _install_worker_diagnostics() -> None:
 
 def _failure_detail(stderr: str) -> str:
     lines = stderr.splitlines()
-    progress = [line for line in lines if line.startswith("corpus_phase ")]
+    progress = {}
+    for line in lines:
+        if line.startswith("corpus_phase "):
+            progress[line.split()[1]] = line
     traceback = "\n".join(line for line in lines if not line.startswith("corpus_phase "))
     # Faulthandler prints the most recent frame first. Later progress must
     # neither displace that frame nor fill the bounded traceback excerpt.
-    return f"{progress[-1] if progress else 'no corpus phase completed'}\n{traceback[:1200]}"
+    summary = "\n".join(progress.values()) if progress else "no corpus phase completed"
+    return f"{summary}\n{traceback[:1200]}"
 
 
 def _require_installed_evaluator() -> None:
