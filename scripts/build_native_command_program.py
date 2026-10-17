@@ -207,6 +207,27 @@ def check_delivery_budgets(*, program: bytes, catalog: bytes) -> None:
         raise ValueError("generated catalog artifact exceeds its delivery budget")
 
 
+def compilation_failure(completed: subprocess.CompletedProcess, paths: list[Path]) -> ValueError:
+    """Keep native source diagnostics without assuming a crash produced JSON."""
+    try:
+        failure = json.loads(completed.stdout)
+    except (ValueError, UnicodeDecodeError):
+        failure = None
+    if isinstance(failure, dict) and isinstance(failure.get("code"), str) and failure["code"]:
+        pointer = failure.get("pointer")
+        location = ""
+        if isinstance(pointer, str) and pointer.startswith("/records/"):
+            index_text = pointer.removeprefix("/records/")
+            if len(index_text) <= 3 and index_text.isascii() and index_text.isdecimal():
+                index = int(index_text)
+                if index < len(paths):
+                    location = f" ({paths[index].relative_to(ROOT)})"
+        detail = f"{location}: {failure['code'][:1024]}"
+    else:
+        detail = ": " + completed.stdout[:1024].decode(errors="replace")
+    return ValueError(f"native source compilation failed (exit {completed.returncode}){detail}")
+
+
 def main() -> int:
     """Build or strictly check projections bound to current native implementation and authored sources."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -257,14 +278,7 @@ def main() -> int:
     with source_stream() as (stream, trust_value, paths):
         completed = subprocess.run(command, stdin=stream, stdout=subprocess.PIPE, cwd=ROOT, timeout=600, check=False)
     if completed.returncode:
-        failure = json.loads(completed.stdout)
-        pointer = failure.get("pointer", "")
-        location = ""
-        if pointer.startswith("/records/") and pointer.removeprefix("/records/").isdigit():
-            index = int(pointer.removeprefix("/records/"))
-            if index < len(paths):
-                location = f" ({paths[index].relative_to(ROOT)})"
-        raise ValueError(f"native source compilation failed{location}: {failure.get('code', 'unknown')}")
+        raise compilation_failure(completed, paths)
     compiled = json.loads(completed.stdout)
     if compiled["catalog_projection_kind"] != "complete":
         raise ValueError("release generation requires a complete catalog")

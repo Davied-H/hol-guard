@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -98,3 +99,27 @@ def test_mcp_record_is_forwarded_raw_for_the_native_validator(generator):
         read_frame(stream)
         assert read_frame(stream) == raw
         assert paths[-1].name == "example.json"
+
+
+@pytest.mark.parametrize("output", [b"", b"panic\xff", b"[]", b"null", b'"error"', b'{"pointer":0}', b'{"code":null}'])
+def test_compiler_crashes_keep_exit_status_and_a_bounded_excerpt(generator, output):
+    failure = generator.compilation_failure(subprocess.CompletedProcess([], -9, output), [])
+    assert isinstance(failure, ValueError)
+    assert "exit -9" in str(failure)
+    assert output[:1024].decode(errors="replace") in str(failure)
+    failure = generator.compilation_failure(subprocess.CompletedProcess([], 2, b"x" * 5000), [])
+    assert len(str(failure)) < 1100
+
+
+@pytest.mark.parametrize("pointer", [None, 0, [], "/records/9999999999", "/records/²"])
+def test_invalid_diagnostic_pointers_cannot_hide_native_errors(generator, pointer):
+    output = json.dumps({"code": "invalid_source", "pointer": pointer}).encode()
+    assert "invalid_source" in str(generator.compilation_failure(subprocess.CompletedProcess([], 2, output), []))
+
+
+def test_structured_failure_names_the_exact_source(generator):
+    paths = [generator.ROOT / "contributions/command-sources/command.one.json"]
+    output = b'{"code":"command_source_json_invalid","pointer":"/records/0"}'
+    failure = generator.compilation_failure(subprocess.CompletedProcess([], 2, output), paths)
+    assert "contributions/command-sources/command.one.json" in str(failure)
+    assert "command_source_json_invalid" in str(failure)

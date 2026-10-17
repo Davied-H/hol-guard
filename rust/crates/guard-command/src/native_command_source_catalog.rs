@@ -87,16 +87,21 @@ pub(super) fn lower_catalog(
     if (sources.is_empty() && mcp_sources.is_empty()) || sources.len() + mcp_sources.len() > 512 {
         return Err("command_source_catalog_bytes_invalid");
     }
+    let mut remaining = json::MAX_SOURCE_BYTES;
     let mut documents: Vec<SourceDocument> = sources
         .iter()
         .map(|bytes| {
-            serde_json::from_value(json::decode(bytes)?)
-                .map_err(|_| "command_source_contract_invalid")
+            let value = json::decode(bytes)?;
+            json::compact_record(&value, &mut remaining)?;
+            serde_json::from_value(value).map_err(|_| "command_source_contract_invalid")
         })
         .collect::<Result<_, _>>()?;
     let mut mcp_documents = mcp_sources
         .iter()
-        .map(|bytes| mcp::lower(bytes))
+        .map(|bytes| {
+            json::compact_record(&json::decode(bytes)?, &mut remaining)?;
+            mcp::lower(bytes)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     mcp_documents.sort_by(|a, b| {
         a.document

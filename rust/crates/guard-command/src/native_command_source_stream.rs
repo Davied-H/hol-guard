@@ -74,6 +74,7 @@ pub fn compile_source_stream(
     let mut commands = Vec::new();
     let mut servers = Vec::new();
     let mut rules = 0usize;
+    let mut remaining = json::MAX_SOURCE_BYTES;
     for record in 0..header.sources + header.mcp_sources {
         let mut ingest = || -> Result<Vec<u8>, &'static str> {
             let bytes = frame(&mut reader)?;
@@ -93,7 +94,7 @@ pub fn compile_source_stream(
             if rules > super::super::MAX_RULES {
                 return Err("command_source_program_rule_budget_exceeded");
             }
-            serde_json::to_vec(&value).map_err(|_| "command_source_encoding_failed")
+            json::compact_record(&value, &mut remaining)
         };
         let bytes = ingest().map_err(|code| SourceStreamError {
             code,
@@ -204,5 +205,33 @@ mod tests {
                 "command_source_stream_header_invalid"
             );
         }
+    }
+
+    #[test]
+    fn rejects_excess_retained_work_before_collecting_the_complete_catalog() {
+        let mut source: Value = serde_json::from_slice(include_bytes!(
+            "../tests/fixtures/command-source-example.v1.json"
+        ))
+        .unwrap();
+        source["extension"]["project_markers"] = json!((0..1280)
+            .map(|index| format!("marker-{index}-{}", "x".repeat(3990)))
+            .collect::<Vec<_>>());
+        let record = serde_json::to_vec(&source).unwrap();
+        assert!(record.len() < json::MAX_SOURCE_BYTES);
+        let second = String::from_utf8(record.clone())
+            .unwrap()
+            .replace("command.example-cli", "command.example-two")
+            .into_bytes();
+        let first = input(&record);
+        let length = u32::from_be_bytes(first[5..9].try_into().unwrap()) as usize;
+        let mut header: Value = serde_json::from_slice(&first[9..9 + length]).unwrap();
+        header["sources"] = json!(2);
+        let mut stream = MAGIC.to_vec();
+        append(&mut stream, &serde_json::to_vec(&header).unwrap());
+        append(&mut stream, &record);
+        append(&mut stream, &second);
+        let error = compile_source_stream(stream.as_slice()).unwrap_err();
+        assert_eq!(error.code, "command_source_catalog_work_budget_exceeded");
+        assert_eq!(error.record, Some(1));
     }
 }
