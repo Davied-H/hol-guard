@@ -264,7 +264,14 @@ fn created_file_probe(model: &CanonicalCommandV1, context: PathContext<'_>) -> b
     let Some(removed) = removed_target(&last.arguments, directory) else {
         return false;
     };
-    if removed != created || sensitive_command(&last.text) || !absent_target(created, context) {
+    // The absence proof expands `~` to home; a quoted `~` stays a relative path
+    // that may name something that already exists.
+    if removed != created
+        || sensitive_command(&last.text)
+        || !super::directory_targets::home_targets_unquoted(first)
+        || !super::directory_targets::home_targets_unquoted(last)
+        || !absent_target(created, context)
+    {
         return false;
     }
     let mut creation = model.clone();
