@@ -78,6 +78,11 @@ for (const width of [1280, 390]) {
     }
 
     await toolbar.getByRole("button", { name: /^Blocked/ }).click();
+    // Editing a row under a setting filter keeps it in view until the view changes.
+    const blockedRows = await detail.locator("article[data-command-id]").count();
+    await detail.getByRole("radiogroup", { name: "db:seed protection setting" })
+      .getByRole("radio", { name: "Allow", exact: true }).click();
+    await expect(detail.locator("article[data-command-id]")).toHaveCount(blockedRows);
     await toolbar.getByRole("searchbox", { name: "Find a script", exact: true }).fill("no-such-script");
     await detail.getByRole("button", { name: "Clear search and filters", exact: true }).click();
     await expect(detail.getByRole("button", { name: "Expand all", exact: true })).toBeVisible();

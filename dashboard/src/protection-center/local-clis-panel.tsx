@@ -193,7 +193,7 @@ export function LocalCliDetail(props: {
             <p className="mt-1 text-sm leading-6 text-slate-600">{continuityCopy(props.item)?.description}</p>
           </div>
         ) : null}
-        {props.item.surface === "mcp" ? (
+        {props.item.surface === "mcp" || !(added || hasSuggestedRules(props.item)) ? (
           <p className="mt-3 max-w-2xl text-sm leading-6 text-brand-dark/75">
             {detailPolicyCopy(props.item.surface)}
           </p>
@@ -353,6 +353,7 @@ export function LocalCliDetail(props: {
             <p role="note" className="mt-2 max-w-2xl text-sm leading-6 text-brand-dark/75">{SUGGESTED_RULES_NOTICE}</p>
           ) : null}
           <CustomExtensionCommandBrowser
+            key={props.item.cli_id}
             commands={commands}
             savedCommands={props.item.commands}
             surface={props.item.surface}

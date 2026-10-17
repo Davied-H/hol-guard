@@ -50,18 +50,40 @@ export function CustomExtensionCommandBrowser(props: BrowserProps) {
     [props.commands, query],
   );
   const counts = useMemo(() => stateFilterCounts(searched, saved), [searched, saved]);
-  const visible = useMemo(
-    () => sortCommands(searched.filter((command) => commandMatchesFilter(command, filter, saved)), sort),
-    [searched, filter, saved, sort],
-  );
+  // Which rows show, and in what order, is decided from the settings at the moment the
+  // view last changed. Editing a row under a setting filter or sort keeps it in place
+  // (and keeps keyboard focus) until the person changes the view or the catalog reloads.
+  const viewKey = [query, filter, sort, props.commands.map((command) => command.command_id).join("\n")].join("\u0000");
+  const [frozen, setFrozen] = useState({ key: viewKey, saved, commands: props.commands });
+  let viewBase = frozen;
+  if (frozen.key !== viewKey || frozen.saved !== saved) {
+    viewBase = { key: viewKey, saved, commands: props.commands };
+    setFrozen(viewBase);
+  }
+  const visible = useMemo(() => {
+    const live = new Map(props.commands.map((command) => [command.command_id, command]));
+    return sortCommands(
+      viewBase.commands.filter((command) => commandMatchesQuery(command, query) && commandMatchesFilter(command, filter, saved)),
+      sort,
+    ).flatMap((command) => live.get(command.command_id) ?? []);
+  }, [viewBase.commands, props.commands, query, filter, saved, sort]);
   const groups = useMemo(() => groupCommands(visible, props.surface), [visible, props.surface]);
   const families = groups.filter((group) => group.commands.length > 1);
   const narrowed = query.trim() !== "" || filter !== "all";
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => (
-    props.commands.length > COLLAPSE_GROUPS_AT
-      ? new Set(groupCommands(props.commands, props.surface).filter((group) => group.commands.length > 1).map((group) => group.key))
-      : new Set()
-  ));
+  const familyKeys = useMemo(
+    () => groupCommands(props.commands, props.surface).filter((group) => group.commands.length > 1).map((group) => group.key),
+    [props.commands, props.surface],
+  );
+  const longCatalog = props.commands.length > COLLAPSE_GROUPS_AT;
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set(longCatalog ? familyKeys : []));
+  // Families a refreshed catalog adds follow the long-catalog default; families the
+  // person already opened or closed keep that choice.
+  const [knownFamilies, setKnownFamilies] = useState<ReadonlySet<string>>(() => new Set(familyKeys));
+  const newFamilies = familyKeys.filter((key) => !knownFamilies.has(key));
+  if (newFamilies.length > 0) {
+    setKnownFamilies(new Set([...knownFamilies, ...newFamilies]));
+    if (longCatalog) setCollapsed((current) => new Set([...current, ...newFamilies]));
+  }
   const anyCollapsed = !narrowed && families.some((group) => collapsed.has(group.key));
   const bulkTargets = visible.filter(props.bulkEligible);
 

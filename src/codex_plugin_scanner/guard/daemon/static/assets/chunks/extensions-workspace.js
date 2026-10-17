@@ -3195,14 +3195,35 @@ function CustomExtensionCommandBrowser(props) {
     [props.commands, query]
   );
   const counts = reactExports.useMemo(() => stateFilterCounts(searched, saved), [searched, saved]);
-  const visible = reactExports.useMemo(
-    () => sortCommands(searched.filter((command) => commandMatchesFilter(command, filter, saved)), sort),
-    [searched, filter, saved, sort]
-  );
+  const viewKey = [query, filter, sort, props.commands.map((command) => command.command_id).join("\n")].join("\0");
+  const [frozen, setFrozen] = reactExports.useState({ key: viewKey, saved, commands: props.commands });
+  let viewBase = frozen;
+  if (frozen.key !== viewKey || frozen.saved !== saved) {
+    viewBase = { key: viewKey, saved, commands: props.commands };
+    setFrozen(viewBase);
+  }
+  const visible = reactExports.useMemo(() => {
+    const live = new Map(props.commands.map((command) => [command.command_id, command]));
+    return sortCommands(
+      viewBase.commands.filter((command) => commandMatchesQuery(command, query) && commandMatchesFilter(command, filter, saved)),
+      sort
+    ).flatMap((command) => live.get(command.command_id) ?? []);
+  }, [viewBase.commands, props.commands, query, filter, saved, sort]);
   const groups = reactExports.useMemo(() => groupCommands(visible, props.surface), [visible, props.surface]);
   const families = groups.filter((group) => group.commands.length > 1);
   const narrowed = query.trim() !== "" || filter !== "all";
-  const [collapsed, setCollapsed] = reactExports.useState(() => props.commands.length > COLLAPSE_GROUPS_AT ? new Set(groupCommands(props.commands, props.surface).filter((group) => group.commands.length > 1).map((group) => group.key)) : /* @__PURE__ */ new Set());
+  const familyKeys = reactExports.useMemo(
+    () => groupCommands(props.commands, props.surface).filter((group) => group.commands.length > 1).map((group) => group.key),
+    [props.commands, props.surface]
+  );
+  const longCatalog = props.commands.length > COLLAPSE_GROUPS_AT;
+  const [collapsed, setCollapsed] = reactExports.useState(() => new Set(longCatalog ? familyKeys : []));
+  const [knownFamilies, setKnownFamilies] = reactExports.useState(() => new Set(familyKeys));
+  const newFamilies = familyKeys.filter((key) => !knownFamilies.has(key));
+  if (newFamilies.length > 0) {
+    setKnownFamilies(/* @__PURE__ */ new Set([...knownFamilies, ...newFamilies]));
+    if (longCatalog) setCollapsed((current) => /* @__PURE__ */ new Set([...current, ...newFamilies]));
+  }
   const anyCollapsed = !narrowed && families.some((group) => collapsed.has(group.key));
   const bulkTargets = visible.filter(props.bulkEligible);
   const toggleGroup = reactExports.useCallback((key) => {
@@ -5859,7 +5880,7 @@ function LocalCliDetail(props) {
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: continuityCopy(props.item)?.title }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-slate-600", children: continuityCopy(props.item)?.description })
       ] }) : null,
-      props.item.surface === "mcp" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 max-w-2xl text-sm leading-6 text-brand-dark/75", children: detailPolicyCopy(props.item.surface) }) : null,
+      props.item.surface === "mcp" || !(added || hasSuggestedRules(props.item)) ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 max-w-2xl text-sm leading-6 text-brand-dark/75", children: detailPolicyCopy(props.item.surface) }) : null,
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-5 flex flex-wrap gap-3", children: [
         added ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
           props.item.state === "allowed" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "inline-flex min-h-11 items-center rounded-xl bg-slate-100 px-4 text-sm font-semibold text-brand-dark", children: props.item.surface === "mcp" ? mcpPermissionStatusLabel(props.nativePublication, props.item.permission_scope) : "Allowed on this device" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "min-h-11 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white", onClick: requestAllow, children: props.item.surface === "mcp" ? "Enable tool permissions" : "Allow this extension's commands" }),
@@ -6027,7 +6048,8 @@ function LocalCliDetail(props) {
           bulkMixedCopy: bulkCopy.mixedCopy,
           onChange: handleCommandState,
           onBulkChange: applyBulk
-        }
+        },
+        props.item.cli_id
       ),
       props.item.surface === "mcp" && bulkTargetCount > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: "Bulk choices apply to listed tools with direct permissions. Execution wrappers and unlisted tools keep their separate review settings." }) : null,
       commandsDirty ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-review-bar", "data-testid": "custom-extension-review-bar", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", children: [
