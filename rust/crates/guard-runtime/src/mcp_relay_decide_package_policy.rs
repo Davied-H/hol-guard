@@ -106,6 +106,7 @@ pub(super) struct ProcessFacts<'a> {
 }
 
 /// What the stored policy settles for a relayed package call.
+#[derive(Clone)]
 pub(super) struct PackagePolicy {
     /// The caller's evaluation with the override's rewrite applied.
     pub(super) evaluation: Map<String, Value>,
