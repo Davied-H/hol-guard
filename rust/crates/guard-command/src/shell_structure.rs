@@ -125,25 +125,30 @@ struct HeredocDecl {
 fn heredoc_declarations(line: &[char], state: &mut ShellScanState) -> Vec<HeredocDecl> {
     let mut matches = Vec::new();
     let mut index = 0usize;
+    // `#` opens a comment only at the start of a word, so the rest of the line
+    // is not shell syntax and cannot declare a heredoc. Quoting state is
+    // unchanged by a comment, so the next line resumes from the break point.
+    //
+    // Word starts are tracked from the scan's own steps rather than from the
+    // preceding character, because `advance` consumes an escape pair or a
+    // quoted span in one step: bash reads `echo a\ #` as the single word
+    // `a #`, where the `#` is not a comment at all.
+    let mut word_start = true;
     while index < line.len() {
         let next_index = state.advance(line, index);
         if next_index != index + 1 {
             index = next_index;
+            word_start = false;
             continue;
         }
-        // `#` opens a comment only at the start of a word, so the rest of the
-        // line is not shell syntax and cannot declare a heredoc. Quoting state
-        // is unchanged by a comment, so the next line resumes from here.
-        if state.is_top_level()
-            && line[index] == '#'
-            && (index == 0
-                || matches!(
-                    line[index - 1],
-                    ' ' | '\t' | ';' | '&' | '|' | '(' | ')' | '<' | '>'
-                ))
-        {
+        if state.is_top_level() && line[index] == '#' && word_start {
             break;
         }
+        let next_word_start = state.is_top_level()
+            && matches!(
+                line[index],
+                ' ' | '\t' | ';' | '&' | '|' | '(' | ')' | '<' | '>'
+            );
         if state.is_top_level()
             && line[index] == '<'
             && line.get(index + 1) == Some(&'<')
@@ -160,10 +165,12 @@ fn heredoc_declarations(line: &[char], state: &mut ShellScanState) -> Vec<Heredo
             };
             if let Some(declaration) = declaration {
                 index = declaration.end;
+                word_start = false;
                 matches.push(declaration);
                 continue;
             }
         }
+        word_start = next_word_start;
         index += 1;
     }
     matches

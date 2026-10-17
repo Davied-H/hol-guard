@@ -187,3 +187,50 @@ fn a_quote_closed_on_a_later_line_restores_heredoc_detection() {
     assert!(!masked.contains("npm install hidden"));
     assert!(masked.contains("npm install after"));
 }
+
+#[test]
+fn an_escaped_delimiter_before_a_hash_does_not_open_a_comment() {
+    // bash reads `a\ #"` as the single word `a #"`, so the quote opens and
+    // stays open across the following lines; nothing may be masked.
+    for header in [
+        "echo a\\ #\"",
+        "echo a\\;#\"",
+        "echo a\\|#\"",
+        "echo a\\\t#\"",
+    ] {
+        let command = format!("{header}\n<<EOF\n\"\nnpm install evil\nEOF");
+        let heredocs = extract_heredocs(&command);
+        assert!(heredocs.is_empty(), "{header}");
+        assert_eq!(
+            mask_heredoc_bodies(&command, &heredocs),
+            command,
+            "{header}"
+        );
+    }
+}
+
+#[test]
+fn a_closing_quote_before_a_hash_does_not_open_a_comment() {
+    // `"x"#` is one word, so the `<<EOF` later on the line still declares.
+    let command = "echo \"x\"# <<EOF\nnpm install hidden\nEOF\nnpm install after";
+    let heredocs = extract_heredocs(command);
+    assert_eq!(heredocs.len(), 1);
+    assert_eq!(heredocs[0].delimiter, "EOF");
+    let masked = mask_complete_heredocs(command, &heredocs);
+    assert!(!masked.contains("npm install hidden"));
+    assert!(masked.contains("npm install after"));
+}
+
+#[test]
+fn an_unescaped_operator_before_a_hash_opens_a_comment() {
+    for header in ["echo a;# <<EOF", "echo a &# <<EOF", "echo a <# <<EOF"] {
+        let command = format!("{header}\nnpm install malicious\nEOF");
+        let heredocs = extract_heredocs(&command);
+        assert!(heredocs.is_empty(), "{header}");
+        assert_eq!(
+            mask_heredoc_bodies(&command, &heredocs),
+            command,
+            "{header}"
+        );
+    }
+}
