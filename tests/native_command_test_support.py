@@ -448,8 +448,10 @@ def real_native_review_fixtures(
         timeout=30,
     )
     assert completed.returncode == 0, completed.stderr.decode(errors="replace")
-    result = json.loads(completed.stdout)
-    del completed  # drop the raw JSON bytes before the parsed rows are retained
+    output = completed.stdout.decode(json.detect_encoding(completed.stdout), "surrogatepass")
+    del completed  # release wire bytes before allocating the parsed rows
+    result = json.loads(output)
+    del output
     assert result["schema"] == "guard.command-extension-evaluation-batch-results.v1"
     binding = result["control_binding"]
     assert binding["program_digest"] == BUILT_IN_COMMAND_EXTENSION_REGISTRY.program_digest
