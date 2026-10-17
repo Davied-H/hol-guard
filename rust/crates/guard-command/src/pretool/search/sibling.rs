@@ -123,10 +123,25 @@ fn no_whitelisting_ancestor(operand: &Path, context: ReadContext<'_>) -> bool {
 struct Ignored {
     anywhere: Vec<String>,
     at_root: Vec<String>,
-    /// Final names of the paths negated patterns re-include. `rg` searches
-    /// such an entry even when it is hidden, so the walk screens hidden
-    /// entries with any of these names wherever they appear.
-    whitelisted: Vec<String>,
+    /// The paths negated patterns re-include. `rg` searches such an entry
+    /// even when it is hidden, so the walk screens the hidden entries they
+    /// name.
+    whitelisted: Vec<Whitelist>,
+}
+
+/// One negated pattern, kept with the scope git gives it.
+///
+/// A pattern anchored to its ignore file's directory, by a leading slash or
+/// by a slash anywhere inside it, re-includes that one path and nothing
+/// else: `!/.env.example` in the root says nothing about `src/.env.example`.
+/// A bare name re-includes every entry of that name below the directory.
+struct Whitelist {
+    /// The directory the ignore file applies to.
+    base: PathBuf,
+    /// The re-included path, relative to `base`, lowercased.
+    relative: PathBuf,
+    /// Whether the name is re-included at any depth below `base`.
+    anywhere: bool,
 }
 
 impl Ignored {
@@ -135,17 +150,28 @@ impl Ignored {
             || (directly_below_root && self.at_root.iter().any(|ignored| ignored == name))
     }
 
-    fn whitelists(&self, name: &str) -> bool {
-        self.whitelisted
-            .iter()
-            .any(|whitelisted| whitelisted.eq_ignore_ascii_case(name))
+    /// Whether a negation re-includes `path`, which the walk reached below
+    /// the directory its ignore file applies to.
+    fn whitelists(&self, path: &Path) -> bool {
+        let lowered =
+            |value: &std::ffi::OsStr| PathBuf::from(value.to_string_lossy().to_lowercase());
+        self.whitelisted.iter().any(|whitelisted| {
+            if whitelisted.anywhere {
+                path.file_name()
+                    .is_some_and(|name| lowered(name) == whitelisted.relative)
+            } else {
+                path.strip_prefix(&whitelisted.base)
+                    .is_ok_and(|relative| lowered(relative.as_os_str()) == whitelisted.relative)
+            }
+        })
     }
 
     /// Reads the `.gitignore` in `directory`, if any, and admits its
-    /// negated patterns.
+    /// negated patterns. They apply to that directory's tree, not to the
+    /// repository's.
     fn admit_ignore_file(&mut self, directory: &Path) -> bool {
         match optional_ignore_lines(&directory.join(".gitignore")) {
-            Some(Some(lines)) => self.admit_negations(&lines),
+            Some(Some(lines)) => self.admit_negations(&lines, directory),
             Some(None) => true,
             None => false,
         }
@@ -158,13 +184,17 @@ impl Ignored {
     /// is one the descendant screen refuses is decided where the walk meets
     /// the file, so a root rule naming a template beside the searched
     /// directory does not answer for a search that never reaches it.
-    fn admit_negations(&mut self, lines: &[String]) -> bool {
+    fn admit_negations(&mut self, lines: &[String], base: &Path) -> bool {
         for line in lines {
             let Some(pattern) = line.strip_prefix('!') else {
                 continue;
             };
-            let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
             let pattern = pattern.strip_suffix('/').unwrap_or(pattern);
+            // Git anchors a pattern to its ignore file's directory as soon as
+            // it carries a slash anywhere but the end, so only a bare name
+            // re-includes entries deeper down.
+            let anchored = pattern.strip_prefix('/').is_some() || pattern.contains('/');
+            let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
             let components: Vec<&str> = pattern.split('/').collect();
             let literal = components.iter().all(|component| plain_name(component));
             let pruned = components.iter().any(|component| {
@@ -173,10 +203,17 @@ impl Ignored {
                     .chain(&self.at_root)
                     .any(|ignored| ignored.eq_ignore_ascii_case(component))
             });
-            let Some(name) = components.last().filter(|_| literal && !pruned) else {
+            if !literal || pruned || (!anchored && components.len() != 1) {
                 return false;
-            };
-            self.whitelisted.push((*name).to_owned());
+            }
+            self.whitelisted.push(Whitelist {
+                base: base.to_path_buf(),
+                relative: components
+                    .iter()
+                    .map(|component| component.to_lowercase())
+                    .collect(),
+                anywhere: !anchored,
+            });
         }
         true
     }
@@ -218,7 +255,8 @@ fn ignored_names(root: &Path) -> Option<Ignored> {
             ignored.anywhere.push(name.to_owned());
         }
     }
-    (ignored.admit_negations(&excludes) && ignored.admit_negations(&lines)).then_some(ignored)
+    (ignored.admit_negations(&excludes, root) && ignored.admit_negations(&lines, root))
+        .then_some(ignored)
 }
 
 /// The git directories whose `info/exclude` `rg` may read: `.git` itself, or
@@ -304,7 +342,7 @@ fn walk(root: &Path, operand: &Path, ignored: &mut Ignored) -> bool {
             }
             // `rg` skips hidden entries unless a negated pattern re-includes
             // them; ignore files themselves were read above.
-            if name == ".gitignore" || (name.starts_with('.') && !ignored.whitelists(name)) {
+            if name == ".gitignore" || (name.starts_with('.') && !ignored.whitelists(&path)) {
                 continue;
             }
             if ignored.prunes(name, directory == root) {

@@ -119,3 +119,19 @@ fn a_root_negation_beside_the_searched_directory_leaves_it_allowed() {
     // The root itself still holds the template the rule re-includes.
     assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", false);
 }
+
+#[test]
+fn an_anchored_negation_decides_only_its_own_path() {
+    let layout = layout("rg-sibling-anchored-negation");
+    let sibling = layout.org.join("service-api");
+    // `!/.env.example` re-includes the root file and says nothing about the
+    // one in `src`, which `rg` keeps skipping as an ordinary hidden entry.
+    write(sibling.join(".gitignore"), ".env*\n!/.env.example\n");
+    write(sibling.join(".env.example"), "TOKEN=fixture\n");
+    write(sibling.join("src/.env.example"), "TOKEN=fixture\n");
+    write(sibling.join("src/main.rs"), "fn main() {} // fixture\n");
+    let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api/src", true);
+    // The search that reaches the root does meet the re-included file.
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", false);
+}
