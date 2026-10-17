@@ -247,6 +247,7 @@ pub(super) fn resolved_path_allowed_for_operation(
     if !resolved_location_allowed(canonical, home_dir, cwd, verified_temporary)
         || !(guard_secure_fs::hidden_read_parts_allowed(canonical)
             || (read_only && guard_secure_fs::hidden_empty_work_tree_file(canonical))
+            || (read_only && project_dotfile_read(canonical, home_dir))
             || guard_safety_doc(canonical, home_dir)
             || (read_only
                 && (agent_skill_document(canonical, home_dir)
@@ -285,6 +286,15 @@ pub(super) fn resolved_read_target_allowed(
         || (!guard_secure_fs::contains_symlink_component(candidate)
             && resolved_location_allowed(canonical, home_dir, cwd, false)
             && resolved_home_hidden_content_read(canonical, home_dir))
+}
+
+/// A project's own dotfile in a checkout, read as the document it is.
+///
+/// The home directory is handed over so a dotfiles repository cannot make the
+/// home directory itself the work tree that admits `~/.claude.json`.
+fn project_dotfile_read(canonical: &std::path::Path, home_dir: Option<&str>) -> bool {
+    let home = home_dir.and_then(|home| std::fs::canonicalize(home).ok());
+    guard_secure_fs::hidden_project_document(canonical, home.as_deref())
 }
 
 /// Every resolved-path screen except the hidden-component one: system roots,

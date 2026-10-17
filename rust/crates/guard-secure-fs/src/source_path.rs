@@ -485,6 +485,100 @@ pub fn hidden_empty_work_tree_file(path: &Path) -> bool {
         .any(|ancestor| fs::symlink_metadata(ancestor.join(".git")).is_ok())
 }
 
+/// Extensions a project writes its own configuration and prose under. A
+/// credential file conventionally carries none of them: `.netrc`, `.npmrc`,
+/// `.pgpass` and `.git-credentials` are named for what they hold and end
+/// there, so requiring one of these already separates a project's documents
+/// from a store of logins.
+const PROJECT_DOCUMENT_EXTENSIONS: &[&str] = &[
+    "cfg", "conf", "ini", "json", "jsonc", "markdown", "md", "toml", "txt", "yaml", "yml",
+];
+
+/// Words that name a tool's own login or keystore rather than a project's
+/// configuration, read over the name's parts so `.mcp.json` and
+/// `.claude.json` keep their review wherever they sit.
+const TOOL_LOGIN_WORDS: &[&str] = &[
+    "agent",
+    "agents",
+    "aider",
+    "claude",
+    "codex",
+    "copilot",
+    "cursor",
+    "docker",
+    "dockercfg",
+    "gnupg",
+    "gpg",
+    "hgrc",
+    "htpasswd",
+    "keychain",
+    "keyring",
+    "keystore",
+    "kube",
+    "kubeconfig",
+    "mcp",
+    "netrc",
+    "npmrc",
+    "omp",
+    "pgpass",
+    "pypirc",
+    "ssh",
+    "vault",
+    "windsurf",
+];
+
+/// A hidden file at the leaf of a git work tree that a project keeps its own
+/// configuration or prose in: `.tsconfig-lb-check.json`, `.release-notes.md`,
+/// `.local-ledger.md`.
+///
+/// A hidden name used to read only from a fixed list, so every project that
+/// spells its own dotfile differently collected an approval nobody could
+/// answer, while the file itself is part of the checkout the agent is already
+/// working in. What stands in for that list is the shape such a file has: an
+/// ordinary document extension, a name carrying no credential marker and none
+/// of the words a tool keeps its own login under, every parent component
+/// visible, and a `.git` above it. The work tree may not be the home
+/// directory itself, where a dotfiles repository would otherwise turn
+/// `~/.claude.json` into a project document.
+pub fn hidden_project_document(path: &Path, home: Option<&Path>) -> bool {
+    if !fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return false;
+    }
+    let parts = lowered_parts(path);
+    let Some((name, parents)) = parts.split_last() else {
+        return false;
+    };
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let tool_login = stem
+        .replace(['-', '.'], "_")
+        .split('_')
+        .any(|word| TOOL_LOGIN_WORDS.contains(&word));
+    if !name.starts_with('.')
+        || name.starts_with(".env")
+        || !PROJECT_DOCUMENT_EXTENSIONS.contains(&extension.as_str())
+        || tool_login
+        || SENSITIVE_SEARCH_BASENAMES.contains(&name.as_str())
+        || EXTERNAL_SENSITIVE_PARTS.contains(&name.as_str())
+        || sensitive_external_filename(path)
+        || !hidden_dir_parts_allowed(parents)
+    {
+        return false;
+    }
+    path.ancestors()
+        .skip(1)
+        .find(|ancestor| fs::symlink_metadata(ancestor.join(".git")).is_ok())
+        .is_some_and(|root| home.is_none_or(|home| root != home))
+}
+
 pub fn source_like(path: &Path) -> bool {
     let parts = lowered_parts(path);
     if parts
