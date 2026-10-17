@@ -1,4 +1,4 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/chunks/home-dashboard-VtwR1O2-.js","assets/chunks/home-protection-module-DnLZeHxL.js","assets/chunks/fleet-workspace-DmDuZHX_.js","assets/chunks/settings-save-proof-modal-BDRsuu6u.js","assets/chunks/harness-version-label-D-kJqJoc.js","assets/chunks/connect-guard-cloud-button-Ba-zt-Qs.js","assets/chunks/settings-workspace-CMFb2h1h.js","assets/chunks/confirm-dialog-y92zau8W.js","assets/chunks/extensions-workspace-DZKEiS-5.js","assets/chunks/app-detail-workspace-B_QHLDM-.js","assets/chunks/policy-workspace-page-BK-l5fNi.js"])))=>i.map(i=>d[i]);
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/chunks/home-dashboard-VdO-EGlw.js","assets/chunks/home-protection-module-BfY_dHFF.js","assets/chunks/fleet-workspace-DmDuZHX_.js","assets/chunks/settings-save-proof-modal-BDRsuu6u.js","assets/chunks/harness-version-label-D-kJqJoc.js","assets/chunks/connect-guard-cloud-button-Ba-zt-Qs.js","assets/chunks/settings-workspace-CMFb2h1h.js","assets/chunks/confirm-dialog-y92zau8W.js","assets/chunks/extensions-workspace-CtV1U2o8.js","assets/chunks/app-detail-workspace-CoZ4TL4T.js","assets/chunks/policy-workspace-page-B5K4R0fr.js"])))=>i.map(i=>d[i]);
 (function polyfill() {
   const relList = document.createElement("link").relList;
   if (relList && relList.supports && relList.supports("modulepreload")) return;
@@ -33808,7 +33808,7 @@ function turnProtectionOnUpdate(snapshot) {
 }
 const McpPolicyRequestPanel = lazyWorkspace(
   "mcp-policy-request-panel",
-  () => __vitePreload(() => import("./chunks/mcp-policy-request-panel-Kwf4Eej3.js"), true ? [] : void 0).then((m) => ({ default: m.McpPolicyRequestPanel }))
+  () => __vitePreload(() => import("./chunks/mcp-policy-request-panel-BJgmcnxo.js"), true ? [] : void 0).then((m) => ({ default: m.McpPolicyRequestPanel }))
 );
 function InboxWatchBanner(props) {
   const { snapshot } = props;
@@ -34206,26 +34206,26 @@ function useRouteFocus(view, mainSelector = "main#main-content") {
     }
   }, [view, mainSelector]);
 }
-const HomeWorkspace = lazyWorkspace("home-dashboard", () => __vitePreload(() => import("./chunks/home-dashboard-VtwR1O2-.js"), true ? __vite__mapDeps([0,1]) : void 0).then((m) => ({ default: m.HomeWorkspace })));
+const HomeWorkspace = lazyWorkspace("home-dashboard", () => __vitePreload(() => import("./chunks/home-dashboard-VdO-EGlw.js"), true ? __vite__mapDeps([0,1]) : void 0).then((m) => ({ default: m.HomeWorkspace })));
 const FleetWorkspace = lazyWorkspace("fleet-workspace", () => __vitePreload(() => import("./chunks/fleet-workspace-DmDuZHX_.js"), true ? __vite__mapDeps([2,3,4,5]) : void 0).then((m) => ({ default: m.FleetWorkspace })));
 const SettingsWorkspace = lazyWorkspace("settings-workspace", () => __vitePreload(() => import("./chunks/settings-workspace-CMFb2h1h.js"), true ? __vite__mapDeps([6,3,7,5]) : void 0).then((m) => ({ default: m.SettingsWorkspace })));
 const ExtensionsWorkspace = lazyWorkspace(
   "extensions-workspace",
-  () => __vitePreload(() => import("./chunks/extensions-workspace-DZKEiS-5.js"), true ? __vite__mapDeps([8,7]) : void 0).then((module) => ({ default: module.ExtensionsWorkspace }))
+  () => __vitePreload(() => import("./chunks/extensions-workspace-CtV1U2o8.js"), true ? __vite__mapDeps([8,7]) : void 0).then((module) => ({ default: module.ExtensionsWorkspace }))
 );
-const AppDetailWorkspace = lazyWorkspace("app-detail-workspace", () => __vitePreload(() => import("./chunks/app-detail-workspace-B_QHLDM-.js"), true ? __vite__mapDeps([9,4]) : void 0).then((m) => ({ default: m.AppDetailWorkspace })));
+const AppDetailWorkspace = lazyWorkspace("app-detail-workspace", () => __vitePreload(() => import("./chunks/app-detail-workspace-CoZ4TL4T.js"), true ? __vite__mapDeps([9,4]) : void 0).then((m) => ({ default: m.AppDetailWorkspace })));
 const HelpModal = lazyWorkspace("help-modal", () => __vitePreload(() => import("./chunks/help-modal-Br79wbUv.js"), true ? [] : void 0).then((m) => ({ default: m.HelpModal })));
 const SupplyChainHubWorkspace = lazyWorkspace(
   "supply-chain-hub-workspace",
-  () => __vitePreload(() => import("./chunks/supply-chain-hub-workspace-uPKLV9zW.js").then((n) => n.d), true ? [] : void 0).then((m) => ({ default: m.SupplyChainHubWorkspace }))
+  () => __vitePreload(() => import("./chunks/supply-chain-hub-workspace-BfyRy8tm.js").then((n) => n.d), true ? [] : void 0).then((m) => ({ default: m.SupplyChainHubWorkspace }))
 );
 const PolicyWorkspacePage = lazyWorkspace(
   "policy-workspace-page",
-  () => __vitePreload(() => import("./chunks/policy-workspace-page-BK-l5fNi.js"), true ? __vite__mapDeps([10,5]) : void 0).then((m) => ({ default: m.PolicyWorkspacePage }))
+  () => __vitePreload(() => import("./chunks/policy-workspace-page-B5K4R0fr.js"), true ? __vite__mapDeps([10,5]) : void 0).then((m) => ({ default: m.PolicyWorkspacePage }))
 );
 const AboutWorkspace = lazyWorkspace(
   "about-workspace",
-  () => __vitePreload(() => import("./chunks/about-workspace-BlriyIS7.js"), true ? [] : void 0).then((m) => ({ default: m.AboutWorkspace }))
+  () => __vitePreload(() => import("./chunks/about-workspace--j1pyeRc.js"), true ? [] : void 0).then((m) => ({ default: m.AboutWorkspace }))
 );
 const ProtectionRepairPage = lazyWorkspace(
   "protection-repair-page",
@@ -35205,16 +35205,16 @@ export {
   HiMiniFolder as bN,
   FaWindows as bO,
   FaAws as bP,
-  isBulkApproveGateReady as bQ,
-  HiMiniArrowLeft as bR,
-  HiMiniPlus as bS,
-  startGuardCloudConnect as bT,
-  HiMiniArrowTopRightOnSquare as bU,
-  fetchExtensionControlApi as bV,
-  fetchExtensionDiscoveryApi as bW,
-  HiMiniArrowRight as bX,
-  HiMiniClock as bY,
-  HiMiniCheck as bZ,
+  HiMiniPlus as bQ,
+  HiMiniCheck as bR,
+  isBulkApproveGateReady as bS,
+  HiMiniArrowLeft as bT,
+  startGuardCloudConnect as bU,
+  HiMiniArrowTopRightOnSquare as bV,
+  fetchExtensionControlApi as bW,
+  fetchExtensionDiscoveryApi as bX,
+  HiMiniArrowRight as bY,
+  HiMiniClock as bZ,
   HiMiniFunnel as b_,
   isRecord$3 as ba,
   fetchWithGuardAuth as bb,
