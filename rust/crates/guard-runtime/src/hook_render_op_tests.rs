@@ -251,3 +251,33 @@ fn terminal_policy_action_kind_requires_an_evaluation_object() {
     assert_eq!(result.status, "error");
     assert_eq!(result.code, "native_hook_render_invalid");
 }
+
+#[test]
+fn cursor_after_shell_observed_kind_answers_whether_the_command_already_ran() {
+    let mut req = request("cursor_after_shell_observed");
+    req.cli = Some(json!({
+        "payload": {"event": "afterShellExecution", "duration": 4},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], true);
+
+    // A before-event carries no report of a finished command.
+    req.cli = Some(json!({
+        "payload": {"event": "beforeShellExecution", "command": "ls"},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], false);
+}
+
+#[test]
+fn cursor_after_shell_observed_kind_requires_a_payload_object() {
+    let mut req = request("cursor_after_shell_observed");
+    req.cli = Some(json!({"payload": "afterShellExecution"}));
+    let result = decode(evaluate_hook_render_request(&req).expect("encoded"));
+    assert_eq!(result.status, "error");
+    assert_eq!(result.code, "native_hook_render_invalid");
+}

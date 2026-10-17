@@ -136,6 +136,42 @@ def native_evaluation_has_terminal_policy_action(
     return value if isinstance(value, bool) else None
 
 
+# The payload fields the after-shell rule reads to judge a Cursor report.
+_AFTER_SHELL_PAYLOAD_FIELDS = (
+    "duration",
+    "event",
+    "hook_event_name",
+    "hookEventName",
+    "hook_name",
+    "output",
+    "result_json",
+)
+
+
+def native_cursor_after_shell_observed(
+    harness: str,
+    payload: Mapping[str, object],
+    *,
+    guard_home: Path | None = None,
+) -> bool | None:
+    """Whether this Cursor payload reports a finished command; ``None`` when unavailable.
+
+    The answer gates the step that turns a pending approval into a durable
+    session allowance, so reading a before-event as an after-report would mint
+    an allowance for a command nobody watched finish. The resident reads the
+    payload itself rather than taking the caller's account of it.
+    """
+
+    params: dict[str, object] = {
+        "payload": {key: payload[key] for key in _AFTER_SHELL_PAYLOAD_FIELDS if key in payload}
+    }
+    rendered = native_render_cli("cursor_after_shell_observed", harness, params, guard_home=guard_home)
+    if rendered is None or rendered[1] is None:
+        return None
+    value = rendered[1].get("value")
+    return value if isinstance(value, bool) else None
+
+
 # The payload fields the artifact-id rule reads to name an event.
 _ARTIFACT_ID_PAYLOAD_FIELDS = (
     "source_scope",
@@ -221,6 +257,7 @@ __all__ = [
     "HOOK_RENDER_FEATURE",
     "native_artifact_id_from_event",
     "native_claude_approval_copy",
+    "native_cursor_after_shell_observed",
     "native_evaluation_has_terminal_policy_action",
     "native_render_cli",
     "native_render_pre_tool",

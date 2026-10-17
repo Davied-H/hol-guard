@@ -26,7 +26,8 @@ pub struct HookRenderRequestV1 {
     pub request_id: String,
     /// `pre_tool`, `pre_tool_review`, `recording_only_pre_tool`, `cli_response`,
     /// `cli_document`, `copilot_hook_response`, `claude_approval_copy`,
-    /// `artifact_id` or `terminal_policy_action`.
+    /// `artifact_id`, `terminal_policy_action` or
+    /// `cursor_after_shell_observed`.
     pub kind: String,
     pub harness: String,
     /// The verdict to render; absent for `recording_only_pre_tool`.

@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from .commands_support_hook_state import (
         _append_cursor_pending_shell_key,
         _claude_pending_permission_state_key,
-        _cursor_after_shell_observed,
         _cursor_conversation_id,
         _cursor_pending_shell_state_key,
         _cursor_shell_command_from_payload,
@@ -34,6 +33,7 @@ from ..native_hook_authority_state import (
     hook_authority_state,
     object_field,
 )
+from ..native_hook_render import native_cursor_after_shell_observed
 from ..runtime.approval_context import parse_approval_context_token
 from ..store import _runtime_scoped_exact_match_key, runtime_tool_action_exact_match_context
 from ._commands_shared import *
@@ -318,7 +318,11 @@ def _persist_cursor_native_permission_after_shell(
     # cannot become an allowance.
     if not _cursor_pending_saved_at_is_fresh(store, pending, now):
         return False
-    if not _cursor_after_shell_observed(prepared):
+    # Whether the harness is reporting a finished command is what separates a
+    # pending approval from a durable allowance, and the resident reads that
+    # payload itself. A resident that cannot answer leaves the approval pending
+    # rather than minting an allowance on a guess.
+    if not native_cursor_after_shell_observed(harness, prepared, guard_home=guard_home):
         return False
     if not cursor_after_observer_trusted(
         guard_home=guard_home,

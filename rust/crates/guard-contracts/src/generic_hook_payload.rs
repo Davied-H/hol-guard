@@ -188,6 +188,31 @@ const GENERIC_HOOK_NON_CONTENT_FIELDS: &[&str] = &[
     "user_override",
 ];
 
+/// `_cursor_after_shell_observed`
+/// (`commands_support_hook_state.py:443-453`): whether this Cursor payload is
+/// a report that the command already ran.
+///
+/// It gates the step that turns a pending approval into a durable session
+/// allowance, so reading a before-event as an after-report would mint an
+/// allowance for a command nobody watched finish. A numeric `duration` is the
+/// harness timing its own completed call and settles it on its own; an MCP
+/// execution has to carry a non-blank `result_json`; anything else needs a
+/// string `output`, present even when the command printed nothing. A boolean
+/// is not a duration - JSON keeps the two apart, where Python had to say so.
+pub fn cursor_after_shell_observed(payload: &Map<String, Value>) -> bool {
+    if let Some(duration) = payload.get("duration").and_then(Value::as_f64) {
+        return duration >= 0.0;
+    }
+    let event = hook_event_name(payload).unwrap_or_default().to_lowercase();
+    if event == "aftermcpexecution" {
+        return payload
+            .get("result_json")
+            .and_then(Value::as_str)
+            .is_some_and(|text| !text.trim().is_empty());
+    }
+    payload.get("output").is_some_and(Value::is_string)
+}
+
 /// `_generic_hook_content_key` (`commands_hook_native_generic.py:292-295`):
 /// canonicalize a top-level hook key across snake/camel/kebab transports —
 /// `re.sub(r"(?<!^)(?=[A-Z])", "_", key)` then `-` → `_` then lowercase.
@@ -603,5 +628,45 @@ mod tests {
         assert_eq!(shlex_join(&["a b".into()]), "'a b'");
         assert_eq!(shlex_join(&["it's".into()]), "'it'\"'\"'s'");
         assert_eq!(shlex_join(&["".into()]), "''");
+    }
+
+    #[test]
+    fn after_shell_observed_is_a_report_that_the_command_already_ran() {
+        let observed = |value: Value| {
+            let Value::Object(payload) = value else {
+                unreachable!("test payloads are objects");
+            };
+            cursor_after_shell_observed(&payload)
+        };
+
+        assert!(observed(json!({"duration": 0})));
+        assert!(observed(json!({"duration": 12.5})));
+        assert!(!observed(json!({"duration": -1})));
+        // A boolean is not a timing, so it falls through to the other reads
+        // rather than being treated as a duration of zero.
+        assert!(!observed(json!({"duration": true})));
+        assert!(observed(json!({"duration": true, "output": ""})));
+
+        assert!(observed(
+            json!({"event": "afterMCPExecution", "result_json": "{}"})
+        ));
+        assert!(!observed(
+            json!({"event": "afterMCPExecution", "result_json": "  "})
+        ));
+        assert!(!observed(json!({"event": "afterMCPExecution"})));
+        // An MCP execution is judged on its result, not on an output field it
+        // does not carry.
+        assert!(!observed(
+            json!({"event": "afterMCPExecution", "output": ""})
+        ));
+
+        // A command that printed nothing still reported, so an empty string
+        // output counts and a missing one does not.
+        assert!(observed(
+            json!({"event": "afterShellExecution", "output": ""})
+        ));
+        assert!(!observed(json!({"event": "afterShellExecution"})));
+        assert!(!observed(json!({"output": 3})));
+        assert!(!observed(json!({})));
     }
 }
