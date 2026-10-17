@@ -10,6 +10,12 @@
 //! tokens, else from the same shell model the daemon reads the invocation
 //! with. A launch the daemon rejects as malformed and a catalog read failure
 //! still defer.
+//!
+//! `review_grant` reads the same rule for a review the daemon paused
+//! (`native_local_cli_grant_response`), where a block applies to any review
+//! and an allow lifts only one the caller may override. That lane blocks
+//! nothing it could not check, so a failed identity or grant read leaves the
+//! review standing instead of deferring.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -20,7 +26,7 @@ use serde_json::{Map, Value};
 use super::workspace::python_strip;
 use crate::context_digest_package_scripts::package_json_scripts;
 use crate::local_cli_identify::{identify, Request};
-use block::{Launch, Verdict};
+use block::{Launch, ReviewVerdict, Verdict};
 
 const TOOL_INPUT_FIELDS: [&str; 2] = ["tool_input", "toolInput"];
 const COMMAND_FIELDS: [&str; 4] = ["command", "cmd", "shell_command", "shellCommand"];
@@ -76,17 +82,6 @@ pub(super) fn custom_rule_response(
     }
 }
 
-/// Whether the daemon would read a custom grant for this `PreToolUse`: the
-/// payload names a command and a launch directory, and the command launches a
-/// local CLI. `Err` is any failure the daemon could still resolve to a launch.
-pub(super) fn launches_local_cli(
-    payload: &Map<String, Value>,
-    workspace: &str,
-    home_dir: &str,
-) -> Result<bool, ()> {
-    launch_for(payload, workspace, home_dir).map(|launch| launch.is_some())
-}
-
 /// A local CLI launch with the invocation the daemon derives its command
 /// tokens from.
 struct Launched<'a> {
@@ -112,7 +107,7 @@ impl Launched<'_> {
 
 /// The local CLI the daemon reads a grant for, or `None` when the payload
 /// names no command or launch directory or the command launches none.
-fn launch_for<'a>(
+pub(super) fn launch_for<'a>(
     payload: &'a Map<String, Value>,
     workspace: &str,
     home_dir: &str,
@@ -160,7 +155,12 @@ fn local_launch(command: &str, cwd: &str, home_dir: &str) -> Result<Option<Launc
 /// The grant read the daemon asks the resident for, with the command id it
 /// resolves from the CLI's catalog: the package script tokens select it, and
 /// any other invocation's tokens come from the shell model.
-fn grant(launched: &Launched<'_>, home_dir: &str, guard_home: &str) -> Result<Verdict, ()> {
+fn grant_answer(
+    launched: &Launched<'_>,
+    current_action: &str,
+    home_dir: &str,
+    guard_home: &str,
+) -> Result<Option<Value>, ()> {
     let launch = &launched.launch;
     let catalog =
         crate::local_cli_grant_op::command_catalog(guard_home, &launch.cli_id).map_err(|_| ())?;
@@ -173,13 +173,32 @@ fn grant(launched: &Launched<'_>, home_dir: &str, guard_home: &str) -> Result<Ve
         };
         block::command_selector(&catalog, &tokens)
     };
-    let answer = crate::local_cli_grant_op::decide_allowed_launch(
+    Ok(crate::local_cli_grant_op::decide_launch(
         guard_home,
+        current_action,
         &launch.source,
         command_id.as_deref(),
     )
-    .ok();
-    Ok(block::grant_verdict(launch, answer.as_ref()))
+    .ok())
+}
+
+fn grant(launched: &Launched<'_>, home_dir: &str, guard_home: &str) -> Result<Verdict, ()> {
+    let answer = grant_answer(launched, "allow", home_dir, guard_home)?;
+    Ok(block::grant_verdict(&launched.launch, answer.as_ref()))
+}
+
+/// `native_local_cli_grant_response`: the custom rule the daemon reads for a
+/// reviewed `PreToolUse`, or `None` when no rule applies to the command and
+/// the review stands. Every failure the allowed lane blocks as unverified
+/// leaves the review standing here, as the daemon's own lane does.
+pub(super) fn review_grant(check: &RuleCheck<'_>) -> Option<ReviewVerdict> {
+    let payload = check.payload?;
+    let launched = launch_for(payload, check.workspace, check.home_dir).ok()??;
+    let answer = grant_answer(&launched, "review", check.home_dir, check.guard_home).ok()?;
+    match block::review_verdict(&launched.launch, answer.as_ref()) {
+        ReviewVerdict::Unchanged => None,
+        verdict => Some(verdict),
+    }
 }
 
 /// The daemon's command rule: the first non-blank command field of the tool

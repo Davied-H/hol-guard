@@ -125,12 +125,24 @@ pub(crate) fn decide_allowed_launch(
     source: &LocalCliIdentitySourceV1,
     command_id: Option<&str>,
 ) -> Result<Value, &'static str> {
+    decide_launch(guard_home, "allow", source, command_id)
+}
+
+/// `decide_allowed_launch` for the action the daemon holds the request at:
+/// the review lanes read the same grant, and every action outside
+/// `GRANT_REFINABLE_ACTIONS` answers with no grant.
+pub(crate) fn decide_launch(
+    guard_home: &str,
+    current_action: &str,
+    source: &LocalCliIdentitySourceV1,
+    command_id: Option<&str>,
+) -> Result<Value, &'static str> {
     decide(&LocalCliGrantRequestV1 {
         schema: LOCAL_CLI_GRANT_REQUEST_SCHEMA.to_owned(),
         request_id: String::new(),
         store_path: store_text(guard_home),
         guard_home: guard_home.to_owned(),
-        current_action: "allow".to_owned(),
+        current_action: current_action.to_owned(),
         source: source.clone(),
         command_id: command_id.map(str::to_owned),
     })

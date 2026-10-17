@@ -1,6 +1,7 @@
-use super::block::Launch;
+use super::block::{Launch, ReviewVerdict};
 use super::{
-    custom_rule_response, launch_cwd, launches_local_cli, pre_tool_command, Launched, RuleCheck,
+    custom_rule_response, launch_cwd, launch_for, pre_tool_command, review_grant, Launched,
+    RuleCheck,
 };
 use crate::context_digest_package_scripts::package_json_scripts;
 use guard_contracts::LocalCliIdentitySourceV1;
@@ -130,6 +131,19 @@ impl Case {
             },
         )
     }
+
+    /// The custom rule the daemon reads for a review of `command`.
+    fn review(&self, command: &str) -> Option<ReviewVerdict> {
+        let payload = object(json!({ "tool_input": { "command": command } }));
+        review_grant(&RuleCheck {
+            payload: Some(&payload),
+            harness: "codex",
+            workspace: &self.workspace,
+            home_dir: &self.workspace,
+            guard_home: &self.guard_home,
+            recording_only: false,
+        })
+    }
 }
 
 const COMMANDS: &str = "
@@ -200,8 +214,10 @@ fn an_invocation_without_package_tokens_reads_the_daemon_shell_model() {
 #[test]
 fn only_a_command_that_launches_a_local_cli_reads_a_grant() {
     let case = Case::new("launches", "");
-    let launches =
-        |payload: Value| launches_local_cli(&object(payload), &case.workspace, &case.workspace);
+    let launches = |payload: Value| {
+        launch_for(&object(payload), &case.workspace, &case.workspace)
+            .map(|launch| launch.is_some())
+    };
     assert_eq!(
         launches(json!({ "tool_input": { "command": "npm run build" } })),
         Ok(true)
@@ -335,4 +351,62 @@ fn a_grant_the_resident_cannot_read_answers_as_unverified() {
     assert_eq!(cursor["policy_action"], "block");
     assert_eq!(cursor["reason_code"], "local_cli_extension_unverified");
     assert_eq!(damaged.check("pwd", false), Ok(None));
+}
+
+#[test]
+fn a_review_reads_the_same_grant_the_daemon_refines_it_with() {
+    let none = Case::new("review-none", "");
+    assert_eq!(none.review("npm run build"), None);
+    assert_eq!(none.review("pwd"), None);
+
+    let allowed = Case::new(
+        "review-allowed",
+        "insert into local_cli_grant values ('{cli}', '{hash}', 'allowed');",
+    );
+    assert_eq!(
+        allowed.review("npm run build"),
+        Some(ReviewVerdict::Allowed)
+    );
+
+    let blocked = Case::new(
+        "review-blocked",
+        "insert into local_cli_grant values ('{cli}', '{hash}', 'blocked');",
+    );
+    assert!(matches!(
+        blocked.review("npm run build"),
+        Some(ReviewVerdict::Blocked(_))
+    ));
+
+    // A command grant refines the CLI's own allow, as it does for an allowed
+    // `PreToolUse`.
+    let command = Case::new(
+        "review-command",
+        &format!(
+            "insert into local_cli_grant values ('{{cli}}', '{{hash}}', 'allowed'); {COMMANDS} \
+             insert into local_cli_command_grant values ('{{cli}}', 'build', 'block');"
+        ),
+    );
+    assert!(matches!(
+        command.review("npm run build"),
+        Some(ReviewVerdict::Blocked(_))
+    ));
+}
+
+#[test]
+fn a_review_stands_when_the_grant_cannot_be_read() {
+    // The allowed lane blocks both of these as unverified. A review is
+    // already held, so `native_local_cli_grant_response` leaves it standing.
+    let damaged = Case::new(
+        "review-damaged",
+        "insert into local_cli_grant values ('{cli}', x'00', 'blocked');",
+    );
+    assert_eq!(damaged.review("npm run build"), None);
+
+    let broken = Case::new("review-broken", "");
+    fs::write(
+        Path::new(&broken.guard_home).join("guard.db"),
+        b"not a database",
+    )
+    .unwrap();
+    assert_eq!(broken.review("npm run build"), None);
 }

@@ -72,21 +72,48 @@ pub(super) enum Verdict {
 /// `decide_local_cli_grant` after the resident's grant answer: an answer for
 /// another identity, or none at all, is unverified.
 pub(super) fn grant_verdict(launch: &Launch, answer: Option<&Value>) -> Verdict {
-    let Some(answer) = answer.and_then(Value::as_object) else {
-        return Verdict::Unverified;
-    };
+    match grant_state(launch, answer) {
+        Some("blocked") => Verdict::Blocked(launch.name.clone()),
+        Some("allowed" | "none") => Verdict::Unchanged,
+        _ => Verdict::Unverified,
+    }
+}
+
+/// What the daemon does with a reviewed `PreToolUse` once it read the grant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ReviewVerdict {
+    /// No grant, or no answer the daemon trusts: the review stands, as
+    /// `native_local_cli_grant_response` returns `None` for both.
+    Unchanged,
+    /// A block naming the CLI, which applies to any review.
+    Blocked(String),
+    /// An allow, which lifts only a review the daemon may override.
+    Allowed,
+}
+
+/// `native_local_cli_grant_response`'s reading of the same grant answer: a
+/// review never blocks what it could not check, so every answer the allowed
+/// lane calls unverified leaves the review standing here.
+pub(super) fn review_verdict(launch: &Launch, answer: Option<&Value>) -> ReviewVerdict {
+    match grant_state(launch, answer) {
+        Some("blocked") => ReviewVerdict::Blocked(launch.name.clone()),
+        Some("allowed") => ReviewVerdict::Allowed,
+        _ => ReviewVerdict::Unchanged,
+    }
+}
+
+/// The grant state of an answer the daemon trusts for this launch: the keys
+/// `_decode_payload` requires, for the identity the daemon derived.
+fn grant_state<'a>(launch: &Launch, answer: Option<&'a Value>) -> Option<&'a str> {
+    let answer = answer.and_then(Value::as_object)?;
     if answer.len() != ANSWER_KEYS.len()
         || !ANSWER_KEYS.iter().all(|key| answer.contains_key(*key))
         || answer["cli_id"].as_str() != Some(launch.cli_id.as_str())
         || answer["identity_hash"].as_str() != Some(launch.identity_hash.as_str())
     {
-        return Verdict::Unverified;
+        return None;
     }
-    match answer["state"].as_str() {
-        Some("blocked") => Verdict::Blocked(launch.name.clone()),
-        Some("allowed" | "none") => Verdict::Unchanged,
-        _ => Verdict::Unverified,
-    }
+    answer["state"].as_str()
 }
 
 /// The launch identity the daemon reads a grant for.
@@ -218,7 +245,7 @@ pub(super) fn blocked_reason(name: &str) -> String {
 /// block marked as a blocked reuse, or in Watch the recording-only continue.
 /// `None` when the daemon's render request could exceed its size limit, so
 /// its fixed fallback would answer instead.
-pub(super) fn block_response(
+pub(crate) fn block_response(
     harness: &str,
     result: &Object,
     name: &str,
