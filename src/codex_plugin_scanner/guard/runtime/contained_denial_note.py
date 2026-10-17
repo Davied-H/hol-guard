@@ -23,9 +23,9 @@ SCOPE = (
     "only commands Guard proves safe run directly, outside the sandbox."
 )
 WRITE_NOTE = (
-    _PREFIX + "blocked a write outside the workspace. Only the workspace and $TMPDIR are writable, "
-    "apart from protected paths such as Git configuration. Keep files the command writes "
-    "inside the workspace or $TMPDIR." + SCOPE
+    _PREFIX + "blocked a write outside the workspace. Only the workspace, $TMPDIR and a private "
+    "scratch $HOME are writable, apart from protected paths such as Git configuration. Keep "
+    "files the command writes inside the workspace or $TMPDIR." + SCOPE
 )
 EXEC_NOTE = _PREFIX + "blocked starting a program outside the locations it allows." + SCOPE
 CONNECT_NOTE = _PREFIX + "blocked a network connection. The sandbox has no network access." + SCOPE
@@ -39,8 +39,8 @@ DOCKER_NOTE = (
     "that needs a container runtime cannot run contained." + SCOPE
 )
 GENERIC_NOTE = (
-    _PREFIX + "denied an operation. Only the workspace and $TMPDIR are writable, and there is no "
-    "network, home, PTY or Docker socket access." + SCOPE
+    _PREFIX + "denied an operation. Only the workspace, $TMPDIR and a private scratch $HOME are "
+    "writable, and there is no network, real home directory, PTY or Docker socket access." + SCOPE
 )
 # Words that make a line a denial at all.
 DENIAL_WORDS = (b"eperm", b"eacces", b"operation not permitted", b"permission denied")
