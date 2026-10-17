@@ -8,6 +8,7 @@ import {
   bulkCommandState,
   enrollmentCommandStates,
   filterPackageScriptCommands,
+  packageScriptQueryFrom,
   isLocalCliId,
   normalizeLocalCliItem,
   normalizeLocalCliList,
@@ -304,6 +305,10 @@ assert.deepEqual(
   filterPackageScriptCommands(packageScripts.commands, "guard:audit").map((entry) => entry.name),
   ["guard:reddit-targeting:audit"],
 );
+assert.equal(packageScriptQueryFrom("guard:reddit", packageScripts.commands), "guard:reddit");
+assert.equal(packageScriptQueryFrom("no-such-script", packageScripts.commands), "");
+assert.equal(packageScriptQueryFrom("npm run", packageScripts.commands), "");
+assert.equal(packageScriptQueryFrom("  ", packageScripts.commands), "");
 assert.deepEqual(
   filterPackageScriptCommands(packageScripts.commands, "npm run").map((entry) => entry.name),
   ["guard:reddit-targeting:audit", "build"],
