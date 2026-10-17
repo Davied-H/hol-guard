@@ -58,7 +58,7 @@ fn split_execution_segments_inner(
                         && chars
                             .get(index + 2)
                             .copied()
-                            .is_some_and(opens_brace_command))
+                            .is_some_and(crate::parser_brace_command::opens_brace_command))
                 {
                     return Err("command_substitution_not_yet_supported");
                 }

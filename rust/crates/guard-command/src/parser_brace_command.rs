@@ -18,12 +18,12 @@ pub(crate) fn brace_runs_a_command(text: &str) -> bool {
     })
 }
 
-fn opens_brace_command(character: char) -> bool {
+pub(crate) fn opens_brace_command(character: char) -> bool {
     character.is_whitespace() || character == '|'
 }
 
 /// Spellings whose quoting this reader does not follow. In `$'…'` a `\'` is
-/// an escape that leaves the word open, and a word-initial `#` begins a
+/// an escape that leaves the word open, and a `#` that opens a word begins a
 /// comment that runs to the newline; reading either as a plain single quote
 /// leaves the scan one quote out of step with the shell, which hides the
 /// brace standing behind it. Both fall back to the raw reading, which
@@ -34,12 +34,19 @@ fn quoting_is_beyond_this_reader(text: &str) -> bool {
     }
     let mut previous: Option<char> = None;
     for character in text.chars() {
-        if character == '#' && previous.is_none_or(char::is_whitespace) {
+        if character == '#' && previous.is_none_or(opens_a_word) {
             return true;
         }
         previous = Some(character);
     }
     false
+}
+
+/// What can stand in front of a `#` that begins a comment: Bash takes the
+/// word after an unquoted operator as a fresh word, so `cmd;# note` is a
+/// comment just as `cmd # note` is.
+fn opens_a_word(character: char) -> bool {
+    character.is_whitespace() || matches!(character, ';' | '&' | '|' | '(' | ')' | '<' | '>')
 }
 
 /// The same reading for text that still carries its quotes. A single quote
