@@ -193,11 +193,13 @@ pub(super) fn inspection_arguments<'a>(
             | "config" | "grep" | "ls-tree" | "cat-file" | "show-ref" | "for-each-ref" | "rev-list"
             | "shortlog" | "check-ignore",
         ) => true,
-        // A tag listing and a clean preview only print, but the same two
-        // subcommands also write a tag and remove a file, so each is admitted
-        // only in the spelling its own grammar proves.
+        // A tag listing, a clean preview and a patch check only print, but the
+        // same three subcommands also write a tag, remove a file and patch the
+        // tree, so each is admitted only in the spelling its own grammar
+        // proves.
         Some("tag") => crate::pretool::git_tag_listing::is_listing(&remaining[1..]),
         Some("clean") => crate::pretool::git_clean_preview::is_dry_run(&remaining[1..]),
+        Some("apply") => crate::pretool::git_apply_check::is_check_only(&remaining[1..]),
         _ => false,
     };
     admitted.then_some(remaining)

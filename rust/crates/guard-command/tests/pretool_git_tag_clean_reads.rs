@@ -162,3 +162,87 @@ fn clean_preview_is_allowed_and_removal_stays_reviewed() {
         }
     }
 }
+
+#[test]
+fn apply_check_is_allowed_and_patching_stays_reviewed() {
+    let (root, home, repository) = repository_fixture("apply");
+    let _cleanup = FixtureCleanup(root);
+    let config = repository.join(".git/config");
+    for (settings, command, expected) in [
+        ("", "git apply --check feature.patch", "allow"),
+        ("", "git apply --check -p1 feature.patch", "allow"),
+        ("", "git apply --check --verbose feature.patch", "allow"),
+        ("", "git apply --check --stat feature.patch", "allow"),
+        (
+            "",
+            "git apply --check --whitespace=error feature.patch",
+            "allow",
+        ),
+        (
+            "",
+            "git apply --check --exclude=build/* feature.patch",
+            "allow",
+        ),
+        ("", "git apply --check -- patches/one.diff", "allow"),
+        ("", "git apply --check feature.patch | cat", "allow"),
+        // The check prints its report without a pager or a diff driver.
+        (
+            "[core]\npager = ./synthetic-never-execute\n",
+            "git apply --check feature.patch",
+            "allow",
+        ),
+        // Reading the files the patch names refreshes the index, which
+        // starts a configured monitor.
+        (
+            "[core]\nfsmonitor = ./synthetic-never-execute\n",
+            "git apply --check feature.patch",
+            "review",
+        ),
+        (
+            "[core]\nfsmonitor = false\n",
+            "git apply --check feature.patch",
+            "allow",
+        ),
+        // Every form that writes something, reaches outside the workspace or
+        // carries an option this grammar does not know keeps its review.
+        ("", "git apply feature.patch", "review"),
+        ("", "git apply --check --index feature.patch", "review"),
+        ("", "git apply --check --cached feature.patch", "review"),
+        ("", "git apply --check --3way feature.patch", "review"),
+        ("", "git apply --check --reject feature.patch", "review"),
+        (
+            "",
+            "git apply --check --unsafe-paths feature.patch",
+            "review",
+        ),
+        (
+            "",
+            "git apply --check --directory=src feature.patch",
+            "review",
+        ),
+        (
+            "",
+            "git apply --check --build-fake-ancestor=ancestor feature.patch",
+            "review",
+        ),
+        ("", "git apply --check --output=out feature.patch", "review"),
+        (
+            "",
+            "git apply --check --whitespace=fix feature.patch",
+            "review",
+        ),
+        ("", "git apply --check ../outside.patch", "review"),
+        ("", "git apply --check -", "review"),
+        ("", "git apply --stat feature.patch", "review"),
+    ] {
+        std::fs::write(&config, settings).unwrap();
+        for harness in ["omp", "zcode"] {
+            let decision = decide(harness, command, &home, &repository);
+            if expected == "review" {
+                assert_ne!(decision, "allow", "{harness}: {command}: {settings}");
+            } else {
+                assert_eq!(decision, expected, "{harness}: {command}: {settings}");
+            }
+        }
+    }
+}

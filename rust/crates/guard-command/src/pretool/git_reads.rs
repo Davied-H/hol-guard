@@ -136,6 +136,12 @@ pub(super) fn safe_git_arguments(
         // `core.fsmonitor`, so the configuration probe clears it first.
         return allow_helper_context && super::git_clean_preview::is_dry_run(&arguments[1..]);
     }
+    if subcommand == "apply" {
+        // `--check` reports whether the patch would apply and writes nothing,
+        // but reading the files it names can start a configured
+        // `core.fsmonitor`, so the configuration probe clears it first.
+        return allow_helper_context && super::git_apply_check::is_check_only(&arguments[1..]);
+    }
     if !matches!(
         subcommand,
         "status" | "diff" | "log" | "show" | "rev-parse" | "ls-files" | "remote"
