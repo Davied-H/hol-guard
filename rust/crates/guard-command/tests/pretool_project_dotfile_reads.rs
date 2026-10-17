@@ -91,6 +91,9 @@ fn a_dotfiles_repository_in_the_home_directory_keeps_its_review() {
     assert_decision(&cwd, &layout.home, "cat ~/.shell-aliases.toml", false);
 }
 
+/// A loose dotfile is no project's document, and a repository the home
+/// directory itself sits in does not make it one: the work tree a dotfile
+/// reads under has to be one of the home directory's own.
 #[test]
 fn a_project_dotfile_outside_a_checkout_keeps_its_review() {
     let layout = layout("project-dotfile-loose");
@@ -98,5 +101,7 @@ fn a_project_dotfile_outside_a_checkout_keeps_its_review() {
     std::fs::create_dir_all(&loose).unwrap();
     std::fs::write(loose.join(".scratch-ledger.md"), "# ledger\n").unwrap();
     let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "cat ~/notes/.scratch-ledger.md", false);
+    std::fs::create_dir_all(layout.home.parent().unwrap().join(".git")).unwrap();
     assert_decision(&cwd, &layout.home, "cat ~/notes/.scratch-ledger.md", false);
 }

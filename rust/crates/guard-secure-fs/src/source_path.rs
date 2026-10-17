@@ -537,9 +537,11 @@ const TOOL_LOGIN_WORDS: &[&str] = &[
 /// working in. What stands in for that list is the shape such a file has: an
 /// ordinary document extension, a name carrying no credential marker and none
 /// of the words a tool keeps its own login under, every parent component
-/// visible, and a `.git` above it. The work tree may not be the home
-/// directory itself, where a dotfiles repository would otherwise turn
-/// `~/.claude.json` into a project document.
+/// visible, and a work tree of the home directory's own above it. That work
+/// tree is never the home directory itself, where a dotfiles repository would
+/// otherwise turn `~/.claude.json` into a project document, and never a
+/// checkout above home, which would read every dotfile in the home directory
+/// as that checkout's document.
 pub fn hidden_project_document(path: &Path, home: Option<&Path>) -> bool {
     if !fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file()) {
         return false;
@@ -573,10 +575,22 @@ pub fn hidden_project_document(path: &Path, home: Option<&Path>) -> bool {
     {
         return false;
     }
+    let Some(home) = home else {
+        return false;
+    };
+    // The work tree has to be one of the home directory's own: a walk that
+    // keeps climbing finds whatever repository happens to sit above it, and a
+    // home directory nested in a checkout would turn every dotfile it holds
+    // into that checkout's document. The home directory is never the work
+    // tree either, so a dotfiles repository cannot admit `~/.claude.json`.
     path.ancestors()
         .skip(1)
-        .find(|ancestor| fs::symlink_metadata(ancestor.join(".git")).is_ok())
-        .is_some_and(|root| home.is_none_or(|home| root != home))
+        .take_while(|ancestor| {
+            ancestor
+                .strip_prefix(home)
+                .is_ok_and(|below| below != Path::new(""))
+        })
+        .any(|ancestor| fs::symlink_metadata(ancestor.join(".git")).is_ok())
 }
 
 pub fn source_like(path: &Path) -> bool {
