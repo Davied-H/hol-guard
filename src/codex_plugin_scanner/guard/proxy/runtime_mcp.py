@@ -781,9 +781,7 @@ class RuntimeMcpGuardProxy:
             server_identity=self._session_server_identity(),
             tool_definition=public_tool_definition,
             provider_catalog_hash=(
-                self.store.read_mcp_provider_authority_hash()
-                if composio_names_a_wrapper(tool_name)
-                else None
+                self.store.read_mcp_provider_authority_hash() if composio_names_a_wrapper(tool_name) else None
             ),
         )
         artifact, artifact_hash = identity.artifact, identity.artifact_hash
