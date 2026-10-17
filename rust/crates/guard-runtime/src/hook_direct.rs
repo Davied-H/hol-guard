@@ -93,8 +93,6 @@ const EVENT_NAME_FIELDS: [&str; 6] = [
 ];
 const PRE_TOOL_USE: &str = "PreToolUse";
 const POST_TOOL_USE: &str = "PostToolUse";
-/// The denial the daemon adds a command-control repair link to.
-const REPAIRABLE_BLOCK_REASON: &str = "native_command_control_authority_block";
 const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
 const USER_PROMPT_EVENT_NAMES: [&str; 3] = ["prompt", "userpromptsubmit", "userpromptsubmitted"];
 const CLAUDE_CODE: &str = "claude-code";
@@ -444,7 +442,6 @@ fn answer(
         home_dir: &request_home,
         guard_home: &guard_home,
         recording_only,
-        own_shape: cursor_harness,
     };
     // The daemon's custom block replaces the edge response before it routes
     // a sandbox requirement, so a block also drops any routed snapshot.
@@ -473,7 +470,7 @@ fn answer(
 }
 
 #[path = "hook_direct_claude_permission_text.rs"]
-mod claude_permission_text;
+pub(crate) mod claude_permission_text;
 #[path = "hook_direct_claude_prompt_text.rs"]
 mod claude_prompt_text;
 #[path = "hook_direct_contained.rs"]

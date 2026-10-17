@@ -90,6 +90,40 @@ use wire::*;
 
 type MatchResult = Result<Arc<[usize]>, &'static str>;
 
+/// `ExecutableInvocationMatcher` - one executable matcher, built outside a
+/// compiled program.
+///
+/// Extension review has to decide which discovered operation owns a reviewed
+/// literal invocation. Python answered that with matchers of its own, so a
+/// vector could be bound by one grammar at review time and enforced by
+/// another at run time. This hands that caller the node a compiled program
+/// would hold, matched by the same code.
+#[derive(Debug)]
+pub struct ExecutableInvocationMatcher {
+    node: ExecutableNode,
+}
+
+impl ExecutableInvocationMatcher {
+    /// Builds the matcher from the config an `executable.v1` or
+    /// `executable-path-set.v1` node carries, with the same validation the
+    /// program compiler applies.
+    pub fn from_config(operation: &str, config: Value) -> Result<Self, &'static str> {
+        Ok(Self {
+            node: compile::compile_executable(operation, config)?,
+        })
+    }
+
+    /// Whether any segment of the command matches.
+    pub fn matches(
+        &self,
+        command: &CanonicalCommandV1,
+        deadline: Option<Instant>,
+    ) -> Result<bool, &'static str> {
+        evaluation::executable_evidence(&self.node, command, deadline)
+            .map(|evidence| !evidence.is_empty())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProgramPermission {

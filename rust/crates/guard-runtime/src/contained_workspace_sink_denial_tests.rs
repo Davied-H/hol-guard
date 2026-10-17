@@ -31,6 +31,23 @@ fn each_cause_gets_its_own_note() {
         note("Error: EPERM: operation not permitted, scandir '/home/dev'"),
         Some(READ_NOTE)
     );
+    assert_eq!(
+        note("OSError: [Errno 1] Operation not permitted: '/dev/ptmx'"),
+        Some(PTY_NOTE)
+    );
+    assert_eq!(note("OSError: out of pty devices"), Some(PTY_NOTE));
+    assert_eq!(
+        note("Error: EACCES: permission denied, openpty"),
+        Some(PTY_NOTE)
+    );
+    assert_eq!(
+        note("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"),
+        None
+    );
+    assert_eq!(
+        note("permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock"),
+        Some(DOCKER_NOTE)
+    );
 }
 
 #[test]
@@ -79,8 +96,19 @@ fn a_denial_with_no_clear_cause_gets_the_generic_note() {
 
 #[test]
 fn notes_carry_no_link_or_approval_request() {
-    for note in [WRITE_NOTE, EXEC_NOTE, CONNECT_NOTE, READ_NOTE, GENERIC_NOTE] {
+    for note in [
+        WRITE_NOTE,
+        EXEC_NOTE,
+        CONNECT_NOTE,
+        READ_NOTE,
+        PTY_NOTE,
+        DOCKER_NOTE,
+        GENERIC_NOTE,
+    ] {
         assert!(note.contains("HOL Guard's workspace sandbox"));
+        assert!(note.ends_with(
+            " This applies to every program the command starts, including children of an interpreter; only commands Guard proves safe run directly, outside the sandbox."
+        ));
         assert!(!note.contains("http"));
         assert!(!note.to_ascii_lowercase().contains("approv"));
     }

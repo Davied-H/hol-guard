@@ -125,12 +125,24 @@ pub(crate) fn decide_allowed_launch(
     source: &LocalCliIdentitySourceV1,
     command_id: Option<&str>,
 ) -> Result<Value, &'static str> {
+    decide_launch(guard_home, "allow", source, command_id)
+}
+
+/// `decide_allowed_launch` for the action the daemon holds the request at:
+/// the review lanes read the same grant, and every action outside
+/// `GRANT_REFINABLE_ACTIONS` answers with no grant.
+pub(crate) fn decide_launch(
+    guard_home: &str,
+    current_action: &str,
+    source: &LocalCliIdentitySourceV1,
+    command_id: Option<&str>,
+) -> Result<Value, &'static str> {
     decide(&LocalCliGrantRequestV1 {
         schema: LOCAL_CLI_GRANT_REQUEST_SCHEMA.to_owned(),
         request_id: String::new(),
         store_path: store_text(guard_home),
         guard_home: guard_home.to_owned(),
-        current_action: "allow".to_owned(),
+        current_action: current_action.to_owned(),
         source: source.clone(),
         command_id: command_id.map(str::to_owned),
     })
@@ -179,12 +191,12 @@ fn store_text(guard_home: &str) -> String {
 pub(crate) fn command_catalog(
     guard_home: &str,
     cli_id: &str,
-) -> Result<(BTreeSet<String>, bool), &'static str> {
+) -> Result<BTreeSet<String>, &'static str> {
     let store_path = local_store_read::require_store_path(&store_text(guard_home), guard_home)
         .map_err(store_error)?;
     let Some(connection) = local_store_read::open_read_only(&store_path).map_err(store_error)?
     else {
-        return Ok((BTreeSet::new(), false));
+        return Ok(BTreeSet::new());
     };
     let mut catalog = BTreeSet::new();
     if table_exists(&connection, "local_cli_command")? {
@@ -203,16 +215,7 @@ pub(crate) fn command_catalog(
             catalog.insert(row.map_err(|_| STORE_UNAVAILABLE)?);
         }
     }
-    let blocked = table_exists(&connection, "local_cli_command_grant")?
-        && connection
-            .query_row(
-                "select exists(select 1 from local_cli_command_grant \
-                 where cli_id = ?1 and state = 'block')",
-                params![cli_id],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(|_| STORE_UNAVAILABLE)?;
-    Ok((catalog, blocked))
+    Ok(catalog)
 }
 
 fn outcome(state: GrantState, cli_id: Option<&str>, identity_hash: Option<&str>) -> Value {

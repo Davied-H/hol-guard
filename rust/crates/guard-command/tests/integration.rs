@@ -39,6 +39,7 @@ pub mod pretool_brew_reads;
 pub mod pretool_bun_eval;
 pub mod pretool_cd_canonical_workspace;
 pub mod pretool_chain_temporary_files;
+pub mod pretool_contained_exec_roots;
 pub mod pretool_contained_loopback;
 pub mod pretool_contained_safety_guide;
 pub mod pretool_contained_script_tests;

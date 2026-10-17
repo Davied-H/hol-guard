@@ -1,9 +1,12 @@
 """The note a failed workspace-contained run gets when its output names a denial.
 
 The note names what the sandbox blocked: a write outside the workspace,
-starting a program outside the allowed roots, a network connection, or a
-read outside the workspace. The first output line that names one of those
-picks it; a denial with no clearer cause gets the generic note. Markers
+starting a program outside the allowed roots, a network connection, a read
+outside the workspace, a pseudo-terminal, or the Docker socket. The first
+output line that names one of those picks it; a denial with no clearer cause
+gets the generic note. Every note ends with the scope sentence, so an agent
+can plan: programs the command starts, including children of an interpreter,
+ran contained, and only commands Guard proves safe run directly. Markers
 match whole words, so a path such as `/usr/libexec` or `rewrite.log` names
 no cause, and only errors a sandbox denial produces name one alone. Rust keeps
 the same notes and markers in `contained_workspace_sink_denial.rs`, byte for
@@ -15,23 +18,42 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 _PREFIX = "This command ran inside HOL Guard's workspace sandbox, which "
-WRITE_NOTE = (
-    _PREFIX + "blocked a write outside the workspace. Only the workspace and $TMPDIR are writable, "
-    "apart from protected paths such as Git configuration. Keep files the command writes "
-    "inside the workspace or $TMPDIR."
+SCOPE = (
+    " This applies to every program the command starts, including children of an interpreter; "
+    "only commands Guard proves safe run directly, outside the sandbox."
 )
-EXEC_NOTE = _PREFIX + "blocked starting a program outside the locations it allows."
-CONNECT_NOTE = _PREFIX + "blocked a network connection. The sandbox has no network access."
-READ_NOTE = _PREFIX + "blocked a read outside the workspace, such as the home directory."
+WRITE_NOTE = (
+    _PREFIX + "blocked a write outside the workspace. Only the workspace, $TMPDIR and a private "
+    "scratch $HOME are writable, apart from protected paths such as Git configuration. Keep "
+    "files the command writes inside the workspace or $TMPDIR." + SCOPE
+)
+EXEC_NOTE = _PREFIX + "blocked starting a program outside the locations it allows." + SCOPE
+CONNECT_NOTE = _PREFIX + "blocked a network connection. The sandbox has no network access." + SCOPE
+READ_NOTE = _PREFIX + "blocked a read outside the workspace, such as the home directory." + SCOPE
+PTY_NOTE = (
+    _PREFIX + "blocked opening a pseudo-terminal. The sandbox has no PTY, so a program that needs "
+    "an interactive terminal cannot run contained; use its non-interactive form." + SCOPE
+)
+DOCKER_NOTE = (
+    _PREFIX + "blocked access to the Docker socket. The sandbox never allows Docker, so a command "
+    "that needs a container runtime cannot run contained." + SCOPE
+)
 GENERIC_NOTE = (
-    _PREFIX + "denied an operation. Only the workspace and $TMPDIR are writable, and there is no "
-    "network or home access."
+    _PREFIX + "denied an operation. Only the workspace, $TMPDIR and a private scratch $HOME are "
+    "writable, and there is no network, real home directory, PTY or Docker socket access." + SCOPE
 )
 # Words that make a line a denial at all.
 DENIAL_WORDS = (b"eperm", b"eacces", b"operation not permitted", b"permission denied")
 # Per cause, in order: markers that name the cause alone, then words that name
 # it on a line that also holds a denial word.
 CAUSES = (
+    # A daemon that is merely down prints the same text, so Docker needs a denial word on the line.
+    (DOCKER_NOTE, (), (b"docker daemon",)),
+    (
+        PTY_NOTE,
+        (b"out of pty devices",),
+        (b"/dev/ptmx", b"openpty", b"forkpty", b"posix_openpt"),
+    ),
     (EXEC_NOTE, (b"spawn eperm", b"spawn eacces"), (b"exec", b"execve", b"posix_spawn")),
     (
         CONNECT_NOTE,
