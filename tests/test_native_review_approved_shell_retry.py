@@ -31,6 +31,7 @@ inbox row, not the response, says whether an attempt was reviewed.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -96,7 +97,15 @@ def _approve_then_retry(
     same artifact, and with the working directory known a path operand is one
     of the things a row is bound to.
     """
-    first = worker.review_http_payload(payload=_payload(command, use_id, workspace), **kwargs)
+    # The HTTP bridge supplies a bounded deadline. Supplying it here also
+    # exercises the existing fresh-ACK retry when a grant republishes policy.
+    from codex_plugin_scanner.guard.daemon.hook_worker import WORKSPACE_POLICY_READINESS_TIMEOUT_SECONDS
+
+    first = worker.review_http_payload(
+        payload=_payload(command, use_id, workspace),
+        deadline=time.monotonic() + WORKSPACE_POLICY_READINESS_TIMEOUT_SECONDS,
+        **kwargs,
+    )
     queued = _queued(store, seen)
     assert first["policy_action"] != "allow", first
     assert len(queued) == 1, (first, queued)
@@ -111,7 +120,11 @@ def _approve_then_retry(
         _grant(store, queued[0]["request_id"], workspace)
 
     retry_payload = _payload(retry_command or command, retry_use_id or use_id, workspace)
-    retry = worker.review_http_payload(payload=retry_payload, **kwargs)
+    retry = worker.review_http_payload(
+        payload=retry_payload,
+        deadline=time.monotonic() + WORKSPACE_POLICY_READINESS_TIMEOUT_SECONDS,
+        **kwargs,
+    )
     requeued = _queued(store, seen)
     return {
         "policy_action": retry["policy_action"],
