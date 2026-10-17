@@ -182,17 +182,83 @@ pub(super) fn body_items<'a>(
 }
 
 /// Whether a body item can change the loop variable or `IFS`, so a later
-/// `$NAME` would not expand to the word written in the header. References
-/// are already placeholders here, so any remaining bare `NAME` or `IFS` is a
-/// target for `read`, `printf -v`, `declare`, `unset`, an assignment and so
-/// on. A `-NAME` flag such as `[ -f ... ]` is not a target; an attached
-/// `-vNAME` is.
+/// `$NAME` would not expand to the word written in the header. References are
+/// already placeholders here, so a remaining bare `NAME` or `IFS` is read as
+/// the name `read`, `printf -v`, `declare`, `unset` or an assignment binds. A
+/// `-NAME` flag such as `[ -f ... ]` is not a target; an attached `-vNAME` is.
 pub(super) fn rebinds(item: &str, name: &str) -> bool {
     // Quoting is how a rebinding hides: the shell builds one word out of
     // `o''pt=secret`, while the written text holds no run that spells the
     // name. Scanning both forms covers a name split across quotes and one
     // that quoting would instead join to its neighbour.
-    names_a_target(item, name) || names_a_target(&unquoted(item), name)
+    may_rebind(item, name) || may_rebind(&unquoted(item), name)
+}
+
+/// A bare `NAME` only binds where something in the same item can bind a name:
+/// the word is an assignment, a builtin that takes a name is there, or the
+/// item opens an arithmetic command, which assigns without an `=` sign. A
+/// name the item merely talks about, as in `echo "pkg: $pkg"`, binds nothing.
+fn may_rebind(text: &str, name: &str) -> bool {
+    names_a_target(text, name)
+        && (assigns(text, name) || holds_a_binding_word(text) || text.contains("(("))
+}
+
+/// `NAME=`, `NAME+=` and `NAME[index]=` at the start of a word.
+fn assigns(text: &str, name: &str) -> bool {
+    words(text).any(|word| {
+        word.strip_prefix(name).is_some_and(|rest| {
+            rest.starts_with('=') || rest.starts_with("+=") || rest.starts_with('[')
+        })
+    })
+}
+
+/// The builtins and keywords that bind the name written beside them.
+/// `command` and `builtin` are here because they run the builtins that do,
+/// and `set` because ksh spells an array assignment `set -A name`.
+const BINDING_WORDS: &[&str] = &[
+    ".",
+    "builtin",
+    "command",
+    "coproc",
+    "declare",
+    "eval",
+    "exec",
+    "export",
+    "float",
+    "for",
+    "getopts",
+    "integer",
+    "let",
+    "local",
+    "mapfile",
+    "nameref",
+    "printf",
+    "read",
+    "readarray",
+    "readonly",
+    "select",
+    "set",
+    "source",
+    "typeset",
+    "unset",
+    "vared",
+    "wait",
+];
+
+fn holds_a_binding_word(text: &str) -> bool {
+    words(text).any(|word| {
+        let bare: String = word
+            .chars()
+            .filter(|c| !matches!(c, '\'' | '"' | '\\'))
+            .collect();
+        BINDING_WORDS.contains(&bare.as_str())
+    })
+}
+
+/// The item's words, split where the shell starts a new one.
+fn words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '<' | '>'))
+        .filter(|word| !word.is_empty())
 }
 
 /// The word the shell builds once it removes the quoting, which is the text
