@@ -54,12 +54,19 @@ def _snapshot(health: AuthorityHealth = AuthorityHealth.PROTECTED) -> ExtensionC
 class _Store:
     """Read-only fake: any write raises, so a recommendation can never set a connector up."""
 
-    def __init__(self, siblings: dict[str, dict[str, object]] | None = None) -> None:
+    def __init__(self, siblings: dict[str, dict[str, object]] | None = None, *, other_rows: int = 0) -> None:
         self.siblings = siblings or {}
+        # Newer pending rows from other groups, listed before this connector's rows.
+        self.rows = [{"request_id": f"other-{n}", "queue_group_id": f"other:{n}"} for n in range(other_rows)]
+        self.rows += [{"request_id": key, "queue_group_id": _GROUP} for key in self.siblings]
 
-    def list_approval_requests(self, *, status: str, limit: int) -> list[dict[str, object]]:
-        assert status == "pending"
-        return [{"request_id": key, "queue_group_id": _GROUP} for key in self.siblings]
+    def list_approval_request_page(
+        self, *, status: str, limit: int, cursor: str | None, include_totals: bool
+    ) -> dict[str, object]:
+        assert status == "pending" and not include_totals
+        start = int(cursor or 0)
+        end = start + limit
+        return {"items": self.rows[start:end], "next_cursor": str(end) if end < len(self.rows) else None}
 
     def get_approval_extension_allow_hint(self, request_id: str) -> object:
         return self.siblings.get(request_id)
@@ -126,6 +133,20 @@ def test_queue_time_hint_is_the_connector_for_a_setup_review(monkeypatch: pytest
     )
 
     assert hint == _hint()
+
+
+def test_queue_time_hint_takes_risk_classes_from_observed_rules() -> None:
+    native_result = {
+        "reason_code": "native_command_review_required",
+        "command_extensions": {
+            "observations": [{"rule_id": "command.api-gateway.delete"}, {"rule_id": "command.unknown.rule"}, "bad"],
+        },
+    }
+
+    hint = native_review_allow_hint.native_review_hint(object(), {}, native_result, None, None, None, _CONNECTOR)
+
+    assert hint is not None
+    assert hint["risk_classes"] == ["destructive_shell", "network_egress"]
 
 
 def test_queue_time_hint_without_a_connector_is_the_extension_hint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,6 +217,26 @@ def test_caution_when_any_grouped_row_carries_a_caution_class(monkeypatch: pytes
     assert result is not None
     assert result["caution"] is True
     assert result["caution_risk_classes"] == ["destructive"]
+
+
+def test_caution_reads_grouped_rows_past_the_first_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    _items(monkeypatch)
+    store = _Store({"req-2": _hint(risk_classes=["destructive"])}, other_rows=450)
+
+    result = _build(_approval(_hint()), store)
+
+    assert result is not None and result["caution_risk_classes"] == ["destructive"]
+
+
+def test_caution_when_the_group_scan_stops_early(monkeypatch: pytest.MonkeyPatch) -> None:
+    _items(monkeypatch)
+    monkeypatch.setattr(recommendation, "_MAX_GROUP_SCAN_ROWS", 200)
+    store = _Store({"req-2": _hint()}, other_rows=450)
+
+    result = _build(_approval(_hint()), store)
+
+    # Unread rows are never treated as safe.
+    assert result is not None and result["caution"] is True and result["caution_risk_classes"] == []
 
 
 def test_a_failed_read_never_fails_the_approval(monkeypatch: pytest.MonkeyPatch) -> None:

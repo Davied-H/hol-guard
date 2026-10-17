@@ -92,6 +92,20 @@ def _definite_review_binding(native_result: Mapping[str, object]) -> Mapping[str
     return binding
 
 
+def _observed_risk_classes(native_result: Mapping[str, object]) -> list[str]:
+    """Risk classes of the catalog rules the native evidence observed in this command."""
+
+    evidence = native_result.get("command_extensions")
+    observations = evidence.get("observations") if isinstance(evidence, Mapping) else None
+    classes: list[str] = []
+    for observation in observations if isinstance(observations, list) else []:
+        rule_id = observation.get("rule_id") if isinstance(observation, Mapping) else None
+        rule = BUILT_IN_COMMAND_EXTENSION_REGISTRY.get_rule(rule_id) if isinstance(rule_id, str) else None
+        if rule is not None:
+            classes.extend(rule.risk_classes)
+    return classes
+
+
 def native_review_hint(
     store: object,
     payload: Mapping[str, object],
@@ -113,7 +127,7 @@ def native_review_hint(
             identity_hash=connector.identity_hash,
             display_name=connector_display_name(connector),
             surface=connector.surface,
-            risk_classes=native_result.get("risk_classes"),
+            risk_classes=_observed_risk_classes(native_result),
         )
     return native_review_extension_allow_hint(
         store,

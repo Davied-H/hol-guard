@@ -21,9 +21,10 @@ from ..runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
 from .approval_extension_recommendation import CAUTION_RISK_CLASSES
 
 CONNECTOR_RECOMMENDATION_SCHEMA = "guard.approval-connector-recommendation.v1"
-# Sibling rows read for the caution check; a group past this is still cautioned
-# from what was read, never cleared.
-_MAX_GROUP_ROWS = 200
+# Pending rows read per page, and the most the group scan reads in total. A
+# scan that stops early is cautioned: unread rows are never treated as safe.
+_GROUP_PAGE_ROWS = 200
+_MAX_GROUP_SCAN_ROWS = 2000
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,25 +40,52 @@ def _stored_connector(store: object, cli_id: str, identity_hash: str) -> Mapping
     return None
 
 
+def pending_connector_group_rows(store: object, identity_hash: str) -> tuple[list[Mapping[str, object]], bool]:
+    """Pending rows queued on this connector identity, paging through the whole queue.
+
+    The queue cannot filter by group, so other groups' rows are skipped page by
+    page. Returns the rows and whether every pending row was read; the scan
+    stops after ``_MAX_GROUP_SCAN_ROWS`` rows.
+    """
+
+    pager = getattr(store, "list_approval_request_page", None)
+    if not callable(pager):
+        return [], False
+    prefix = f"connector:{identity_hash}:"
+    rows: list[Mapping[str, object]] = []
+    cursor: str | None = None
+    scanned = 0
+    while scanned < _MAX_GROUP_SCAN_ROWS:
+        page = pager(status="pending", limit=_GROUP_PAGE_ROWS, cursor=cursor, include_totals=False)
+        if not isinstance(page, Mapping):
+            return rows, False
+        items = page.get("items")
+        if not isinstance(items, list):
+            return rows, False
+        scanned += len(items)
+        for row in items:
+            if isinstance(row, Mapping) and str(row.get("queue_group_id") or "").startswith(prefix):
+                rows.append(row)
+        next_cursor = page.get("next_cursor")
+        if not items or not isinstance(next_cursor, str) or not next_cursor:
+            return rows, True
+        cursor = next_cursor
+    return rows, False
+
+
 def _group_risk_classes(
     store: object,
     identity_hash: str,
     current: list[str],
     read_hint: Callable[[str], object],
-) -> set[str]:
+) -> tuple[set[str], bool]:
     classes = set(current)
-    lister = getattr(store, "list_approval_requests", None)
-    if not callable(lister):
-        return classes
-    prefix = f"connector:{identity_hash}:"
-    rows = lister(status="pending", limit=_MAX_GROUP_ROWS)
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, Mapping) or not str(row.get("queue_group_id") or "").startswith(prefix):
-            continue
+    rows, complete = pending_connector_group_rows(store, identity_hash)
+    for row in rows:
         hint = validated_connector_setup_hint(read_hint(str(row.get("request_id", ""))))
         if hint is not None and hint["identity_hash"] == identity_hash:
             classes.update(_strings(hint["risk_classes"]))
-    return classes
+    return classes, complete
 
 
 def build_approval_connector_recommendation(
@@ -87,7 +115,7 @@ def build_approval_connector_recommendation(
     if surface != hint["surface"]:
         return None
     reader = getattr(store, "get_approval_extension_allow_hint", None)
-    risk_classes = _group_risk_classes(
+    risk_classes, scanned_all = _group_risk_classes(
         store,
         identity_hash,
         _strings(hint["risk_classes"]),
@@ -111,7 +139,7 @@ def build_approval_connector_recommendation(
         # Recomputed from the stored connector, never trusted from the queue time.
         "card_recommendation": {"state": "allowed", "capabilities": []},
         "approval_gate_configured": approval_gate_configured,
-        "caution": bool(caution_classes),
+        "caution": bool(caution_classes) or not scanned_all,
         "caution_risk_classes": caution_classes,
         "revision": snapshot.revision,
     }
@@ -140,5 +168,6 @@ def safe_connector_recommendation(
 __all__ = [
     "CONNECTOR_RECOMMENDATION_SCHEMA",
     "build_approval_connector_recommendation",
+    "pending_connector_group_rows",
     "safe_connector_recommendation",
 ]
