@@ -189,6 +189,23 @@ pub(super) fn requires_pytest_containment(model: &CanonicalCommandV1) -> bool {
     }
 }
 
+/// The entrypoints Prettier publishes: version 3 moved the executable into
+/// `bin/`, and version 2 is still installed widely enough to name as well.
+pub(crate) const PRETTIER_ENTRIES: [&str; 2] =
+    ["prettier/bin/prettier.cjs", "prettier/bin-prettier.js"];
+
+/// Whether a Prettier command asks only whether the files are formatted.
+/// `--check` and `--list-different` print and exit; every other spelling may
+/// reach `--write`, which rewrites each file it visits.
+pub(crate) fn prettier_checks(arguments: &[String]) -> bool {
+    arguments.iter().any(|argument| {
+        matches!(
+            argument.as_str(),
+            "--check" | "-c" | "--list-different" | "-l"
+        )
+    })
+}
+
 fn executable_is_bunx(executable: &str) -> bool {
     super::executable_basename(executable) == "bunx"
 }
@@ -447,15 +464,16 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         // form, with no pnpm option before the tool, reads as one.
         "pnpm" => {
             matches!(arguments, [run, task] if run == "run" && matches!(task.as_str(), "lint" | "typecheck"))
-                || matches!(arguments, [exec, tool, rest @ ..] if exec == "exec" && (tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit"))))
+                || matches!(arguments, [exec, tool, rest @ ..] if exec == "exec" && (tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit")) || (tool == "prettier" && prettier_checks(rest))))
         }
         "bunx" | "npx" => {
-            matches!(arguments, [tool, rest @ ..] if tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit")))
+            matches!(arguments, [tool, rest @ ..] if tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit")) || (tool == "prettier" && prettier_checks(rest)))
         }
         "eslint" => true,
         "tsc" => arguments.iter().any(|arg| arg == "--noEmit"),
+        "prettier" => prettier_checks(arguments),
         "node" | "nodejs" => {
-            matches!(arguments, [entry, rest @ ..] if local_package_entry(entry, "eslint/bin/eslint.js") || (local_package_entry(entry, "typescript/bin/tsc") && rest.iter().any(|arg| arg == "--noEmit")))
+            matches!(arguments, [entry, rest @ ..] if local_package_entry(entry, "eslint/bin/eslint.js") || (local_package_entry(entry, "typescript/bin/tsc") && rest.iter().any(|arg| arg == "--noEmit")) || (PRETTIER_ENTRIES.iter().any(|name| local_package_entry(entry, name)) && prettier_checks(rest)))
         }
         _ => false,
     };
@@ -463,7 +481,13 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         && !arguments.iter().any(|arg| {
             matches!(
                 arg.as_str(),
-                "--fix" | "--fix-dry-run" | "--output-file" | "-o" | "--emitDeclarationOnly"
+                "--fix"
+                    | "--fix-dry-run"
+                    | "--output-file"
+                    | "-o"
+                    | "--emitDeclarationOnly"
+                    | "--write"
+                    | "-w"
             ) || arg.starts_with("--output-file=")
                 || arg.starts_with("--fix=")
         })
