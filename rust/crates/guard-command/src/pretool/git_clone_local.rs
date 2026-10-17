@@ -202,7 +202,7 @@ fn parse(segment: &CommandSegmentV1) -> Option<LocalClone<'_>> {
     (branch.is_none_or(super::worktree_add::valid_branch_name)
         && local_path_text(source)
         && local_path_text(destination))
-    .then(|| LocalClone {
+    .then_some(LocalClone {
         leading,
         source,
         destination,
