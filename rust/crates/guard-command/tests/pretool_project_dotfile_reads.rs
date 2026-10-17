@@ -48,6 +48,12 @@ fn reading_a_login_environment_or_credential_dotfile_is_reviewed() {
         // No document extension: the shape a store of logins has.
         (".npmrc", "//registry:_authToken=fixture\n"),
         (".netrc", "machine example login fixture\n"),
+        // A credential name keeps its review when the leading dot hides it.
+        (".private-key.txt", "fixture\n"),
+        (".id_rsa.txt", "fixture\n"),
+        (".id_ed25519.json", "{}\n"),
+        (".passwords.json", "{}\n"),
+        (".aws-config.json", "{}\n"),
     ] {
         std::fs::write(sibling.join(name), body).unwrap();
     }
@@ -61,6 +67,11 @@ fn reading_a_login_environment_or_credential_dotfile_is_reviewed() {
         ".deploy-credentials.json",
         ".npmrc",
         ".netrc",
+        ".private-key.txt",
+        ".id_rsa.txt",
+        ".id_ed25519.json",
+        ".passwords.json",
+        ".aws-config.json",
     ] {
         assert_decision(
             &cwd,

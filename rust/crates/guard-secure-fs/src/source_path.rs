@@ -501,12 +501,15 @@ const TOOL_LOGIN_WORDS: &[&str] = &[
     "agent",
     "agents",
     "aider",
+    "aws",
+    "azure",
     "claude",
     "codex",
     "copilot",
     "cursor",
     "docker",
     "dockercfg",
+    "gcloud",
     "gnupg",
     "gpg",
     "hgrc",
@@ -550,12 +553,19 @@ pub fn hidden_project_document(path: &Path, home: Option<&Path>) -> bool {
     let Some((name, parents)) = parts.split_last() else {
         return false;
     };
-    let extension = path
+    // Every name screen reads the spelling without the leading dot as well as
+    // with it. A credential name does not stop being one when a project hides
+    // it: `.private-key.txt` has the stem `.private-key`, which no list holds,
+    // and `.id_rsa.txt` splits into `id` and `rsa`, so the dot alone used to
+    // carry such a name past screens that already know it.
+    let bare_name = name.trim_start_matches('.');
+    let bare = Path::new(bare_name);
+    let extension = bare
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let stem = path
+    let stem = bare
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
@@ -569,9 +579,17 @@ pub fn hidden_project_document(path: &Path, home: Option<&Path>) -> bool {
         || !PROJECT_DOCUMENT_EXTENSIONS.contains(&extension.as_str())
         || tool_login
         || SENSITIVE_SEARCH_BASENAMES.contains(&name.as_str())
+        || SENSITIVE_SEARCH_BASENAMES.contains(&bare_name)
         || EXTERNAL_SENSITIVE_PARTS.contains(&name.as_str())
+        || EXTERNAL_SENSITIVE_PARTS.contains(&bare_name)
         || sensitive_external_filename(path)
-        || !hidden_dir_parts_allowed(parents)
+        || sensitive_external_filename(bare)
+        || crate::credential_store_names::secret_bearing_file_name(bare_name)
+        // The rule is the project's own document in a checkout an agent is
+        // working in, so every directory above it is one an ordinary listing
+        // shows. A hidden parent is some tool's tree, whatever the leaf is
+        // called.
+        || parents.iter().any(|parent| parent.starts_with('.'))
     {
         return false;
     }
