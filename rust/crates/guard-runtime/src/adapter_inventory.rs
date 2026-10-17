@@ -189,8 +189,12 @@ pub(crate) fn carried(value: &PyVal) -> Result<Value, &'static str> {
 }
 
 /// One MCP server entry: `command` and `url` when they are strings.
+/// Gemini names a streamable remote server `httpUrl`; Antigravity uses
+/// `serverUrl`. Each is the same remote endpoint as `url`.
 pub(crate) fn mcp_fields<'a>(config: &'a PyVal) -> Fields<'a> {
-    let url = config.get("url").and_then(PyVal::as_str);
+    let url = ["url", "httpUrl", "serverUrl"]
+        .into_iter()
+        .find_map(|key| config.get(key).and_then(PyVal::as_str));
     Fields {
         command: config.get("command").and_then(PyVal::as_str),
         args: string_args(config),
