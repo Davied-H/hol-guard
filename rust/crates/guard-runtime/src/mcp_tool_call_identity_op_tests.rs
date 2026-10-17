@@ -148,8 +148,11 @@ fn only_a_wrapper_that_can_carry_a_provider_action_binds_the_provider_hash() {
     let (artifact, _) = build_artifact(&discovery).expect("builds");
     assert!(!artifact.metadata.contains_key("mcp_provider_catalog_hash"));
 
-    // A malformed hash is still refused on the wrapper that would bind it.
+    // A malformed hash is refused wherever it came from, including the
+    // wrapper whose artifact would not have bound it.
     let mut malformed = build.clone();
     malformed.provider_catalog_hash = Some("nope".to_owned());
+    assert_eq!(build_artifact(&malformed), Err(ERR_PROVIDER_HASH));
+    malformed.tool_name = "mcp__codex_apps__composio__composio_search_tools".to_owned();
     assert_eq!(build_artifact(&malformed), Err(ERR_PROVIDER_HASH));
 }
