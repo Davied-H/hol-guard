@@ -69,14 +69,14 @@ def _arch() -> str:
     return "unknown"
 
 
-def machine_section(store: GuardStore, *, include_os_version: bool, now: str) -> dict[str, object]:
+def machine_section(*, include_os_version: bool, hash_key: bytes) -> dict[str, object]:
     os_name = _os_name()
     hostname = platform.node().strip().lower()
     return {
         "osName": os_name,
         "osVersion": _os_version(os_name) if include_os_version else None,
         "arch": _arch(),
-        "hostnameHash": keyed_digest(store, hostname, now=now) if hostname else None,
+        "hostnameHash": keyed_digest(hash_key, hostname) if hostname else None,
     }
 
 

@@ -51,7 +51,7 @@ _ITEM_SOURCES = {
 }
 
 
-def inventory_items(store: GuardStore, *, now: str) -> list[dict[str, object]]:
+def inventory_items(store: GuardStore, *, hash_key: bytes) -> list[dict[str, object]]:
     """Installed items from the local inventory table, in contract shape.
 
     A failed read raises: an unreadable inventory must not look like an empty one,
@@ -82,9 +82,7 @@ def inventory_items(store: GuardStore, *, now: str) -> list[dict[str, object]]:
             "hash": normalized_hash(row.get("artifact_hash")),
             "harness": harness,
             "source": _ITEM_SOURCES.get(str(row.get("source_scope") or ""), "unknown"),
-            "pathHash": (
-                keyed_digest(store, config_path, now=now) if isinstance(config_path, str) and config_path else None
-            ),
+            "pathHash": (keyed_digest(hash_key, config_path) if isinstance(config_path, str) and config_path else None),
             "firstSeenAt": first_seen,
             "lastSeenAt": last_seen,
         }

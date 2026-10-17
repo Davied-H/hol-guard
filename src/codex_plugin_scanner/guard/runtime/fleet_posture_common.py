@@ -115,7 +115,7 @@ def json_size(payload: object) -> int:
     return len(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
 
 
-def keyed_digest(store: GuardStore, text: str, *, now: str) -> str:
+def keyed_digest(key: bytes, text: str) -> str:
     """``sha256:`` HMAC of ``text`` under a random per-install secret.
 
     Host names and config paths are guessable (they contain user names), so a plain
@@ -123,10 +123,12 @@ def keyed_digest(store: GuardStore, text: str, *, now: str) -> str:
     machine; the output keeps the contract's ``sha256:<64 hex>`` shape.
     """
 
-    return "sha256:" + hmac.new(_hash_key(store, now), text.encode("utf-8"), hashlib.sha256).hexdigest()
+    return "sha256:" + hmac.new(key, text.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def _hash_key(store: GuardStore, now: str) -> bytes:
+def load_hash_key(store: GuardStore, now: str) -> bytes:
+    """Read (or create) the per-install secret. Call once per build, not per hash."""
+
     raw = store.get_sync_payload(HASH_KEY_STATE_KEY)
     existing = raw.get("key") if isinstance(raw, dict) else None
     if isinstance(existing, str) and len(existing) >= 32:

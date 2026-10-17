@@ -24,6 +24,7 @@ from .fleet_posture_common import (
     FOLLOWUP_STATE_KEY,
     FORCE_FULL_STATE_KEY,
     HARNESS_IDS,
+    HASH_KEY_STATE_KEY,
     LAST_SENT_STATE_KEY,
     MAX_ITEMS_PER_SYNC,
     MAX_PAYLOAD_BYTES,
@@ -33,6 +34,7 @@ from .fleet_posture_common import (
     clip,
     iso,
     json_size,
+    load_hash_key,
     normalized_timestamp,
     utc,
 )
@@ -214,7 +216,8 @@ def build_fleet_posture_state(
     now_text = iso(now)
     # Raises when the inventory cannot be read: the runner then omits this posture
     # rather than reporting an empty inventory.
-    current_items = inventory_items(store, now=now_text)
+    hash_key = load_hash_key(store, now_text)
+    current_items = inventory_items(store, hash_key=hash_key)
     grouped = group_by_harness(current_items)
     diagnostics_cache = DiagnosticsCache(store, now=now, ttl_seconds=settings.diagnostics_ttl_seconds)
     tools: list[dict[str, object]] = []
@@ -253,7 +256,7 @@ def build_fleet_posture_state(
             now=now,
             limit=limit,
         )
-        assembled = _assemble(store, settings, now, detail, tools, current_items, plan, acknowledgement)
+        assembled = _assemble(store, settings, now, detail, tools, current_items, plan, acknowledgement, hash_key)
         return plan, assembled
 
     plan, payload = plan_and_assemble(MAX_ITEMS_PER_SYNC)
@@ -273,7 +276,7 @@ def build_fleet_posture_state(
             plan, payload = best
         else:
             plan = InventoryPlan("digest_only", [], [], dict(previous or {}), stream_active(last), False)
-            payload = _assemble(store, settings, now, detail, tools, current_items, plan, acknowledgement)
+            payload = _assemble(store, settings, now, detail, tools, current_items, plan, acknowledgement, hash_key)
         payload_bytes = json_size(payload)
     if payload_bytes > MAX_PAYLOAD_BYTES:
         for tool in payload["aiTools"]:
@@ -317,12 +320,13 @@ def _assemble(
     current_items: list[dict[str, object]],
     plan: InventoryPlan,
     acknowledgement: Mapping[str, object] | None,
+    hash_key: bytes,
 ) -> dict[str, Any]:
     return {
         "schemaVersion": SCHEMA_VERSION,
         "collectedAt": iso(now),
         "client": client_section(store, settings.runtime),
-        "machine": machine_section(store, include_os_version=detail, now=iso(now)),
+        "machine": machine_section(include_os_version=detail, hash_key=hash_key),
         "aiTools": [dict(tool) for tool in tools],
         "inventory": {
             "digest": item_digest(current_items),
@@ -363,6 +367,7 @@ __all__ = [
     "AUTO_UPDATE_STATE_KEY",
     "CAPABILITY",
     "FOLLOWUP_STATE_KEY",
+    "HASH_KEY_STATE_KEY",
     "LAST_SENT_STATE_KEY",
     "MAX_PAYLOAD_BYTES",
     "SCHEMA_VERSION",

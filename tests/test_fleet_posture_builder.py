@@ -584,3 +584,20 @@ def test_tool_diagnostics_are_cached_between_builds(
     assert calls == ["probe"]
     _build(store, context, [adapter], diagnostics_ttl_seconds=0)
     assert calls == ["probe", "probe"]
+
+
+def test_hash_key_is_read_once_per_build(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_inventory(store, monkeypatch, [_row(f"item-{index}") for index in range(50)])
+    _set_receipts(monkeypatch, store, {})
+    reads: list[str] = []
+    original = store.get_sync_payload
+
+    def counting(key: str) -> object:
+        reads.append(key)
+        return original(key)
+
+    monkeypatch.setattr(store, "get_sync_payload", counting)
+    _build(store, context, [])
+    assert reads.count(fp.HASH_KEY_STATE_KEY) == 1
