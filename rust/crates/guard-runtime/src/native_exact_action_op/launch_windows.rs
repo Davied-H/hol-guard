@@ -247,10 +247,9 @@ fn search_path_dlls(ctx: &Ctx) -> Proof<BTreeMap<String, String>> {
 }
 
 /// Whether every image finds a DLL named `name` before the search reaches
-/// `PATH`: in the Windows directory, or in the system directory of each
-/// architecture this machine runs. Every search order that reaches `PATH`
-/// (the default, `SetDllDirectory`, an altered search path) visits these
-/// first, and `LOAD_LIBRARY_SEARCH_*` loads never visit `PATH`.
+/// `PATH`: in the Windows directory, or in every architecture's system
+/// directory as only a 64-bit process sees them unredirected. Each search
+/// order that reaches `PATH` visits these first; `LOAD_LIBRARY_SEARCH_*` never.
 fn found_before_path(windows: &str, name: &str) -> bool {
     let holds = |dir: &str| fs_path::is_file(&fs_path::join(dir, name));
     if holds(windows) {
@@ -261,7 +260,7 @@ fn found_before_path(windows: &str, name: &str) -> bool {
         .map(|dir| fs_path::join(windows, dir))
         .filter(|dir| fs_path::is_dir(dir))
         .peekable();
-    present.peek().is_some() && present.all(|dir| holds(&dir))
+    cfg!(target_pointer_width = "64") && present.peek().is_some() && present.all(|dir| holds(&dir))
 }
 
 /// A spelling bash and `CreateProcessW` read as the same file: no MSYS root
