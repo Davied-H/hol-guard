@@ -58,6 +58,7 @@ def run_approval_command(
             store=store,
             approval_center_url=load_guard_daemon_url(store.guard_home),
             now=_now(),
+            apply_scheduled_posture_reverts=False,
         )
         payload["auto_open"] = _auto_open_first_pending_request(store=store, workspace=workspace)
         return payload
@@ -67,6 +68,7 @@ def run_approval_command(
             store=store,
             approval_center_url=load_guard_daemon_url(store.guard_home),
             now=_now(),
+            apply_scheduled_posture_reverts=False,
         )
     if command == "clear-history":
         harness = getattr(args, "harness", None)

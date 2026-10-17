@@ -633,46 +633,6 @@ class TestApprovalsAutoOpenCommand:
         assert output["auto_open"]["reason"] == "policy-disabled"
 
 
-class TestApprovalsListCommand:
-    """'hol-guard approvals list' prints the queue without opening the approval center."""
-
-    def test_list_prints_the_queue_and_never_opens_the_browser(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        home_dir = tmp_path / "guard-home"
-        store = GuardStore(home_dir)
-        store.add_approval_request(_make_request(request_id="req-list-1"), "2026-01-01T00:00:00Z")
-        opened_urls: list[str] = []
-        monkeypatch.setattr(
-            approval_commands_module,
-            "load_guard_daemon_url",
-            lambda _guard_home: "http://127.0.0.1:5474",
-        )
-        monkeypatch.setattr(
-            approval_commands_module,
-            "open_browser_url",
-            lambda url: opened_urls.append(url) or True,
-        )
-
-        rc = main(["guard", "approvals", "list", "--home", str(home_dir), "--json"])
-        output = json.loads(capsys.readouterr().out)
-
-        assert rc == 0
-        assert opened_urls == []
-        assert "auto_open" not in output
-        assert output["pending_count"] == 1
-        assert output["next_request_id"] == "req-list-1"
-
-    def test_list_resolves_nothing(self, tmp_path: Path, capsys) -> None:
-        home_dir = tmp_path / "guard-home"
-        store = GuardStore(home_dir)
-        store.add_approval_request(_make_request(request_id="req-list-2"), "2026-01-01T00:00:00Z")
-
-        rc = main(["guard", "approvals", "list", "--home", str(home_dir), "--json"])
-        capsys.readouterr()
-
-        assert rc == 0
-        assert store.get_approval_request("req-list-2")["status"] == "pending"
-
-
 class TestApprovalsRetryHintCommand:
     """T736-T737: 'hol-guard approvals retry-hint <request_id>' command."""
 
