@@ -155,7 +155,12 @@ pub(super) fn decide_package_leg(
         // The proxy's second resolution, which reads the store the decide
         // path still holds open: the fresh tool authority, then the fresh
         // package policy.
-        || Ok((run_policy(subject, Some(inputs.saved))?, inputs.resolve()?)),
+        || {
+            Ok((
+                run_policy(subject, Some(inputs.saved), Some(inputs.saved.connection))?,
+                inputs.resolve()?,
+            ))
+        },
     )?;
     Ok(Packaged {
         artifact: inputs.artifact,

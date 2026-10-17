@@ -585,7 +585,7 @@ fn resolve(
     };
     let identity = identity(request, &view, control_digest.clone())?;
     let subject = subject::subject(request, &identity, &view)?;
-    let decision = run_policy(&subject, saved.as_ref())?;
+    let decision = run_policy(&subject, saved.as_ref(), connection)?;
     let packaged = match leg {
         Some(PackageLeg::Decide(intent)) => {
             let inputs = package_leg::package_inputs(
@@ -966,6 +966,9 @@ mod package_spend;
 #[path = "mcp_relay_decide_policy.rs"]
 mod policy;
 use policy::run_policy;
+// The provider lookups a reviewed provider action is steered by.
+#[path = "mcp_relay_decide_provider.rs"]
+mod provider;
 #[path = "mcp_relay_decide_queue.rs"]
 mod queue;
 use queue::route;
