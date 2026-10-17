@@ -15,7 +15,7 @@ mod credential_path;
 mod secure_open;
 mod source_path;
 
-pub use credential_path::credential_named_path;
+pub use credential_path::{credential_directory_path, credential_named_path};
 use secure_open::{secure_open, SecureOpenError};
 pub use source_path::{
     classify_scannable_source_path, classify_source_path, credential_path_markers,

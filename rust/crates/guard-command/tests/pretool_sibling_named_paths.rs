@@ -6,7 +6,7 @@
 //! spellings keep their review.
 #![cfg(unix)]
 
-use crate::pretool_home_layout_reads::{assert_decision, layout, write};
+use crate::pretool_home_layout_reads::{assert_decision, layout, repository, write};
 
 #[test]
 fn naming_a_file_in_a_sibling_repository_is_allowed() {
@@ -71,6 +71,29 @@ fn a_named_path_that_could_reach_a_secret_is_reviewed() {
         "rg -n fixture ~/Code/org/service-api/src/secrets/prod.pem",
         // Nothing below home that is not a repository gets this route.
         "rg -n fixture ~/Code/org/notes/todo.md",
+    ] {
+        assert_decision(&cwd, &layout.home, command, false);
+    }
+}
+
+#[test]
+fn a_repository_inside_a_credential_store_keeps_its_review() {
+    let layout = layout("rg-sibling-store-repository");
+    // A repository directory named the way source code is, inside a store:
+    // the file screen stands aside for a source-code name, and a screen of
+    // the components below the repository root never sees the store above it.
+    let sibling = layout.home.join("Code/secrets/service.ts");
+    repository(&sibling);
+    write(sibling.join("prod.json"), "{}\n");
+    let cwd = layout.org.join("app-portal");
+    for command in [
+        "rg -n fixture ~/Code/secrets/service.ts/prod.json",
+        // A name that is not there yet is held to the same screen.
+        "rg -n fixture ~/Code/secrets/service.ts/staging.json",
+        // A missing directory that would be a store is screened as well, not
+        // only the last name in the spelling.
+        "rg -n fixture ~/Code/org/service-api/src/secrets/prod.json",
+        "rg -n fixture ~/Code/org/service-api/src/api-tokens/prod.json",
     ] {
         assert_decision(&cwd, &layout.home, command, false);
     }

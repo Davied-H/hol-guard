@@ -385,15 +385,30 @@ pub(in crate::pretool) fn rg_sibling_repository_path(
             return false;
         }
     }
+    // A relative screen never sees the directories above the repository root,
+    // and `credential_named_path` stands aside as soon as the last component
+    // is source code, so a repository kept inside a store
+    // (`~/Code/secrets/service.ts`) would clear both and open everything it
+    // holds. The directories on the way are screened on their own.
+    let full = missing
+        .iter()
+        .fold(present.clone(), |path, name| path.join(name));
+    if guard_secure_fs::credential_directory_path(&full) {
+        return false;
+    }
     if missing.is_empty() {
         return present.is_file() && tree::descendant_allowed(&present, root, true);
     }
-    let last = missing.len() - 1;
+    // Every missing name is screened as a file, not only the last one. The
+    // screen answers for the path as it stands when the command is prepared,
+    // and a name that is absent then may be anything by the time `rg` opens
+    // it; holding each one to the narrower screen means the thing that turns
+    // up there cannot be a store `rg` would then walk.
     allow_absent
         && present.is_dir()
-        && missing.iter().enumerate().all(|(index, name)| {
+        && missing.iter().all(|name| {
             named.push(name);
-            tree::descendant_allowed(&named, root, index == last)
+            tree::descendant_allowed(&named, root, true)
         })
 }
 

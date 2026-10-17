@@ -42,7 +42,7 @@ fn decide(cwd: &Path, home: &Path, command: &str) -> guard_contracts::PreToolRes
     )
 }
 
-fn repository(path: &Path) {
+pub(crate) fn repository(path: &Path) {
     std::fs::create_dir_all(path.join(".github/workflows")).unwrap();
     std::fs::create_dir_all(path.join("src")).unwrap();
     std::fs::write(path.join(".github/workflows/ci.yml"), "name: ci\n").unwrap();
