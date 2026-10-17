@@ -15,6 +15,7 @@ from codex_plugin_scanner.guard.adapters import codex as codex_adapter
 from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge as bridge
 from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge_flow as flow
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
+from codex_plugin_scanner.guard.codex_hook_bridge_runtime import decode_bridge_config_argument
 from codex_plugin_scanner.guard.codex_hook_runtime_trust import TrustedCodexHookLaunch
 
 
@@ -34,7 +35,7 @@ def test_total_outage_rejects_unverified_recovery_action(
         home_override_explicit=True,
     )
     codex_adapter.CodexHarnessAdapter().install(context)
-    config_json = codex_adapter._hook_command_parts(context)[3]
+    config_json = decode_bridge_config_argument(codex_adapter._hook_command_parts(context)[-1])
     managed_config = json.loads(config_json)
     config = {
         key: managed_config[key]

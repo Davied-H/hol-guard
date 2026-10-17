@@ -14,6 +14,7 @@ from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge as brid
 from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge_flow as flow
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
 from codex_plugin_scanner.guard.adapters.codex_daemon_hook_auth import _DaemonResponseError
+from codex_plugin_scanner.guard.codex_hook_bridge_runtime import decode_bridge_config_argument
 from codex_plugin_scanner.guard.codex_hook_file_integrity import CodexHookIntegrityError
 from codex_plugin_scanner.guard.codex_hook_runtime_trust import TrustedCodexHookLaunch
 from tests.codex_daemon_hook_bridge_fixtures import _bridge_config
@@ -129,7 +130,7 @@ def test_total_outage_blocks_mutating_action_without_authenticated_fallback(
         home_override_explicit=True,
     )
     codex_adapter.CodexHarnessAdapter().install(context)
-    config_json = codex_adapter._hook_command_parts(context)[3]
+    config_json = decode_bridge_config_argument(codex_adapter._hook_command_parts(context)[-1])
     managed_config = json.loads(config_json)
     config = {
         key: managed_config[key]
