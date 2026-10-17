@@ -110,3 +110,24 @@ fn cli_kinds_require_params() {
     assert_eq!(result.status, "error");
     assert_eq!(result.code, "native_hook_render_invalid");
 }
+
+#[test]
+fn copilot_hook_response_kind_always_renders_a_document() {
+    let mut req = request("copilot_hook_response");
+    req.harness = "copilot".to_owned();
+    req.cli = Some(json!({"policy_action": "block", "reason": "no"}));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["outcome"], "document");
+    assert_eq!(payload["response"]["permissionDecision"], "deny");
+    assert_eq!(payload["response"]["permissionDecisionReason"], "no");
+
+    req.cli = Some(json!({"policy_action": "allow", "reason": "no"}));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["outcome"], "document");
+    assert_eq!(payload["response"]["permissionDecision"], "allow");
+    assert!(payload["response"]["permissionDecisionReason"].is_null());
+}

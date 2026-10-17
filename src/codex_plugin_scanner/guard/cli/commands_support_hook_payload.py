@@ -401,12 +401,6 @@ def _emit_native_hook_notification_stderr(reason: str) -> None:
     # ephemeral approval link the operator needs.
     print(reason, file=sys.stderr)  # codeql[py/clear-text-logging-sensitive-data]
 
-def _copilot_hook_permission_decision(policy_action: str) -> str:
-    if policy_action in {"review", "require-reapproval", "sandbox-required", "block"}:
-        return "deny"
-    return "allow"
-
-
 def _object_list(value: object | None) -> list[object]:
     if isinstance(value, list):
         return value
@@ -721,7 +715,7 @@ __all__ = [
     "_ACTION_ENVELOPE_HARNESSES", "_action_envelope_json", "_apply_native_edge_envelope_fields",
     "_approval_center_browser_url",
     "_approval_surface_policy_for_flow", "_browser_url_with_guard_params", "_coalesce_string",
-    "_copilot_hook_permission_decision", "_emit_native_hook_block_stderr",
+    "_emit_native_hook_block_stderr",
     "_emit_native_hook_json_document", "_emit_native_hook_notification_stderr",
     "_emit_native_hook_response", "_emit_native_post_tool_envelope", "_first_hook_tool_call",
     "_headless_approval_resolver", "_hook_action_envelope",

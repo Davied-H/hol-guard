@@ -311,6 +311,37 @@ fn prompt_document(
     base
 }
 
+/// The flat line the CLI writes for Copilot's command hook
+/// (`_emit_copilot_hook_response`).
+///
+/// Copilot's command-hook contract only accepts its native transport fields,
+/// so this carries the binary disposition and nothing of the exact Guard
+/// action; that action stays in Guard's receipts and events.
+pub fn copilot_hook_response(params: &Object) -> Object {
+    let denied = blocking(text(params, "policy_action").unwrap_or("allow"));
+    let mut payload = Object::new();
+    payload.insert(
+        "permissionDecision".into(),
+        json!(if denied { "deny" } else { "allow" }),
+    );
+    if denied {
+        payload.insert(
+            "permissionDecisionReason".into(),
+            json!(text(params, "reason").unwrap_or("")),
+        );
+    }
+    if let Some(reuse) = params.get("approval_reuse").and_then(Value::as_object) {
+        payload.insert("approval_reuse".into(), Value::Object(reuse.clone()));
+    }
+    match params.get("scanner_evidence").and_then(Value::as_array) {
+        Some(evidence) if !evidence.is_empty() => {
+            payload.insert("scanner_evidence".into(), Value::Array(evidence.clone()));
+        }
+        _ => {}
+    }
+    payload
+}
+
 /// The `--json` protocol document for native harnesses (`_native_hook_json_document`).
 pub fn cli_document(harness: &str, params: &Object) -> CliOutcome {
     let canonical = text(params, "canonical_harness")

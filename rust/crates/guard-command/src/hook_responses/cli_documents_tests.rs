@@ -101,3 +101,56 @@ fn encoded_markers_come_from_the_command_text() {
     }
     assert!(!content_flagged(&Object::new()));
 }
+
+#[test]
+fn copilot_hook_response_carries_only_the_binary_disposition() {
+    for action in ["review", "require-reapproval", "sandbox-required", "block"] {
+        let mut params = Object::new();
+        params.insert("policy_action".into(), json!(action));
+        params.insert("reason".into(), json!("HOL Guard paused this."));
+        let payload = copilot_hook_response(&params);
+        assert_eq!(payload["permissionDecision"], json!("deny"), "{action}");
+        assert_eq!(
+            payload["permissionDecisionReason"],
+            json!("HOL Guard paused this."),
+            "{action}"
+        );
+        assert!(!payload.contains_key("policy_action"), "{action}");
+    }
+    for action in ["allow", "allow-with-notice", "watch", ""] {
+        let mut params = Object::new();
+        params.insert("policy_action".into(), json!(action));
+        params.insert("reason".into(), json!("HOL Guard paused this."));
+        let payload = copilot_hook_response(&params);
+        assert_eq!(payload["permissionDecision"], json!("allow"), "{action}");
+        assert!(
+            !payload.contains_key("permissionDecisionReason"),
+            "an allow carries no reason: {action}"
+        );
+    }
+    assert_eq!(
+        copilot_hook_response(&Object::new())["permissionDecision"],
+        json!("allow")
+    );
+}
+
+#[test]
+fn copilot_hook_response_forwards_reuse_and_evidence() {
+    let mut params = Object::new();
+    params.insert("policy_action".into(), json!("allow"));
+    params.insert("reason".into(), json!(""));
+    params.insert("approval_reuse".into(), json!({}));
+    params.insert("scanner_evidence".into(), json!([]));
+    let payload = copilot_hook_response(&params);
+    assert_eq!(payload["approval_reuse"], json!({}));
+    assert!(
+        !payload.contains_key("scanner_evidence"),
+        "empty evidence is omitted, matching the caller's truthiness check"
+    );
+
+    params.insert("approval_reuse".into(), json!({"request_id": "abc"}));
+    params.insert("scanner_evidence".into(), json!([{"rule": "secret"}]));
+    let payload = copilot_hook_response(&params);
+    assert_eq!(payload["approval_reuse"], json!({"request_id": "abc"}));
+    assert_eq!(payload["scanner_evidence"], json!([{"rule": "secret"}]));
+}

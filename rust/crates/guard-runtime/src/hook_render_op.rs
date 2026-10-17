@@ -5,7 +5,9 @@
 //! review), the resident returns the exact harness JSON. Rendering itself
 //! lives in `guard_command::hook_responses`, shared with the edge decision.
 
-use guard_command::hook_responses::cli_documents::{cli_document, cli_response, CliOutcome};
+use guard_command::hook_responses::cli_documents::{
+    cli_document, cli_response, copilot_hook_response, CliOutcome,
+};
 use guard_command::hook_responses::{pre_tool, pre_tool_review, recording_only_pre_tool, Object};
 use guard_contracts::{
     HookRenderRequestV1, HookRenderResultV1, HOOK_RENDER_MAX_BYTES, HOOK_RENDER_RESULT_SCHEMA,
@@ -49,14 +51,19 @@ fn cli_payload(outcome: CliOutcome) -> Value {
 
 fn render(request: &HookRenderRequestV1) -> Result<Value, &'static str> {
     let harness = request.harness.as_str();
-    if matches!(request.kind.as_str(), "cli_response" | "cli_document") {
+    if matches!(
+        request.kind.as_str(),
+        "cli_response" | "cli_document" | "copilot_hook_response"
+    ) {
         let params = object_of(request.cli.as_ref()).ok_or("native_hook_render_invalid")?;
-        return Ok(if request.kind == "cli_response" {
-            cli_payload(
+        return Ok(match request.kind.as_str() {
+            "cli_response" => cli_payload(
                 cli_response(harness, params).map_or(CliOutcome::Silent, CliOutcome::Document),
-            )
-        } else {
-            cli_payload(cli_document(harness, params))
+            ),
+            "copilot_hook_response" => {
+                cli_payload(CliOutcome::Document(copilot_hook_response(params)))
+            }
+            _ => cli_payload(cli_document(harness, params)),
         });
     }
     render_edge(request).map(|response| json!({ "response": Value::Object(response) }))
