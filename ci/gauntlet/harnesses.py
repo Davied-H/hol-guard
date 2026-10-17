@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import Scenario
+from .claude_tools import claude_tools
 
 HARNESSES = ("omp", "claude-code", "codex", "cursor")
 
@@ -169,7 +170,7 @@ class Harness:
                 "--disable-slash-commands",
                 "--no-session-persistence",
                 "--tools",
-                _claude_tools(scenario),
+                claude_tools(scenario),
             ]
             model = self.model(model)
             return command + (["--model", model] if model else [])
@@ -227,23 +228,6 @@ class Harness:
         (rules / "gauntlet-fixture.mdc").write_text(
             "---\ndescription: Guard Gauntlet fixture context\nalwaysApply: true\n---\n" + body, encoding="utf-8"
         )
-
-
-# A full task leaves every step to the model, so Claude gets its ordinary coding tools.
-FULL_TASK_CLAUDE_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,TodoWrite"
-
-
-def _claude_tools(scenario: Scenario) -> str:
-    if scenario.oracle == "full-task":
-        return FULL_TASK_CLAUDE_TOOLS
-    if scenario.oracle == "home-copy-task":
-        return "Bash,Read"
-    if scenario.commands:
-        return "Bash"
-    if scenario.oracle == "blocked-read":
-        return "Read"
-    names = {"bash": "Bash", "read": "Read", "write": "Write", "edit": "Edit"}
-    return ",".join(names[tool] for tool in scenario.required_tools) or "Bash,Read,Write,Edit"
 
 
 ADAPTERS = {

@@ -254,6 +254,13 @@ def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
     skipped = [c for c in case.get("expected_commands", []) if _tokens(c) not in reviewed]
     if skipped:
         return "not-exercised", f"the model did not run {len(skipped)} requested command(s)"
+    # A case names its tools because the request each one makes is what is under
+    # test. Reading a file through the shell is a different request from reading
+    # it with the harness's own read tool, so a lane that fell back to the shell
+    # never exercised the gate the case was written for.
+    unused = sorted(set(scenario.required_tools) - {call.get("tool") for call in calls})
+    if unused:
+        return "not-exercised", "the model did not use the " + ", ".join(unused) + " tool(s) the case requires"
     failed = [c for c in calls if c.get("is_error")]
     if failed:
         return "task-incomplete", f"a {failed[0]['tool']} call failed after Guard allowed it"

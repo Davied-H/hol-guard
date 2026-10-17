@@ -11,7 +11,10 @@ from __future__ import annotations
 import pytest
 
 from ci.gauntlet.catalog import load_catalog
+from ci.gauntlet.harness_judge import assess_harness_case
 from ci.gauntlet.harness_suite import lane_catalog
+from ci.gauntlet.harnesses import claude_tools
+from ci.gauntlet.proofs import required_checks
 
 # Oh My Pi's own tools. No other lane has anything to map them onto.
 OMP_ONLY = {"glob", "grep", "eval", "task", "wait", "todo", "learn"}
@@ -48,3 +51,79 @@ def test_memory_note_cases_stay_on_oh_my_pi(harness: str) -> None:
     selected = {s.id for s in lane_catalog(harness)}
     notes = sorted(s.id for s in load_catalog() if s.oracle == "blocked-memory-note" and s.id in selected)
     assert not notes, f"{harness} has no memory-note tool: {notes}"
+
+
+def _granted(scenario) -> set[str]:
+    """The catalog tool names Claude Code is handed for one case."""
+    names = {"Bash": "bash", "Read": "read", "Write": "write", "Edit": "edit"}
+    return {names[name] for name in claude_tools(scenario).split(",")}
+
+
+def test_a_case_that_also_names_commands_still_gets_its_structured_tools() -> None:
+    """Granting Bash alone would leave the structured call impossible to make.
+
+    Three selected cases list shell commands beside a read or a write. The
+    commands add Bash to the tools the case names; they do not replace them.
+    """
+    mixed = [s for s in lane_catalog("claude-code") if s.oracle == "native-tools" and s.commands]
+    assert mixed, "no native-tools case lists commands"
+    for scenario in mixed:
+        granted = _granted(scenario)
+        assert set(scenario.required_tools) <= granted, scenario.id
+        assert "bash" in granted, scenario.id
+
+
+def test_every_selected_case_is_handed_the_tools_it_requires() -> None:
+    for scenario in lane_catalog("claude-code"):
+        if scenario.oracle == "native-tools":
+            assert set(scenario.required_tools) <= _granted(scenario), scenario.id
+
+
+def _allow_row(tool: str) -> dict:
+    """One quiet Guard review of a call the harness made."""
+    name = {"bash": "Bash", "read": "Read", "write": "Write", "edit": "Edit"}[tool]
+    return {
+        "route_harness": "claude-code",
+        "payload": {"hook_event_name": "PreToolUse", "tool_name": name, "tool_input": {}},
+        "response": {},
+        "receipt": {"harness": "claude-code", "event_name": "PreToolUse", "decision": "allow", "reason_code": None},
+    }
+
+
+def _case(scenario, tools: tuple[str, ...]) -> dict:
+    """One finished case whose transcript used exactly ``tools``."""
+    return {
+        "harness": "claude-code",
+        "guard_rows": [_allow_row(tool) for tool in tools],
+        "transcript": {
+            "calls": [
+                {"id": str(i), "name": tool, "tool": tool, "args": {}, "is_error": False}
+                for i, tool in enumerate(tools)
+            ],
+            "terminal": True,
+            "failed": False,
+        },
+        "returncode": 0,
+        "filesystem": dict.fromkeys(required_checks(scenario), True),
+        "native_routes": {"native_resident": len(tools)},
+        "egress_requests": [],
+        "approval_delta": 0,
+        "cleanup_ok": True,
+        "credentials_seeded": 1,
+        "credential_env": [],
+        "expected_commands": [],
+    }
+
+
+def test_a_shell_fallback_does_not_pass_as_a_structured_read() -> None:
+    """Reading through the shell is a different request from the read tool.
+
+    Without this the lane could report a structured read it never made, which
+    is the whole reason these cases run here.
+    """
+    scenario = next(s for s in lane_catalog("claude-code") if s.oracle == "native-tools" and "read" in s.required_tools)
+    shell_only = assess_harness_case(scenario, _case(scenario, ("bash",)))
+    assert shell_only["outcome"] == "not-exercised"
+    assert "read" in shell_only["reason"]
+    used = assess_harness_case(scenario, _case(scenario, tuple(scenario.required_tools)))
+    assert used["outcome"] == "pass"
