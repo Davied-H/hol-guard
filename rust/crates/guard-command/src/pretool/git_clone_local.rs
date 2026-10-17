@@ -196,7 +196,7 @@ fn parse(segment: &CommandSegmentV1) -> Option<LocalClone<'_>> {
             }
         }
     }
-    let [&source, &destination] = operands.as_slice() else {
+    let &[source, destination] = operands.as_slice() else {
         return None;
     };
     (branch.is_none_or(super::worktree_add::valid_branch_name)
