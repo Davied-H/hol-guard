@@ -425,6 +425,7 @@ mod managed_policy_file_trust;
 mod managed_policy_floor;
 mod managed_policy_load;
 mod managed_policy_plist;
+mod managed_policy_registry;
 mod managed_resident;
 mod mcp_classification_op;
 mod mcp_probe_op;
