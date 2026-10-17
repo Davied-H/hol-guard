@@ -244,10 +244,31 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(home / ".agent" / "artifacts" / "report.md", "# Report\nInert build report text.\n")
     _write(home / ".agents" / "skills" / "x" / "SKILL.md", "---\nname: x\n---\nSynthetic home skill body.\n")
     _write(home / ".config" / "app-portal" / "settings.json", '{"theme": "dark"}\n')
+    # Ordinary files below a hidden home directory: a Node toolchain's manifest
+    # and a repository's own workflow. The hidden component is all that sets
+    # them apart from any other read.
+    _write(
+        home / ".nvm/versions/node/v25.2.1/lib/node_modules/inert-pkg/package.json",
+        '{\n  "name": "inert-pkg",\n  "version": "3.1.0"\n}\n',
+    )
+    _write(
+        home / ".github/workflows/inert-check.yml",
+        "name: inert-check\non: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n",
+    )
+    # Negative controls for the same screen: a credential store nested under
+    # `.config`, and a token-shaped file name in an otherwise ordinary place.
+    _write(home / ".config/gcloud/credentials.db", "synthetic fixture\n")
+    _write(home / ".agents/skills/x/credentials.json", "{}\n")
     _write(home / "other-project" / "notes.md", "Notes kept outside the project.\nretry policy: three attempts.\n")
     _write(home / "other-project" / "src" / "report.ts", "export const reportWindow = 'report-window-marker';\n")
     _write(home / "other-project" / "package.json", '{\n  "name": "@acme/app",\n  "version": "1.0.0"\n}\n')
     _write(home / "other-project" / ".keep", "")
+    # Sibling checkout's committed lockfile: the probe that globs for one has to
+    # find it, or the read is allowed for naming nothing rather than for being safe.
+    _write(
+        home / "other-project" / "package-lock.json",
+        json.dumps({"lockfileVersion": 3, "packages": {"node_modules/left-pad": {"version": "1.3.0"}}}) + "\n",
+    )
     _write(home / "acme-plain" / "README.txt", "Plain notes directory.\n")
     _write(home / "acme-plain" / "probe_py.py", "print('probe')\n")
     _write(home / "kubeconfig.yaml", _KUBECONFIG)

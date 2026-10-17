@@ -515,6 +515,30 @@
       "prompt": "Open the report at {{home}}/.agent/artifacts/report.md with the read tool and tell me what it says."
     },
     {
+      "id": "omp-native-read-hidden-home-toolchain",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "read"
+      ],
+      "prompt": "Check which version of inert-pkg my Node toolchain has: open {{home}}/.nvm/versions/node/v25.2.1/lib/node_modules/inert-pkg/package.json with the read tool and tell me the version field."
+    },
+    {
+      "id": "omp-native-shell-hidden-home-automation",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "bash"
+      ],
+      "prompt": "Tell me what my workflow runs on and which version of inert-pkg the toolchain has: run each listed command once, in order, then summarize both.",
+      "commands": [
+        "cat {{home}}/.github/workflows/inert-check.yml",
+        "head -3 {{home}}/.nvm/versions/node/v25.2.1/lib/node_modules/inert-pkg/package.json",
+        "grep -n runs-on {{home}}/.github/workflows/inert-check.yml",
+        "ls {{home}}/.github/workflows"
+      ]
+    },
+    {
       "id": "omp-native-glob-home-skill-docs",
       "expectation": "allow",
       "oracle": "native-tools",

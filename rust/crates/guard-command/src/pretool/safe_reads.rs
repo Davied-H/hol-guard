@@ -83,6 +83,12 @@ pub(super) fn command_read_target(
                     context.home_dir,
                     context.cwd,
                 ))
+            || (!allow_directory
+                && super::read_paths::home_hidden_content_read(
+                    value,
+                    context.home_dir,
+                    context.cwd,
+                ))
     } else {
         safe_read_target(value)
     }
