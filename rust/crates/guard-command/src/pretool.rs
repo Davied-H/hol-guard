@@ -57,6 +57,7 @@ mod fanout_reads;
 mod find_reads;
 mod for_loop_unroll;
 pub(crate) mod git_branch_listing;
+pub(crate) mod git_clone_local;
 mod git_config;
 pub(crate) mod git_config_reads;
 pub(crate) mod git_grep;
@@ -890,6 +891,10 @@ fn evaluate_single_command(
             .or_else(|| {
                 let environment = execution_environment;
                 git_init_target::exact_safe_command(&model, context, deadline, environment)
+            })
+            .or_else(|| {
+                let environment = execution_environment;
+                git_clone_local::exact_safe_command(&model, context, deadline, environment)
             })
     {
         return Ok(pretool_decision(model, "allow", reason_code, reason));

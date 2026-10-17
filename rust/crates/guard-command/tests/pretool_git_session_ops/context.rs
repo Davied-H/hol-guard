@@ -181,6 +181,68 @@ fn init_of_a_fresh_owned_temporary_directory_is_quiet() {
 }
 
 #[test]
+fn clone_of_a_local_repository_into_a_fresh_directory_is_quiet() {
+    const CLONE: &str = "native_exact_safe_git_clone_local";
+    let session = session("clone");
+    let primary = session.primary.display();
+    let home = session.home.display();
+    let copy = format!("{home}/app-portal-copy");
+    for command in [
+        format!("git clone {primary} {copy}"),
+        format!("git clone --branch main {primary} {copy}"),
+        format!("git clone -q --no-hardlinks {primary} {copy}"),
+        format!("git clone --single-branch -b main {primary} {copy}"),
+        format!("git clone -n {primary} {copy}"),
+    ] {
+        session.assert_allow(&command, CLONE);
+    }
+    for command in [
+        // A remote clone fetches a repository nothing here has read.
+        format!("git clone https://github.com/example-org/app-portal.git {copy}"),
+        format!("git clone file://{primary} {copy}"),
+        // The template, the configuration and the submodules of the new
+        // repository all decide what later runs in it.
+        format!("git clone --template={home}/tpl {primary} {copy}"),
+        format!("git clone --recurse-submodules {primary} {copy}"),
+        format!("git clone --config core.pager=id {primary} {copy}"),
+        format!("git -c core.pager=id clone {primary} {copy}"),
+        format!("git clone --separate-git-dir {home}/sep {primary} {copy}"),
+        format!("git clone --upload-pack id {primary} {copy}"),
+        // The destination must be a directory that does not exist yet,
+        // below the home directory or an owned temporary directory.
+        format!("git clone {primary} {home}"),
+        format!("git clone {primary} /etc/guard-clone"),
+        format!("git clone {primary} {copy}/nested/deeper"),
+        // A single operand leaves the destination for Git to name.
+        format!("git clone {primary}"),
+        // The source must be a repository the user already has.
+        format!("git clone {home}/org {copy}"),
+        format!("git clone {primary} {copy} > {home}/clone.log"),
+        format!("git clone {primary} {copy} && rm -rf {primary}"),
+        format!("git clone -b missing-branch {primary} {copy}"),
+    ] {
+        session.assert_not_allow(&command);
+    }
+    // A hook the new checkout would run, and a template directory whose
+    // hooks the copy would keep, each keep their review.
+    executable_hook(&session.primary.join(".git/hooks/post-checkout"));
+    session.assert_not_allow(&format!("git clone {primary} {copy}"));
+    std::fs::remove_file(session.primary.join(".git/hooks/post-checkout")).unwrap();
+    session.assert_allow(&format!("git clone {primary} {copy}"), CLONE);
+    git(
+        &session.home,
+        &session.primary,
+        &[
+            "config",
+            "--global",
+            "init.templateDir",
+            &format!("{home}/tpl"),
+        ],
+    );
+    session.assert_not_allow(&format!("git clone {primary} {copy}"));
+}
+
+#[test]
 fn init_of_a_fresh_leaf_directly_in_a_temporary_root_is_quiet() {
     const INIT: &str = "native_exact_safe_git_init_target";
     let session = session("init-root");
