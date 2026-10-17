@@ -123,10 +123,13 @@ def _bound_external_archive_mcp_request(
     return {**message, "params": bound_params}, bound_params
 
 
-def _tool_decision_after_runtime_allow(decision: ToolCallDecision, *, source: str) -> ToolCallDecision:
+def _tool_decision_after_runtime_allow(
+    decision: ToolCallDecision, *, source: str, policy_action: GuardAction
+) -> ToolCallDecision:
     return replace(
         decision,
         action="allow",
+        policy_action=policy_action,
         source=source,
         pending_approval_reuse_decision=None,
         approval_reuse_claim_disposition=None,
@@ -718,6 +721,7 @@ class RuntimeMcpGuardProxy:
         return replace(
             decision,
             action=gate["action"],
+            policy_action=gate["policy_action"],
             source=gate["source"],
             summary=gate["summary"],
             approval_reuse_status=gate["approval_reuse_status"],
@@ -1028,6 +1032,7 @@ class RuntimeMcpGuardProxy:
         return replace(
             decision,
             action=override["action"],
+            policy_action=override["policy_action"],
             source=override["source"],
             pending_approval_reuse_decision=None,
             approval_reuse_claim_disposition=None,
@@ -1246,7 +1251,11 @@ class RuntimeMcpGuardProxy:
                 tool_decision=(
                     decision
                     if tool_source is None
-                    else _tool_decision_after_runtime_allow(decision, source=tool_source)
+                    else _tool_decision_after_runtime_allow(
+                        decision,
+                        source=tool_source,
+                        policy_action=route["decision_policy_action"],
+                    )
                 ),
                 tool_scanner_evidence=decision_scanner_evidence,
                 package_resolution=held["package_resolution"],

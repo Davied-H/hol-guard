@@ -7,6 +7,7 @@
 
 use std::collections::BTreeSet;
 
+use guard_command::approval_reuse::enforced_policy_action;
 use guard_command::mcp_tool_catalog::normalized_tools_catalog_page;
 use guard_contracts::{
     GuardAction, McpCatalogCursorV1, McpCatalogEventQueryV1, McpCatalogEventV1, McpCatalogStateV1,
@@ -232,9 +233,13 @@ pub(crate) fn saved_allow_gate(query: &McpSavedAllowGateQueryV1) -> Value {
         truthy_or(decision.current_action.as_deref(), &decision.action),
         GuardAction::Review,
     );
+    // The gate rejects the saved authority, so the action it leaves on the
+    // decision is not always the one the call enforces.
+    let policy = enforced_policy_action(action, Some("rejected"), Some(TOOL_CATALOG_INCOMPLETE));
     json!({
         "disable": true,
         "action": action.as_str(),
+        "policy_action": policy.as_str(),
         "source": "tool-catalog-state",
         "summary": SAVED_ALLOW_SUMMARY,
         "approval_reuse_status": "rejected",
