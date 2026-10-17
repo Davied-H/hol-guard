@@ -72,6 +72,11 @@ pub fn evaluate_with_deadline(
             .map(|p| json!({"left":p.left,"right":p.right}))
             .collect::<Vec<_>>())),
         "heredocs" => Ok(json!(shell_structure::extract_heredocs(command))),
+        // Callers that only need to know whether a command carries an inline
+        // script body would otherwise read the paged `heredocs` rows and throw
+        // the bodies away, so the hot path pays to ship a whole script across
+        // the boundary to compute a yes or no. The owner answers it directly.
+        "has_embedded_script" => Ok(json!(!shell_structure::extract_heredocs(command).is_empty())),
         "embedded_script_evidence" => Ok(json!(
             crate::embedded_script_evidence::embedded_script_evidence_entries(command)
         )),
