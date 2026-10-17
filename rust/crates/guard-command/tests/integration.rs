@@ -32,6 +32,7 @@ pub mod inline_expression_boundaries;
 pub mod js_semver_vectors;
 pub mod manifest_change_vectors;
 pub mod mcp_package_sources;
+pub mod native_command_source_stream;
 pub mod package_context_vectors;
 pub mod portable_command_source_fixtures;
 pub mod pretool_agent_metadata;

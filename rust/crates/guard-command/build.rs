@@ -10,8 +10,6 @@ use std::{
 };
 
 const MAX_INPUT_BYTES: u64 = 8 * 1024 * 1024;
-// The canonical corpus plus one acceptance source no longer fits in 4MiB.
-const MAX_ENVELOPE_BYTES: u64 = 8 * 1024 * 1024;
 
 fn read_input(root: &Path, path: &Path) -> String {
     let relative = path.strip_prefix(root).expect("input inside source tree");
@@ -169,22 +167,17 @@ fn main() {
         "canonical source inventory invalid"
     );
     let trust = trust_map(root);
-    // Keep raw JSON until the native duplicate-key/depth/budget validator runs.
-    // Parsing then reserializing here would silently discard duplicate keys.
-    let request = format!(
-        r#"{{"schema":"guard.command-extension-build.v1","sources":[{}],"mcp_sources":[{}],"trust":{}}}"#,
-        commands.join(","),
-        mcp.join(","),
-        trust
-    );
-    assert!(
-        request.len() as u64 <= MAX_ENVELOPE_BYTES,
-        "canonical source envelope exceeds budget"
-    );
-    let mut compiled = guard_command_build::native_command_program::source::compile_build_request(
-        request.as_bytes(),
-    )
-    .unwrap_or_else(|error| panic!("canonical source compilation failed: {error}"));
+    // Each raw record reaches native strict validation independently. Do not
+    // normalize authored JSON or construct a formatting-sensitive corpus envelope.
+    let commands: Vec<_> = commands.iter().map(|text| text.as_bytes()).collect();
+    let mcp: Vec<_> = mcp.iter().map(|text| text.as_bytes()).collect();
+    let mut compiled =
+        guard_command_build::native_command_program::source::compile_catalog_with_mcp(
+            &commands,
+            &mcp,
+            &serde_json::to_vec(&trust).expect("trust encoding"),
+        )
+        .unwrap_or_else(|error| panic!("canonical source compilation failed: {error}"));
     assert_eq!(compiled.catalog_projection_kind, "complete");
     assert_eq!(
         compiled.implementation_digest, identity,

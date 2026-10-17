@@ -50,6 +50,19 @@ fn offline_cli_exports_build_derived_trust_without_stdin() {
 }
 
 #[test]
+fn offline_cli_bounds_each_stream_frame_and_rejects_extra_arguments() {
+    let mut input = b"HGCS\x01".to_vec();
+    input.extend_from_slice(&(8 * 1024 * 1024 + 1u32).to_be_bytes());
+    let output = invoke(&["compile-stream"], &input);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["code"],
+        "command_source_bytes_invalid"
+    );
+    assert!(!invoke(&["compile-stream", "extra"], &[]).status.success());
+}
+
+#[test]
 fn offline_cli_compiles_deterministically_and_checks_exact_identity() {
     let input = request();
     let first = invoke(&["compile"], &input);

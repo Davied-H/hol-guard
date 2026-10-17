@@ -48,7 +48,7 @@ fn known_subset(values: &[String], owners: &[String]) -> bool {
     unique(values) && values.iter().all(|value| owners.contains(value))
 }
 
-fn validate(document: &SourceDocument, mcp: bool) -> Result<(), &'static str> {
+pub(super) fn validate(document: &SourceDocument, mcp: bool) -> Result<(), &'static str> {
     if document.schema != SOURCE_SCHEMA {
         return Err("command_source_version_unsupported");
     }

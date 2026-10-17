@@ -74,20 +74,17 @@ fn trust_rows(bytes: &[u8]) -> Result<(TrustMap, BTreeMap<String, String>), &'st
     Ok((map, classes))
 }
 
+pub(super) fn validate_trust(bytes: &[u8]) -> Result<(), &'static str> {
+    trust_rows(bytes).map(|_| ())
+}
+
 /// Existing MCP JSON remains canonical and is lowered alongside command sources.
 pub(super) fn lower_catalog(
     sources: &[&[u8]],
     mcp_sources: &[&[u8]],
     trust: &[u8],
 ) -> Result<CompiledSourceCatalog, &'static str> {
-    if (sources.is_empty() && mcp_sources.is_empty())
-        || sources.len() + mcp_sources.len() > 512
-        || sources
-            .iter()
-            .chain(mcp_sources.iter())
-            .try_fold(0usize, |total, bytes| total.checked_add(bytes.len()))
-            .is_none_or(|size| size > MAX_SOURCE_CATALOG_BYTES)
-    {
+    if (sources.is_empty() && mcp_sources.is_empty()) || sources.len() + mcp_sources.len() > 512 {
         return Err("command_source_catalog_bytes_invalid");
     }
     let mut documents: Vec<SourceDocument> = sources
@@ -470,7 +467,7 @@ mod tests {
         let mut source = EXAMPLE_SOURCE.to_vec();
         source.resize(MAX_PROGRAM_BYTES + 1, b' ');
         assert!(source.len() > MAX_PROGRAM_BYTES);
-        assert!(source.len() <= MAX_SOURCE_CATALOG_BYTES);
+        assert!(source.len() <= MAX_SOURCE_INPUT_BYTES);
 
         let output = compile_addition(&[source.as_slice()], TRUST_MAP)
             .expect("a valid source catalog above 4 MiB must compile as an addition");
