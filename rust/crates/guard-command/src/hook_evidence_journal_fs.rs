@@ -158,7 +158,7 @@ fn read_bounded(path: &Path, max_bytes: usize, label: &str) -> Result<Option<Vec
         return Err(io::Error::other(label.to_owned()));
     }
     let mut body = Vec::new();
-    file.by_ref()
+    Read::by_ref(&mut file)
         .take(max_bytes as u64 + 1)
         .read_to_end(&mut body)?;
     Ok(Some(body))
