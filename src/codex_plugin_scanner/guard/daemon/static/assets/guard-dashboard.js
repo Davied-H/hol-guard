@@ -13255,6 +13255,9 @@ function declaredScopesForAction(item, action) {
   return null;
 }
 function requestSupportsScope(item, action, scope) {
+  if (action === "allow" && item.scope_restrictions?.includes("retry_cannot_reuse_approval") && scope !== "artifact") {
+    return false;
+  }
   const declaredScopes = declaredScopesForAction(item, action);
   if (declaredScopes !== null) {
     return declaredScopes.includes(scope);
@@ -13269,7 +13272,7 @@ function scopeChoicesForRequest(item, action = "allow") {
     item,
     action,
     action === "allow" ? DEFAULT_SCOPE_CHOICES : BLOCK_SCOPE_CHOICES
-  );
+  ).map((choice) => action === "allow" && choice.value === "artifact" && item.scope_restrictions?.includes("retry_cannot_reuse_approval") ? { ...choice, label: "Exact reviewed action", description: "Choose a duration below. This request requires persistent consent." } : choice);
 }
 const ADVANCED_SCOPE_VALUES = /* @__PURE__ */ new Set(["global"]);
 function advancedScopeChoicesForRequest(item, action = "allow") {
@@ -31436,7 +31439,8 @@ function ApprovalExtensionRecommendationCard(props) {
     [recommendation]
   );
   const primary = recommendation?.permissions[0] ?? null;
-  const { item, allowScope, approvalGate, onResolve, onApproved, onDialogActiveChange } = props;
+  const { item, allowScope, approvalGate, onResolve, onApproved, onDialogActiveChange, persistExactAction = false } = props;
+  const resolutionAvailable = !retryCannotReuseApproval(item) || persistExactAction;
   const dialogActive = confirmOpen || busy;
   reactExports.useEffect(() => {
     onDialogActiveChange?.(dialogActive);
@@ -31460,18 +31464,19 @@ function ApprovalExtensionRecommendationCard(props) {
       setError(null);
       void (async () => {
         try {
+          const decisionPayload = buildDecisionPayload({
+            item,
+            action: "allow",
+            scope: allowScope,
+            reason: "approved in review; extension setting allowed",
+            persistExactAction
+          });
           const outcome = await approveWithExtensionAllow(
             {
               ...defaultExtensionAllowDeps,
               resolve: async (proof) => {
                 await onResolve({
-                  ...buildDecisionPayload({
-                    item,
-                    action: "allow",
-                    scope: allowScope,
-                    reason: "approved in review; extension setting allowed",
-                    persistExactAction: false
-                  }),
+                  ...decisionPayload,
                   ...approvalGateRequiredForResolution(approvalGate, "allow", allowScope) ? proof : {}
                 });
               }
@@ -31493,7 +31498,7 @@ function ApprovalExtensionRecommendationCard(props) {
         }
       })();
     },
-    [allowScope, approvalGate, copy, item, onApproved, onResolve, recommendation]
+    [allowScope, approvalGate, copy, item, onApproved, onResolve, recommendation, persistExactAction]
   );
   if (!recommendation || !copy || !primary) return null;
   const caution = recommendation.caution;
@@ -31516,10 +31521,11 @@ function ApprovalExtensionRecommendationCard(props) {
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-relaxed text-brand-dark/80", children: copy.body }),
             copy.cautionLines.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 space-y-1", "aria-label": "Before you allow this", children: copy.cautionLines.map((line) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { className: "text-sm font-medium text-brand-attention", children: line }, line)) }),
             authorityUnavailable && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-sm text-brand-dark/80", children: "Protection settings need attention before Guard can change them from here." }),
+            !resolutionAvailable && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-sm text-brand-dark/80", children: "Inspect this permission in Extensions. Approving this request once is unavailable." }),
             savedMessage && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-sm font-medium text-brand-green-text", role: "status", children: savedMessage }),
             error && !confirmOpen && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-sm text-brand-purple", role: "alert", children: error }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-3 flex flex-wrap items-center gap-2", children: [
-              !authorityUnavailable && savedMessage === null && gateReady && /* @__PURE__ */ jsxRuntimeExports.jsx(
+              resolutionAvailable && !authorityUnavailable && savedMessage === null && gateReady && /* @__PURE__ */ jsxRuntimeExports.jsx(
                 ActionButton,
                 {
                   variant: caution ? "outline" : "primary",
@@ -31528,7 +31534,7 @@ function ApprovalExtensionRecommendationCard(props) {
                   children: copy.primaryLabel
                 }
               ),
-              !authorityUnavailable && savedMessage === null && !gateReady && /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { href: "/settings?section=approval", variant: "outline", children: "Set up approval password" }),
+              resolutionAvailable && !authorityUnavailable && savedMessage === null && !gateReady && /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { href: "/settings?section=approval", variant: "outline", children: "Set up approval password" }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs(
                 "button",
                 {
@@ -31626,6 +31632,7 @@ function useReviewDecisionResolve(params) {
     availableScopeChoices,
     blockScopeOptions,
     hasAllowScope,
+    canSubmitAllow,
     watchOnlyObservation,
     rememberExactAction,
     extensionDialogActive,
@@ -31667,6 +31674,10 @@ function useReviewDecisionResolve(params) {
   const handleResolve = reactExports.useCallback(
     async (action, gateOverride) => {
       if (!item || resolutionBlockReason !== null) return;
+      if (action === "allow" && !canSubmitAllow) {
+        setErrorMessage(hasAllowScope ? "Choose 'Always allow exact action' before approving; run once is unavailable." : "This action has no eligible approval scope.");
+        return;
+      }
       const requestId = item.request_id;
       const requestedScope = action === "allow" ? allowScope : blockScope;
       const gate = gateOverride ?? approvalGate;
@@ -31747,7 +31758,9 @@ function useReviewDecisionResolve(params) {
       approvalPassword,
       approvalTotpCode,
       cooldownOptOut,
-      resolutionBlockReason
+      resolutionBlockReason,
+      canSubmitAllow,
+      hasAllowScope
     ]
   );
   const handleRequestResolve = reactExports.useCallback(
@@ -31755,6 +31768,10 @@ function useReviewDecisionResolve(params) {
       if (resolutionBlockReason !== null || decisionBusy) return;
       if (action === "allow" && !hasAllowScope) {
         setErrorMessage("This action has no eligible approval scope.");
+        return;
+      }
+      if (action === "allow" && !canSubmitAllow) {
+        setErrorMessage("Choose 'Always allow exact action' before approving; run once is unavailable.");
         return;
       }
       if (action === "block" && blockScopeOptions.length === 0) {
@@ -31830,6 +31847,7 @@ function useReviewDecisionResolve(params) {
       decisionContractKey,
       handleResolve,
       hasAllowScope,
+      canSubmitAllow,
       isStillShown,
       item,
       approvalGate,
@@ -32019,7 +32037,8 @@ function ReviewDecisionCard(props) {
     setAllowScope,
     availableScopeChoices,
     blockScopeOptions,
-    hasAllowScope: canSubmitAllow,
+    hasAllowScope,
+    canSubmitAllow,
     watchOnlyObservation,
     rememberExactAction,
     extensionDialogActive,
@@ -32170,6 +32189,7 @@ function ReviewDecisionCard(props) {
           item,
           approvalGate,
           allowScope,
+          persistExactAction: persistExactAllow,
           disabled: !canSubmitAllow || submitting !== null || pendingAction !== null,
           onResolve: props.onResolve,
           onApproved: handleExtensionApproved,

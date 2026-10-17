@@ -163,7 +163,8 @@ export function ReviewDecisionCard(props: {
     setAllowScope,
     availableScopeChoices,
     blockScopeOptions,
-    hasAllowScope: canSubmitAllow,
+    hasAllowScope,
+    canSubmitAllow,
     watchOnlyObservation,
     rememberExactAction,
     extensionDialogActive,
@@ -348,6 +349,7 @@ export function ReviewDecisionCard(props: {
             item={item}
             approvalGate={approvalGate}
             allowScope={allowScope}
+            persistExactAction={persistExactAllow}
             disabled={!canSubmitAllow || submitting !== null || pendingAction !== null}
             onResolve={props.onResolve}
             onApproved={handleExtensionApproved}

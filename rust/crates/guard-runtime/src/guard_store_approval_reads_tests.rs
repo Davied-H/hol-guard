@@ -4,11 +4,13 @@
 //! Python still attaches the temporary MCP and local tool hints and decodes
 //! the page cursor, so the replay leaves both out.
 
-use guard_contracts::{GuardStoreRequestV1, GUARD_STORE_REQUEST_SCHEMA};
+use guard_contracts::{ApprovalScopeItemV1, GuardStoreRequestV1, GUARD_STORE_REQUEST_SCHEMA};
 use rusqlite::Connection;
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
+use crate::approval_scope_contract::View;
+use crate::approval_scope_material::scope_contract_digest;
 use crate::guard_store_approval_read_scope::UNAVAILABLE;
 use crate::guard_store_cmd_vectors_tests::{insert_rows, temp_home};
 use crate::guard_store_op::evaluate_guard_store_request;
@@ -175,7 +177,7 @@ pub(crate) fn expected(call: &Value, long_string: usize) -> Result<Value, (Strin
 
 /// Extend historical Python replies with the additive capability projection.
 /// Expected permissions still come exclusively from each recorded contract.
-fn with_execution_capabilities(value: Value) -> Value {
+pub(crate) fn with_execution_capabilities(value: Value) -> Value {
     match value {
         Value::Object(mut fields) => {
             for item in fields.values_mut() {
@@ -184,6 +186,46 @@ fn with_execution_capabilities(value: Value) -> Value {
             if fields.contains_key("scope_contract_version")
                 && fields.contains_key("allowed_scopes_by_action")
             {
+                let field = |name: &str| fields.get(name).cloned();
+                let item = ApprovalScopeItemV1 {
+                    artifact_id: field("artifact_id"),
+                    artifact_type: field("artifact_type"),
+                    artifact_hash: field("artifact_hash"),
+                    artifact_name: field("artifact_name"),
+                    policy_action: field("policy_action"),
+                    harness: field("harness"),
+                    publisher: field("publisher"),
+                    source_scope: field("source_scope"),
+                    config_path: field("config_path"),
+                    wrapper_chain: field("wrapper_chain"),
+                    action_identity: field("action_identity"),
+                    raw_command_text: field("raw_command_text"),
+                    action_envelope_json: field("action_envelope_json"),
+                    scanner_evidence: field("scanner_evidence"),
+                    workspace_target: fields
+                        .get("workspace")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                };
+                let mut upgraded = Value::Object(fields);
+                upgrade_recorded_contract(&item, &mut upgraded);
+                fields = upgraded.as_object().unwrap().clone();
+                if fields.contains_key("allowed_scopes") {
+                    fields.insert(
+                        "allowed_scopes".to_owned(),
+                        fields["allowed_scopes_by_action"]["allow"].clone(),
+                    );
+                }
+                if fields.contains_key("recommended_scope") {
+                    fields.insert(
+                        "recommended_scope".to_owned(),
+                        fields["recommended_scope_by_action"]["allow"].clone(),
+                    );
+                }
+                let allow_scopes = fields["allowed_scopes_by_action"]["allow"].clone();
+                if let Some(Value::Object(decision)) = fields.get_mut("decision_v2_json") {
+                    decision.insert("approval_scopes".to_owned(), allow_scopes);
+                }
                 let scopes = &fields["allowed_scopes_by_action"];
                 let allow = scopes["allow"]
                     .as_array()
@@ -210,6 +252,80 @@ fn with_execution_capabilities(value: Value) -> Value {
         }
         other => other,
     }
+}
+
+/// Apply only the specified unavailable-delivery change to recorded contracts.
+/// All other permission expectations remain the historical fixture oracle.
+pub(crate) fn upgrade_recorded_contract(item: &ApprovalScopeItemV1, want: &mut Value) {
+    let unbound_native = item
+        .artifact_id
+        .as_ref()
+        .and_then(Value::as_str)
+        .is_some_and(|id| id.contains(":native-pretool:"))
+        && !item
+            .artifact_hash
+            .as_ref()
+            .and_then(Value::as_str)
+            .is_some_and(|hash| {
+                crate::guard_store_native_review_consume::binding_pattern().is_match(hash)
+            });
+    if !unbound_native {
+        return;
+    }
+    let restrictions = want["scope_restrictions"].as_array_mut().unwrap();
+    if !restrictions.contains(&json!("retry_cannot_reuse_approval")) {
+        restrictions.insert(1, json!("retry_cannot_reuse_approval"));
+    }
+    restrictions.retain(|reason| {
+        reason != "workspace_allow_bound_to_project_and_action"
+            && reason != "broad_allow_bound_to_exact_action"
+    });
+    let persistence = want["exact_action_persistence_eligible"].as_bool().unwrap();
+    if persistence {
+        want["allowed_scopes_by_action"]["allow"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|scope| scope == "artifact");
+        want["recommended_scope_by_action"]["allow"] = if want["allowed_scopes_by_action"]["allow"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+        {
+            Value::Null
+        } else {
+            json!("artifact")
+        };
+    } else {
+        want["allowed_scopes_by_action"]["allow"] = json!([]);
+        want["recommended_scope_by_action"]["allow"] = Value::Null;
+        let restrictions = want["scope_restrictions"].as_array_mut().unwrap();
+        if !restrictions.contains(&json!("execution_binding_unavailable")) {
+            restrictions.insert(2, json!("execution_binding_unavailable"));
+        }
+    }
+    let strings = |value: &Value| -> Vec<String> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect()
+    };
+    let blocks = strings(&want["allowed_scopes_by_action"]["block"]);
+    let allows = strings(&want["allowed_scopes_by_action"]["allow"]);
+    let restrictions = strings(&want["scope_restrictions"]);
+    let reasons = strings(&want["task_capability_eligibility"]["reason_codes"]);
+    want["scope_contract_digest"] = json!(scope_contract_digest(
+        &View::new(item),
+        &allows.iter().map(String::as_str).collect::<Vec<_>>(),
+        &blocks.iter().map(String::as_str).collect::<Vec<_>>(),
+        &restrictions.iter().map(String::as_str).collect::<Vec<_>>(),
+        want["task_capability_eligibility"]["eligible"]
+            .as_bool()
+            .unwrap(),
+        &reasons.iter().map(String::as_str).collect::<Vec<_>>(),
+        persistence,
+    ));
 }
 
 fn list(home: &std::path::Path, source: &str, call: &Value) -> Result<Value, (String, String)> {

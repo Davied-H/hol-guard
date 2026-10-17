@@ -138,6 +138,9 @@ export function requestSupportsScope(
   action: ApprovalResolutionAction,
   scope: DecisionScope,
 ): boolean {
+  if (action === "allow" && item.scope_restrictions?.includes("retry_cannot_reuse_approval") && scope !== "artifact") {
+    return false;
+  }
   const declaredScopes = declaredScopesForAction(item, action);
   if (declaredScopes !== null) {
     return declaredScopes.includes(scope);
@@ -161,7 +164,10 @@ export function scopeChoicesForRequest(
     item,
     action,
     action === "allow" ? DEFAULT_SCOPE_CHOICES : BLOCK_SCOPE_CHOICES,
-  );
+  ).map((choice) => action === "allow" && choice.value === "artifact" &&
+    item.scope_restrictions?.includes("retry_cannot_reuse_approval")
+      ? { ...choice, label: "Exact reviewed action", description: "Choose a duration below. This request requires persistent consent." }
+      : choice);
 }
 
 export const ADVANCED_SCOPE_VALUES = new Set<DecisionScope>(["global"]);

@@ -132,6 +132,8 @@ pub(crate) fn contract(view: &View<'_>) -> ScopeContract {
         if !persistence_eligible {
             allow_scopes.clear();
             restrictions.push("execution_binding_unavailable");
+        } else {
+            allow_scopes.retain(|scope| *scope == "artifact");
         }
     }
     if unverified {

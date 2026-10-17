@@ -171,14 +171,21 @@ test("persistent-only native review requires explicit duration before submitting
   const bodies: Array<Record<string, unknown>> = [];
   const persistent: GuardApprovalRequest = {
     ...request, harness: "omp", artifact_id: "omp:native-pretool:bash", artifact_type: "tool_call",
-    allowed_scopes: ["artifact"], allowed_scopes_by_action: { allow: ["artifact"], block: ["artifact"] },
-    recommended_scope_by_action: { allow: "artifact", block: "artifact" },
+    allowed_scopes: ["artifact", "workspace", "harness", "global"],
+    allowed_scopes_by_action: { allow: ["artifact", "workspace", "harness", "global"], block: ["artifact"] },
+    recommended_scope_by_action: { allow: "workspace", block: "artifact" },
     scope_restrictions: ["retry_cannot_reuse_approval"], exact_action_persistence_eligible: true,
   };
   await mountApprovalFixture(page, bodies, persistent);
   await page.goto(`/requests/scope-e2e?${DAEMON}`);
   await expect(page.getByRole("radio", { name: /^This time/ })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: /Allow just this once|Allow and remember for this project/ })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: /Exact reviewed action/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose an available approval duration" })).toBeDisabled();
+  await page.keyboard.press("a");
+  await expect(page.getByText("Choose 'Always allow exact action' before approving; run once is unavailable.")).toBeVisible();
+  await expect(page.getByText("This action has no eligible approval scope.")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByText("Always allow exact action", { exact: true }).click();
   await expect(page.getByRole("radio", { name: /Always allow exact action/ })).toBeChecked();
   await expect(page.getByRole("button", { name: "Approve and remember", exact: true })).toBeEnabled();
