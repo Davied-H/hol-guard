@@ -14,6 +14,7 @@ import sys
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
+from ..native_hook_adapter import UnsupportedHarnessError
 from ..native_hook_render import native_evaluation_has_terminal_policy_action
 from .native_hook_exit_code import native_hook_verdict_exit_code
 
@@ -689,13 +690,6 @@ def _approval_surface_policy_for_flow(config_policy: str, approval_flow: dict[st
         return "never-auto-open"
     return config_policy
 
-_ACTION_ENVELOPE_HARNESSES = frozenset(
-    {
-        "codex", "cline", "claude-code", "opencode", "copilot", "gemini", "hermes",
-        "openclaw", "cursor", "grok", "kimi", "pi", "omp", "zcode", "devin",
-    }
-)
-
 def _hook_action_envelope(
     *,
     harness: str,
@@ -704,23 +698,26 @@ def _hook_action_envelope(
     workspace: Path | None,
     guard_home: Path | None = None,
 ) -> GuardActionEnvelope | None:
-    canonical_harness = _canonical_harness_name(harness)
-    if canonical_harness not in _ACTION_ENVELOPE_HARNESSES:
+    try:
+        return normalize_harness_payload(
+            _canonical_harness_name(harness),
+            _hook_event_name(payload) or "PreToolUse",
+            payload,
+            workspace=workspace,
+            home_dir=home_dir,
+            guard_home=guard_home,
+        )
+    except UnsupportedHarnessError:
+        # Which harnesses have an action adapter is the resident's registry.
+        # A second list here would quietly withhold the envelope from a
+        # harness the adapter had learned, so the answer comes from asking.
         return None
-    return normalize_harness_payload(
-        canonical_harness,
-        _hook_event_name(payload) or "PreToolUse",
-        payload,
-        workspace=workspace,
-        home_dir=home_dir,
-        guard_home=guard_home,
-    )
 
 def _action_envelope_json(envelope: GuardActionEnvelope | None) -> dict[str, object] | None:
     return envelope.to_dict() if envelope is not None else None
 
 __all__ = [
-    "_ACTION_ENVELOPE_HARNESSES", "_action_envelope_json", "_apply_native_edge_envelope_fields",
+    "_action_envelope_json", "_apply_native_edge_envelope_fields",
     "_approval_center_browser_url",
     "_approval_surface_policy_for_flow", "_browser_url_with_guard_params", "_coalesce_string",
     "_emit_native_hook_block_stderr",
