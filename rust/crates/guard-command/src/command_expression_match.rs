@@ -102,7 +102,15 @@ fn compile(condition: &CommandConditionV1) -> Result<Regex, String> {
         "glob" => glob_pattern(&condition.value)?,
         // Anchored, because the dialect matches a whole command and a
         // leftmost match of an alternation would answer a smaller question.
-        "regex" => format!("\\A(?:{})\\z", condition.value),
+        "regex" => {
+            // The author's pattern has to be a whole regex on its own first.
+            // `git status)|(.*` wrapped unchecked becomes an alternation whose
+            // second branch is anchored only at the end, so a search would
+            // match every command the rule never named.
+            Regex::new(&condition.value)
+                .map_err(|_| format!("invalid_command_{}", condition.operator))?;
+            format!("\\A(?:{})\\z", condition.value)
+        }
         _ => fancy_regex::escape(&condition.value).into_owned(),
     };
     let source = if condition.case_sensitive {
