@@ -14,6 +14,7 @@ fn policy(policy_action: &str) -> PackagePolicy {
     evaluation.insert("policy_action".to_owned(), json!(policy_action));
     evaluation.insert("decision".to_owned(), json!(policy_action));
     evaluation.insert("reasons".to_owned(), json!([]));
+    evaluation.insert("packages".to_owned(), json!([]));
     PackagePolicy {
         evaluation,
         current_action: GuardAction::Review,
@@ -166,10 +167,24 @@ fn the_composition_queues_a_package_request_the_tool_policy_permitted() {
 
 #[test]
 fn the_composition_hands_back_an_observed_forward() {
-    // The forward comes with the observed requests the proxy queues first.
+    // The forward runs under the authoritative action and carries the observed
+    // requests the proxy queues first, plus the evidence the override leaves.
     assert_eq!(
         compose("observe", &tool(GuardAction::Allow), &policy("review")),
-        Err(PACKAGE_OBSERVE),
+        Ok(Decided::Package(PackageRoute::ObserveForward(
+            package_observe::Observed {
+                executed_action: "allow".to_owned(),
+                tool: None,
+                package: Some("review".to_owned()),
+                evidence_append: vec![json!({
+                    "authoritative_action": "allow",
+                    "observed_package_policy_action": "review",
+                    "observed_policy_action": "review",
+                    "observed_tool_policy_action": "allow",
+                    "source": "observe_mode",
+                })],
+            }
+        ))),
     );
 }
 

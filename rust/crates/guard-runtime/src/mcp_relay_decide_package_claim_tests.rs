@@ -104,6 +104,7 @@ fn policy(policy_action: &str) -> PackagePolicy {
     evaluation.insert("policy_action".to_owned(), json!(policy_action));
     evaluation.insert("decision".to_owned(), json!(policy_action));
     evaluation.insert("reasons".to_owned(), json!([]));
+    evaluation.insert("packages".to_owned(), json!([]));
     evaluation.insert(
         "risk_summary".to_owned(),
         json!("left-pad was published yesterday"),

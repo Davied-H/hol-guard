@@ -8,17 +8,17 @@
 //! (`native_mcp_proxy_decision.py` `tool_facts`, `package_facts`), so the
 //! relay and the proxy decide a package call by one algorithm rather than two.
 //!
-//! The relay answers only the legs that stop or forward a call on what it has
-//! already read. Three defer:
+//! The route names every leg; three of them are answered beyond it, because
+//! each writes rows before the call is answered:
 //!
-//! * a queued package request under the `ask` blocked-request mode, because
-//!   `_queue_package_approval_response` then writes a package-shaped approval
-//!   row the relay does not yet shape. Under `safe-alternative` the same leg
-//!   blocks in place, which the lane answers;
-//! * an observed forward, because the proxy queues the observed requests it
-//!   would have blocked before it forwards;
-//! * a forward whose policies left a saved approval pending, which is the
-//!   claim lane's call to spend.
+//! * a queued package request, which under the `ask` blocked-request mode
+//!   writes the package-shaped approval row `_queue_package_approval_response`
+//!   queues (`mcp_relay_decide_package_ask.rs`). Under `safe-alternative` the
+//!   same leg blocks in place;
+//! * an observed forward, whose observed approval requests are queued before
+//!   the call is forwarded (`mcp_relay_decide_package_observe.rs`);
+//! * a forward whose policies left a saved approval pending, which the claim
+//!   lane spends (`mcp_relay_decide_package_claim.rs`).
 //!
 //! A queued *tool* leg does not defer. `_queue_approval_center_response`
 //! answers it exactly as it answers a plain blocked tool call, so the relay
