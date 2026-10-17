@@ -34,6 +34,8 @@ mod cd;
 mod chmod;
 #[path = "workspace_contained_git.rs"]
 mod git_metadata;
+#[path = "workspace_contained_home_cd.rs"]
+mod home_cd;
 #[path = "workspace_git_keeps_work.rs"]
 mod keeps_work;
 #[path = "workspace_contained_kill.rs"]
@@ -441,8 +443,16 @@ pub(super) fn convert(
         return;
     };
     let (launch_context, sent_text) = (context, command_text);
+    // The sink expands a leading `cd ~/<dir>` itself and runs the rest from
+    // the directory it reaches, so the checks below see that directory.
+    let issued = model;
+    let home = home_cd::as_absolute_cd(model, context);
+    let model = home.as_ref().map_or(model, |list| &list.model);
+    let command_text = home
+        .as_ref()
+        .map_or(command_text, |list| Some(list.text.as_str()));
     let projected = super::contained_wrapper::package_dir::as_cd_list(model, context);
-    let (issued, model) = (model, projected.as_ref().map_or(model, |list| &list.model));
+    let model = projected.as_ref().map_or(model, |list| &list.model);
     let command_text = projected
         .as_ref()
         .map_or(command_text, |list| Some(list.text.as_str()));
