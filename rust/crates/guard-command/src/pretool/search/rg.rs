@@ -83,11 +83,63 @@ pub(in crate::pretool) fn rg_hidden_whitelist_reason(
 /// search that file instead, which is why a piped `rg` still has to answer
 /// for the config even though it walks no tree itself.
 fn config_cannot_add_arguments(arguments: &[String], context: ReadContext<'_>) -> bool {
-    context.ripgrep_config_absent
-        || arguments
-            .iter()
-            .take_while(|argument| argument.as_str() != "--")
-            .any(|argument| argument == "--no-config")
+    context.ripgrep_config_absent || config_option_present(arguments)
+}
+
+/// Short options that take the next argument as their value, as the parsed
+/// pass below reads them.
+const RG_SHORT_VALUE_OPTIONS: [char; 13] = [
+    'e', 'f', 'g', 'A', 'B', 'C', 'E', 'j', 'm', 'M', 'r', 't', 'T',
+];
+
+/// Whether `--no-config` is here as an option rather than as the value of
+/// one.
+///
+/// `rg -e --no-config` searches its input for that string, and
+/// `rg --replace --no-config` writes it over every match: an option takes
+/// the next argument whatever it looks like. Reading either as the flag
+/// would clear a config the command still loads, and the config's lines
+/// become arguments of their own, so option values are stepped over here the
+/// way the parsed pass steps over them, and `--` ends the options.
+fn config_option_present(arguments: &[String]) -> bool {
+    let mut pending_value = false;
+    for argument in arguments {
+        if std::mem::take(&mut pending_value) {
+            continue;
+        }
+        if argument == "--" {
+            return false;
+        }
+        if let Some(name) = argument.strip_prefix("--").filter(|name| !name.is_empty()) {
+            match name.split_once('=') {
+                // `--opt=value` carries its value, so the next argument is an
+                // option or an operand again.
+                Some((name, _)) => {
+                    if name == "no-config" {
+                        return true;
+                    }
+                }
+                None => {
+                    if name == "no-config" {
+                        return true;
+                    }
+                    pending_value = options::rg_value_role(argument).is_some();
+                }
+            }
+            continue;
+        }
+        if let Some(cluster) = argument.strip_prefix('-').filter(|rest| !rest.is_empty()) {
+            // The first value-taking letter consumes the rest of the cluster,
+            // and the next argument only when nothing is attached to it.
+            if let Some((offset, option)) = cluster
+                .char_indices()
+                .find(|(_, option)| RG_SHORT_VALUE_OPTIONS.contains(option))
+            {
+                pending_value = cluster[offset + option.len_utf8()..].is_empty();
+            }
+        }
+    }
+    false
 }
 
 fn safe_rg_arguments_inner(
@@ -314,4 +366,43 @@ fn rg_arguments_pass(
                 context.home_dir,
                 context.cwd,
             ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::config_option_present;
+
+    fn arguments(line: &str) -> Vec<String> {
+        line.split_whitespace().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn the_flag_counts_only_where_ripgrep_reads_it_as_an_option() {
+        for line in [
+            "--no-config PATTERN",
+            "-n --no-config PATTERN",
+            "--no-config -e PATTERN",
+            "-e PATTERN --no-config",
+            "-A3 --no-config PATTERN",
+            "--max-count=2 --no-config PATTERN",
+            "-in --no-config PATTERN",
+        ] {
+            assert!(config_option_present(&arguments(line)), "{line}");
+        }
+        for line in [
+            "PATTERN",
+            // The value of an option, whatever it is spelled like.
+            "-e --no-config",
+            "--max-count --no-config",
+            "--replace --no-config",
+            "-f --no-config",
+            "-C --no-config -e PATTERN",
+            "-ie --no-config",
+            // Past `--` every argument is an operand.
+            "-- --no-config",
+            "PATTERN -- --no-config",
+        ] {
+            assert!(!config_option_present(&arguments(line)), "{line}");
+        }
+    }
 }
