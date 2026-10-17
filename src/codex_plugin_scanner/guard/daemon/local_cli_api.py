@@ -13,6 +13,7 @@ from ..adapters.harness_mcp_discovery import (
     DiscoveredHarnessMcpServer,
     DiscoveredRemoteMcpServer,
     apply_source_labels,
+    configured_harness_detections,
     discover_harness_mcp_servers,
     discover_remote_mcp_servers,
     discovered_server_for_observation,
@@ -849,37 +850,43 @@ class LocalCliApiService:
 
     def _discovered_remote_servers(self) -> tuple[DiscoveredRemoteMcpServer, ...]:
         # Remote servers are listed, never launched; a failed read lists none.
-        now = time.monotonic()
         cached = self._remote_discovery_cache
-        if cached is not None and now - cached[0] < _DISCOVERY_TTL_SECONDS:
-            return cached[1]
-        try:
-            servers = discover_remote_mcp_servers(
-                home_dir=Path.home(),
-                guard_home=self._store.guard_home,
-                workspace_dir=self._discovery_workspace(),
-            )
-        except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
-            return ()
-        self._remote_discovery_cache = (now, servers)
-        return servers
+        if cached is None or time.monotonic() - cached[0] >= _DISCOVERY_TTL_SECONDS:
+            _ = self._discovered_servers()
+            cached = self._remote_discovery_cache
+        return cached[1] if cached is not None else ()
 
     def _discovered_servers(self, *, strict: bool = False) -> tuple[DiscoveredHarnessMcpServer, ...]:
         now = time.monotonic()
         cached = self._discovery_cache
         if cached is not None and now - cached[0] < _DISCOVERY_TTL_SECONDS:
             return cached[1]
+        home_dir = Path.home()
+        workspace_dir = self._discovery_workspace()
         try:
+            # One detection pass feeds both the stdio and the remote list.
+            detections = configured_harness_detections(home_dir, self._store.guard_home, workspace_dir)
             servers = discover_harness_mcp_servers(
-                home_dir=Path.home(),
+                home_dir=home_dir,
                 guard_home=self._store.guard_home,
-                workspace_dir=self._discovery_workspace(),
+                workspace_dir=workspace_dir,
+                detections=detections,
             )
         except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
             if strict:
                 raise DiscoveryStageError("configured_host_scan_failed") from None
             return ()
         self._discovery_cache = (now, servers)
+        try:
+            remote = discover_remote_mcp_servers(
+                home_dir=home_dir,
+                guard_home=self._store.guard_home,
+                workspace_dir=workspace_dir,
+                detections=detections,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
+            remote = ()
+        self._remote_discovery_cache = (now, remote)
         return servers
 
     def _live_mcp_launch_command(self, payload: dict[str, object]) -> str | None:

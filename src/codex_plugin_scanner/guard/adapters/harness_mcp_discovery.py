@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -11,7 +12,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit, urlunsplit
 
 from ..models import GuardArtifact, HarnessDetection
 from ..runtime.local_cli_identity import UnlistedCliIdentity
@@ -21,11 +21,13 @@ from ..runtime.mcp_protection import McpServerIdentity, build_mcp_server_identit
 from ..runtime.observed_mcp_tools import ObservedMcpTool, observed_mcp_tool
 from .contracts import display_name_for
 from .mcp_servers import ManagedMcpServer, observable_stdio_servers_with_proxy, proxy_process_env
+from .remote_mcp_origin import remote_mcp_origin
 
 if TYPE_CHECKING:
     from .base import HarnessContext
 
 MAX_DISCOVERED_MCP_SERVERS = 100
+_NAMESPACE_UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
 logger = logging.getLogger(__name__)
 
 
@@ -79,6 +81,14 @@ def discover_remote_mcp_servers(
 
     loaded = detections if detections is not None else _safe_detections(home_dir, guard_home, workspace_dir)
     return _remote_servers(loaded)
+
+
+def configured_harness_detections(
+    home_dir: Path, guard_home: Path, workspace_dir: Path | None = None
+) -> list[HarnessDetection]:
+    """One detection pass that both ``discover_*`` functions can share."""
+
+    return _safe_detections(home_dir, guard_home, workspace_dir)
 
 
 def _stdio_servers(loaded: Sequence[HarnessDetection]) -> tuple[DiscoveredHarnessMcpServer, ...]:
@@ -146,37 +156,23 @@ def _remote_server(artifact: GuardArtifact) -> DiscoveredRemoteMcpServer | None:
     if artifact.artifact_type != "mcp_server" or artifact.command or not artifact.url:
         return None
     origin = remote_mcp_origin(artifact.url)
-    name = artifact.name.strip()
-    if origin is None or not name:
+    # Harnesses put the server name in the tool namespace with every
+    # character outside [A-Za-z0-9_-] replaced by `_`.
+    name = _NAMESPACE_UNSAFE.sub("_", artifact.name.strip())
+    if origin is None or not name.strip("_"):
         return None
-    # The namespace a call to this server's tools carries on this harness.
+    # The namespace a call to this server's tools carries on this harness. A
+    # name whose calls nest another server under it (`codex_apps`) names no
+    # single connector, so it is left to the calls that use it.
     tool = observed_mcp_tool(artifact.harness, f"mcp__{name}__tool")
-    if tool is None:
+    nested = observed_mcp_tool(artifact.harness, f"mcp__{name}__server__tool")
+    if tool is None or nested is None or nested.namespace != tool.namespace:
         return None
     return DiscoveredRemoteMcpServer(
         tool=tool,
         origin=origin,
         source_label=f"{display_name_for(artifact.harness)} · configured server",
     )
-
-
-def remote_mcp_origin(url: str) -> str | None:
-    """Return ``scheme://host/path``: query, fragment and credentials never persist."""
-
-    try:
-        parts = urlsplit(url.strip())
-        hostname = parts.hostname
-        port = parts.port
-    except ValueError:
-        return None
-    if parts.scheme.lower() not in {"http", "https"} or not hostname:
-        return None
-    host = f"[{hostname}]" if ":" in hostname else hostname
-    netloc = f"{host}:{port}" if port is not None else host
-    origin = urlunsplit((parts.scheme.lower(), netloc.lower(), parts.path, "", ""))
-    if len(origin) > 512 or any(character in origin for character in "?#@ ") or not origin.isprintable():
-        return None
-    return origin
 
 
 def persist_discovered_harness_mcp_servers(

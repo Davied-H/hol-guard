@@ -86,6 +86,25 @@ def test_remote_origin_keeps_scheme_host_and_path_only() -> None:
         assert remote_mcp_origin(rejected) is None
 
 
+def test_remote_origin_masks_path_segments_that_look_like_keys() -> None:
+    assert remote_mcp_origin("https://mcp.example.test/api/mcp/s/a1b2c3d4e5/mcp") == (
+        "https://mcp.example.test/api/mcp/s/[masked]/mcp"
+    )
+    assert remote_mcp_origin("https://mcp.example.test/v1/" + "k" * 24) == "https://mcp.example.test/v1/[masked]"
+    assert remote_mcp_origin("https://mcp.example.test/2025-06-18/mcp") == "https://mcp.example.test/2025-06-18/mcp"
+
+
+def test_a_server_name_is_read_as_the_namespace_its_calls_carry(tmp_path: Path) -> None:
+    detections = (
+        _remote_detection("claude-code", "echo mcp", "https://mcp.example.test/mcp"),
+        _remote_detection("codex", "codex_apps", "https://mcp.example.test/apps"),
+    )
+
+    remote = discover_remote_mcp_servers(home_dir=tmp_path, guard_home=tmp_path / "home", detections=detections)
+
+    assert [server.tool.namespace for server in remote] == ["mcp__echo_mcp__"]
+
+
 def test_configured_remote_server_shares_the_record_its_tool_calls_use(tmp_path: Path) -> None:
     store = GuardStore(tmp_path / "home")
     observed = _observe(store, "codex", "echo-mcp")
@@ -219,3 +238,21 @@ def test_mcp_list_shows_markup_in_names_literally(tmp_path: Path, capsys: pytest
 
     assert rc == 0
     assert "[bold" in out
+
+
+def test_mcp_list_json_keeps_the_configs_that_declare_a_server(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    store = GuardStore(home)
+    _observe(store, "codex", "echo-mcp")
+    detection = _remote_detection("codex", "echo-mcp", "https://mcp.example.test/mcp")
+    remote = discover_remote_mcp_servers(home_dir=tmp_path, guard_home=home, detections=(detection,))
+    persist_discovered_harness_mcp_servers(store, (), seen_at=_NOW, remote=remote)
+    _observe(store, "codex", "echo-mcp")
+
+    rc, out = _run(capsys, "mcp", "list", "--home", str(home), "--json")
+
+    assert rc == 0
+    (item,) = json.loads(out)["items"]
+    assert item["declared_sources"] == ["codex:remote"]

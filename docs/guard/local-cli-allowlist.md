@@ -12,7 +12,7 @@ Shell utilities such as `ls` and `grep` are not custom extensions. Everyday sear
 
 **From your apps** lists MCP servers Guard found in harness configs. **Seen on this device** lists your own scripts and binaries that agents have actually run. Guard ranks those by how much they look like a product tool, not by whichever command ran last.
 
-Remote MCP servers (a `url`, `httpUrl`, or `serverUrl` entry instead of a launch command) are listed too. Guard never connects to one to list its tools. It records the server's origin (scheme, host, and path; the query string and any credentials are dropped) and fills in tools as agents call them. A configured remote server and the tools an agent calls on it are one connector, so it shows up once.
+Remote MCP servers (a `url`, `httpUrl`, or `serverUrl` entry instead of a launch command) are listed too. Guard never connects to one to list its tools. It records the server's origin (scheme, host, and path; the query string and any credentials are dropped, and a path segment that looks like a key is shown as `[masked]`) and fills in tools as agents call them. A configured remote server and the tools an agent calls on it are one connector, so it shows up once.
 
 ## From the command line
 

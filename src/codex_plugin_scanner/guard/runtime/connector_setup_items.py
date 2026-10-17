@@ -28,6 +28,7 @@ class ConnectorSetupItem:
     source_label: str | None
     remote_origin: str | None
     needs_setup: bool
+    declared_sources: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +112,7 @@ def connector_setup_summary(store: GuardStore) -> ConnectorSetupSummary:
             continue
         label = item.get("source_label")
         origin = item.get("remote_origin")
+        declared = item.get("declared_sources")
         rows.append(
             ConnectorSetupItem(
                 cli_id=cli_id,
@@ -120,6 +122,9 @@ def connector_setup_summary(store: GuardStore) -> ConnectorSetupSummary:
                 source_label=label if isinstance(label, str) and label else None,
                 remote_origin=origin if isinstance(origin, str) and origin else None,
                 needs_setup=connector_needs_setup(item),
+                declared_sources=tuple(value for value in declared if isinstance(value, str))
+                if isinstance(declared, list)
+                else (),
             )
         )
     return ConnectorSetupSummary(items=tuple(rows))

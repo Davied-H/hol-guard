@@ -96,6 +96,7 @@ def mcp_list_payload(store: GuardStore, *, generated_at: str, dashboard_url: str
                 "status": status,
                 "source_label": item.source_label,
                 "remote_origin": item.remote_origin,
+                "declared_sources": list(item.declared_sources),
                 "setup_url": connector_setup_href(dashboard_url, item.cli_id),
             }
         )
