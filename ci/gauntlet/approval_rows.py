@@ -59,6 +59,7 @@ def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
             }
         )
         rows[-1]["connector_class"] = connector_class(rows[-1], envelope, observations)
+        rows[-1]["connector"] = row_connector(rows[-1], envelope, observations)
     return rows
 
 
@@ -96,6 +97,26 @@ def _remote(item: dict[str, Any]) -> bool:
     )
 
 
+def row_connector(row: dict[str, Any], envelope: dict[str, Any], observations: list[dict[str, Any]]) -> str | None:
+    """The connector a pending row is about: its MCP server, or the local CLI it was observed as.
+
+    A row whose connector cannot be resolved stays ``None``, so a judge never counts it for a
+    connector it cannot prove it belongs to.
+    """
+    server = _mcp_server(str(row.get("tool_name") or ""))
+    if server is not None:
+        return server
+    name = _mapping(envelope.get("local_cli_observation")).get("name")
+    group = str(row.get("queue_group_id") or "")
+    if not name and group.startswith("connector:"):
+        digest = group.removeprefix("connector:")
+        found = [
+            item for item in observations if digest in {item.get("identity_hash"), item.get("server_identity_hash")}
+        ]
+        name = found[0].get("name") if found else None
+    return name if isinstance(name, str) and name else None
+
+
 def connector_class(row: dict[str, Any], envelope: dict[str, Any], observations: list[dict[str, Any]]) -> str | None:
     """Classify one pending row; ``None`` when it is not about a connector at all."""
     server = _mcp_server(str(row.get("tool_name") or ""))
@@ -117,7 +138,7 @@ def connector_class(row: dict[str, Any], envelope: dict[str, Any], observations:
 
 
 def covered_connector_classes(scenarios: Any) -> set[str]:
-    """Classes the connector catalog exercises, read from the cases themselves."""
+    """Classes these cases exercise, read from the cases themselves."""
     from .connector_fixtures import ECHO_MCP, LANECTL, REMOTE_MCP
 
     covered: set[str] = set()
@@ -132,20 +153,37 @@ def covered_connector_classes(scenarios: Any) -> set[str]:
     return covered
 
 
-def connector_coverage(cases: list[dict[str, Any]]) -> dict[str, Any]:
-    """Pending connector rows by class, and every class no Gauntlet case exercises."""
+def connector_classes(rows: Any) -> list[str]:
+    """The connector class of each pending row, so a report case keeps them after its raw rows are dropped."""
+    classes = (row.get("connector_class") for row in rows or [] if isinstance(row, dict))
+    return sorted(name for name in classes if isinstance(name, str))
+
+
+def connector_coverage(cases: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Pending connector rows by class and the classes this run proved, from the cases it ran.
+
+    A class is covered only by a connector case that ran in this run and passed, so a
+    targeted run, a skipped case or a failed one never claims the classes it did not
+    exercise. ``None`` when the run held no connector case at all. ``supported`` is what
+    the catalog could exercise, kept apart from what this run did.
+    """
     from .catalog import CONNECTOR_CATALOG, load_catalog
 
+    catalog = {scenario.id: scenario for scenario in load_catalog(CONNECTOR_CATALOG)}
+    ran = [case for case in cases if case.get("id") in catalog]
+    if not ran:
+        return None
     observed: dict[str, int] = {}
-    for case in cases:
-        for row in case.get("approval_rows") or []:
-            name = row.get("connector_class") if isinstance(row, dict) else None
-            if isinstance(name, str):
-                observed[name] = observed.get(name, 0) + 1
-    covered = covered_connector_classes(load_catalog(CONNECTOR_CATALOG))
+    for case in ran:
+        names = case.get("connector_classes")
+        names = names if isinstance(names, list) else connector_classes(case.get("approval_rows"))
+        for name in names:
+            observed[name] = observed.get(name, 0) + 1
+    covered = covered_connector_classes(catalog[case["id"]] for case in ran if case.get("outcome") == "pass")
     universe = sorted(set(CONNECTOR_CLASSES) | set(observed))
     return {
         "observed": dict(sorted(observed.items())),
         "covered": sorted(covered),
+        "supported": sorted(covered_connector_classes(catalog.values())),
         "uncovered": [{"class": name, "rows": observed.get(name, 0)} for name in universe if name not in covered],
     }

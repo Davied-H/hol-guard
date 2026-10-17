@@ -133,13 +133,6 @@ jobs:
         run: echo "$RUNNER_TEMP/gitleaks-bin" >> "$GITHUB_PATH"
       - name: Verify Gitleaks fixture exclusion scope
         run: python3 scripts/ci/check_gitleaks_fixture_scope.py
-      # The denylist lives only in the runner environment or a repository secret, never in
-      # the tree; the check skips when neither is set and never prints a matched token.
-      - name: Private token check
-        env:
-          GUARD_PRIVATE_TOKEN_DENYLIST_SECRET: ${{ secrets.GUARD_PRIVATE_TOKEN_DENYLIST }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: python3 scripts/ci/check_private_tokens.py ${BASE_SHA:+--range "$BASE_SHA..HEAD"}
       - name: Determine Gitleaks scope
         id: gitleaks-scope
         env:
@@ -165,6 +158,23 @@ jobs:
             echo "head_sha=$EVENT_HEAD_SHA" >> "$GITHUB_OUTPUT"
           else
             echo "mode=dir" >> "$GITHUB_OUTPUT"
+          fi
+      # The denylist lives only in the runner environment or a repository secret, never in
+      # the tree; the check skips when neither is set and never prints a matched token. It
+      # scans the same commit range as Gitleaks, so pull-request, merge-group and push runs
+      # all check their commit messages as well as the tree.
+      - name: Private token check
+        env:
+          GUARD_PRIVATE_TOKEN_DENYLIST_SECRET: ${{ secrets.GUARD_PRIVATE_TOKEN_DENYLIST }}
+          SCOPE_MODE: ${{ steps.gitleaks-scope.outputs.mode }}
+          BASE_SHA: ${{ steps.gitleaks-scope.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.gitleaks-scope.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE_MODE" = "git" ]; then
+            python3 scripts/ci/check_private_tokens.py --range "$BASE_SHA..$HEAD_SHA"
+          else
+            python3 scripts/ci/check_private_tokens.py
           fi
       - name: Prepare isolated Gitleaks commit range
         id: gitleaks-range

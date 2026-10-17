@@ -229,6 +229,7 @@ def run_harness_case(
                 context=context,
                 workspace=fixture.workspace,
                 model=model,
+                mcp_config=connector.mcp_configs[0] if connector is not None else None,
             )
             # The approve-then-retry lane needs a second phase: an operator granting the
             # review row while the agent is still running, so the agent issues its own retry.

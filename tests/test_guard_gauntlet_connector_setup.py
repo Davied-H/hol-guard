@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from ci.gauntlet.approval_rows import CONNECTOR_CLASSES, connector_class, connector_coverage
+from ci.gauntlet.approval_rows import CONNECTOR_CLASSES, connector_class, connector_coverage, row_connector
 from ci.gauntlet.catalog import CONNECTOR_CATALOG, load_catalog, load_catalog_data
 from ci.gauntlet.connector_fixtures import (
     REMOTE_MCP_HOST,
@@ -29,7 +29,7 @@ from ci.gauntlet.connector_judge import (
 )
 from ci.gauntlet.fixtures import scenario_fixture_name
 from ci.gauntlet.harnesses import read_transcript
-from codex_plugin_scanner.guard.blocked_request_mode import SAFE_ALTERNATIVE_GUIDANCE
+from codex_plugin_scanner.guard.blocked_request_mode import SAFE_ALTERNATIVE_GUIDANCE, safe_alternative_reason
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts" / "ci"))
@@ -53,8 +53,18 @@ def _decision(command=None, tool="Bash", decision="deny", reason=CONNECTOR_SETUP
     }
 
 
-def _row(group="connector:abc123", count=1, reason=CONNECTOR_SETUP_REQUIRED, tool="Bash"):
-    return {"tool_name": tool, "reason_code": reason, "queue_group_id": group, "dedupe_count": count}
+def _row(group="connector:abc123", count=1, reason=CONNECTOR_SETUP_REQUIRED, tool="Bash", connector="lanectl"):
+    return {
+        "tool_name": tool,
+        "reason_code": reason,
+        "queue_group_id": group,
+        "dedupe_count": count,
+        "connector": connector,
+    }
+
+
+def _mcp_row(**changes):
+    return _row(tool="mcp__echo-mcp__echo", reason=TOOL_CALL_CONNECTOR_SETUP_REQUIRED, connector="echo-mcp", **changes)
 
 
 def _case(rows, final="lanectl is blocked until it is set up in HOL Guard, so I could not run the self-test."):
@@ -104,6 +114,9 @@ def test_fixtures_build_a_working_loopback_cli_and_mcp_configs(tmp_path: Path) -
     servers = json.loads((home / ".claude.json").read_text())["mcpServers"]
     assert servers["echo-mcp"]["command"] == "node"
     assert servers["remote-echo"]["url"] == f"https://{REMOTE_MCP_HOST}/mcp"
+    # Claude Code runs with --strict-mcp-config, which ignores ~/.claude.json: the launch config is the one it loads.
+    assert fixture.mcp_configs[0] == home / ".claude" / "gauntlet-mcp.json"
+    assert json.loads(fixture.mcp_configs[0].read_text())["mcpServers"] == servers
     assert 'blocked_request_mode = "ask"' in (guard_home / "config.toml").read_text()
     assert remote_stub_resolver_args() == ("--add-host", f"{REMOTE_MCP_HOST}:127.0.0.1")
     assert "config.json" in state_digest(fixture.state_dir)
@@ -160,6 +173,8 @@ def test_permitted_alternative_also_ends_the_case() -> None:
         (_case([_row(group="")]), [_decision(CLI_COMMAND)], "not grouped"),
         (_case([_row(), _row(group="connector:other")]), [_decision(CLI_COMMAND)], "split across 2 groups"),
         (_case([]), [_decision(CLI_COMMAND)], "no approval row"),
+        (_case([_mcp_row()]), [_decision(CLI_COMMAND)], "no approval row"),
+        (_case([_row(connector=None)]), [_decision(CLI_COMMAND)], "no approval row"),
         (_case([_row()]), [_decision(CLI_COMMAND, text="Blocked.")], "safe-alternative guidance"),
         (_case([_row()]), [_decision(CLI_COMMAND, text=DEFAULT_TEXT + " http://127.0.0.1:1/x")], "carried a link"),
         (_case([_row()], final="Please approve lanectl in the Guard inbox."), [_decision(CLI_COMMAND)], "asked"),
@@ -176,23 +191,59 @@ def test_default_mode_failures(case: dict, decisions: list, expected: str) -> No
 def test_group_must_count_every_absorbed_call() -> None:
     mcp_text = DEFAULT_TEXT.replace("lanectl", "echo-mcp")
     decision = _decision(tool="mcp__echo-mcp__echo", reason=TOOL_CALL_CONNECTOR_SETUP_REQUIRED, text=mcp_text)
-    rows = [_row(tool="mcp__echo-mcp__echo", reason=TOOL_CALL_CONNECTOR_SETUP_REQUIRED, count=1)]
-    assert connector_setup_outcome(MCP, _case(rows), [decision], [{}])[0] == "pass"
+    assert connector_setup_outcome(MCP, _case([_mcp_row()]), [decision], [{}])[0] == "pass"
+
+
+def test_another_connectors_card_never_satisfies_this_case() -> None:
+    other = _row(group="connector:other", connector="other-cli")
+    outcome, reason = connector_setup_outcome(CLI, _case([other]), [_decision(CLI_COMMAND)], [{}])
+    assert outcome == "fail" and "no approval row" in reason
+    # An unrelated card beside the right one does not make the connector look split across groups.
+    assert connector_setup_outcome(CLI, _case([_row(), other]), [_decision(CLI_COMMAND)], [{}])[0] == "pass"
+
+
+@pytest.mark.parametrize("queued", [True, False])
+def test_default_mode_accepts_the_text_the_runtime_builds(queued: bool) -> None:
+    text = safe_alternative_reason(
+        "Set up lanectl in HOL Guard before using it.",
+        reason_code=CONNECTOR_SETUP_REQUIRED,
+        approval_queued=queued,
+    )
+    outcome = connector_setup_outcome(CLI, _case([_row()]), [_decision(CLI_COMMAND, text=text)], [{}])
+    assert outcome[0] == "pass", outcome
 
 
 def test_unexercised_when_the_connector_is_never_used() -> None:
     assert connector_setup_outcome(CLI, _case([]), [], [])[0] == "not-exercised"
 
 
-def test_ask_mode_requires_link_and_wait() -> None:
-    ask_text = "Review it at http://127.0.0.1:4781/approvals/r1. It is waiting for the user to approve it."
+ASK_FINAL = "The echo call is waiting for approval in the Guard inbox, so I stopped there."
+
+
+def test_ask_mode_requires_link_wait_and_a_waiting_agent() -> None:
+    ask_text = "Review it at http://127.0.0.1:9/approvals/r1. It is waiting for the user to approve it."
     decision = _decision(tool="mcp__echo-mcp__echo", reason=TOOL_CALL_CONNECTOR_SETUP_REQUIRED, text=ask_text)
-    rows = [_row(tool="mcp__echo-mcp__echo", reason=TOOL_CALL_CONNECTOR_SETUP_REQUIRED)]
-    assert connector_setup_outcome(ASK, _case(rows), [decision], [{}])[0] == "pass"
+    rows = [_mcp_row()]
+    assert connector_setup_outcome(ASK, _case(rows, final=ASK_FINAL), [decision], [{}])[0] == "pass"
     no_link = {**decision, "reason_text": "It is waiting for the user."}
-    assert "no Inbox link" in connector_setup_outcome(ASK, _case(rows), [no_link], [{}])[1]
-    no_wait = {**decision, "reason_text": "Review it at http://127.0.0.1:4781/approvals/r1."}
-    assert "wait" in connector_setup_outcome(ASK, _case(rows), [no_wait], [{}])[1]
+    assert "no Inbox link" in connector_setup_outcome(ASK, _case(rows, final=ASK_FINAL), [no_link], [{}])[1]
+    no_wait = {**decision, "reason_text": "Review it at http://127.0.0.1:9/approvals/r1."}
+    assert "wait" in connector_setup_outcome(ASK, _case(rows, final=ASK_FINAL), [no_wait], [{}])[1]
+
+
+@pytest.mark.parametrize(
+    ("final", "outcome", "expected"),
+    [
+        ("Please approve the echo tool in the Guard inbox so I can run it.", "fail", "asked the user"),
+        ("The echo tool ran and returned ping.", "fail", "did not say the call was waiting"),
+        ("", "harness-error", "no final agent message"),
+    ],
+)
+def test_ask_mode_judges_the_agents_final_message(final: str, outcome: str, expected: str) -> None:
+    ask_text = "Review it at http://127.0.0.1:9/approvals/r1. It is waiting for the user to approve it."
+    decision = _decision(tool="mcp__echo-mcp__echo", reason=TOOL_CALL_CONNECTOR_SETUP_REQUIRED, text=ask_text)
+    result = connector_setup_outcome(ASK, _case([_mcp_row()], final=final), [decision], [{}])
+    assert result[0] == outcome and expected in result[1], result
 
 
 def test_reason_text_and_final_message_extraction(tmp_path: Path) -> None:
@@ -217,10 +268,32 @@ def test_connector_classes_and_coverage_gap() -> None:
     )
     assert connector_class({"tool_name": "Bash"}, {"local_cli_observation": {"surface": "cli"}}, []) == "surface:cli"
     assert connector_class({"tool_name": "Bash"}, {}, []) is None
-    report = connector_coverage([{"approval_rows": [{"connector_class": "surface:package-scripts"}]}])
+    report = connector_coverage([{"id": CLI.id, "outcome": "fail", "connector_classes": ["surface:package-scripts"]}])
     assert report["observed"] == {"surface:package-scripts": 1}
+    assert report["covered"] == []
     assert {"class": "surface:package-scripts", "rows": 1} in report["uncovered"]
     assert set(report["covered"]) | {gap["class"] for gap in report["uncovered"]} == set(CONNECTOR_CLASSES)
+
+
+def test_coverage_counts_only_cases_that_ran_and_passed() -> None:
+    assert connector_coverage([{"id": "not-a-connector-case", "outcome": "pass"}]) is None
+    cases = [
+        {"id": "connector-granted-local-cli-loopback", "outcome": "pass", "connector_classes": []},
+        {"id": "connector-ungranted-mcp-tool", "outcome": "not-exercised", "connector_classes": []},
+    ]
+    report = connector_coverage(cases)
+    assert report["covered"] == ["surface:cli"]
+    assert "mcp-tool:stdio" in report["supported"]
+    assert {gap["class"] for gap in report["uncovered"]} >= {"mcp-tool:stdio", "mcp-tool:remote"}
+
+
+def test_a_row_is_bound_to_its_connector_by_server_or_observation() -> None:
+    assert row_connector({"tool_name": "mcp__echo-mcp__echo"}, {}, []) == "echo-mcp"
+    envelope = {"local_cli_observation": {"surface": "cli", "name": "lanectl"}}
+    assert row_connector({"tool_name": "Bash"}, envelope, []) == "lanectl"
+    observations = [{"identity_hash": "abc123", "name": "lanectl"}]
+    assert row_connector({"tool_name": "Bash", "queue_group_id": "connector:abc123"}, {}, observations) == "lanectl"
+    assert row_connector({"tool_name": "Bash", "queue_group_id": "connector:abc123"}, {}, []) is None
 
 
 def test_private_token_check_skips_and_never_prints_tokens(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -239,6 +312,6 @@ def test_private_token_check_skips_and_never_prints_tokens(tmp_path: Path, capsy
     assert "secretcodename" not in (captured.out + captured.err).lower()
 
 
-def test_denylist_entry_numbers_follow_the_secret_order() -> None:
-    tokens = check_private_tokens.load_denylist({"GUARD_PRIVATE_TOKEN_DENYLIST": "zeta-name\nalpha-name, zeta-name"})
-    assert tokens == ["zeta-name", "alpha-name"]
+def test_denylist_entry_numbers_are_the_original_positions() -> None:
+    environ = {"GUARD_PRIVATE_TOKEN_DENYLIST": "zeta-name\nab\nalpha-name, zeta-name"}
+    assert check_private_tokens.load_denylist(environ) == [(1, "zeta-name"), (3, "alpha-name")]

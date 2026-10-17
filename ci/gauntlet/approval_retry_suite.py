@@ -22,6 +22,7 @@ from typing import Any
 from ci.native_runtime import probe_installed_pi_output as probe
 
 from .approval_retry import CATALOG as APPROVAL_RETRY_CATALOG
+from .approval_rows import connector_classes
 from .catalog import catalog_digest, load_catalog
 from .fixtures import create_run_root, digest_file
 from .harness_case import run_harness_case
@@ -99,6 +100,7 @@ def run_approval_retry_suite(
                 "id": row["id"],
                 **row["assessment"],
                 "approval_grants": len((row.get("approval_grants") or {}).get("granted") or []),
+                "connector_classes": connector_classes(row.get("approval_rows")),
                 "evidence_sha256": digest_file(output / "cases" / f"{row['id']}.json"),
             }
             for row in (completed[s.id] for s in selected if s.id in completed)

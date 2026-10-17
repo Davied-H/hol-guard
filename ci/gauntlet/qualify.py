@@ -19,11 +19,10 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import qualify_setup
 from .fixtures import create_numbered_dir
@@ -35,8 +34,12 @@ from .timing import PhaseTimings
 REPO = Path(__file__).resolve().parents[2]
 REAP_SECONDS = 150.0
 RETRYABLE_OUTCOMES = frozenset({"not-exercised", "inference-error", "harness-error"})
-PROVIDER_ENV = tuple(
-    "GUARD_GAUNTLET_" + name for name in ("PROVIDER_URL", "MODEL", "PROVIDER_IDENTITY", "API_KEY", "REASONING_EFFORT")
+PROVIDER_ENV = (
+    "GUARD_GAUNTLET_PROVIDER_URL",
+    "GUARD_GAUNTLET_MODEL",
+    "GUARD_GAUNTLET_PROVIDER_IDENTITY",
+    "GUARD_GAUNTLET_API_KEY",
+    "GUARD_GAUNTLET_REASONING_EFFORT",
 )
 
 
@@ -159,7 +162,6 @@ def summarize_attempt(
             and interruptions["benign_cases"] > 0,
             "interruptions": interruptions,
             "known_gaps": summary.get("known_gaps", []),
-            "connector_coverage": summary.get("connector_coverage"),
             "merge_qualified": summary.get("merge_qualified") is True,
             "stopped_early": summary.get("stopped_early") is True,
             "outcomes": dict(Counter(case.get("outcome") for case in cases)),
@@ -406,7 +408,7 @@ def main(args: Any) -> int:
                         cwd=candidate,
                         env=env,
                         log=run_root / "logs" / f"attempt-{k}.log",
-                        on_started=lambda k=k: driven.append(k),
+                        on_started=lambda: driven.append(k),
                     )
                 record = summarize_attempt(k, evidence, rc, time.monotonic() - t0, _read_summary(evidence))
                 record["work_root"] = str(work)
@@ -484,8 +486,6 @@ def main(args: Any) -> int:
             "known_gaps": verify_result.get("known_gaps") if verify_result else None,
             "unverified_interruptions": None if verify_result or not attempts else attempts[-1].get("interruptions"),
             "unverified_known_gaps": None if verify_result or not attempts else attempts[-1].get("known_gaps"),
-            # Connector classes no Gauntlet case exercises: a coverage gap, reported and never hidden.
-            "connector_gaps": ((attempts[-1].get("connector_coverage") or {}).get("uncovered") if attempts else None),
             "verify": verify_result,
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "phase_seconds": timings.report(),

@@ -26,6 +26,7 @@ from typing import Any
 from .catalog import Scenario
 from .claude_tools import claude_tools
 from .connector_judge import final_message
+from .mcp_calls import codex_call, codex_result, cursor_call
 
 HARNESSES = ("omp", "claude-code", "codex", "cursor")
 
@@ -146,11 +147,13 @@ class Harness:
         context: str,
         workspace: Path,
         model: str | None,
+        mcp_config: Path | None = None,
     ) -> list[str]:
         """Build a non-interactive, JSON-streaming invocation with the CLI's own approvals off.
 
         A harness-side sandbox or approval prompt could stop a harmful call before it
-        reaches Guard and be miscounted as protection, so only Guard may refuse.
+        reaches Guard and be miscounted as protection, so only Guard may refuse. Claude
+        Code ignores every MCP config but ``mcp_config`` (``--strict-mcp-config``).
         """
         glossary = _TOOL_GLOSSARY[self.name]
         if self.name == "claude-code":
@@ -173,6 +176,8 @@ class Harness:
                 "--tools",
                 claude_tools(scenario),
             ]
+            if mcp_config is not None:
+                command += ["--mcp-config", str(mcp_config)]
             model = self.model(model)
             return command + (["--model", model] if model else [])
         if self.name == "codex":
@@ -462,6 +467,10 @@ def _codex_event(event: dict, kind: Any, calls: dict, order: list, terminal: boo
             _remember(calls, order, item.get("id"), item_type, {"changes": item.get("changes")})
             if kind == "item.completed":
                 _finish(calls, item.get("id"), item.get("status") != "completed", item.get("changes"))
+        elif item_type == "mcp_tool_call" and (call := codex_call(item)):
+            _remember(calls, order, item.get("id"), *call)
+            if kind == "item.completed":
+                _finish(calls, item.get("id"), *codex_result(item))
     elif kind == "turn.completed":
         return True, failed
     elif kind in {"turn.failed", "error"}:
@@ -476,11 +485,13 @@ def _cursor_event(event: dict, kind: Any, calls: dict, order: list, terminal: bo
         if len(tools) == 1:
             name = tools[0]
             body = wrapper[name] if isinstance(wrapper[name], dict) else {}
-            _remember(calls, order, event.get("call_id"), name, body.get("args"))
+            _remember(calls, order, event.get("call_id"), *cursor_call(name, body))
             if event.get("subtype") == "completed":
                 result = body.get("result")
                 success = result.get("success") if isinstance(result, dict) else None
-                is_error = not isinstance(success, dict) or success.get("exitCode", 0) != 0
+                is_error = not isinstance(success, dict) or (
+                    success.get("exitCode", 0) != 0 or success.get("isError") is True
+                )
                 _finish(calls, event.get("call_id"), is_error, result)
     elif kind == "result":
         return True, event.get("is_error") is True or event.get("subtype") != "success"

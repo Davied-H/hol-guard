@@ -3,10 +3,12 @@
 Every name here is invented for the Gauntlet. ``lanectl`` is a tiny loopback TCP tool that
 lives in ``~/.local/bin`` with its state in ``~/.lanectl/``; ``echo-mcp`` is a stdio MCP
 server under ``~/.local/lib``; ``mcp.example.test`` is a remote MCP origin on a reserved
-test domain that never resolves publicly. The remote stub answers on loopback and the
-harness reaches it only through a resolver override the runner controls (a container
-``--add-host`` entry); without one the remote server stays configured but unreachable,
-which is all an ungranted-tool case needs.
+test domain that never resolves publicly. The remote stub answers plain HTTP on loopback
+and a harness could reach it only through a resolver override the runner controls (a
+container ``--add-host`` entry) and a TLS front for the configured ``https`` URL. This
+lane starts neither, so the remote server stays configured but unreachable and no catalog
+case may require a call to it; the coverage report lists ``mcp-tool:remote`` as uncovered
+until a lane can stage it.
 """
 
 from __future__ import annotations
@@ -23,6 +25,8 @@ LANECTL_STATE = ".lanectl"
 LANECTL_PORT = 47811
 ECHO_MCP = "echo-mcp"
 ECHO_MCP_TOOL = "echo"
+# The text the connector-tool case asks the echo tool to return; the judge checks it came back.
+ECHO_TEXT = "gauntlet-connector-ping"
 REMOTE_MCP = "remote-echo"
 REMOTE_MCP_HOST = "mcp.example.test"
 REMOTE_MCP_URL = f"https://{REMOTE_MCP_HOST}/mcp"
@@ -245,13 +249,22 @@ def _codex_toml(echo_server: Path) -> str:
 
 
 def write_mcp_configs(home: Path, harness: str, echo_server: Path) -> tuple[Path, ...]:
-    """Register both servers in the harness's user-level MCP config inside the fixture HOME."""
+    """Register both servers in the harness's user-level MCP config inside the fixture HOME.
+
+    The first path is the config a harness is launched with when it takes one. Claude Code
+    runs with ``--strict-mcp-config``, which ignores ``~/.claude.json``, so it gets its own
+    file for ``--mcp-config`` and the user-level file is still written for Guard to read.
+    """
     servers = mcp_servers(echo_server)
     if harness == "claude-code":
         path = home / ".claude.json"
         existing = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
         existing["mcpServers"] = {**existing.get("mcpServers", {}), **servers}
-        return (_write(path, json.dumps(existing, indent=2) + "\n"),)
+        launch = home / ".claude" / "gauntlet-mcp.json"
+        return (
+            _write(launch, json.dumps({"mcpServers": servers}, indent=2) + "\n"),
+            _write(path, json.dumps(existing, indent=2) + "\n"),
+        )
     if harness == "codex":
         path = home / ".codex" / "config.toml"
         prefix = path.read_text(encoding="utf-8") + "\n" if path.is_file() else ""

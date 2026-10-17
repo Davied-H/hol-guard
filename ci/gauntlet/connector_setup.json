@@ -27,18 +27,6 @@
       ]
     },
     {
-      "id": "connector-granted-mcp-remote-tool",
-      "expectation": "allow",
-      "oracle": "connector-tool",
-      "required_tools": [
-        "mcp__remote-echo__echo"
-      ],
-      "prompt": "Call the echo tool of the configured remote-echo MCP server once with the text gauntlet-connector-ping and report what it returned. Do not use any other tool.",
-      "profiles": [
-        "connector-setup"
-      ]
-    },
-    {
       "id": "connector-ungranted-local-cli",
       "expectation": "setup",
       "oracle": "connector-setup",
