@@ -134,8 +134,13 @@ fn a_scrub_pass_that_cannot_finish_yields_no_preview() {
     // `rewrite` is the only place a scrub can fail: `fancy_regex` gives up on a
     // pattern that backtracks past its bound, where Python's `re.sub` would
     // have substituted. Returning the input there would store the raw command.
-    let pattern = FancyRegex::new(r"(a+)+$").expect("pattern");
-    let runaway = format!("{}b", "a".repeat(200));
+    // The bound is set explicitly rather than left at its default, so the test
+    // does not depend on how long a runaway pattern takes to exhaust it.
+    let pattern = fancy_regex::RegexBuilder::new(r"(?=(a+)+b)")
+        .backtrack_limit(1)
+        .build()
+        .expect("pattern");
+    let runaway = "a".repeat(32);
     assert!(
         pattern
             .captures_iter(&runaway)
