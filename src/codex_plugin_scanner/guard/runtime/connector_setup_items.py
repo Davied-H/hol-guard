@@ -13,8 +13,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from .package_json_script_memory import _package_item_available, public_local_cli_item
-
 if TYPE_CHECKING:
     from ..store import GuardStore
 
@@ -53,6 +51,10 @@ def listed_public_items(store: GuardStore) -> list[dict[str, object]]:
     A legacy server-wide MCP record is hidden once a host connection for the
     same server is recorded; package scripts whose manifest is gone drop out.
     """
+
+    # Package script memory loads the command catalog; importing it here keeps
+    # `hol-guard --help` from paying for it.
+    from .package_json_script_memory import _package_item_available, public_local_cli_item
 
     stored = store.list_local_cli_items()
     configured = {
