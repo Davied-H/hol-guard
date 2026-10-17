@@ -26,11 +26,69 @@ const MAX_IGNORE_BYTES: u64 = 64 * 1024;
 const IGNORE_FILES: [&str; 3] = [".gitignore", ".ignore", ".rgignore"];
 
 /// Negation components seen so far: every one, for re-entered directories,
-/// and the ones that could name a hidden secret.
+/// and the re-included paths that could name a hidden secret.
 #[derive(Default)]
 struct Negations {
     all: Vec<String>,
-    risky: Vec<String>,
+    risky: Vec<Risk>,
+}
+
+/// One negated pattern, kept with the scope Git gives it.
+///
+/// A pattern anchored to its ignore file's directory, by a leading slash or
+/// by a slash anywhere inside it, re-includes that one path and nothing
+/// else: `!/.env.example` at a repository root says nothing about
+/// `src/.env.example`, which `rg` keeps skipping as an ordinary hidden
+/// entry. A bare name re-includes every entry of that name below the
+/// directory the ignore file applies to.
+struct Risk {
+    /// The directory the ignore file applies to.
+    base: PathBuf,
+    /// The pattern's components, each with whether it could name a hidden
+    /// secret on its own.
+    components: Vec<(String, bool)>,
+    /// Whether the single component re-includes a name at any depth.
+    anywhere: bool,
+}
+
+impl Risk {
+    /// Whether this negation re-includes `path`, a hidden entry the walk
+    /// found, or a directory on the way to one.
+    fn re_includes(&self, path: &Path) -> bool {
+        let glob = |pattern: &str, name: &std::ffi::OsStr| {
+            super::glob_matches(
+                pattern.to_ascii_lowercase().as_bytes(),
+                name.to_string_lossy().to_ascii_lowercase().as_bytes(),
+            )
+        };
+        let Ok(relative) = path.strip_prefix(&self.base) else {
+            return false;
+        };
+        if self.anywhere {
+            let Some((pattern, risky)) = self.components.first() else {
+                return false;
+            };
+            return *risky && relative.file_name().is_some_and(|name| glob(pattern, name));
+        }
+        // A directory on the way to the re-included path is re-included
+        // too, so a prefix of the pattern's components counts, and the
+        // component the path ends at decides whether it could name a
+        // secret.
+        let names: Vec<&std::ffi::OsStr> = relative.iter().collect();
+        let Some((_, risky)) = names
+            .len()
+            .checked_sub(1)
+            .and_then(|index| self.components.get(index))
+        else {
+            return false;
+        };
+        *risky
+            && names
+                .iter()
+                .copied()
+                .zip(&self.components)
+                .all(|(name, (pattern, _))| glob(pattern, name))
+    }
 }
 
 /// A directory a plain ignore rule prunes: a bare name anywhere below the
@@ -114,7 +172,11 @@ fn no_hidden_whitelist(root: &Path, context: ReadContext<'_>) -> bool {
                 })
             })
         };
-        !matches(&negations.all, &pruned) && !matches(&negations.risky, &hidden)
+        !matches(&negations.all, &pruned)
+            && !negations
+                .risky
+                .iter()
+                .any(|risk| hidden.iter().any(|path| risk.re_includes(path)))
     })
 }
 
@@ -219,13 +281,15 @@ fn excludes_files(lines: &[String], home: &Path) -> Vec<PathBuf> {
 
 /// Walks the directories `rg` may enter below `root`, reading each ignore
 /// file there. Returns the directory names it pruned by a plain rule and
-/// the hidden names it saw.
+/// the paths of the hidden entries it saw. A negation is held against the
+/// whole path, not the name alone, because a rule anchored to one directory
+/// says nothing about a name of its own below another.
 fn walk(
     root: &Path,
     repository: bool,
     outer: Vec<Rule>,
     negations: &mut Negations,
-) -> Option<(Vec<String>, Vec<String>)> {
+) -> Option<(Vec<String>, Vec<PathBuf>)> {
     let mut pruned = Vec::new();
     let mut hidden = Vec::new();
     let mut pending = vec![(root.to_path_buf(), 0usize, outer, repository)];
@@ -254,7 +318,7 @@ fn walk(
                 *listed |= name.eq_ignore_ascii_case(wanted);
             }
             if name.starts_with('.') && name != ".git" {
-                hidden.push(name.to_owned());
+                hidden.push(entry.path());
             }
             let is_dir = entry.file_type().ok()?.is_dir();
             if is_dir && name != ".git" && (!name.starts_with('.') || benign_hidden(name)) {
@@ -319,7 +383,7 @@ fn ignore_rules(
             continue;
         }
         if let Some(pattern) = line.strip_prefix('!') {
-            record_negation(pattern, negations);
+            record_negation(pattern, base, negations);
             continue;
         }
         let line = line.strip_suffix('/').unwrap_or(line);
@@ -343,15 +407,21 @@ fn ignore_rules(
     Some(rules)
 }
 
-/// Records each component of a negated pattern, marking the ones that could
-/// name a hidden secret. An escape or empty component matches anything.
-fn record_negation(pattern: &str, negations: &mut Negations) {
-    let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
+/// Records a negated pattern, with the directory its ignore file applies to
+/// and whether each component could name a hidden secret. An escape or empty
+/// component matches anything.
+fn record_negation(pattern: &str, base: &Path, negations: &mut Negations) {
     let pattern = pattern.strip_suffix('/').unwrap_or(pattern);
+    // Git anchors a pattern to its ignore file's directory as soon as it
+    // carries a slash anywhere but the end, so only a bare name re-includes
+    // entries deeper down.
+    let anchored = pattern.starts_with('/') || pattern.contains('/');
+    let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
+    let mut components = Vec::new();
     for component in pattern.split('/') {
         if component.is_empty() || component.contains('\\') {
             negations.all.push("*".to_owned());
-            negations.risky.push("*".to_owned());
+            components.push(("*".to_owned(), true));
             continue;
         }
         negations.all.push(component.to_owned());
@@ -361,10 +431,13 @@ fn record_negation(pattern: &str, negations: &mut Negations) {
         // directory, so it counts whenever it matches a hidden name.
         let harmless = plain_name(component)
             && (!component.starts_with('.') || (screened && benign_hidden(component)));
-        if !harmless {
-            negations.risky.push(component.to_owned());
-        }
+        components.push((component.to_owned(), !harmless));
     }
+    negations.risky.push(Risk {
+        base: base.to_path_buf(),
+        components,
+        anywhere: !anchored,
+    });
 }
 
 fn benign_hidden(name: &str) -> bool {
