@@ -25,6 +25,10 @@ fn linux_workspace_sandbox_available() -> bool {
 }
 
 pub(crate) const REASON: &str = "native_workspace_containment_required";
+/// A generic review left in place because the sandbox could not run the
+/// program; the local CLI it launches can be set up on this device instead.
+pub(crate) const OUTSIDE_ROOTS_REASON: &str =
+    "native_workspace_containment_executable_outside_roots";
 #[cfg(unix)]
 pub(crate) const PROFILE: &str = "workspace-contained-v1";
 
@@ -40,6 +44,8 @@ pub(super) mod home_cd;
 mod keeps_work;
 #[path = "workspace_contained_kill.rs"]
 mod kill;
+#[path = "workspace_contained_launch.rs"]
+mod launch;
 #[path = "workspace_contained_links.rs"]
 mod links;
 #[path = "workspace_contained_package.rs"]
@@ -528,6 +534,19 @@ pub(super) fn convert(
     }
     // Last, so a check above that keeps the review keeps its own reason.
     if super::script_content::keeps_network_review(result, issued, sent_text, launch_context) {
+        return;
+    }
+    if launch::outside(shaped, &workspace, context, execution_environment) {
+        // Nothing marks a generic review as unrecognised any more plainly, so
+        // only that one is renamed; any other reason already says more.
+        if result.reason_code == floor_reason && !package {
+            result.reason_code = OUTSIDE_ROOTS_REASON.into();
+            result.reason = concat!(
+                "HOL Guard's workspace sandbox cannot run this program, ",
+                "so it was not started there.",
+            )
+            .into();
+        }
         return;
     }
     mark_contained(result);

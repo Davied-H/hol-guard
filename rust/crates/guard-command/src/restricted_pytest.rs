@@ -212,6 +212,7 @@ mod contained_tests;
 mod credentials;
 mod environment;
 mod executables;
+mod launch_roots;
 mod mapping;
 mod mapping_elf;
 mod mapping_snapshot;
@@ -234,6 +235,7 @@ pub fn evaluate_with_deadline(
 }
 pub use authority::evaluate;
 pub(crate) use environment::forwarded_setting;
+pub(crate) use launch_roots::launches_outside_exec_roots;
 pub use mapping::evidence as mapping_evidence;
 pub use workspace::workspace_script_reads;
 pub(crate) use workspace::{exact_shape as workspace_exact_shape, workspace_admissible};
