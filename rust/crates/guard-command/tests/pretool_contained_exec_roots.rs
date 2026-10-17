@@ -96,3 +96,23 @@ fn a_workspace_program_the_sandbox_can_run_is_still_contained() {
         assert_eq!(result.reason_code, "native_workspace_containment_required");
     }
 }
+
+#[test]
+fn a_relative_program_after_a_cd_is_judged_from_that_directory() {
+    let root = fixture();
+    let interpreter = root.join("installed/lanectl-python");
+    tool(&interpreter, "");
+    tool(
+        &root.join("project/tools/lanectl"),
+        &format!("#!{}\n", interpreter.display()),
+    );
+    tool(&root.join("project/tools/ready"), "#!/bin/sh\necho up\n");
+
+    let outside = decide(&root, "/usr/bin:/bin", "cd tools && ./lanectl status");
+    let inside = decide(&root, "/usr/bin:/bin", "cd tools && ./ready status");
+
+    assert_ne!(outside.minimum_action, "sandbox-required");
+    if cfg!(target_os = "macos") {
+        assert_eq!(inside.minimum_action, "sandbox-required");
+    }
+}

@@ -213,6 +213,7 @@ mod credentials;
 mod environment;
 mod executables;
 mod launch_roots;
+mod launch_shebang;
 mod mapping;
 mod mapping_elf;
 mod mapping_snapshot;

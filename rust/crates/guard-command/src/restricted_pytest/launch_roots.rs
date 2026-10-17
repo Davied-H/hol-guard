@@ -5,51 +5,87 @@
 //! the PATH entries it accepted. A program the agent's shell would find
 //! elsewhere, or whose script interpreter lives elsewhere, cannot run inside
 //! it, so containing that command would only trade a review for a failure.
+use super::launch_shebang::{shebang, Shebang};
 use super::*;
 
-/// Shebang lines longer than this are not read.
-const SHEBANG_BYTES: usize = 256;
+/// What looking a program up came to.
+enum Lookup {
+    Found(PathBuf),
+    /// Nothing to run: a builtin, a function or a name the shell expands.
+    Missing,
+    /// The answer depends on a directory the caller does not know.
+    Unresolved,
+}
 
-/// Whether any of `programs`, resolved the way the agent's shell resolves it
-/// on `search_path`, is something the workspace sandbox could not execute.
-/// A bare name the shell cannot find is left to the shell (a builtin or a
-/// function), and a program that resolves to another file inside the
-/// sandbox than outside it counts as unreachable.
+/// Whether any launch, resolved the way the agent's shell resolves it on
+/// `search_path`, is something the workspace sandbox could not execute. Each
+/// launch carries every directory the shell may stand in when it starts, with
+/// `None` for one that cannot be named. A bare name the shell cannot find is
+/// left to the shell (a builtin or a function), a program that resolves to
+/// another file inside the sandbox than outside it counts as unreachable, and
+/// so does one whose lookup depends on a directory that is not known.
 pub(crate) fn launches_outside_exec_roots<'a>(
-    programs: impl IntoIterator<Item = &'a str>,
+    launches: impl IntoIterator<Item = (&'a str, Vec<Option<PathBuf>>)>,
     search_path: &str,
     home: Option<&Path>,
     workspace: &Path,
-    cwd: &Path,
 ) -> bool {
     let (roots, sandbox_path) = workspace_exec_roots(search_path, home, workspace);
     let executable = executable_roots(workspace, roots);
-    programs.into_iter().any(|program| {
-        let Some(found) = locate(program, search_path, cwd) else {
-            return false;
-        };
-        let Ok(canonical) = found.canonicalize() else {
-            return true;
-        };
-        let reaches = |path: &Path| path_is_within_any(path, &executable);
-        if !reaches(&canonical) {
-            return true;
-        }
-        if !program.contains('/')
-            && locate(program, &sandbox_path, cwd)
-                .and_then(|inside| inside.canonicalize().ok())
-                .as_deref()
-                != Some(canonical.as_path())
-        {
-            return true;
-        }
-        interpreter(&canonical).is_some_and(|interpreter| {
-            match locate(&interpreter, &sandbox_path, cwd) {
-                Some(path) => !path.canonicalize().is_ok_and(|path| reaches(&path)),
-                None => true,
-            }
+    let reaches = |path: &Path| path_is_within_any(path, &executable);
+    launches.into_iter().any(|(program, places)| {
+        places.iter().any(|place| {
+            unreachable_from(
+                program,
+                place.as_deref(),
+                (search_path, sandbox_path.as_str()),
+                &reaches,
+            )
         })
     })
+}
+
+/// Whether `program`, started from `place`, is one the sandbox could not run.
+/// `paths` are the session `PATH` and the one the sandbox accepted.
+fn unreachable_from(
+    program: &str,
+    place: Option<&Path>,
+    paths: (&str, &str),
+    reaches: &impl Fn(&Path) -> bool,
+) -> bool {
+    let (search_path, sandbox_path) = paths;
+    let found = match locate(program, search_path, place) {
+        Lookup::Found(path) => path,
+        Lookup::Missing => return false,
+        Lookup::Unresolved => return true,
+    };
+    let Ok(canonical) = found.canonicalize() else {
+        return true;
+    };
+    if !reaches(&canonical) {
+        return true;
+    }
+    if !program.contains('/') {
+        let inside = match locate(program, sandbox_path, place) {
+            Lookup::Found(path) => path.canonicalize().ok(),
+            Lookup::Missing | Lookup::Unresolved => None,
+        };
+        if inside.as_deref() != Some(canonical.as_path()) {
+            return true;
+        }
+    }
+    match shebang(&canonical) {
+        Shebang::Absent => false,
+        Shebang::Unclear => true,
+        Shebang::Runs(programs) => {
+            programs
+                .iter()
+                .any(|name| match locate(name, sandbox_path, place) {
+                    Lookup::Found(path) => !path.canonicalize().is_ok_and(|path| reaches(&path)),
+                    Lookup::Missing | Lookup::Unresolved => true,
+                })
+        }
+    }
 }
 
 /// Directories the sandbox may execute from on this platform.
@@ -70,40 +106,39 @@ fn executable_roots(workspace: &Path, exec_roots: Vec<PathBuf>) -> Vec<PathBuf> 
     roots
 }
 
-/// The file `program` names: a path relative to `cwd`, or a bare name on
-/// `search_path`. Names a shell would expand are not resolved.
-fn locate(program: &str, search_path: &str, cwd: &Path) -> Option<PathBuf> {
+/// The file `program` names when started from `place`: a path relative to
+/// `place`, or a bare name on `search_path`, where an empty or relative entry
+/// is a directory below `place` too. Names a shell would expand are not
+/// resolved.
+fn locate(program: &str, search_path: &str, place: Option<&Path>) -> Lookup {
     if program.is_empty() || program.contains(['$', '~', '`', '*', '?', '[', '\\', '\n']) {
-        return None;
+        return Lookup::Missing;
     }
-    if program.contains('/') {
-        let candidate = cwd.join(program);
-        return executable_file(&candidate).then_some(candidate);
-    }
-    shutil_which(program, Some(search_path))
-}
-
-/// The program a `#!` line runs: its interpreter, or for `/usr/bin/env` the
-/// first operand that is not an option or an assignment.
-fn interpreter(script: &Path) -> Option<String> {
-    let mut head = [0_u8; SHEBANG_BYTES];
-    let read = std::fs::File::open(script).ok()?.read(&mut head).ok()?;
-    let line = head[..read].strip_prefix(b"#!")?;
-    // A line the buffer cuts off is not read as a shorter interpreter.
-    let end = match line.iter().position(|byte| *byte == b'\n') {
-        Some(end) => end,
-        None if read < SHEBANG_BYTES => line.len(),
-        None => return None,
+    let candidate = if program.contains('/') {
+        match (Path::new(program).is_absolute(), place) {
+            (true, _) => PathBuf::from(program),
+            (false, Some(directory)) => directory.join(program),
+            (false, None) => return Lookup::Unresolved,
+        }
+    } else {
+        for entry in search_path.split(':') {
+            let directory = match (Path::new(entry).is_absolute(), place) {
+                (true, _) => PathBuf::from(entry),
+                (false, Some(directory)) => directory.join(entry),
+                (false, None) => return Lookup::Unresolved,
+            };
+            let candidate = directory.join(program);
+            if executable_file(&candidate) {
+                return Lookup::Found(candidate);
+            }
+        }
+        return Lookup::Missing;
     };
-    let line = &line[..end];
-    let mut words = std::str::from_utf8(line).ok()?.split_ascii_whitespace();
-    let first = words.next()?;
-    if Path::new(first).file_name().and_then(OsStr::to_str) != Some("env") {
-        return Some(first.to_owned());
+    if executable_file(&candidate) {
+        Lookup::Found(candidate)
+    } else {
+        Lookup::Missing
     }
-    words
-        .find(|word| !word.starts_with('-') && !word.contains('='))
-        .map(str::to_owned)
 }
 
 #[cfg(test)]
