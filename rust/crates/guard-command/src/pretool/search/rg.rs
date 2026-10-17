@@ -36,7 +36,10 @@ pub(super) fn safe_rg_segment(
     // `git diff | rg PATTERN` in a repository whose `.gitignore` carries a
     // `!.env.example` rule went to review for a search that never touches
     // the tree.
-    if segment.pipeline_index > 0 && safe_rg_stdin_arguments(&segment.arguments) {
+    if segment.pipeline_index > 0
+        && config_cannot_add_arguments(&segment.arguments, context)
+        && safe_rg_stdin_arguments(&segment.arguments)
+    {
         return true;
     }
     let absent = model
@@ -70,6 +73,21 @@ pub(in crate::pretool) fn rg_hidden_whitelist_reason(
         "HOL Guard requires review because an ignore file here re-includes a hidden file (for example a `!.env.example` rule), so rg would read that file too. Name the directories to search, such as `rg PATTERN src docs`, or list names with `rg --files`."
             .to_owned()
     })
+}
+
+/// Whether no inherited `RIPGREP_CONFIG_PATH` can add arguments to this
+/// `rg`.
+///
+/// A config file's lines become command-line arguments, so one can hand the
+/// command a path of its own. A filter that only reads its input would then
+/// search that file instead, which is why a piped `rg` still has to answer
+/// for the config even though it walks no tree itself.
+fn config_cannot_add_arguments(arguments: &[String], context: ReadContext<'_>) -> bool {
+    context.ripgrep_config_absent
+        || arguments
+            .iter()
+            .take_while(|argument| argument.as_str() != "--")
+            .any(|argument| argument == "--no-config")
 }
 
 fn safe_rg_arguments_inner(
