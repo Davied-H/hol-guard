@@ -88,6 +88,23 @@ def _group_risk_classes(
     return classes, complete
 
 
+def _setup_request(
+    item: Mapping[str, object], approval: Mapping[str, object], cli_id: str, identity_hash: str
+) -> dict[str, object]:
+    body: dict[str, object] = {
+        "cli_id": cli_id,
+        "identity_hash": identity_hash,
+        "name": item.get("name"),
+        "kind": item.get("kind"),
+        "state": "allowed",
+        "connector_group_request_id": approval.get("request_id"),
+    }
+    for key in ("example_label", "interpreter_name"):
+        if isinstance(item.get(key), str):
+            body[key] = item[key]
+    return body
+
+
 def build_approval_connector_recommendation(
     approval: Mapping[str, object],
     *,
@@ -138,6 +155,9 @@ def build_approval_connector_recommendation(
         "deep_link": hint["deep_link"],
         # Recomputed from the stored connector, never trusted from the queue time.
         "card_recommendation": {"state": "allowed", "capabilities": []},
+        # Pre-filled body for the same local-CLI preview/apply endpoint as
+        # Protect; the dashboard adds the revision, credentials and nonce.
+        "setup_request": _setup_request(item, approval, cli_id, identity_hash),
         "approval_gate_configured": approval_gate_configured,
         "caution": bool(caution_classes) or not scanned_all,
         "caution_risk_classes": caution_classes,

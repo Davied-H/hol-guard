@@ -78,6 +78,7 @@ from ..runtime.package_json_scripts import looks_like_package_script_paste
 from ..runtime.skill_workflow_preflight import preflight_skill_dependencies
 from .local_cli_api_contract import LOCAL_CLI_API_SCHEMA as _LOCAL_CLI_API_SCHEMA
 from .local_cli_api_contract import LocalCliApiError
+from .local_cli_connector_group import connector_group_request_id, resolve_connector_group
 from .local_cli_continuity_api import decorate_local_cli_continuity
 from .local_cli_mcp_store import bound_mcp_observation, stored_mcp_recognition
 from .local_cli_profiles_api import (
@@ -407,11 +408,15 @@ class LocalCliApiService:
     def close_discovery(self) -> bool:
         return self._discovery_jobs.close()
 
-    def list_items(self) -> dict[str, object]:
+    def list_items(self, *, identity_hash: str | None = None) -> dict[str, object]:
         # Listing must stay a read of persisted grants. Live MCP/package
         # discovery writes to the same store and can abort the HTTP response
         # when the daemon is under lock contention.
-        return self._list_payload(self._listed_public_items())
+        items = self._listed_public_items()
+        if identity_hash is not None:
+            # The Protect deep link binds to one identity; a changed binary lists nothing.
+            items = [item for item in items if item.get("identity_hash") == identity_hash]
+        return self._list_payload(items)
 
     def provider_actions(self, payload: dict[str, object]) -> dict[str, object]:
         cli_id = self._required_string(payload, "cli_id")
@@ -929,6 +934,7 @@ class LocalCliApiService:
 
     def preview(self, payload: dict[str, object]) -> dict[str, object]:
         identity, state = self._mutation_from_payload(payload)
+        connector_group_request_id(payload, state)
         self._provider_updates_from_payload(payload)
         current = self._store.read_local_cli_revision()
         expected = self._required_int(payload, "previous_revision")
@@ -947,6 +953,7 @@ class LocalCliApiService:
 
     def apply(self, payload: dict[str, object]) -> dict[str, object]:
         identity, state = self._mutation_from_payload(payload)
+        group_request_id = connector_group_request_id(payload, state)
         provider_updates = self._provider_updates_from_payload(payload)
         expected = self._required_int(payload, "previous_revision")
         session_nonce = self._required_string(payload, "session_nonce")
@@ -999,7 +1006,7 @@ class LocalCliApiService:
             raise LocalCliApiError(400, "invalid_local_cli_mutation", str(exc)) from exc
         finally:
             notify_native_policy_mutation(self._store.guard_home)
-        return {
+        result: dict[str, object] = {
             "schema_version": _LOCAL_CLI_API_SCHEMA,
             "status": "applied",
             "revision": revision,
@@ -1007,6 +1014,17 @@ class LocalCliApiService:
             "cli_id": identity.cli_id,
             "state": state,
         }
+        if group_request_id is not None:
+            # Only after the proof-bound write saved `allowed`; it checks the gate again.
+            result["connector_group"] = resolve_connector_group(
+                self._store,
+                cli_id=identity.cli_id,
+                identity_hash=identity.identity_hash,
+                request_id=group_request_id,
+                approval_gate_input=input_from_mapping(payload),
+                now=utc_now(),
+            )
+        return result
 
     def forget(self, payload: dict[str, object]) -> dict[str, object]:
         """Drop a detected record the user never enrolled; it returns if seen again."""
