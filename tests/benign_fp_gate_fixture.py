@@ -436,12 +436,8 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(tmp_org / "app" / "src" / "index.ts", "export const railStage = 1;\n")
     _write(tmp_org / "app" / "tests" / "index.test.ts", "import { railStage } from '../src';\n")
     _write(tmp_org / "app" / "scripts" / "report.py", "print('report')\n")
-    _write(tmp_org / "app" / ".gitignore", "node_modules/\n")
     _git(tmp_org / "app", "add", "-A", home=home)
     _git(tmp_org / "app", "commit", "--quiet", "-m", "app base", home=home)
-    # Installed, gitignored runner under the scratch checkout: agents list its
-    # `.bin` shim from a sibling, and the shim has to be there to be read.
-    _node_package(tmp_org / "app", "vitest", _NODE_PACKAGES["vitest"])
     followup = str(tmp_org.parent / "app-followup")
     _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", followup, home=home)
     remote = tmp_org.parent / "remote" / "app.git"
