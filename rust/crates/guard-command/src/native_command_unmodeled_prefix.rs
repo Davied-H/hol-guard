@@ -172,8 +172,22 @@ fn prefix_reads_a_program_file(words: &[&str]) -> bool {
     let Some(index) = program_index(words) else {
         return true;
     };
-    let program = words[index];
-    program.contains(['/', '\\']) || names_a_script(program) || reads_a_program_file(words, index)
+    let rest = &words[index..];
+    let Some(program) = rest.first() else {
+        return true;
+    };
+    // A launcher hands its program to whatever stands next, which may be
+    // another launcher or a shell prefix: `nohup timeout 30 bash -lc …` runs
+    // the shell behind `timeout`, and reading only the word `timeout` would
+    // miss it. Walk a stacked launcher down to the program it runs, and keep
+    // the failure for any other prefix standing in that position.
+    if is_launcher(program) {
+        return prefix_reads_a_program_file(rest);
+    }
+    if SHELL_PREFIXES.contains(&command_basename(program).as_str()) {
+        return true;
+    }
+    program.contains(['/', '\\']) || names_a_script(program) || reads_a_program_file(rest, 0)
 }
 
 /// Whether the word at `index` is an interpreter that takes the program it

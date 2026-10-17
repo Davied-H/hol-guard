@@ -105,3 +105,28 @@ fn a_program_file_behind_a_launcher_is_still_unread() {
         assert!(!reads(command), "{command}");
     }
 }
+
+/// A launcher standing in front of another launcher or a shell prefix hands
+/// the real program further along, and the scan follows it there.
+#[test]
+fn a_stacked_launcher_is_walked_to_its_own_program() {
+    for command in [
+        "nohup timeout 30 bash -lc 'npm run build'",
+        "nohup nice -n 10 sh -c 'npm run build'",
+        "timeout 30 nice ./deploy.sh",
+        "nice -n 10 nohup setsid release.py",
+        "nohup time node server.js",
+        "nohup command ./deploy.sh",
+        "timeout 30 nohup timeout 5 bash -lc 'id'",
+    ] {
+        assert!(reads(command), "{command}");
+    }
+    for command in [
+        "nohup timeout 30 npm test",
+        "timeout 30 nice cargo build",
+        "nice -n 10 nohup npm start",
+        "nohup setsid stdbuf -oL cargo test",
+    ] {
+        assert!(!reads(command), "{command}");
+    }
+}
