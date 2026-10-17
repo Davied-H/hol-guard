@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use tree_sitter::{Node, ParseOptions, Parser};
 
 mod commands;
+mod descriptor_context;
+pub use descriptor_context::is_descriptor_reference;
 pub mod delivery;
 pub mod graph;
 mod source;

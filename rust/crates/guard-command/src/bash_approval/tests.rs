@@ -180,6 +180,38 @@ fn dynamic_and_hidden_shell_effects_never_produce_partial_success() {
 }
 
 #[test]
+fn launch_internal_descriptors_cannot_change_script_tests() {
+    for source in [
+        "test -t 0",
+        "test -f //dev//fd/6",
+        "test -e /dev/./stdin",
+        "test -e /proc/self/fd/6",
+        "test -e /proc/thread-self/fd/6",
+    ] {
+        assert_eq!(
+            analyze(source, &["script.sh".into()], &environment())
+                .unwrap_err()
+                .reason,
+            "bash_process_descriptor_unproven"
+        );
+    }
+    assert!(analyze(
+        "printf '%s' '/dev/fd/6'; test -n /ordinary/report; test dry = dry; test 1 -eq 1",
+        &["script.sh".into()],
+        &environment()
+    )
+    .is_ok());
+    for source in [
+        "[ -p /dev/fd/6 ]",
+        "test -p ./descriptor-alias/6",
+        "test -f /ordinary/report",
+        "test value -eq 1",
+    ] {
+        assert!(analyze(source, &["script.sh".into()], &environment()).is_err());
+    }
+}
+
+#[test]
 fn default_arguments_and_quoted_values_match_bash() {
     let result = analyze(
         "mode=${1:-dry}\nprintf '%s' \"$mode\"",

@@ -40,6 +40,18 @@ impl State<'_, '_> {
         if argv[0] == "return" {
             return Err(self.error(node, "bash_source_return_unproven"));
         }
+        if matches!(argv[0].as_str(), "test" | "[")
+            && argv[1..]
+                .iter()
+                .any(|value| value == "-t" || super::is_descriptor_reference(value))
+        {
+            return Err(self.error(node, "bash_process_descriptor_unproven"));
+        }
+        if matches!(argv[0].as_str(), "test" | "[") && !modeled_test(&argv) {
+            // Filesystem predicates can inspect process-relative descriptor
+            // aliases. This profile supports only literal string/integer tests.
+            return Err(self.error(node, "bash_test_context_unproven"));
+        }
         // These alter parsing, resolution or shell startup. They need their
         // own semantics and must never become ordinary allowlisted commands.
         if matches!(
@@ -193,5 +205,27 @@ impl State<'_, '_> {
             return Err(self.error(node, "bash_expanded_data_bounds"));
         }
         Ok(())
+    }
+}
+
+fn modeled_test(argv: &[String]) -> bool {
+    let mut arguments = &argv[1..];
+    if argv[0] == "[" {
+        if arguments.last().is_none_or(|value| value != "]") {
+            return false;
+        }
+        arguments = &arguments[..arguments.len() - 1];
+    }
+    match arguments {
+        [] | [_] => true,
+        [flag, _] => matches!(flag.as_str(), "-n" | "-z"),
+        [left, operator, right] => match operator.as_str() {
+            "=" | "==" | "!=" => true,
+            "-eq" | "-ne" | "-gt" | "-ge" | "-lt" | "-le" => {
+                left.parse::<i64>().is_ok() && right.parse::<i64>().is_ok()
+            }
+            _ => false,
+        },
+        _ => false,
     }
 }

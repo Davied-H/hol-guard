@@ -122,8 +122,15 @@ fn bash_resident_inspection_captures_real_fixture_without_permission_token() {
             capture: Box::new(capture.clone()),
         },
     };
-    let bytes =
-        crate::native_exact_action_op::evaluate_native_exact_action_request(&request).unwrap();
+    assert!(crate::resident_protocol::capabilities()
+        .features
+        .contains(&guard_contracts::NATIVE_BASH_SUBJECT_INSPECTION_FEATURE.to_owned()));
+    let wrapped = serde_json::json!({"operation": "native_exact_action", "request": request});
+    let bytes = crate::resident_protocol::evaluate_resident_bytes(
+        &serde_json::to_vec(&wrapped).unwrap(),
+        None,
+    )
+    .unwrap();
     let result: NativeExactActionResultV1 = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(result.status, "ok");
     let NativeExactActionPayloadV1::BashSubject {
@@ -188,6 +195,30 @@ fn bash_resident_inspection_never_treats_withheld_exports_as_unset() {
         );
         request.execution_environment.environment_names.pop();
     }
+}
+
+#[test]
+fn bash_resident_inspection_rejects_crlf_helper_interpreter_spelling() {
+    let (_root, request) = fixture();
+    std::fs::write(
+        Path::new(&request.cwd).join("fixture-registry"),
+        "#!/bin/bash\r\nprintf changed\n",
+    )
+    .unwrap();
+    assert_eq!(inspect(&request), Err("bash_helper_interpreter_unproven"));
+}
+
+#[test]
+fn bash_resident_inspection_refuses_host_process_descriptor_sources() {
+    use std::os::fd::AsRawFd;
+    let (_root, mut request) = fixture();
+    let path = Path::new(&request.cwd).join("maintenance.sh");
+    let source = std::fs::File::open(&path).unwrap();
+    request.command = format!("/bin/bash /dev/fd/{} dry", source.as_raw_fd());
+    assert_eq!(inspect(&request), Err("bash_process_descriptor_unproven"));
+    std::fs::write(&path, format!("source /dev/fd/{}", source.as_raw_fd())).unwrap();
+    request.command = format!("/bin/bash '{}' dry", path.display());
+    assert_eq!(inspect(&request), Err("bash_process_descriptor_unproven"));
 }
 
 #[test]

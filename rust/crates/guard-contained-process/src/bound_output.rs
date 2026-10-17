@@ -73,7 +73,7 @@ impl Output {
         })
     }
 
-    /// Recheck namespace/link state before releasing the frozen source frame.
+    /// Recheck path/link bindings before releasing the frozen source frame.
     pub fn verify(&self) -> io::Result<()> {
         self.directory.verify()?;
         let name = CString::new(self.leaf.as_bytes()).map_err(|_| changed())?;

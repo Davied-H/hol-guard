@@ -34,6 +34,9 @@ const SELECTED: &[&str] = &[
 type Result<T> = std::result::Result<T, &'static str>;
 
 fn canonical(value: &str) -> Result<PathBuf> {
+    if guard_command::bash_approval::is_descriptor_reference(value) {
+        return Err("bash_process_descriptor_unproven");
+    }
     if value.len() > 4096 || !Path::new(value).is_absolute() {
         return Err("bash_context_path_invalid");
     }
@@ -145,6 +148,9 @@ impl Resolver<'_> {
     fn code(&self, requested: &str, resolved: &Path) -> Result<graph::Code> {
         self.check()?;
         for candidate in [Path::new(requested), resolved] {
+            if guard_command::bash_approval::is_descriptor_reference(&text(candidate)?) {
+                return Err("bash_process_descriptor_unproven");
+            }
             if is_request_secret_path(&text(candidate)?, Some(self.cwd), Some(self.home)) {
                 return Err("bash_sensitive_code_path");
             }
@@ -253,7 +259,7 @@ impl graph::Resolver for Resolver<'_> {
             }
         } else {
             let code = self.code(&spelling, &path)?;
-            if code.source.lines().next() != Some("#!/bin/bash") {
+            if code.source.split('\n').next() != Some("#!/bin/bash") {
                 return Err("bash_helper_interpreter_unproven");
             }
             graph::Executable::Bash(code)

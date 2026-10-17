@@ -332,6 +332,8 @@ impl Builder<'_> {
                         content_sha256,
                     } => {
                         if !resolved_path.starts_with('/')
+                            || resolved_path.len() > 4096
+                            || resolved_path.contains('\0')
                             || content_sha256.len() != 64
                             || !content_sha256.bytes().all(|b| b.is_ascii_hexdigit())
                         {
@@ -362,7 +364,14 @@ impl Builder<'_> {
                         }
                         self.native_images
                             .insert(resolved_path.clone(), content_sha256);
-                        Some(quote(&resolved_path))
+                        // Keep the original native argv[0] while pinning the
+                        // executable path. A direct path replacement changes it.
+                        let launch = format!("exec -a \"$0\" {} \"$@\"", quote(&resolved_path));
+                        Some(format!(
+                            "/bin/bash --noprofile --norc -c {} {}",
+                            quote(&launch),
+                            quote(name)
+                        ))
                     }
                     Executable::Bash(helper) => {
                         invocation.resolved_path = Some(helper.resolved_path.clone());

@@ -7,6 +7,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Only descriptor inspection is available; this advertises no launch authority.
+pub const NATIVE_BASH_SUBJECT_INSPECTION_FEATURE: &str = "native-bash-subject-inspection-v1";
+
 /// Read-only resident inspection. Supplied context is not execution authority.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]

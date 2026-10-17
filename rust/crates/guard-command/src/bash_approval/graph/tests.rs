@@ -247,6 +247,50 @@ fn recursive_or_unresolved_helpers_never_return_a_partial_graph() {
 
 #[cfg(unix)]
 #[test]
+fn frozen_native_call_preserves_original_argv_zero() {
+    struct NativeBash;
+    impl Resolver for NativeBash {
+        fn resolve(&self, _: &[String]) -> std::result::Result<Executable, &'static str> {
+            Ok(Executable::Native {
+                resolved_path: "/bin/bash".into(),
+                content_sha256: "a".repeat(64),
+            })
+        }
+    }
+    let graph = build(
+        Code {
+            original_path: "/entry".into(),
+            resolved_path: "/entry".into(),
+            source: "named-utility --noprofile --norc -c 'printf %s \"$0\"'".into(),
+        },
+        &["/entry".into()],
+        &BTreeMap::new(),
+        &NativeBash,
+        Instant::now() + Duration::from_secs(1),
+    )
+    .unwrap();
+    let result = std::process::Command::new("/bin/bash")
+        .args([
+            "--noprofile",
+            "--norc",
+            "-c",
+            graph.source_for_launch().unwrap(),
+            "/entry",
+        ])
+        .env_clear()
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(result.stdout, b"named-utility");
+}
+
+#[cfg(unix)]
+#[test]
 fn frozen_dry_graph_runs_without_opening_mutable_entry_or_helper_paths() {
     use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicUsize, Ordering};
