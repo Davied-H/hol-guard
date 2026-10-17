@@ -35,6 +35,26 @@ _NOT_QUEUED = (
     "continue with a permitted alternative or tell the user what is blocked."
 )
 
+# A connector setup review: one decision for the CLI, not an approval of this action.
+_CONNECTOR_SETUP_WAIT = (
+    "Setting it up is a one-time decision for the user in the HOL Guard inbox (`hol-guard approvals`), "
+    "not an approval of this action. Do not retry it, in this or another spelling, until it is set up; "
+    "continue with other work meanwhile."
+)
+_CONNECTOR_SURFACE_LABELS = {"cli": "local CLI", "package-scripts": "package script", "mcp": "MCP server"}
+
+
+def connector_setup_reason(name: str, surface: str, *, ask: bool) -> str:
+    """Agent text for a review held only because Guard was never set up for the connector.
+
+    The default mode adds ``SAFE_ALTERNATIVE_GUIDANCE`` and no link or request to
+    ask the user; ``ask`` mode says it waits in the inbox, and the caller adds the link.
+    """
+    label = _CONNECTOR_SURFACE_LABELS.get(surface, surface)
+    reason = f"HOL Guard has not been set up for `{name}` ({label}) on this device."
+    return f"{reason} {_CONNECTOR_SETUP_WAIT if ask else SAFE_ALTERNATIVE_GUIDANCE}"
+
+
 # Plain-language next steps keyed by the reason code Rust already returned.
 _REASON_CODE_HINTS = {
     "native_destructive_command": (

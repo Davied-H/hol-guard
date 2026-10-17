@@ -36,8 +36,10 @@ from .hook_native_saved_approval import (
 )
 from .hook_request_parsing import pre_tool_command, pre_tool_input
 from .native_review_allow_hint import native_review_extension_allow_hint
+from .native_review_connector import connector_agent_reason, native_review_setup_connector
 
 if TYPE_CHECKING:
+    from ..local_cli_hook import SetupConnector
     from ..store import GuardStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -188,6 +190,13 @@ def pause_native_pre_tool_for_approval(
     except (OSError, RuntimeError, TypeError, ValueError):
         ask = False
     approval_center_url = _native_review_approval_center_url(store)
+    connector = native_review_setup_connector(
+        store, payload=payload, native_result=native_result, workspace=workspace, home_dir=home_dir
+    )
+    # The row keeps the native reason as evidence; only the agent text changes.
+    # Allowing the connector lets the retry run whatever its binding, so only
+    # the mode decides whether the agent waits for it.
+    setup_reason = None if connector is None else connector_agent_reason(connector, ask=ask)
     if not ask or (identity is None and exact_token is None):
         # The agent stays on the silent block. The inbox row is a separate record.
         queued = queue_native_pre_tool_review(
@@ -204,24 +213,30 @@ def pause_native_pre_tool_for_approval(
             once_only_reason=once_only_reason,
             approval_center_url=approval_center_url,
             review_binding=identity,
+            connector=connector,
         )
         if queued is None:
             _LOGGER.warning("Silent review blocked without an inbox row for %s", harness)
         else:
             _record_silent_native_review_event(store, queued)
-        reason = safe_alternative_reason(
-            str(native_result.get("reason") or "HOL Guard blocked this action."),
-            reason_code=str(native_result.get("reason_code") or "") or "unknown",
-            approval_queued=queued is not None,
-            # The queued row is stored with this same binding; without one a
-            # one-time approval cannot match the agent's retry.
-            retry_reuses_approval=identity is not None,
-            exact_action_allowable=exact_token is not None,
-        )
+        reason = setup_reason
+        if reason is None:
+            reason = safe_alternative_reason(
+                str(native_result.get("reason") or "HOL Guard blocked this action."),
+                reason_code=str(native_result.get("reason_code") or "") or "unknown",
+                approval_queued=queued is not None,
+                # The queued row is stored with this same binding; without one a
+                # one-time approval cannot match the agent's retry.
+                retry_reuses_approval=identity is not None,
+                exact_action_allowable=exact_token is not None,
+            )
         # Approving a row that is neither bound to the retry nor eligible
         # for an exact-action Always cannot let the agent run the action,
         # so the reason does not send the user to approve it.
         approval_can_unblock = identity is not None or exact_token is not None
+        if setup_reason is not None:
+            # The default mode never links or sends the agent to the user.
+            approval_can_unblock = ask
         raw_url = queued.get("approval_url") if queued is not None and approval_can_unblock else None
         if isinstance(raw_url, str) and raw_url.strip():
             # The agent passes the link on, so the user can open the queued row.
@@ -247,6 +262,7 @@ def pause_native_pre_tool_for_approval(
         once_only_reason=once_only_reason,
         approval_center_url=approval_center_url,
         review_binding=identity,
+        connector=connector,
     )
     if queued is None:
         failed = dict(native_result)
@@ -258,7 +274,7 @@ def pause_native_pre_tool_for_approval(
         return render_pre_tool(harness, failed, guard_home=guard_home, deadline=deadline)
     response = render_pre_tool_review(
         harness,
-        native_result,
+        native_result if setup_reason is None else {**native_result, "reason": setup_reason},
         approval=queued,
         guard_home=guard_home,
         deadline=deadline,
@@ -312,6 +328,7 @@ def queue_native_pre_tool_review(
     once_only_reason: str | None = None,
     approval_center_url: str | None = None,
     review_binding: str | None | TokenUnset = TOKEN_UNSET,
+    connector: SetupConnector | None = None,
 ) -> dict[str, object] | None:
     try:
         native_review_policy_binding(harness=harness, native_result=native_result, verified_receipt=native_receipt)
@@ -393,6 +410,7 @@ def queue_native_pre_tool_review(
         risk_summary=reason,
         action_envelope_json=action_envelope,
         raw_command_text=pre_tool_command(payload),
+        queue_group_id=None if connector is None else connector.queue_group_id,
         extension_allow_hint=native_review_extension_allow_hint(
             store,
             payload=payload,
