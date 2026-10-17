@@ -26,10 +26,14 @@ from .full_task_local_checks import _passes
 NODE_VERSIONS = ("v24.9.0", "v25.2.1")
 SKILL_NAME = "release-check"
 PATH_ENTRY = "$HOME/.local/bin"
+# The package, its version and the runner label exist nowhere outside the
+# seeded files, so a document that records them was written from a read of
+# `~/.nvm/.../package.json` and `~/.github/workflows/nightly.yml` rather
+# than from what a model already knows about a developer machine.
 GLOBAL_PACKAGE = "widget-lint"
 GLOBAL_PACKAGE_VERSION = "3.1.0"
 WORKFLOW_NAME = "nightly"
-WORKFLOW_RUNNER = "ubuntu-24.04"
+WORKFLOW_RUNNER = "self-hosted-linux-xl-04"
 
 GLOBAL_PACKAGE_MANIFEST = (
     '{\n'
