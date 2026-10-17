@@ -153,6 +153,7 @@ pub mod pretool_pytest_contained_route;
 pub mod pretool_read_output_scratch;
 pub mod pretool_recursive_copies;
 pub mod pretool_recursive_file_search;
+pub mod pretool_request_path_context;
 pub mod pretool_rg_inclusion_globs;
 pub mod pretool_ripgrep_config;
 pub mod pretool_root_removal;

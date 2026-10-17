@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -294,3 +295,90 @@ def test_hook_worker_leaves_out_of_scope_events_to_existing_handling(
         result["reason_code"] == "native_hook_event_unavailable"
         and result["hookSpecificOutput"]["decision"]["behavior"] == "deny"
     )
+
+
+def _status(
+    tmp_path: Path,
+    features: tuple[str, ...],
+) -> runtime.NativeRuntimeStatus:
+    runtime_path = tmp_path / "hol-guard-runtime"
+    runtime_path.write_bytes(b"runtime")
+    return runtime.NativeRuntimeStatus(
+        mode="auto",
+        available=True,
+        compatible=True,
+        reason="ready",
+        identity=runtime.NativeRuntimeIdentity(
+            path=runtime_path,
+            size=runtime_path.stat().st_size,
+            mtime_ns=runtime_path.stat().st_mtime_ns,
+            sha256="0" * 64,
+        ),
+        capabilities=runtime.NativeRuntimeCapabilities(
+            protocol_version=2,
+            runtime_version="test",
+            rule_digest="1" * 64,
+            build_sha="2" * 40,
+            target="test",
+            features=features,
+        ),
+    )
+
+
+def _sent_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    features: tuple[str, ...],
+) -> dict[str, Any]:
+    monkeypatch.setattr(
+        "codex_plugin_scanner.guard.native_pretool.native_runtime_status",
+        lambda: _status(tmp_path, features),
+    )
+    sent: dict[str, Any] = {}
+
+    class SentError(Exception):
+        """Stops the review once the request has been read."""
+
+    def capture(**kwargs: Any) -> bytes | None:
+        sent.update(json.loads(kwargs["payload"]))
+        raise SentError
+
+    monkeypatch.setattr(
+        "codex_plugin_scanner.guard.native_pretool.native_resident_client_request",
+        capture,
+    )
+    routes.reset_native_hook_route()
+    with pytest.raises(SentError):
+        pretool.review_pre_tool_native(
+            "rg -n fixture ../service-api",
+            guard_home=tmp_path,
+            cwd=tmp_path / "app-portal",
+            home_dir=tmp_path,
+        )
+    return sent
+
+
+def test_pre_tool_request_carries_the_directories_the_command_runs_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        ("pre-tool-command-authority-v1", "resident-protocol-v2", "pre-tool-path-context-v1"),
+    )
+    assert sent["request"]["cwd"] == str(tmp_path / "app-portal")
+    assert sent["request"]["home_dir"] == str(tmp_path)
+
+
+def test_a_runtime_without_the_feature_is_asked_the_question_it_understands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        ("pre-tool-command-authority-v1", "resident-protocol-v2"),
+    )
+    assert "cwd" not in sent["request"]
+    assert "home_dir" not in sent["request"]

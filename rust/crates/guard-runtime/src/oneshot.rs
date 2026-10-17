@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use guard_command::pretool::{evaluate_pre_tool, PreToolDecisionV1};
+use guard_command::pretool::{evaluate_pre_tool_in, PreToolDecisionV1};
 use guard_command::{parse_command, CommandModelRequestV1};
 use guard_contracts::{NativeHookRequestV1, NATIVE_PROTOCOL_VERSION};
 use guard_hook_core::review_post_tool;
@@ -218,15 +218,42 @@ pub(crate) fn evaluate_pre_tool_value(value: &Value) -> Result<Value, String> {
         transport: transport.to_owned(),
         extraction_provenance: extraction_provenance.to_owned(),
     };
-    let decision = evaluate_pre_tool(&request)?;
+    let decision = evaluate_pre_tool_in(
+        &request,
+        mapping_string(value, "home_dir"),
+        mapping_string(value, "cwd"),
+    )?;
     let request_id = mapping_string(value, "request_id");
     Ok(pre_tool_response(request_id, decision))
 }
 
-pub(crate) fn evaluate_pre_tool_request(
-    request: &CommandModelRequestV1,
-) -> Result<Vec<u8>, String> {
-    crate::encode_response(&pre_tool_response(None, evaluate_pre_tool(request)?))
+/// The feature that says this runtime reads `cwd` and `home_dir` on a
+/// pre-tool request. A caller that does not see it sends neither: an older
+/// runtime would ignore the fields and answer every path rule as though the
+/// command ran nowhere.
+pub(crate) const PRE_TOOL_PATH_CONTEXT_FEATURE: &str = "pre-tool-path-context-v1";
+
+/// A pre-tool request, with the directories the command runs in.
+///
+/// They are optional so that a caller which does not know them, or an older
+/// one that never sent them, keeps the decision it has today.
+#[derive(Debug, Deserialize)]
+pub(crate) struct PreToolRequestV1 {
+    #[serde(flatten)]
+    pub(crate) model: CommandModelRequestV1,
+    #[serde(default)]
+    pub(crate) cwd: Option<String>,
+    #[serde(default)]
+    pub(crate) home_dir: Option<String>,
+}
+
+pub(crate) fn evaluate_pre_tool_request(request: &PreToolRequestV1) -> Result<Vec<u8>, String> {
+    let decision = evaluate_pre_tool_in(
+        &request.model,
+        request.home_dir.as_deref(),
+        request.cwd.as_deref(),
+    )?;
+    crate::encode_response(&pre_tool_response(None, decision))
 }
 
 #[cfg_attr(not(test), allow(dead_code, unused_imports))]

@@ -24,6 +24,7 @@ from .native_runtime_resilience import (
 _MAX_REQUEST_BYTES = 64 * 1024
 _MAX_RESULT_TEXT = 2_048
 _PRETOOL_AUTHORITY_FEATURE = "pre-tool-command-authority-v1"
+_PRETOOL_PATH_CONTEXT_FEATURE = "pre-tool-path-context-v1"
 _RESIDENT_PROTOCOL_FEATURE = "resident-protocol-v2"
 _PRETOOL_RESULT_KEYS = {
     "schema",
@@ -204,8 +205,12 @@ def review_pre_tool_native(
 
     ``record_health=False`` is for advisory callers running on a shortened
     budget: their timeouts and overloads must not feed resident backoff.
+
+    ``cwd`` and ``home_dir`` say where the command runs. Every rule that
+    reads a path needs them to resolve ``../sibling`` and ``~/Code``, and
+    refuses the command without them, so a caller that leaves them out gets a
+    review for commands the enforced hook lane allows.
     """
-    del cwd, home_dir
     status = native_runtime_status()
     if (
         not status.available
@@ -220,12 +225,18 @@ def review_pre_tool_native(
     deadline_started = time.monotonic()
     deadline_monotonic = deadline_started + timeout_seconds
     deadline_budget_ms = max(1, min(9_000, int(timeout_seconds * 1_000)))
-    request = {
+    request: dict[str, Any] = {
         "command": command,
         "dialect": "posix",
         "transport": "shell_string",
         "extraction_provenance": "guard-shell",
     }
+    # An older runtime ignores the two fields and answers as it does today.
+    if _PRETOOL_PATH_CONTEXT_FEATURE in status.capabilities.features:
+        if cwd is not None:
+            request["cwd"] = str(cwd)
+        if home_dir is not None:
+            request["home_dir"] = str(home_dir)
     encoded = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     if len(encoded) > _MAX_REQUEST_BYTES:
         return record_native_hook_result("native_fail_safe", None)

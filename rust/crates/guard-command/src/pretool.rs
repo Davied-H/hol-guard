@@ -616,6 +616,22 @@ pub fn evaluate_pre_tool(request: &CommandModelRequestV1) -> Result<PreToolDecis
     evaluate_pre_tool_with_context(request, None, None)
 }
 
+/// The same evaluation, told where the command runs.
+///
+/// Every rule that reads a path needs the working directory and the home
+/// directory to resolve `../sibling` and `~/Code`, and refuses the command
+/// when it has neither. A caller that knows them — the hook that received
+/// them from the harness, `guard inspect`, the dashboard's console — passes
+/// them here, and gets the decision the enforced hook lane gives the same
+/// command rather than the one a context-free screen is left with.
+pub fn evaluate_pre_tool_in(
+    request: &CommandModelRequestV1,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> Result<PreToolDecisionV1, String> {
+    evaluate_pre_tool_with_context(request, home_dir, cwd)
+}
+
 pub(super) fn evaluate_pre_tool_with_context(
     request: &CommandModelRequestV1,
     home_dir: Option<&str>,
