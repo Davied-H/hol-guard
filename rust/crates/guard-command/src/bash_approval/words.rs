@@ -2,7 +2,7 @@
 
 use tree_sitter::Node;
 
-use super::{Result, State};
+use super::{Result, State, MAX_WORD_BYTES};
 
 pub(super) fn ordinary_variable(name: &str) -> bool {
     let mut bytes = name.bytes();
@@ -48,6 +48,14 @@ pub(super) fn ordinary_variable(name: &str) -> bool {
 
 impl State<'_> {
     pub(super) fn word(&self, node: Node<'_>, quoted: bool) -> Result<String> {
+        let value = self.word_inner(node, quoted)?;
+        if value.len() > MAX_WORD_BYTES {
+            return Err(self.error(node, "bash_word_bounds"));
+        }
+        Ok(value)
+    }
+
+    fn word_inner(&self, node: Node<'_>, quoted: bool) -> Result<String> {
         match node.kind() {
             "word" | "number" | "extglob_pattern" => {
                 let value = self.text(node);
@@ -71,7 +79,11 @@ impl State<'_> {
                 let mut result = String::new();
                 let mut cursor = node.walk();
                 for child in node.named_children(&mut cursor) {
-                    result.push_str(&self.word(child, true)?);
+                    let value = self.word(child, true)?;
+                    if result.len() + value.len() > MAX_WORD_BYTES {
+                        return Err(self.error(node, "bash_word_bounds"));
+                    }
+                    result.push_str(&value);
                 }
                 Ok(result)
             }
@@ -97,7 +109,11 @@ impl State<'_> {
                 let mut result = String::new();
                 let mut cursor = node.walk();
                 for child in node.named_children(&mut cursor) {
-                    result.push_str(&self.word(child, quoted)?);
+                    let value = self.word(child, quoted)?;
+                    if result.len() + value.len() > MAX_WORD_BYTES {
+                        return Err(self.error(node, "bash_word_bounds"));
+                    }
+                    result.push_str(&value);
                 }
                 Ok(result)
             }

@@ -83,14 +83,11 @@ pub(crate) fn capture(
     }
     // Duplicate above the reserved child descriptors before dup2: inherited
     // descriptors can otherwise collide with the exec/status descriptors.
-    #[cfg(target_os = "linux")]
     let reserved = i32::try_from(isolation.inherited_files.len())
         .map_err(|_| crate::bound_fs::changed())?
         .checked_add(6)
         .ok_or_else(crate::bound_fs::changed)?
         .max(10);
-    #[cfg(not(target_os = "linux"))]
-    let reserved = 10;
     let exe_fd = unsafe {
         libc::fcntl(
             command.executable.as_raw_fd(),
@@ -113,7 +110,6 @@ pub(crate) fn capture(
         return Err(io::Error::last_os_error());
     }
     let launch_fd = unsafe { OwnedFd::from_raw_fd(launch_fd) };
-    #[cfg(target_os = "linux")]
     let inherited = isolation
         .inherited_files
         .iter()
@@ -128,7 +124,11 @@ pub(crate) fn capture(
         .collect::<io::Result<Vec<_>>>()?;
     let parent = unsafe { libc::getpid() };
     #[cfg(target_os = "macos")]
-    let mut descriptors = supervisor::DescriptorTable::prepare()?;
+    let mut descriptors = supervisor::DescriptorTable::prepare(inherited.len())?;
+    #[cfg(target_os = "macos")]
+    let keep_descriptors = (0..6 + inherited.len() as i32)
+        .chain(std::iter::once(launch_fd.as_raw_fd()))
+        .collect::<Vec<_>>();
     let launch_deadline = LaunchDeadline::prepare(deadline)?;
     #[cfg(test)]
     process_regressions::before_fork();
@@ -158,8 +158,9 @@ pub(crate) fn capture(
             argv: &argv_ptr,
             env: &env_ptr,
             deadline: &launch_deadline,
-            #[cfg(target_os = "linux")]
             inherited: &inherited,
+            #[cfg(target_os = "macos")]
+            keep_descriptors: &keep_descriptors,
             #[cfg(target_os = "macos")]
             descriptors: &mut descriptors,
             #[cfg(target_os = "macos")]

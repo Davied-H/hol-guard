@@ -20,6 +20,7 @@ pub const MAX_SOURCE_BYTES: usize = 1024 * 1024;
 const MAX_OPERATIONS: usize = 1024;
 const MAX_LOOP_VALUES: usize = 64;
 const MAX_DEPTH: usize = 64;
+const MAX_WORD_BYTES: usize = 32 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -36,6 +37,9 @@ pub struct Redirect {
     pub path: String,
     pub append: bool,
     pub line: usize,
+    pub start: usize,
+    pub end: usize,
+    pub statement_start: usize,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +89,10 @@ pub fn analyze_before(
         || source.contains('\0')
         || argv.is_empty()
         || argv.len() > 256
+        || argv.iter().any(|value| value.len() > MAX_WORD_BYTES)
+        || environment
+            .values()
+            .any(|value| value.len() > MAX_WORD_BYTES)
         || context_bytes > MAX_SOURCE_BYTES
     {
         return Err(Uncertainty {
@@ -140,6 +148,7 @@ pub fn analyze_before(
         stopped: false,
         deadline,
         steps: 0,
+        expanded_bytes: 0,
     };
     state.walk(tree.root_node(), 0)?;
     Ok(state.analysis)
@@ -154,6 +163,7 @@ struct State<'a> {
     stopped: bool,
     deadline: Instant,
     steps: usize,
+    expanded_bytes: usize,
 }
 
 impl State<'_> {
@@ -222,7 +232,7 @@ impl State<'_> {
                 let body = self.field(node, "body")?;
                 let mut cursor = node.walk();
                 for redirect in node.children_by_field_name("redirect", &mut cursor) {
-                    self.redirect(redirect)?;
+                    self.redirect(redirect, node.start_byte())?;
                 }
                 self.walk(body, depth + 1)
             }
@@ -264,8 +274,12 @@ impl State<'_> {
                 .unwrap_or("")
             {
                 "name" => (),
-                "argument" => argv.push(self.word(child, false)?),
-                "redirect" => self.redirect(child)?,
+                "argument" => {
+                    let value = self.word(child, false)?;
+                    self.charge(value.len(), child)?;
+                    argv.push(value);
+                }
+                "redirect" => self.redirect(child, node.start_byte())?,
                 _ => return Err(self.error(child, "bash_command_environment_or_subshell")),
             }
         }
@@ -366,6 +380,7 @@ impl State<'_> {
             }
             self.stopped = true;
         }
+        self.charge(argv[0].len(), node)?;
         self.analysis.operations.push(Operation {
             argv,
             line: node.start_position().row + 1,
@@ -375,7 +390,7 @@ impl State<'_> {
         Ok(())
     }
 
-    fn redirect(&mut self, node: Node<'_>) -> Result<()> {
+    fn redirect(&mut self, node: Node<'_>, statement_start: usize) -> Result<()> {
         if node.kind() != "file_redirect" || node.child_by_field_name("descriptor").is_some() {
             return Err(self.error(node, "bash_redirect_unsupported"));
         }
@@ -385,11 +400,25 @@ impl State<'_> {
             return Err(self.error(node, "bash_redirect_unsupported"));
         }
         let path = self.word(destination, false)?;
+        self.charge(path.len(), destination)?;
         self.analysis.writes.push(Redirect {
             path,
             append: prefix == ">>",
             line: node.start_position().row + 1,
+            start: node.start_byte(),
+            end: node.end_byte(),
+            statement_start,
         });
+        Ok(())
+    }
+
+    fn charge(&mut self, bytes: usize, node: Node<'_>) -> Result<()> {
+        self.expanded_bytes = self.expanded_bytes.saturating_add(bytes);
+        if self.expanded_bytes > MAX_SOURCE_BYTES
+            || self.analysis.operations.len() + self.analysis.writes.len() >= MAX_OPERATIONS
+        {
+            return Err(self.error(node, "bash_expanded_data_bounds"));
+        }
         Ok(())
     }
 

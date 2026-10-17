@@ -76,7 +76,46 @@ fn graph_includes_helper_bytes_and_every_reachable_parent_and_child() {
     assert!(dry
         .frozen_source
         .contains("/bin/bash --noprofile --norc -c"));
+    assert_eq!(
+        dry.source_for_launch().unwrap_err().reason,
+        "bash_output_handles_required"
+    );
 }
+
+#[test]
+fn output_rendering_requires_a_complete_contiguous_descriptor_table() {
+    let entry = || Code {
+        original_path: "/entry".into(),
+        resolved_path: "/entry".into(),
+        source: ": > '/reports/result'\nprintf x >> '/reports/result'".into(),
+    };
+    let run = |fds: &BTreeMap<String, u32>| {
+        build_with_outputs(
+            entry(),
+            &["/entry".into()],
+            &BTreeMap::new(),
+            &FixtureResolver,
+            Instant::now() + Duration::from_secs(1),
+            fds,
+        )
+    };
+    assert_eq!(
+        run(&BTreeMap::new()).unwrap_err().reason,
+        "bash_output_handle_missing"
+    );
+    assert_eq!(
+        run(&BTreeMap::from([("/reports/result".into(), 69)]))
+            .unwrap_err()
+            .reason,
+        "bash_output_descriptor_bounds"
+    );
+    let graph = run(&BTreeMap::from([("/reports/result".into(), 6)])).unwrap();
+    assert_eq!(graph.source_for_launch().unwrap(), ": >&6\nprintf x >&6");
+}
+
+#[cfg(target_os = "macos")]
+#[path = "kernel_tests.rs"]
+mod kernel;
 
 #[test]
 fn recursive_or_unresolved_helpers_never_return_a_partial_graph() {

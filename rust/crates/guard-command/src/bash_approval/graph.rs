@@ -66,13 +66,33 @@ pub struct CodeIdentity {
     pub content_sha256: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct OutputEffect {
+    pub source_path: String,
+    pub redirect: super::Redirect,
+}
+
 pub struct Graph {
+    pub entry_path: String,
     pub code: Vec<CodeIdentity>,
     pub native_images: BTreeMap<String, String>,
     pub invocations: Vec<Invocation>,
-    pub writes: Vec<super::Redirect>,
-    /// Ready for a pipe owned by the native launcher, not a mutable script path.
-    pub frozen_source: String,
+    pub writes: Vec<OutputEffect>,
+    // Frozen code alone does not establish a bound output/effect boundary.
+    frozen_source: String,
+    outputs_bound: bool,
+}
+
+impl Graph {
+    pub fn source_for_launch(&self) -> Result<&str> {
+        if !self.writes.is_empty() && !self.outputs_bound {
+            return Err(Uncertainty {
+                reason: "bash_output_handles_required",
+                line: 1,
+            });
+        }
+        Ok(&self.frozen_source)
+    }
 }
 
 impl std::fmt::Debug for Graph {
@@ -96,9 +116,11 @@ struct Builder<'a> {
     snapshots: BTreeMap<String, String>,
     native_images: BTreeMap<String, String>,
     invocations: Vec<Invocation>,
-    writes: Vec<super::Redirect>,
+    writes: Vec<OutputEffect>,
+    output_fds: Option<&'a BTreeMap<String, u32>>,
     active: BTreeSet<String>,
     bytes: usize,
+    expanded_bytes: usize,
 }
 
 /// Resolve and freeze every helper reached by these exact arguments.
@@ -109,6 +131,50 @@ pub fn build(
     resolver: &dyn Resolver,
     deadline: Instant,
 ) -> Result<Graph> {
+    build_inner(entry, argv, environment, resolver, deadline, None)
+}
+
+/// Render again using the same captured resolver inputs and native-owned FDs.
+/// Neither the FD table nor these source bytes grant permission to execute.
+pub fn build_with_outputs(
+    entry: Code,
+    argv: &[String],
+    environment: &BTreeMap<String, String>,
+    resolver: &dyn Resolver,
+    deadline: Instant,
+    output_fds: &BTreeMap<String, u32>,
+) -> Result<Graph> {
+    let unique = output_fds.values().copied().collect::<BTreeSet<_>>();
+    if output_fds.len() > 64
+        || unique.len() != output_fds.len()
+        || unique
+            .iter()
+            .enumerate()
+            .any(|(index, fd)| *fd != 6 + index as u32)
+    {
+        return Err(Uncertainty {
+            reason: "bash_output_descriptor_bounds",
+            line: 1,
+        });
+    }
+    build_inner(
+        entry,
+        argv,
+        environment,
+        resolver,
+        deadline,
+        Some(output_fds),
+    )
+}
+
+fn build_inner(
+    entry: Code,
+    argv: &[String],
+    environment: &BTreeMap<String, String>,
+    resolver: &dyn Resolver,
+    deadline: Instant,
+    output_fds: Option<&BTreeMap<String, u32>>,
+) -> Result<Graph> {
     let mut builder = Builder {
         resolver,
         environment,
@@ -118,22 +184,33 @@ pub fn build(
         native_images: BTreeMap::new(),
         invocations: Vec::new(),
         writes: Vec::new(),
+        output_fds,
         active: BTreeSet::new(),
         bytes: 0,
+        expanded_bytes: 0,
     };
     let frozen_source = builder.visit(&entry, argv)?;
     Ok(Graph {
+        entry_path: entry.original_path,
         code: builder.code.into_values().collect(),
         native_images: builder.native_images,
         invocations: builder.invocations,
         writes: builder.writes,
         frozen_source,
+        outputs_bound: output_fds.is_some(),
     })
 }
 
 impl Builder<'_> {
     fn visit(&mut self, code: &Code, argv: &[String]) -> Result<String> {
         let error = |reason| Uncertainty { reason, line: 1 };
+        if code.original_path.is_empty()
+            || code.original_path.len() > 4096
+            || code.resolved_path.len() > 4096
+            || !code.resolved_path.starts_with('/')
+        {
+            return Err(error("bash_input_path_bounds"));
+        }
         if Instant::now() >= self.deadline {
             return Err(error("bash_analysis_timeout"));
         }
@@ -179,6 +256,15 @@ impl Builder<'_> {
         let mut replacements = BTreeMap::<(usize, usize), String>::new();
         let mut replacement_bytes = 0usize;
         for operation in analysis.operations {
+            self.expanded_bytes = self
+                .expanded_bytes
+                .saturating_add(operation.argv.iter().map(String::len).sum::<usize>());
+            if self.expanded_bytes > MAX_SOURCE_BYTES {
+                return Err(Uncertainty {
+                    reason: "bash_expanded_data_bounds",
+                    line: operation.line,
+                });
+            }
             if self.invocations.len() >= MAX_GRAPH_CALLS {
                 return Err(Uncertainty {
                     reason: "bash_graph_bounds",
@@ -295,10 +381,39 @@ impl Builder<'_> {
                 }
             }
         }
-        self.writes.extend(analysis.writes);
+        for redirect in analysis.writes {
+            if let Some(outputs) = self.output_fds {
+                let fd = outputs.get(&redirect.path).ok_or(Uncertainty {
+                    reason: "bash_output_handle_missing",
+                    line: redirect.line,
+                })?;
+                let replacement = format!(">&{fd}");
+                let span = (redirect.start, redirect.end);
+                if replacements
+                    .get(&span)
+                    .is_some_and(|previous| previous != &replacement)
+                {
+                    return Err(Uncertainty {
+                        reason: "bash_context_dependent_output",
+                        line: redirect.line,
+                    });
+                }
+                replacements.insert(span, replacement);
+            }
+            self.writes.push(OutputEffect {
+                source_path: code.original_path.clone(),
+                redirect,
+            });
+        }
         let mut source = code.source.clone();
         for ((start, end), replacement) in replacements.into_iter().rev() {
             source.replace_range(start..end, &replacement);
+        }
+        if source.len() > MAX_RENDERED_BYTES {
+            return Err(Uncertainty {
+                reason: "bash_rendered_source_bounds",
+                line: 1,
+            });
         }
         Ok(source)
     }

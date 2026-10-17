@@ -9,6 +9,21 @@ fn environment() -> BTreeMap<String, String> {
 }
 
 #[test]
+fn expanded_words_and_repeated_operations_are_bounded() {
+    let argv = ["script.sh".into()];
+    let oversized = format!("printf '%s' '{}'", "x".repeat(MAX_WORD_BYTES + 1));
+    assert!(analyze(&oversized, &argv, &environment()).is_err());
+    let expanded = format!(
+        "value='{}'; for item in {}; do printf '%s' \"$value\"; done",
+        "x".repeat(MAX_WORD_BYTES),
+        "x ".repeat(64)
+    );
+    assert!(analyze(&expanded, &argv, &environment()).is_err());
+    let zero_args = "true;".repeat(MAX_OPERATIONS + 1);
+    assert!(analyze(&zero_args, &argv, &environment()).is_err());
+}
+
+#[test]
 fn realistic_dry_and_delete_have_distinct_reachable_operations() {
     let dry = analyze(
         SCRIPT,
