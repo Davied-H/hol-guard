@@ -86,5 +86,5 @@ fn only_a_whole_readable_first_line_is_read() {
     assert_eq!(read(b"#!/bin/\xff\xfe\n"), Shebang::Unclear);
     let mut long = b"#!/".to_vec();
     long.extend(vec![b'a'; SHEBANG_BYTES]);
-    assert_eq!(read(&long), Shebang::Absent);
+    assert_eq!(read(&long), Shebang::Unclear);
 }

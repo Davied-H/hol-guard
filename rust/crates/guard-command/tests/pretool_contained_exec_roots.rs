@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+use crate::git_helper_fixture::git_github_controls;
 use serde_json::json;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -37,11 +38,13 @@ fn decide(root: &Path, search_path: &str, command: &str) -> guard_contracts::Pre
         git_config_no_system: false,
         library_search_paths: Default::default(),
     };
+    // Containment only converts a review when the device's controls are present.
+    let controls = git_github_controls("default", "default");
     guard_command::pretool::evaluate_pre_tool_envelope_with_execution_context(
         "codex",
         "PreToolUse",
         &json!({"tool_name":"bash","tool_input":{"command":command}}),
-        None,
+        Some(&controls),
         None,
         guard_command::pretool::PathContext {
             home_dir: root.to_str(),

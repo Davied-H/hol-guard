@@ -2,7 +2,7 @@
 use super::*;
 use std::collections::VecDeque;
 
-/// Shebang lines longer than this are not read.
+/// Shebang lines longer than this are not read; they count as unclear.
 const SHEBANG_BYTES: usize = 256;
 
 /// What a script's first line says it runs.
@@ -30,11 +30,12 @@ pub(super) fn shebang(script: &Path) -> Shebang {
     let Some(line) = head[..read].strip_prefix(b"#!") else {
         return Shebang::Absent;
     };
-    // A line the buffer cuts off is not read as a shorter interpreter.
+    // A line the buffer cuts off may still start its interpreter, so it is
+    // neither read as a shorter line nor taken for a script with none.
     let end = match line.iter().position(|byte| *byte == b'\n') {
         Some(end) => end,
         None if read < SHEBANG_BYTES => line.len(),
-        None => return Shebang::Absent,
+        None => return Shebang::Unclear,
     };
     match std::str::from_utf8(&line[..end]) {
         Ok(text) => runs(text),

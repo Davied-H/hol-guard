@@ -41,6 +41,16 @@ pub(super) fn outside(
 #[cfg(unix)]
 const MOST_PLACES: usize = 16;
 
+/// Commands the shell runs itself, without looking a program up on `PATH`. A
+/// `PATH` directory that happens to hold a file of the same name, such as a
+/// GNU coreutils directory, is never what runs.
+#[cfg(unix)]
+const SHELL_BUILTINS: &[&str] = &[
+    ":", "[", "alias", "break", "continue", "echo", "exit", "export", "false", "getopts", "jobs",
+    "kill", "printf", "pwd", "read", "readonly", "return", "set", "shift", "test", "trap", "true",
+    "type", "umask", "unalias", "unset", "wait",
+];
+
 /// A program a command starts, and where the shell may stand when it does.
 #[cfg(unix)]
 type Launch<'a> = (&'a str, Vec<Option<PathBuf>>);
@@ -63,6 +73,7 @@ fn launches<'a>(model: &'a CanonicalCommandV1, cwd: &Path, cdpath_unset: bool) -
                 places = after_cd(&places, &segment.arguments, cdpath_unset);
             }
             "popd" => places = vec![None],
+            builtin if SHELL_BUILTINS.contains(&builtin) => {}
             _ => launches.push((executable, places.clone())),
         }
     }

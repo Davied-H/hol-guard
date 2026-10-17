@@ -56,6 +56,23 @@ fn a_cd_is_not_a_launch() {
 }
 
 #[test]
+fn a_shell_builtin_is_not_a_launch() {
+    let model = crate::parse_command(&crate::CommandModelRequestV1 {
+        command: "echo start && printf x; test -f a && ./run.sh || true".to_owned(),
+        dialect: "posix".into(),
+        transport: "shell_string".into(),
+        extraction_provenance: "pre-tool-generic".into(),
+    })
+    .unwrap();
+
+    let names: Vec<&str> = launches(&model, Path::new("/work/project"), true)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(names, ["./run.sh"]);
+}
+
+#[test]
 fn a_directory_no_literal_names_is_unknown() {
     let absolute = Some(PathBuf::from("/work/project/abs"));
     assert_eq!(
