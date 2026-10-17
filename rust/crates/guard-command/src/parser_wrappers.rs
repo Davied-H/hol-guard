@@ -228,7 +228,7 @@ const INLINE_SCRIPT_OPTIONS: &[&str] = &["-c", "-lc", "-cl"];
 /// is any other spelling: an option the shell reads differently, a `$0`, a
 /// script on stdin, a prefix or assignment in front of the shell, and a
 /// pipeline or redirect around it all keep their existing paths.
-pub(super) fn inline_shell_script(raw: &str) -> Option<(String, String)> {
+pub(super) fn inline_shell_script(raw: &str) -> Option<String> {
     if raw.len() > crate::MAX_COMMAND_BYTES || raw.contains(['$', '`', '\n', '\r']) {
         return None;
     }
@@ -242,7 +242,7 @@ pub(super) fn inline_shell_script(raw: &str) -> Option<(String, String)> {
     {
         return None;
     }
-    Some((shell.clone(), script.clone()))
+    Some(script.clone())
 }
 
 #[cfg(test)]
@@ -275,13 +275,7 @@ mod tests {
                 Some("bash" | "sh" | "zsh")
             ));
         }
-        for command in [
-            "bash -c 'cat .env'",
-            "bash -s",
-            "bash -e ./preflight.sh",
-            "sh --",
-            "bash .sh",
-        ] {
+        for command in ["bash -s", "bash -e ./preflight.sh", "sh --", "bash .sh"] {
             assert_eq!(parse(command).confidence, "uncertain", "{command}");
         }
     }
@@ -404,7 +398,10 @@ mod tests {
         ] {
             let model = parse(command);
             assert_eq!(model.confidence, "exact", "{command}");
-            assert_eq!(model.wrapper_chain.len(), 1, "{command}");
+            // The shell adds nothing to the script, so it leaves no wrapper
+            // and the model is the one those same words make on their own.
+            assert!(model.wrapper_chain.is_empty(), "{command}");
+            assert_eq!(model.normalized_text, bare(command), "{command}");
             assert_eq!(model.segments[0].executable.as_deref(), Some(executable));
             let words: Vec<&str> = model.segments[0]
                 .arguments
@@ -418,8 +415,21 @@ mod tests {
         let model = parse("bash -c 'cd dashboard && npm run build'");
         assert_eq!(model.confidence, "exact");
         assert_eq!(model.segments.len(), 2);
-        assert_eq!(model.wrapper_chain, ["bash", "bash"]);
+        assert!(model.wrapper_chain.is_empty());
         assert_eq!(model.segments[1].executable.as_deref(), Some("npm"));
+        // A wrapped command keeps every floor its own words reach.
+        assert_eq!(
+            parse("bash -c 'cat .env'").segments[0]
+                .executable
+                .as_deref(),
+            Some("cat")
+        );
+    }
+
+    /// The script `command` carries, as the shell reads it.
+    fn bare(command: &str) -> String {
+        let tokens = crate::shell_tokens(command, false).expect("tokens");
+        tokens[2].clone()
     }
 
     #[test]

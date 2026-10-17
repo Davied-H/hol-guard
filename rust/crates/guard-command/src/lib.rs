@@ -471,14 +471,22 @@ fn parse_command_unbound(request: &CommandModelRequestV1) -> Result<CanonicalCom
 /// form reached `transparent_wrapper_not_yet_supported` and blocked outright,
 /// with no approval left to give it, while the same words without the shell in
 /// front modelled exactly. The script is parsed as the command text it is, so
-/// it reaches the rules, proofs and floors its own words reach.
+/// it reaches the rules, proofs and floors its own words reach, and nothing
+/// else: a wrapped `rm -rf /` still blocks and a wrapped `gh pr merge --auto`
+/// still needs fresh approval.
 ///
-/// The shell stays in the wrapper chain, because it is still a shell: `-lc`
-/// runs the startup files first, and `-c` reads the startup file its
-/// environment names. So the command never proves exact-safe, never draws on
-/// an explicit permission grant, and needs fresh approval each time, exactly
-/// as a privileged wrapper does. A script the parser cannot model keeps the
-/// wrapper's own uncertainty.
+/// The shell leaves no wrapper behind, because this spelling adds no power to
+/// the script. The harness already runs the command text through a shell, so
+/// the startup files a nested `-lc` reads have run before this command is
+/// read, and a payload planted in one runs at the next prompt whatever this
+/// command says. The bounded shape is what keeps that true: three words, a
+/// known shell, a known script option, and no expansion the parser would have
+/// to guess at. Anything else — an extra operand, `-s`, a prefix, a shell this
+/// text only names — keeps the wrapper's own uncertainty, as does a script
+/// this parser cannot model exactly.
+///
+/// The raw text is no longer the command, so `exact_raw_text` is false and a
+/// matcher that reads the literal raw spelling keeps failing closed.
 fn parse_inline_shell_script(
     request: &CommandModelRequestV1,
     raw: &str,
@@ -486,7 +494,7 @@ fn parse_inline_shell_script(
     if request.dialect != "posix" || request.transport != "shell_string" {
         return None;
     }
-    let (shell, script) = parser_wrappers::inline_shell_script(raw)?;
+    let script = parser_wrappers::inline_shell_script(raw)?;
     let mut model = parse_posix_command(&CommandModelRequestV1 {
         command: script,
         ..request.clone()
@@ -495,15 +503,6 @@ fn parse_inline_shell_script(
     if model.confidence != "exact" || model.segments.is_empty() {
         return None;
     }
-    for segment in &mut model.segments {
-        segment.wrapper_chain.insert(0, shell.clone());
-    }
-    model.wrapper_chain = model
-        .segments
-        .iter()
-        .flat_map(|segment| segment.wrapper_chain.iter().cloned())
-        .collect();
-    model.parser_profile = "posix-bounded-wrappers-v2".to_owned();
     model.exact_raw_text = false;
     Some(model)
 }

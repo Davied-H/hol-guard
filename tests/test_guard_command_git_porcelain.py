@@ -27,23 +27,8 @@ GIT_PORCELAIN_REVIEW_CASES: tuple[tuple[str, str, str], ...] = (
 )
 
 
-_ACTION_STRENGTH = {"allow": 0, "review": 1, "require-reapproval": 2, "block": 3}
-
-
 def test_git_porcelain_mutating_commands_are_reviewed(tmp_path: Path) -> None:
-    wrapper_cases = {case[0] for case in GIT_PORCELAIN_REVIEW_CASES if case[0].startswith("zsh -lc ")}
-    assert_reviewed_command_cases(
-        tuple(case for case in GIT_PORCELAIN_REVIEW_CASES if case[0] not in wrapper_cases),
-        tmp_path,
-    )
-    # A shell carrying its whole script names the programs it runs, so the
-    # wrapped form reaches at least the floor those same words reach bare.
-    for command in sorted(wrapper_cases):
-        script = command[len("zsh -lc ") :].strip("'")
-        wrapped = real_native_command_evaluation(command, cwd=tmp_path).native_minimum_action
-        bare = real_native_command_evaluation(script, cwd=tmp_path).native_minimum_action
-        assert wrapped != "allow", command
-        assert _ACTION_STRENGTH[wrapped] >= _ACTION_STRENGTH[bare], command
+    assert_reviewed_command_cases(GIT_PORCELAIN_REVIEW_CASES, tmp_path)
 
 
 GIT_PORCELAIN_SAFE_COMMANDS: tuple[str, ...] = (

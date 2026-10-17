@@ -112,7 +112,7 @@ def test_explicit_git_stash_permission_allows_wrapped_shell_forms(
     )
 
 
-def test_explicit_git_stash_permission_does_not_unwrap_login_shells(
+def test_explicit_git_stash_permission_covers_a_shell_carrying_the_script(
     tmp_path: Path, native_approval_reuse_runtime
 ) -> None:
     command = "zsh -lc 'git stash list'"
@@ -121,12 +121,10 @@ def test_explicit_git_stash_permission_does_not_unwrap_login_shells(
         controls=(("permission", "command.git.permission.stash", "enabled"),),
     )
 
-    # The script is modelled, so the command reaches its own rules, but the
-    # shell stays in front of it: a grant written for the bare command cannot
-    # cover the wrapped one, and the wrapped one never proves exact-safe.
-    assert fixture.payload["command_model"]["wrapper_chain"] == ["zsh"]
-    assert evaluation.minimum_action != "allow"
-
+    # The shell runs exactly the script it carries and adds nothing to it, so
+    # it leaves no wrapper behind and the grant for the script covers it.
+    assert fixture.payload["command_model"]["wrapper_chain"] == []
+    assert fixture.payload["command_extensions"].get("evaluation_error") is None
     request = extract_sensitive_tool_action_request(
         "Shell",
         {"command": command},
@@ -146,7 +144,12 @@ def test_explicit_git_stash_permission_does_not_unwrap_login_shells(
         native_extension_evidence=fixture.payload,
     )
 
-    assert artifact.metadata["command_action_floor"] != "allow"
+    assert artifact.metadata["command_action_floor"] == "allow"
+    assert artifact.metadata["extension_control_resolution"] == {
+        "blocked": False,
+        "failures": [],
+        "explicitly_enabled_permission_ids": ["command.git.permission.stash"],
+    }
     assert (
         _runtime_artifact_policy_action(
             GuardConfig(
@@ -158,7 +161,7 @@ def test_explicit_git_stash_permission_does_not_unwrap_login_shells(
             "grok",
             guard_home=native_approval_reuse_runtime,
         )
-        != "allow"
+        == "allow"
     )
 
 
