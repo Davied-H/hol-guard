@@ -416,7 +416,16 @@ class LocalCliApiService:
         if identity_hash is not None:
             # The Protect deep link binds to one identity; a changed binary lists nothing.
             items = [item for item in items if item.get("identity_hash") == identity_hash]
-        return self._list_payload(items)
+        payload = self._list_payload(items)
+        if identity_hash is not None:
+            # Seeded profile rows are other connectors; a filtered list carries none of them.
+            seeded = payload.get("seeded_items")
+            payload["seeded_items"] = (
+                [item for item in seeded if isinstance(item, dict) and item.get("identity_hash") == identity_hash]
+                if isinstance(seeded, list)
+                else []
+            )
+        return payload
 
     def provider_actions(self, payload: dict[str, object]) -> dict[str, object]:
         cli_id = self._required_string(payload, "cli_id")

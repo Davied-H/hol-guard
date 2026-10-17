@@ -124,7 +124,10 @@ def test_group_goes_through_the_bulk_path_and_offers_the_continuation(
         seen.update(kwargs)
         return {"resolved_count": 1, "failed": [{"request_id": "req-2", "error": "ineligible"}]}
 
+    continued: list[object] = []
+
     def resume(**kwargs: object) -> tuple[dict[str, object], dict[str, str]]:
+        continued.append(kwargs["request_id"])
         updated = {"codexResume": {"status": "sent", "message": "Codex was told to continue."}}
         return updated, {"title": "Decision saved. Codex chat was notified.", "body": "Codex was told to continue."}
 
@@ -142,6 +145,39 @@ def test_group_goes_through_the_bulk_path_and_offers_the_continuation(
     assert isinstance(continuation, dict)
     assert continuation["codexResume"] == {"status": "sent", "message": "Codex was told to continue."}
     assert continuation["retry_hint"] == "Codex was told to continue."
+    # A row the bulk path did not approve is not continued.
+    assert continued == ["req-1"]
+
+
+def test_every_approved_row_continues_its_own_agent(store: GuardStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    continued: list[object] = []
+
+    def resume(**kwargs: object) -> tuple[dict[str, object], object]:
+        continued.append(kwargs["request_id"])
+        return {}, kwargs["copy"]
+
+    monkeypatch.setattr(approvals, "bulk_allow_read_only_once", lambda **_k: {"resolved_count": 2, "failed": []})
+    monkeypatch.setattr(local_approval_continuation, "apply_local_approval_continuation", resume)
+
+    result = group.resolve_connector_group(
+        store, cli_id=_CLI_ID, identity_hash=_HASH, request_id="req-2", approval_gate_input=None, now="t"
+    )
+
+    assert result["status"] == "resolved"
+    assert sorted(continued) == ["req-1", "req-2"]  # type: ignore[type-var]
+    continuation = result["continuation"]
+    assert isinstance(continuation, dict) and continuation["request_id"] == "req-2"
+
+
+def test_the_origin_row_is_found_past_a_long_queue(store: GuardStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The queue scan stopped before reaching this connector's rows.
+    monkeypatch.setattr(group, "pending_connector_group_rows", lambda _store, _hash: ([], False))
+
+    assert group.connector_group_request_ids(store, cli_id=_CLI_ID, identity_hash=_HASH, request_id="req-1") == [
+        "req-1"
+    ]
+    assert group.connector_group_request_ids(store, cli_id=_CLI_ID, identity_hash=_HASH, request_id="req-spoof") == []
+    assert group.connector_group_request_ids(store, cli_id=_CLI_ID, identity_hash=_HASH, request_id="req-other") == []
 
 
 def test_other_harnesses_get_the_retry_hint_text(store: GuardStore, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,9 +321,15 @@ def test_list_filters_to_one_bound_identity(store: GuardStore, monkeypatch: pyte
         "_listed_public_items",
         lambda: [{"cli_id": _CLI_ID, "identity_hash": _HASH}, {"cli_id": "local-cli.x", "identity_hash": _OTHER_HASH}],
     )
-    monkeypatch.setattr(service, "_list_payload", lambda items: {"items": items})
+    seeded = [{"cli_id": "local-cli.profile-x", "identity_hash": _OTHER_HASH}]
+    monkeypatch.setattr(service, "_list_payload", lambda items: {"items": items, "seeded_items": list(seeded)})
 
-    assert service.list_items(identity_hash=_HASH) == {"items": [{"cli_id": _CLI_ID, "identity_hash": _HASH}]}
+    # Seeded profile rows are other connectors, so a filtered list carries none.
+    assert service.list_items(identity_hash=_HASH) == {
+        "items": [{"cli_id": _CLI_ID, "identity_hash": _HASH}],
+        "seeded_items": [],
+    }
+    assert service.list_items()["seeded_items"] == seeded
     assert len(service.list_items()["items"]) == 2  # type: ignore[arg-type]
 
 

@@ -17,10 +17,9 @@ from collections.abc import Mapping
 from ..approval_gate_types import ApprovalGateError, ApprovalGateInput
 from ..runtime.extension_allow_hint import validated_connector_setup_hint
 from ..store import GuardStore
+from .approval_connector_recommendation import pending_connector_group_rows
 from .local_cli_api_contract import LocalCliApiError
 
-# Pending rows read per connector; a larger backlog keeps the rest pending.
-CONNECTOR_GROUP_ROW_LIMIT = 200
 _MAX_REQUEST_ID = 128
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,18 +39,38 @@ def connector_group_request_id(payload: Mapping[str, object], state: str) -> str
     return text
 
 
-def connector_group_request_ids(store: GuardStore, *, cli_id: str, identity_hash: str) -> list[str]:
-    """Pending rows queued on this exact connector identity, oldest first as the store lists them."""
+def _connector_row(store: GuardStore, row: Mapping[str, object], *, cli_id: str, identity_hash: str) -> bool:
+    """A pending row queued on this connector whose stored hint names the same connector."""
 
-    prefix = f"connector:{identity_hash}:"
-    ids: list[str] = []
-    for row in store.list_approval_requests(status="pending", limit=CONNECTOR_GROUP_ROW_LIMIT):
-        if not isinstance(row, Mapping) or not str(row.get("queue_group_id") or "").startswith(prefix):
-            continue
-        request_id = str(row.get("request_id") or "")
-        hint = validated_connector_setup_hint(store.get_approval_extension_allow_hint(request_id))
-        # The group id alone is not enough: the row must name this connector too.
-        if hint is not None and hint["identity_hash"] == identity_hash and hint["cli_id"] == cli_id:
+    if row.get("status") not in (None, "pending"):
+        return False
+    if not str(row.get("queue_group_id") or "").startswith(f"connector:{identity_hash}:"):
+        return False
+    hint = validated_connector_setup_hint(store.get_approval_extension_allow_hint(str(row.get("request_id") or "")))
+    # The group id alone is not enough: the row must name this connector too.
+    return hint is not None and hint["identity_hash"] == identity_hash and hint["cli_id"] == cli_id
+
+
+def connector_group_request_ids(
+    store: GuardStore, *, cli_id: str, identity_hash: str, request_id: str | None = None
+) -> list[str]:
+    """Pending rows queued on this exact connector identity, read across the whole pending queue.
+
+    ``request_id`` (the row the setup started from) is checked directly, so a
+    long queue can never hide it.
+    """
+
+    rows, _complete = pending_connector_group_rows(store, identity_hash)
+    ids = [
+        str(row.get("request_id"))
+        for row in rows
+        if _connector_row(store, row, cli_id=cli_id, identity_hash=identity_hash)
+    ]
+    if request_id is not None and request_id not in ids:
+        origin = store.get_approval_request(request_id) or {}
+        if origin.get("status") == "pending" and _connector_row(
+            store, origin, cli_id=cli_id, identity_hash=identity_hash
+        ):
             ids.append(request_id)
     return ids
 
@@ -101,7 +120,7 @@ def resolve_connector_group(
     from ..approvals import bulk_allow_read_only_once
 
     try:
-        ids = connector_group_request_ids(store, cli_id=cli_id, identity_hash=identity_hash)
+        ids = connector_group_request_ids(store, cli_id=cli_id, identity_hash=identity_hash, request_id=request_id)
     except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
         _LOGGER.warning("Connector group unavailable (%s)", type(error).__name__)
         return {"status": "failed", "error": "connector_group_unavailable", "resolved_count": 0, "failed": []}
@@ -128,13 +147,16 @@ def resolve_connector_group(
         "resolved_count": resolved_count if isinstance(resolved_count, int) else 0,
         "failed": failed if isinstance(failed, list) else [],
     }
-    if request_id not in failed_ids and result["resolved_count"]:
-        result["continuation"] = _continuation(store, request_id, now)
+    # Every row the bulk path approved continues its own agent; the response
+    # carries the continuation of the row the setup started from.
+    for resolved_id in [item for item in ids if item not in failed_ids] if result["resolved_count"] else []:
+        continuation = _continuation(store, resolved_id, now)
+        if resolved_id == request_id:
+            result["continuation"] = continuation
     return result
 
 
 __all__ = [
-    "CONNECTOR_GROUP_ROW_LIMIT",
     "connector_group_request_id",
     "connector_group_request_ids",
     "resolve_connector_group",
