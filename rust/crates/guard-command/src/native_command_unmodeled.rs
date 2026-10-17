@@ -258,6 +258,11 @@ impl CompiledNativeCommandControls {
                 // that was never read. The module name is already in the
                 // command.
                 None if !prefix::interpreter_launch_reads_a_file(&bare) => {}
+                // A shell reading its script from this same text names its
+                // programs here, so there is no file left to read. Without
+                // this arm `sh -c 'npm run build'` had no owner set at all and
+                // was refused outright, with no approval left to give it.
+                None if inline_shell::script_names_its_programs(&bare) => {}
                 None => return None,
             }
         }
@@ -485,8 +490,12 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         // with no approval left to give them, while `timeout 30 npm test`
         // modelled exactly. A prefix that changes who runs the program, and an
         // interpreter standing behind one, are refused before any floor is
-        // read.
+        // read. A shell carrying its script in this same text is read from
+        // that script instead.
         Some("transparent_wrapper_not_yet_supported") => {
+            if let Some(script) = prefix::inline_shell_script(&command.normalized_text) {
+                return inline_shell::script_is_reviewable(&script);
+            }
             let literal = unquoted_literal(&command.normalized_text);
             prefix::launch_only(&literal)
                 && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
@@ -1014,6 +1023,8 @@ fn is_assignment(word: &str) -> bool {
     })
 }
 
+#[path = "native_command_unmodeled_inline_shell.rs"]
+mod inline_shell;
 #[path = "native_command_unmodeled_prefix.rs"]
 mod prefix;
 
