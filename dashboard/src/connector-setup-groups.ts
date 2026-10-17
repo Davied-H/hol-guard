@@ -1,6 +1,6 @@
 import { harnessDisplayName, resolveRequestWorkingDirectory } from "./approval-center-utils";
 import type { GuardApprovalRequest } from "./guard-types";
-import type { LocalCliItem, LocalCliSurface } from "./local-cli-api";
+import { enrollablePackageScriptCommands, type LocalCliItem, type LocalCliSurface } from "./local-cli-api";
 import { localCliHref } from "./local-cli-links";
 import { BULK_BLOCKED_CATEGORY_IDS, BULK_HIGH_CATEGORY_IDS, resolveQueueCategory } from "./queue-state";
 
@@ -45,6 +45,11 @@ export function isConnectorSetupItem(item: GuardApprovalRequest): boolean {
   return item.status === "pending" && connectorGroupKey(item.queue_group_id) !== null;
 }
 
+/** Calls one row stands for, counting retries of the same action that were merged into it. */
+export function connectorItemCallCount(item: GuardApprovalRequest): number {
+  return Math.max(1, item.dedupe_count ?? 1);
+}
+
 /** Same caution rule as bulk approval and the built-in extension card. */
 export function connectorItemNeedsCaution(item: GuardApprovalRequest): boolean {
   if (item.extension_recommendation?.caution === true) return true;
@@ -74,16 +79,50 @@ function workspaceLabel(item: GuardApprovalRequest): string | null {
   return segments[segments.length - 1] ?? null;
 }
 
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+/** Package-manager flags that take the next token as their value (`pnpm --filter web run build`). */
+const PACKAGE_MANAGER_VALUE_FLAGS = new Set(["--filter", "-F", "--prefix", "-C", "--dir", "--cwd", "--workspace", "-w", "--workspace-dir"]);
+/** Runner verbs that put the script name in the next operand (`npm run build`). */
+const SCRIPT_RUN_VERBS = new Set(["run", "run-script"]);
+
+/** The first operands after the executable. Options are skipped and never returned. */
+function leadingOperands(command: string, limit: number, valueFlags: ReadonlySet<string>): string[] {
+  const tokens = command.trim().split(/\s+/);
+  while (tokens.length > 0 && ENV_ASSIGNMENT.test(tokens[0])) tokens.shift();
+  const operands: string[] = [];
+  for (let index = 1; index < tokens.length && operands.length < limit; index += 1) {
+    const token = tokens[index];
+    if (token.startsWith("-")) {
+      if (valueFlags.has(token)) index += 1;
+      continue;
+    }
+    operands.push(token);
+  }
+  return operands;
+}
+
+/** Script name a package-manager command runs: `npm run build`, `pnpm build` and `yarn build` all give `build`. */
+function packageScriptName(command: string): string | null {
+  const [first, second] = leadingOperands(command, 2, PACKAGE_MANAGER_VALUE_FLAGS);
+  if (first === undefined) return null;
+  return SCRIPT_RUN_VERBS.has(first) ? (second ?? null) : first;
+}
+
 /** Catalog command names the rows invoked. Arguments are matched, never shown. */
 export function triedCatalogCommands(items: GuardApprovalRequest[], cli: LocalCliItem | null): string[] {
   if (cli === null) return [];
-  const topLevel = new Set(cli.commands.filter((command) => command.parent_id === null).map((command) => command.name));
+  const packageScripts = cli.surface === "package-scripts";
+  const known = new Set(
+    packageScripts
+      ? enrollablePackageScriptCommands(cli.commands).map((command) => command.name)
+      : cli.commands.filter((command) => command.parent_id === null).map((command) => command.name),
+  );
   const tried = new Set<string>();
   for (const item of items) {
     const command = itemCommand(item);
     if (command === null) continue;
-    const subcommand = command.trim().split(/\s+/).slice(1).find((token) => !token.startsWith("-"));
-    if (subcommand !== undefined && topLevel.has(subcommand)) tried.add(subcommand);
+    const name = packageScripts ? packageScriptName(command) : (leadingOperands(command, 1, new Set())[0] ?? null);
+    if (name !== null && known.has(name)) tried.add(name);
   }
   return [...tried].sort();
 }
@@ -110,12 +149,14 @@ export function buildConnectorSetupGroups(
     const sorted = [...rows].sort((a, b) => itemTimestamp(b) - itemTimestamp(a));
     const identityHash = key.slice(CONNECTOR_GROUP_PREFIX.length);
     const cli = localClis.find((entry) => entry.identity_hash === identityHash) ?? null;
-    const cautionCount = sorted.filter(connectorItemNeedsCaution).length;
+    const cautionCount = sorted
+      .filter(connectorItemNeedsCaution)
+      .reduce((sum, item) => sum + connectorItemCallCount(item), 0);
     groups.push({
       key,
       identityHash,
       items: sorted,
-      callCount: sorted.reduce((sum, item) => sum + Math.max(1, item.dedupe_count ?? 1), 0),
+      callCount: sorted.reduce((sum, item) => sum + connectorItemCallCount(item), 0),
       harnesses: [...new Set(sorted.map((item) => harnessDisplayName(item.harness)))],
       latest: sorted[0],
       workspaceLabel: workspaceLabel(sorted[0]),
@@ -129,12 +170,16 @@ export function buildConnectorSetupGroups(
   return groups.sort((a, b) => itemTimestamp(b.latest) - itemTimestamp(a.latest));
 }
 
-export function countConnectorSetupGroups(items: GuardApprovalRequest[]): number {
-  const keys = new Set<string>();
+/**
+ * Stable key of the connector identities in the Inbox, independent of row order
+ * and repeats. It changes exactly when a connector appears or leaves.
+ */
+export function connectorSetupIdentityKey(items: GuardApprovalRequest[]): string {
+  const hashes = new Set<string>();
   for (const item of items) {
     if (!isConnectorSetupItem(item)) continue;
     const key = connectorGroupKey(item.queue_group_id);
-    if (key !== null) keys.add(key);
+    if (key !== null) hashes.add(key.slice(CONNECTOR_GROUP_PREFIX.length));
   }
-  return keys.size;
+  return [...hashes].sort().join(",");
 }

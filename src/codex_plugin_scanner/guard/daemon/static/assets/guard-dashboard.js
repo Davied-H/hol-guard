@@ -33142,327 +33142,6 @@ function SemanticFilterButton(props) {
     }
   );
 }
-const EXTENSION_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
-const RULE_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
-const DEFAULT_EXTENSION_DETAIL_URL_STATE = {
-  tab: "overview",
-  query: "",
-  risk: "all",
-  state: "all",
-  configurable: "all",
-  source: "all",
-  deprecated: "all",
-  type: "all",
-  sort: "name",
-  ruleId: null
-};
-function oneOf(value, allowed, fallback) {
-  return value !== null && allowed.includes(value) ? value : fallback;
-}
-function parseExtensionRoute(pathname) {
-  if (pathname === "/extensions" || pathname === "/extensions/") return { kind: "overview" };
-  if (!pathname.startsWith("/extensions/")) return { kind: "invalid" };
-  const encoded = pathname.slice("/extensions/".length);
-  if (!encoded || encoded.includes("/")) return { kind: "invalid" };
-  try {
-    const decoded = decodeURIComponent(encoded).trim().toLowerCase();
-    if (decoded === "command.dns") return { kind: "overview" };
-    if (!EXTENSION_ID_PATTERN.test(decoded)) return { kind: "invalid" };
-    return { kind: "detail", extensionId: decoded };
-  } catch {
-    return { kind: "invalid" };
-  }
-}
-function readExtensionDetailUrlState(search) {
-  const params = new URLSearchParams(search);
-  const rawQuery = params.get("q") ?? "";
-  const query = rawQuery.slice(0, 160);
-  const rawRule = params.get("rule")?.trim().toLowerCase() ?? null;
-  const ruleId = rawRule && RULE_ID_PATTERN.test(rawRule) ? rawRule : null;
-  return {
-    tab: oneOf(params.get("tab"), ["overview", "permissions", "managed-controls", "activity", "technical", "commands", "policy", "test-lab"], "overview"),
-    query,
-    risk: oneOf(params.get("risk"), ["all", "low", "medium", "high", "critical"], "all"),
-    state: oneOf(params.get("state"), ["all", "allowed", "blocked"], "all"),
-    configurable: oneOf(params.get("configurable"), ["all", "yes", "no"], "all"),
-    source: oneOf(params.get("source"), ["all", "built-in", "local-admin", "signed-cloud"], "all"),
-    deprecated: oneOf(params.get("deprecated"), ["all", "yes", "no"], "all"),
-    type: oneOf(params.get("type"), ["all", "permission", "rule"], "all"),
-    sort: oneOf(params.get("sort"), ["name", "risk", "id"], "name"),
-    ruleId
-  };
-}
-function extensionDetailSearch(state) {
-  const params = new URLSearchParams();
-  if (state.tab !== "overview") params.set("tab", state.tab);
-  if (state.query.trim()) params.set("q", state.query.trim().slice(0, 160));
-  if (state.risk !== "all") params.set("risk", state.risk);
-  if (state.state !== "all") params.set("state", state.state);
-  if (state.configurable !== "all") params.set("configurable", state.configurable);
-  if (state.source !== "all") params.set("source", state.source);
-  if (state.deprecated !== "all") params.set("deprecated", state.deprecated);
-  if (state.type !== "all") params.set("type", state.type);
-  if (state.sort !== "name") params.set("sort", state.sort);
-  if (state.ruleId && RULE_ID_PATTERN.test(state.ruleId)) params.set("rule", state.ruleId);
-  const encoded = params.toString();
-  return encoded ? `?${encoded}` : "";
-}
-function extensionDetailHref(extensionId, state = DEFAULT_EXTENSION_DETAIL_URL_STATE) {
-  const canonical = extensionId.trim().toLowerCase();
-  if (!EXTENSION_ID_PATTERN.test(canonical)) return "/extensions";
-  return `/extensions/${encodeURIComponent(canonical)}${extensionDetailSearch(state)}`;
-}
-function canonicalExtensionId(catalog, candidate) {
-  if (!candidate) return null;
-  const normalized = candidate.trim().toLowerCase();
-  const direct = catalog.find((extension2) => extension2.extension_id === normalized);
-  if (direct) return direct.extension_id;
-  return catalog.find((extension2) => extension2.aliases.includes(normalized))?.extension_id ?? null;
-}
-function explicitControlState(effective, kind, targetId2) {
-  const projected = kind === "extension" ? effective.projection?.extensions.find((item) => item.extension_id === targetId2)?.local_state : effective.projection?.permissions.find((item) => item.permission_id === targetId2)?.local_state;
-  if (projected) return projected === "inherited" ? null : projected;
-  return effective.controls.find(
-    (control) => control.target.kind === kind && control.target.target_id === targetId2
-  )?.state ?? null;
-}
-function managedExplicitControlState(effective, kind, targetId2) {
-  const projected = kind === "extension" ? effective.projection?.extensions.find((item) => item.extension_id === targetId2)?.managed_state : effective.projection?.permissions.find((item) => item.permission_id === targetId2)?.managed_state;
-  if (projected) return projected === "inherited" ? null : projected;
-  for (const layer of effective.layers) {
-    if (layer.kind !== "signed-cloud") continue;
-    const control = layer.controls.find((item) => item.target_kind === kind && item.target_id === targetId2);
-    if (control) return control.state;
-  }
-  return null;
-}
-function managedPermissionState(effective, permissionId) {
-  return managedExplicitControlState(effective, "permission", permissionId);
-}
-function extensionEffectiveState(effective, extension2) {
-  const projected = effective.projection?.extensions.find((item) => item.extension_id === extension2.extension_id);
-  if (projected) return projected.effective_state === "allowed" ? "enabled" : "disabled";
-  if (effective.health !== "protected") return "disabled";
-  if (effective.global_lockdown) return "disabled";
-  if (extension2.required) return "enabled";
-  const explicit = explicitControlState(effective, "extension", extension2.extension_id);
-  if (extension2.trust_class === "external" || extension2.activation === "opt-in") {
-    return explicit === "enabled" ? "enabled" : "disabled";
-  }
-  return explicit ?? "enabled";
-}
-function permissionEffectiveState(effective, extension2, permission2) {
-  const projected = effective.projection?.permissions.find((item) => item.permission_id === permission2.permission_id);
-  if (projected) return projected.effective_state === "allowed" ? "enabled" : "disabled";
-  if (extensionEffectiveState(effective, extension2) === "disabled") return "disabled";
-  if (!permission2.configurable) return permission2.default_enabled ? "enabled" : "disabled";
-  return explicitControlState(effective, "permission", permission2.permission_id) ?? (permission2.default_enabled ? "enabled" : "disabled");
-}
-function extensionDisplayName(name) {
-  for (const suffix of [" command protection", " protection"]) {
-    if (!name.toLowerCase().endsWith(suffix)) continue;
-    const shortened = name.slice(0, name.length - suffix.length);
-    if (shortened.length < 3 || /[-\s,.]$/.test(shortened)) break;
-    return shortened;
-  }
-  return name;
-}
-function extensionStateLabel(effective, extension2) {
-  if (effective.health !== "protected") return "Unavailable";
-  if (effective.global_lockdown) return "Lockdown";
-  if (managedExplicitControlState(effective, "extension", extension2.extension_id) !== null) return "Managed";
-  if (extension2.required) return "Required";
-  return extensionEffectiveState(effective, extension2) === "enabled" ? "Allowed" : "Blocked";
-}
-function catalogRowSecondLine(extension2, state) {
-  if (state === "Managed" || state === "Lockdown" || state === "Unavailable") return state;
-  if (extension2.trust_class === "external" && state !== "Allowed" && state !== "Required") {
-    return "Off until you turn it on";
-  }
-  if (state === "Blocked") return state;
-  const executables = extension2.executables.join(" · ").trim();
-  return executables || extension2.description;
-}
-function controlProvenance(effective, kind, targetId2) {
-  const managedSource = effective.managed_controls?.authority_mode === "managed-restrictive" ? `Managed by ${effective.managed_controls.workspace_id}` : "Synced from Guard Cloud";
-  const projected = kind === "extension" ? effective.projection?.extensions.find((item) => item.extension_id === targetId2) : effective.projection?.permissions.find((item) => item.permission_id === targetId2);
-  if (projected) {
-    const sources2 = [];
-    if (effective.global_lockdown) sources2.push("Emergency Lockdown");
-    if (projected.managed_state !== "inherited") sources2.push(managedSource);
-    if (projected.local_state !== "inherited") sources2.push("Set on this device");
-    if (sources2.length === 0) sources2.push("Recommended by Guard");
-    return sources2;
-  }
-  const sources = [];
-  if (effective.global_lockdown) sources.push("Emergency Lockdown");
-  for (const layer of effective.layers) {
-    if (layer.controls.some((control) => control.target_kind === kind && control.target_id === targetId2)) {
-      sources.push(layer.kind === "signed-cloud" ? managedSource : "Set on this device");
-    }
-  }
-  if (sources.length === 0) sources.push("Recommended by Guard");
-  return sources;
-}
-function permissionForRule(extension2, rule2) {
-  return extension2.permissions.find((permission2) => permission2.rule_ids.includes(rule2.rule_id)) ?? null;
-}
-function treatmentLabel(value) {
-  const labels = {
-    allow: "Allow",
-    warn: "Warn",
-    review: "Review",
-    "require-reapproval": "Require reapproval",
-    "sandbox-required": "Require sandbox",
-    block: "Block",
-    required: "Required",
-    enforce: "Enforce",
-    monitor: "Monitor",
-    disabled: "Disabled"
-  };
-  return labels[value] ?? value.replaceAll("-", " ");
-}
-function familyHeading(permissions) {
-  const examples = permissions.map((permission2) => permission2.example_command).filter((example) => Boolean(example)).map((example) => example.split(/\s+/));
-  if (!examples.length) return permissions[0]?.label ?? "";
-  const first = examples[0];
-  const shared = [];
-  for (let index = 0; index < first.length; index += 1) {
-    const token = first[index];
-    if (examples.every((parts) => parts[index] === token)) shared.push(token);
-    else break;
-  }
-  return shared.length ? shared.join(" ") : permissions[0]?.label ?? "";
-}
-function groupPermissionsByFamily(permissions) {
-  const byFamily = /* @__PURE__ */ new Map();
-  const ungrouped = [];
-  for (const permission2 of permissions) {
-    if (!permission2.family) ungrouped.push(permission2);
-    else {
-      const members = byFamily.get(permission2.family) ?? [];
-      members.push(permission2);
-      byFamily.set(permission2.family, members);
-    }
-  }
-  const families = [...byFamily.entries()].map(([family, members]) => ({ family, heading: familyHeading(members), permissions: members })).sort((left, right) => left.family.localeCompare(right.family));
-  return { ungrouped, families };
-}
-const LOCAL_CLI_ID_PATTERN = /^local-cli\.[a-z0-9]+(?:-[a-z0-9]+){0,8}$/;
-function addCustomExtensionHref() {
-  return "/extensions/add";
-}
-function parseProtectionRoute(pathname) {
-  if (pathname === "/extensions/add" || pathname === "/extensions/add/") {
-    return { kind: "add-custom" };
-  }
-  if (pathname.startsWith("/extensions/local-cli/")) {
-    try {
-      const cliId = decodeURIComponent(pathname.slice("/extensions/local-cli/".length)).trim().toLowerCase();
-      if (cliId && !cliId.includes("/") && LOCAL_CLI_ID_PATTERN.test(cliId)) {
-        return { kind: "local-cli", cliId };
-      }
-    } catch {
-      return { kind: "invalid" };
-    }
-    return { kind: "invalid" };
-  }
-  return parseExtensionRoute(pathname);
-}
-function localCliHref(cliId) {
-  return `/extensions/local-cli/${encodeURIComponent(cliId)}`;
-}
-const CONNECTOR_GROUP_PREFIX = "connector:";
-const PROTECT_LIST_HREF = "/extensions";
-const IDENTITY_HASH_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
-function connectorGroupKey(queueGroupId) {
-  if (typeof queueGroupId !== "string" || !queueGroupId.startsWith(CONNECTOR_GROUP_PREFIX)) return null;
-  const identityHash = queueGroupId.slice(CONNECTOR_GROUP_PREFIX.length).split(":")[0] ?? "";
-  return IDENTITY_HASH_PATTERN.test(identityHash) ? `${CONNECTOR_GROUP_PREFIX}${identityHash}` : null;
-}
-function isConnectorSetupItem(item) {
-  return item.status === "pending" && connectorGroupKey(item.queue_group_id) !== null;
-}
-function connectorItemNeedsCaution(item) {
-  if (item.extension_recommendation?.caution === true) return true;
-  const categoryId = resolveQueueCategory(item).id;
-  return BULK_HIGH_CATEGORY_IDS.has(categoryId) || BULK_BLOCKED_CATEGORY_IDS.has(categoryId);
-}
-function connectorSurfaceLabel(surface) {
-  if (surface === "mcp") return "MCP server";
-  if (surface === "package-scripts") return "Package scripts";
-  return "Local CLI";
-}
-function itemTimestamp(item) {
-  const value = new Date(item.last_seen_at ?? item.created_at).getTime();
-  return Number.isFinite(value) ? value : 0;
-}
-function itemCommand(item) {
-  return item.action_envelope_json?.command ?? item.raw_command_text ?? null;
-}
-function workspaceLabel(item) {
-  const directory = resolveRequestWorkingDirectory(item);
-  if (directory === null) return null;
-  const segments = directory.split(/[\\/]/).filter(Boolean);
-  return segments[segments.length - 1] ?? null;
-}
-function triedCatalogCommands(items, cli) {
-  if (cli === null) return [];
-  const topLevel = new Set(cli.commands.filter((command) => command.parent_id === null).map((command) => command.name));
-  const tried = /* @__PURE__ */ new Set();
-  for (const item of items) {
-    const command = itemCommand(item);
-    if (command === null) continue;
-    const subcommand = command.trim().split(/\s+/).slice(1).find((token) => !token.startsWith("-"));
-    if (subcommand !== void 0 && topLevel.has(subcommand)) tried.add(subcommand);
-  }
-  return [...tried].sort();
-}
-function connectorSetupHref(cli) {
-  return cli === null ? PROTECT_LIST_HREF : localCliHref(cli.cli_id);
-}
-function buildConnectorSetupGroups(items, localClis = []) {
-  const byKey = /* @__PURE__ */ new Map();
-  for (const item of items) {
-    if (!isConnectorSetupItem(item)) continue;
-    const key = connectorGroupKey(item.queue_group_id);
-    if (key === null) continue;
-    const rows = byKey.get(key) ?? [];
-    rows.push(item);
-    byKey.set(key, rows);
-  }
-  const groups = [];
-  for (const [key, rows] of byKey) {
-    const sorted = [...rows].sort((a, b) => itemTimestamp(b) - itemTimestamp(a));
-    const identityHash = key.slice(CONNECTOR_GROUP_PREFIX.length);
-    const cli = localClis.find((entry) => entry.identity_hash === identityHash) ?? null;
-    const cautionCount = sorted.filter(connectorItemNeedsCaution).length;
-    groups.push({
-      key,
-      identityHash,
-      items: sorted,
-      callCount: sorted.reduce((sum, item) => sum + Math.max(1, item.dedupe_count ?? 1), 0),
-      harnesses: [...new Set(sorted.map((item) => harnessDisplayName(item.harness)))],
-      latest: sorted[0],
-      workspaceLabel: workspaceLabel(sorted[0]),
-      caution: cautionCount > 0,
-      cautionCount,
-      cli,
-      setupHref: connectorSetupHref(cli),
-      triedCommands: triedCatalogCommands(sorted, cli)
-    });
-  }
-  return groups.sort((a, b) => itemTimestamp(b.latest) - itemTimestamp(a.latest));
-}
-function countConnectorSetupGroups(items) {
-  const keys = /* @__PURE__ */ new Set();
-  for (const item of items) {
-    if (!isConnectorSetupItem(item)) continue;
-    const key = connectorGroupKey(item.queue_group_id);
-    if (key !== null) keys.add(key);
-  }
-  return keys.size;
-}
 const CLI_ID_PATTERN = /^local-cli\.[a-z0-9]+(?:-[a-z0-9]+){0,8}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 function isRecord(value) {
@@ -34164,20 +33843,377 @@ async function fetchMcpProviderActions(cliId, options) {
   if (nextOffset !== null && (typeof nextOffset !== "number" || !Number.isSafeInteger(nextOffset) || nextOffset !== options.offset + 50 || nextOffset > 1e4)) throw new Error("Invalid provider inventory page");
   return { actions, nextOffset, catalogToken: body.catalog_token };
 }
+const EXTENSION_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+const RULE_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+const DEFAULT_EXTENSION_DETAIL_URL_STATE = {
+  tab: "overview",
+  query: "",
+  risk: "all",
+  state: "all",
+  configurable: "all",
+  source: "all",
+  deprecated: "all",
+  type: "all",
+  sort: "name",
+  ruleId: null
+};
+function oneOf(value, allowed, fallback) {
+  return value !== null && allowed.includes(value) ? value : fallback;
+}
+function parseExtensionRoute(pathname) {
+  if (pathname === "/extensions" || pathname === "/extensions/") return { kind: "overview" };
+  if (!pathname.startsWith("/extensions/")) return { kind: "invalid" };
+  const encoded = pathname.slice("/extensions/".length);
+  if (!encoded || encoded.includes("/")) return { kind: "invalid" };
+  try {
+    const decoded = decodeURIComponent(encoded).trim().toLowerCase();
+    if (decoded === "command.dns") return { kind: "overview" };
+    if (!EXTENSION_ID_PATTERN.test(decoded)) return { kind: "invalid" };
+    return { kind: "detail", extensionId: decoded };
+  } catch {
+    return { kind: "invalid" };
+  }
+}
+function readExtensionDetailUrlState(search) {
+  const params = new URLSearchParams(search);
+  const rawQuery = params.get("q") ?? "";
+  const query = rawQuery.slice(0, 160);
+  const rawRule = params.get("rule")?.trim().toLowerCase() ?? null;
+  const ruleId = rawRule && RULE_ID_PATTERN.test(rawRule) ? rawRule : null;
+  return {
+    tab: oneOf(params.get("tab"), ["overview", "permissions", "managed-controls", "activity", "technical", "commands", "policy", "test-lab"], "overview"),
+    query,
+    risk: oneOf(params.get("risk"), ["all", "low", "medium", "high", "critical"], "all"),
+    state: oneOf(params.get("state"), ["all", "allowed", "blocked"], "all"),
+    configurable: oneOf(params.get("configurable"), ["all", "yes", "no"], "all"),
+    source: oneOf(params.get("source"), ["all", "built-in", "local-admin", "signed-cloud"], "all"),
+    deprecated: oneOf(params.get("deprecated"), ["all", "yes", "no"], "all"),
+    type: oneOf(params.get("type"), ["all", "permission", "rule"], "all"),
+    sort: oneOf(params.get("sort"), ["name", "risk", "id"], "name"),
+    ruleId
+  };
+}
+function extensionDetailSearch(state) {
+  const params = new URLSearchParams();
+  if (state.tab !== "overview") params.set("tab", state.tab);
+  if (state.query.trim()) params.set("q", state.query.trim().slice(0, 160));
+  if (state.risk !== "all") params.set("risk", state.risk);
+  if (state.state !== "all") params.set("state", state.state);
+  if (state.configurable !== "all") params.set("configurable", state.configurable);
+  if (state.source !== "all") params.set("source", state.source);
+  if (state.deprecated !== "all") params.set("deprecated", state.deprecated);
+  if (state.type !== "all") params.set("type", state.type);
+  if (state.sort !== "name") params.set("sort", state.sort);
+  if (state.ruleId && RULE_ID_PATTERN.test(state.ruleId)) params.set("rule", state.ruleId);
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : "";
+}
+function extensionDetailHref(extensionId, state = DEFAULT_EXTENSION_DETAIL_URL_STATE) {
+  const canonical = extensionId.trim().toLowerCase();
+  if (!EXTENSION_ID_PATTERN.test(canonical)) return "/extensions";
+  return `/extensions/${encodeURIComponent(canonical)}${extensionDetailSearch(state)}`;
+}
+function canonicalExtensionId(catalog, candidate) {
+  if (!candidate) return null;
+  const normalized = candidate.trim().toLowerCase();
+  const direct = catalog.find((extension2) => extension2.extension_id === normalized);
+  if (direct) return direct.extension_id;
+  return catalog.find((extension2) => extension2.aliases.includes(normalized))?.extension_id ?? null;
+}
+function explicitControlState(effective, kind, targetId2) {
+  const projected = kind === "extension" ? effective.projection?.extensions.find((item) => item.extension_id === targetId2)?.local_state : effective.projection?.permissions.find((item) => item.permission_id === targetId2)?.local_state;
+  if (projected) return projected === "inherited" ? null : projected;
+  return effective.controls.find(
+    (control) => control.target.kind === kind && control.target.target_id === targetId2
+  )?.state ?? null;
+}
+function managedExplicitControlState(effective, kind, targetId2) {
+  const projected = kind === "extension" ? effective.projection?.extensions.find((item) => item.extension_id === targetId2)?.managed_state : effective.projection?.permissions.find((item) => item.permission_id === targetId2)?.managed_state;
+  if (projected) return projected === "inherited" ? null : projected;
+  for (const layer of effective.layers) {
+    if (layer.kind !== "signed-cloud") continue;
+    const control = layer.controls.find((item) => item.target_kind === kind && item.target_id === targetId2);
+    if (control) return control.state;
+  }
+  return null;
+}
+function managedPermissionState(effective, permissionId) {
+  return managedExplicitControlState(effective, "permission", permissionId);
+}
+function extensionEffectiveState(effective, extension2) {
+  const projected = effective.projection?.extensions.find((item) => item.extension_id === extension2.extension_id);
+  if (projected) return projected.effective_state === "allowed" ? "enabled" : "disabled";
+  if (effective.health !== "protected") return "disabled";
+  if (effective.global_lockdown) return "disabled";
+  if (extension2.required) return "enabled";
+  const explicit = explicitControlState(effective, "extension", extension2.extension_id);
+  if (extension2.trust_class === "external" || extension2.activation === "opt-in") {
+    return explicit === "enabled" ? "enabled" : "disabled";
+  }
+  return explicit ?? "enabled";
+}
+function permissionEffectiveState(effective, extension2, permission2) {
+  const projected = effective.projection?.permissions.find((item) => item.permission_id === permission2.permission_id);
+  if (projected) return projected.effective_state === "allowed" ? "enabled" : "disabled";
+  if (extensionEffectiveState(effective, extension2) === "disabled") return "disabled";
+  if (!permission2.configurable) return permission2.default_enabled ? "enabled" : "disabled";
+  return explicitControlState(effective, "permission", permission2.permission_id) ?? (permission2.default_enabled ? "enabled" : "disabled");
+}
+function extensionDisplayName(name) {
+  for (const suffix of [" command protection", " protection"]) {
+    if (!name.toLowerCase().endsWith(suffix)) continue;
+    const shortened = name.slice(0, name.length - suffix.length);
+    if (shortened.length < 3 || /[-\s,.]$/.test(shortened)) break;
+    return shortened;
+  }
+  return name;
+}
+function extensionStateLabel(effective, extension2) {
+  if (effective.health !== "protected") return "Unavailable";
+  if (effective.global_lockdown) return "Lockdown";
+  if (managedExplicitControlState(effective, "extension", extension2.extension_id) !== null) return "Managed";
+  if (extension2.required) return "Required";
+  return extensionEffectiveState(effective, extension2) === "enabled" ? "Allowed" : "Blocked";
+}
+function catalogRowSecondLine(extension2, state) {
+  if (state === "Managed" || state === "Lockdown" || state === "Unavailable") return state;
+  if (extension2.trust_class === "external" && state !== "Allowed" && state !== "Required") {
+    return "Off until you turn it on";
+  }
+  if (state === "Blocked") return state;
+  const executables = extension2.executables.join(" · ").trim();
+  return executables || extension2.description;
+}
+function controlProvenance(effective, kind, targetId2) {
+  const managedSource = effective.managed_controls?.authority_mode === "managed-restrictive" ? `Managed by ${effective.managed_controls.workspace_id}` : "Synced from Guard Cloud";
+  const projected = kind === "extension" ? effective.projection?.extensions.find((item) => item.extension_id === targetId2) : effective.projection?.permissions.find((item) => item.permission_id === targetId2);
+  if (projected) {
+    const sources2 = [];
+    if (effective.global_lockdown) sources2.push("Emergency Lockdown");
+    if (projected.managed_state !== "inherited") sources2.push(managedSource);
+    if (projected.local_state !== "inherited") sources2.push("Set on this device");
+    if (sources2.length === 0) sources2.push("Recommended by Guard");
+    return sources2;
+  }
+  const sources = [];
+  if (effective.global_lockdown) sources.push("Emergency Lockdown");
+  for (const layer of effective.layers) {
+    if (layer.controls.some((control) => control.target_kind === kind && control.target_id === targetId2)) {
+      sources.push(layer.kind === "signed-cloud" ? managedSource : "Set on this device");
+    }
+  }
+  if (sources.length === 0) sources.push("Recommended by Guard");
+  return sources;
+}
+function permissionForRule(extension2, rule2) {
+  return extension2.permissions.find((permission2) => permission2.rule_ids.includes(rule2.rule_id)) ?? null;
+}
+function treatmentLabel(value) {
+  const labels = {
+    allow: "Allow",
+    warn: "Warn",
+    review: "Review",
+    "require-reapproval": "Require reapproval",
+    "sandbox-required": "Require sandbox",
+    block: "Block",
+    required: "Required",
+    enforce: "Enforce",
+    monitor: "Monitor",
+    disabled: "Disabled"
+  };
+  return labels[value] ?? value.replaceAll("-", " ");
+}
+function familyHeading(permissions) {
+  const examples = permissions.map((permission2) => permission2.example_command).filter((example) => Boolean(example)).map((example) => example.split(/\s+/));
+  if (!examples.length) return permissions[0]?.label ?? "";
+  const first = examples[0];
+  const shared = [];
+  for (let index = 0; index < first.length; index += 1) {
+    const token = first[index];
+    if (examples.every((parts) => parts[index] === token)) shared.push(token);
+    else break;
+  }
+  return shared.length ? shared.join(" ") : permissions[0]?.label ?? "";
+}
+function groupPermissionsByFamily(permissions) {
+  const byFamily = /* @__PURE__ */ new Map();
+  const ungrouped = [];
+  for (const permission2 of permissions) {
+    if (!permission2.family) ungrouped.push(permission2);
+    else {
+      const members = byFamily.get(permission2.family) ?? [];
+      members.push(permission2);
+      byFamily.set(permission2.family, members);
+    }
+  }
+  const families = [...byFamily.entries()].map(([family, members]) => ({ family, heading: familyHeading(members), permissions: members })).sort((left, right) => left.family.localeCompare(right.family));
+  return { ungrouped, families };
+}
+const LOCAL_CLI_ID_PATTERN = /^local-cli\.[a-z0-9]+(?:-[a-z0-9]+){0,8}$/;
+function addCustomExtensionHref() {
+  return "/extensions/add";
+}
+function parseProtectionRoute(pathname) {
+  if (pathname === "/extensions/add" || pathname === "/extensions/add/") {
+    return { kind: "add-custom" };
+  }
+  if (pathname.startsWith("/extensions/local-cli/")) {
+    try {
+      const cliId = decodeURIComponent(pathname.slice("/extensions/local-cli/".length)).trim().toLowerCase();
+      if (cliId && !cliId.includes("/") && LOCAL_CLI_ID_PATTERN.test(cliId)) {
+        return { kind: "local-cli", cliId };
+      }
+    } catch {
+      return { kind: "invalid" };
+    }
+    return { kind: "invalid" };
+  }
+  return parseExtensionRoute(pathname);
+}
+function localCliHref(cliId) {
+  return `/extensions/local-cli/${encodeURIComponent(cliId)}`;
+}
+const CONNECTOR_GROUP_PREFIX = "connector:";
+const PROTECT_LIST_HREF = "/extensions";
+const IDENTITY_HASH_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+function connectorGroupKey(queueGroupId) {
+  if (typeof queueGroupId !== "string" || !queueGroupId.startsWith(CONNECTOR_GROUP_PREFIX)) return null;
+  const identityHash = queueGroupId.slice(CONNECTOR_GROUP_PREFIX.length).split(":")[0] ?? "";
+  return IDENTITY_HASH_PATTERN.test(identityHash) ? `${CONNECTOR_GROUP_PREFIX}${identityHash}` : null;
+}
+function isConnectorSetupItem(item) {
+  return item.status === "pending" && connectorGroupKey(item.queue_group_id) !== null;
+}
+function connectorItemCallCount(item) {
+  return Math.max(1, item.dedupe_count ?? 1);
+}
+function connectorItemNeedsCaution(item) {
+  if (item.extension_recommendation?.caution === true) return true;
+  const categoryId = resolveQueueCategory(item).id;
+  return BULK_HIGH_CATEGORY_IDS.has(categoryId) || BULK_BLOCKED_CATEGORY_IDS.has(categoryId);
+}
+function connectorSurfaceLabel(surface) {
+  if (surface === "mcp") return "MCP server";
+  if (surface === "package-scripts") return "Package scripts";
+  return "Local CLI";
+}
+function itemTimestamp(item) {
+  const value = new Date(item.last_seen_at ?? item.created_at).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+function itemCommand(item) {
+  return item.action_envelope_json?.command ?? item.raw_command_text ?? null;
+}
+function workspaceLabel(item) {
+  const directory = resolveRequestWorkingDirectory(item);
+  if (directory === null) return null;
+  const segments = directory.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? null;
+}
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+const PACKAGE_MANAGER_VALUE_FLAGS = /* @__PURE__ */ new Set(["--filter", "-F", "--prefix", "-C", "--dir", "--cwd", "--workspace", "-w", "--workspace-dir"]);
+const SCRIPT_RUN_VERBS = /* @__PURE__ */ new Set(["run", "run-script"]);
+function leadingOperands(command, limit, valueFlags) {
+  const tokens = command.trim().split(/\s+/);
+  while (tokens.length > 0 && ENV_ASSIGNMENT.test(tokens[0])) tokens.shift();
+  const operands = [];
+  for (let index = 1; index < tokens.length && operands.length < limit; index += 1) {
+    const token = tokens[index];
+    if (token.startsWith("-")) {
+      if (valueFlags.has(token)) index += 1;
+      continue;
+    }
+    operands.push(token);
+  }
+  return operands;
+}
+function packageScriptName(command) {
+  const [first, second] = leadingOperands(command, 2, PACKAGE_MANAGER_VALUE_FLAGS);
+  if (first === void 0) return null;
+  return SCRIPT_RUN_VERBS.has(first) ? second ?? null : first;
+}
+function triedCatalogCommands(items, cli) {
+  if (cli === null) return [];
+  const packageScripts = cli.surface === "package-scripts";
+  const known = new Set(
+    packageScripts ? enrollablePackageScriptCommands(cli.commands).map((command) => command.name) : cli.commands.filter((command) => command.parent_id === null).map((command) => command.name)
+  );
+  const tried = /* @__PURE__ */ new Set();
+  for (const item of items) {
+    const command = itemCommand(item);
+    if (command === null) continue;
+    const name = packageScripts ? packageScriptName(command) : leadingOperands(command, 1, /* @__PURE__ */ new Set())[0] ?? null;
+    if (name !== null && known.has(name)) tried.add(name);
+  }
+  return [...tried].sort();
+}
+function connectorSetupHref(cli) {
+  return cli === null ? PROTECT_LIST_HREF : localCliHref(cli.cli_id);
+}
+function buildConnectorSetupGroups(items, localClis = []) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    if (!isConnectorSetupItem(item)) continue;
+    const key = connectorGroupKey(item.queue_group_id);
+    if (key === null) continue;
+    const rows = byKey.get(key) ?? [];
+    rows.push(item);
+    byKey.set(key, rows);
+  }
+  const groups = [];
+  for (const [key, rows] of byKey) {
+    const sorted = [...rows].sort((a, b) => itemTimestamp(b) - itemTimestamp(a));
+    const identityHash = key.slice(CONNECTOR_GROUP_PREFIX.length);
+    const cli = localClis.find((entry) => entry.identity_hash === identityHash) ?? null;
+    const cautionCount = sorted.filter(connectorItemNeedsCaution).reduce((sum, item) => sum + connectorItemCallCount(item), 0);
+    groups.push({
+      key,
+      identityHash,
+      items: sorted,
+      callCount: sorted.reduce((sum, item) => sum + connectorItemCallCount(item), 0),
+      harnesses: [...new Set(sorted.map((item) => harnessDisplayName(item.harness)))],
+      latest: sorted[0],
+      workspaceLabel: workspaceLabel(sorted[0]),
+      caution: cautionCount > 0,
+      cautionCount,
+      cli,
+      setupHref: connectorSetupHref(cli),
+      triedCommands: triedCatalogCommands(sorted, cli)
+    });
+  }
+  return groups.sort((a, b) => itemTimestamp(b.latest) - itemTimestamp(a.latest));
+}
+function connectorSetupIdentityKey(items) {
+  const hashes = /* @__PURE__ */ new Set();
+  for (const item of items) {
+    if (!isConnectorSetupItem(item)) continue;
+    const key = connectorGroupKey(item.queue_group_id);
+    if (key !== null) hashes.add(key.slice(CONNECTOR_GROUP_PREFIX.length));
+  }
+  return [...hashes].sort().join(",");
+}
 const SETUP_COPY = GUARD_REVIEW_INTENT_COPY.setup;
-function useConnectorSetupClis(enabled) {
+const CLI_LIST_RETRY_DELAYS_MS = [2e3, 1e4];
+function useConnectorSetupClis(identityKey) {
   const [items, setItems] = reactExports.useState([]);
   reactExports.useEffect(() => {
-    if (!enabled) return;
+    if (identityKey === "") return;
     let cancelled = false;
-    fetchLocalCliList().then((list) => {
-      if (!cancelled) setItems([...list.items, ...list.seeded_items]);
-    }).catch(() => {
-    });
+    let timer = null;
+    const load = (attempt) => {
+      fetchLocalCliList().then((list) => {
+        if (!cancelled) setItems([...list.items, ...list.seeded_items]);
+      }).catch(() => {
+        if (cancelled || attempt >= CLI_LIST_RETRY_DELAYS_MS.length) return;
+        timer = setTimeout(() => load(attempt + 1), CLI_LIST_RETRY_DELAYS_MS[attempt]);
+      });
+    };
+    load(0);
     return () => {
       cancelled = true;
+      if (timer !== null) clearTimeout(timer);
     };
-  }, [enabled]);
+  }, [identityKey]);
   return items;
 }
 function connectorName(group) {
@@ -34196,7 +34232,7 @@ function Block(props) {
 function EvidenceRow(props) {
   const { item, onOpenRequest } = props;
   const handleOpen = reactExports.useCallback(() => onOpenRequest(item.request_id), [item.request_id, onOpenRequest]);
-  const repeats = Math.max(1, item.dedupe_count ?? 1);
+  const repeats = connectorItemCallCount(item);
   return /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "button",
     {
@@ -34317,6 +34353,13 @@ function ConnectorSetupCards(props) {
     group.key
   )) });
 }
+function queuePageSyncTarget(input) {
+  const { pagedRequests, activeRequestId, detailRequestId, pinnedRequestId } = input;
+  if (pagedRequests.length === 0) return null;
+  if (activeRequestId !== null && activeRequestId === pinnedRequestId) return null;
+  const activeOnPage = activeRequestId !== null && (pagedRequests.some((item) => item.request_id === activeRequestId) || detailRequestId === activeRequestId);
+  return activeOnPage ? null : pagedRequests[0].request_id;
+}
 const QUEUE_PAGE_SIZE = 10;
 function ReviewWorkspace(props) {
   const businessQueueReadFailed2 = useBusinessQueueReadFailure();
@@ -34332,19 +34375,30 @@ function ReviewWorkspace(props) {
   const [dateTo, setDateTo] = reactExports.useState("");
   const [mobileQueueOpen, setMobileQueueOpen] = reactExports.useState(false);
   const [page, setPage] = reactExports.useState(1);
+  const [setupPinnedRequestId, setSetupPinnedRequestId] = reactExports.useState(null);
   const selectRequest = reactExports.useCallback((id2) => {
     props.onOpenRequest(id2);
     setMobileQueueOpen(false);
   }, [props.onOpenRequest]);
   const handleOpenRequest = reactExports.useCallback((id2) => {
+    setSetupPinnedRequestId(null);
     selectRequest(id2);
     readState.markRead(id2);
   }, [selectRequest, readState]);
+  const handleOpenSetupEvidence = reactExports.useCallback((id2) => {
+    setSetupPinnedRequestId(id2);
+    selectRequest(id2);
+    readState.markRead(id2);
+  }, [selectRequest, readState]);
+  const handlePageChange = reactExports.useCallback((nextPage) => {
+    setSetupPinnedRequestId(null);
+    setPage(nextPage);
+  }, []);
   const handleToggleMobileQueue = reactExports.useCallback(() => {
     setMobileQueueOpen((v) => !v);
   }, []);
-  const setupGroupCount = reactExports.useMemo(() => countConnectorSetupGroups(requests), [requests]);
-  const setupClis = useConnectorSetupClis(setupGroupCount > 0);
+  const setupIdentityKey = reactExports.useMemo(() => connectorSetupIdentityKey(requests), [requests]);
+  const setupClis = useConnectorSetupClis(setupIdentityKey);
   const setupGroups = reactExports.useMemo(() => buildConnectorSetupGroups(requests, setupClis), [requests, setupClis]);
   const filteredRequests = reactExports.useMemo(() => {
     let items = setupFilter ? requests.filter(isConnectorSetupItem) : requests;
@@ -34361,6 +34415,7 @@ function ReviewWorkspace(props) {
     return sortQueue(searched, sortDirection);
   }, [categoryFilter, dateFrom, dateTo, requests, searchTerm, setupFilter, sortDirection, semanticFilter]);
   reactExports.useEffect(() => {
+    setSetupPinnedRequestId(null);
     setPage(1);
   }, [searchTerm, categoryFilter, sortDirection, semanticFilter, setupFilter, dateFrom, dateTo]);
   const totalPages = Math.max(1, Math.ceil(filteredRequests.length / QUEUE_PAGE_SIZE));
@@ -34403,12 +34458,14 @@ function ReviewWorkspace(props) {
     selectRequest(filteredRequests[0].request_id);
   }, [activeRequestId, requests, filteredRequests, detail?.item.request_id, selectRequest]);
   reactExports.useEffect(() => {
-    if (pagedRequests.length === 0) return;
-    const activeOnPage = pagedRequests.some((item) => item.request_id === activeRequestId) || detail?.item.request_id === activeRequestId;
-    if (!activeOnPage) {
-      selectRequest(pagedRequests[0].request_id);
-    }
-  }, [currentPage, pagedRequests, activeRequestId, detail?.item.request_id, selectRequest]);
+    const target2 = queuePageSyncTarget({
+      pagedRequests,
+      activeRequestId,
+      detailRequestId: detail?.item.request_id ?? null,
+      pinnedRequestId: setupPinnedRequestId
+    });
+    if (target2 !== null) selectRequest(target2);
+  }, [currentPage, pagedRequests, activeRequestId, detail?.item.request_id, setupPinnedRequestId, selectRequest]);
   const bulkApprove = useQueueBulkApprove({
     items: filteredRequests,
     approvalGate: props.approvalGate ?? null,
@@ -34504,7 +34561,7 @@ function ReviewWorkspace(props) {
         groups: setupGroups,
         approvalGate: props.approvalGate ?? null,
         activeRequestId: activeItem.request_id,
-        onOpenRequest: handleOpenRequest
+        onOpenRequest: handleOpenSetupEvidence
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "md:hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -34538,7 +34595,7 @@ function ReviewWorkspace(props) {
           sortDirection,
           semanticFilter,
           setupFilter,
-          setupGroupCount,
+          setupGroupCount: setupGroups.length,
           dateFrom,
           dateTo,
           page: currentPage,
@@ -34550,7 +34607,7 @@ function ReviewWorkspace(props) {
           onSetupFilterChange: setSetupFilter,
           onDateFromChange: setDateFrom,
           onDateToChange: setDateTo,
-          onPageChange: setPage,
+          onPageChange: handlePageChange,
           onOpenRequest: handleOpenRequest,
           selectionMode: bulkApprove.bulkSelection.selectionMode,
           isBulkSelectable: bulkApprove.bulkSelection.isSelectable,

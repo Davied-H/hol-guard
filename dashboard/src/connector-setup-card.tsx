@@ -3,6 +3,7 @@ import { HiMiniExclamationTriangle, HiMiniWrenchScrewdriver } from "react-icons/
 import { ActionButton } from "./approval-center-primitives";
 import { approvalGateProofReady } from "./approval-proof-inline";
 import {
+  connectorItemCallCount,
   connectorSurfaceLabel,
   type ConnectorSetupGroup,
 } from "./connector-setup-groups";
@@ -13,23 +14,37 @@ import { queueItemPreview } from "./review-queue-item";
 
 const SETUP_COPY = GUARD_REVIEW_INTENT_COPY.setup;
 
-/** Read-only local tool list, used only to name each connector and link its Protect page. */
-export function useConnectorSetupClis(enabled: boolean): LocalCliItem[] {
+const CLI_LIST_RETRY_DELAYS_MS = [2_000, 10_000];
+
+/**
+ * Read-only local tool list, used only to name each connector and link its
+ * Protect page. It is fetched again whenever the set of connector identities
+ * changes (`identityKey`, from `connectorSetupIdentityKey`) and retried after a
+ * failed fetch, so a connector that appears while the Inbox is open is named too.
+ */
+export function useConnectorSetupClis(identityKey: string): LocalCliItem[] {
   const [items, setItems] = useState<LocalCliItem[]>([]);
   useEffect(() => {
-    if (!enabled) return;
+    if (identityKey === "") return;
     let cancelled = false;
-    fetchLocalCliList()
-      .then((list) => {
-        if (!cancelled) setItems([...list.items, ...list.seeded_items]);
-      })
-      .catch(() => {
-        // Without the list the card still links to the Protect list.
-      });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = (attempt: number) => {
+      fetchLocalCliList()
+        .then((list) => {
+          if (!cancelled) setItems([...list.items, ...list.seeded_items]);
+        })
+        .catch(() => {
+          // Without the list the card still links to the Protect list; try again shortly.
+          if (cancelled || attempt >= CLI_LIST_RETRY_DELAYS_MS.length) return;
+          timer = setTimeout(() => load(attempt + 1), CLI_LIST_RETRY_DELAYS_MS[attempt]);
+        });
+    };
+    load(0);
     return () => {
       cancelled = true;
+      if (timer !== null) clearTimeout(timer);
     };
-  }, [enabled]);
+  }, [identityKey]);
   return items;
 }
 
@@ -58,7 +73,7 @@ function EvidenceRow(props: {
 }) {
   const { item, onOpenRequest } = props;
   const handleOpen = useCallback(() => onOpenRequest(item.request_id), [item.request_id, onOpenRequest]);
-  const repeats = Math.max(1, item.dedupe_count ?? 1);
+  const repeats = connectorItemCallCount(item);
   return (
     <li>
       <button

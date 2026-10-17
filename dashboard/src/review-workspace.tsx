@@ -40,7 +40,8 @@ import { ReviewDecisionCard } from "./review-decision-card";
 import { ReviewHeader, ReviewQueueList } from "./review-queue-list";
 import { ReviewEmptyState } from "./review-states";
 import { ConnectorSetupCards, useConnectorSetupClis } from "./connector-setup-card";
-import { buildConnectorSetupGroups, countConnectorSetupGroups, isConnectorSetupItem } from "./connector-setup-groups";
+import { buildConnectorSetupGroups, connectorSetupIdentityKey, isConnectorSetupItem } from "./connector-setup-groups";
+import { queuePageSyncTarget } from "./review-queue-page-sync";
 
 export type ReviewViewModel = {
   item: GuardApprovalRequest;
@@ -93,6 +94,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const [dateTo, setDateTo] = useState("");
   const [mobileQueueOpen, setMobileQueueOpen] = useState(false);
   const [page, setPage] = useState(1);
+  // Request opened from a setup card; it stays active while the queue page or filters exclude it.
+  const [setupPinnedRequestId, setSetupPinnedRequestId] = useState<string | null>(null);
 
   const selectRequest = useCallback((id: string) => {
     props.onOpenRequest(id);
@@ -100,16 +103,28 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }, [props.onOpenRequest]);
 
   const handleOpenRequest = useCallback((id: string) => {
+    setSetupPinnedRequestId(null);
     selectRequest(id);
     readState.markRead(id);
   }, [selectRequest, readState]);
+
+  const handleOpenSetupEvidence = useCallback((id: string) => {
+    setSetupPinnedRequestId(id);
+    selectRequest(id);
+    readState.markRead(id);
+  }, [selectRequest, readState]);
+
+  const handlePageChange = useCallback((nextPage: number) => {
+    setSetupPinnedRequestId(null);
+    setPage(nextPage);
+  }, []);
 
   const handleToggleMobileQueue = useCallback(() => {
     setMobileQueueOpen((v) => !v);
   }, []);
 
-  const setupGroupCount = useMemo(() => countConnectorSetupGroups(requests), [requests]);
-  const setupClis = useConnectorSetupClis(setupGroupCount > 0);
+  const setupIdentityKey = useMemo(() => connectorSetupIdentityKey(requests), [requests]);
+  const setupClis = useConnectorSetupClis(setupIdentityKey);
   const setupGroups = useMemo(() => buildConnectorSetupGroups(requests, setupClis), [requests, setupClis]);
 
   const filteredRequests = useMemo(() => {
@@ -128,6 +143,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }, [categoryFilter, dateFrom, dateTo, requests, searchTerm, setupFilter, sortDirection, semanticFilter]);
 
   useEffect(() => {
+    setSetupPinnedRequestId(null);
     setPage(1);
   }, [searchTerm, categoryFilter, sortDirection, semanticFilter, setupFilter, dateFrom, dateTo]);
 
@@ -193,14 +209,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }, [activeRequestId, requests, filteredRequests, detail?.item.request_id, selectRequest]);
 
   useEffect(() => {
-    if (pagedRequests.length === 0) return;
-    const activeOnPage =
-      pagedRequests.some((item) => item.request_id === activeRequestId) ||
-      detail?.item.request_id === activeRequestId;
-    if (!activeOnPage) {
-      selectRequest(pagedRequests[0].request_id);
-    }
-  }, [currentPage, pagedRequests, activeRequestId, detail?.item.request_id, selectRequest]);
+    const target = queuePageSyncTarget({
+      pagedRequests,
+      activeRequestId,
+      detailRequestId: detail?.item.request_id ?? null,
+      pinnedRequestId: setupPinnedRequestId,
+    });
+    if (target !== null) selectRequest(target);
+  }, [currentPage, pagedRequests, activeRequestId, detail?.item.request_id, setupPinnedRequestId, selectRequest]);
 
   const bulkApprove = useQueueBulkApprove({
     items: filteredRequests,
@@ -299,7 +315,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         groups={setupGroups}
         approvalGate={props.approvalGate ?? null}
         activeRequestId={activeItem.request_id}
-        onOpenRequest={handleOpenRequest}
+        onOpenRequest={handleOpenSetupEvidence}
       />
 
       <div className="md:hidden">
@@ -327,7 +343,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             sortDirection={sortDirection}
             semanticFilter={semanticFilter}
             setupFilter={setupFilter}
-            setupGroupCount={setupGroupCount}
+            setupGroupCount={setupGroups.length}
             dateFrom={dateFrom}
             dateTo={dateTo}
             page={currentPage}
@@ -339,7 +355,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             onSetupFilterChange={setSetupFilter}
             onDateFromChange={setDateFrom}
             onDateToChange={setDateTo}
-            onPageChange={setPage}
+            onPageChange={handlePageChange}
             onOpenRequest={handleOpenRequest}
             selectionMode={bulkApprove.bulkSelection.selectionMode}
             isBulkSelectable={bulkApprove.bulkSelection.isSelectable}
