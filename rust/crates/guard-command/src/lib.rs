@@ -753,6 +753,7 @@ mod hook_adapter_secret_path;
 pub mod hook_adapter_value;
 #[cfg(all(test, unix))]
 mod hook_adapter_vector_tests;
+mod hook_evidence_deferred_post;
 pub mod hook_evidence_writer;
 #[cfg(test)]
 mod hook_evidence_writer_tests;

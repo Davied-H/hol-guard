@@ -188,6 +188,64 @@ pub(super) fn body_items<'a>(
 /// on. A `-NAME` flag such as `[ -f ... ]` is not a target; an attached
 /// `-vNAME` is.
 pub(super) fn rebinds(item: &str, name: &str) -> bool {
+    // Quoting is how a rebinding hides: the shell builds one word out of
+    // `o''pt=secret`, while the written text holds no run that spells the
+    // name. Scanning both forms covers a name split across quotes and one
+    // that quoting would instead join to its neighbour.
+    names_a_target(item, name) || names_a_target(&unquoted(item), name)
+}
+
+/// The word the shell builds once it removes the quoting, which is the text
+/// `rebinds` has to read as well as the text as written.
+fn unquoted(item: &str) -> String {
+    let mut built = String::new();
+    let mut characters = item.chars();
+    while let Some(character) = characters.next() {
+        match character {
+            '\'' => {
+                for quoted in characters.by_ref() {
+                    if quoted == '\'' {
+                        break;
+                    }
+                    built.push(quoted);
+                }
+            }
+            '"' => {
+                let mut escaped = false;
+                for quoted in characters.by_ref() {
+                    if escaped {
+                        // Inside double quotes a backslash escapes only these
+                        // characters, and a backslash-newline pair is a line
+                        // continuation that leaves nothing behind. Before any
+                        // other character the shell keeps the backslash as an
+                        // ordinary character of the word.
+                        if quoted != '\n' {
+                            if !matches!(quoted, '$' | '`' | '"' | '\\') {
+                                built.push('\\');
+                            }
+                            built.push(quoted);
+                        }
+                        escaped = false;
+                    } else if quoted == '"' {
+                        break;
+                    } else if quoted == '\\' {
+                        escaped = true;
+                    } else {
+                        built.push(quoted);
+                    }
+                }
+                if escaped {
+                    built.push('\\');
+                }
+            }
+            '\\' => built.extend(characters.next()),
+            other => built.push(other),
+        }
+    }
+    built
+}
+
+fn names_a_target(item: &str, name: &str) -> bool {
     let mut previous = ' ';
     let mut token = String::new();
     let mut flagged = false;

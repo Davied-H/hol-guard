@@ -1,8 +1,11 @@
-//! Pre-hook persistence parity for `RuntimeHookEvidenceWriter`.
+//! Persistence parity for `RuntimeHookEvidenceWriter`.
 //!
 //! A Pre event carries the verdict Rust already reached, so the writer builds
-//! the evidence and the store only stores it. These cover the branch the
-//! Python drain loop takes at `runtime_hook_evidence_writer.py:410-455`.
+//! the evidence and the store only stores it. A post event carries no verdict,
+//! so it may only promote a stored pre-hook row or be written as explicitly
+//! unpaired. These cover the branch the Python drain loop takes at
+//! `runtime_hook_evidence_writer.py:410-455` and the pairing rules in
+//! `cli/commands_support_command_activity.py:208-246`.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -29,19 +32,17 @@ enum StoreCall {
         evidence: Map<String, Value>,
         invocation_preview: Option<String>,
     },
-    DeferredPost {
-        harness: String,
-        correlation_digest: Option<String>,
-        succeeded: bool,
-        has_command: bool,
-        invocation_preview: Option<String>,
-    },
+    ActivityLookup(String),
+    Transition(Map<String, Value>),
+    ObservationConflict(String),
 }
 
 #[derive(Default)]
 struct StubStoreState {
     calls: Vec<StoreCall>,
     pre_replay: bool,
+    /// The row the lookup finds, if a pre-hook event already stored one.
+    previous: Option<Map<String, Value>>,
 }
 
 struct StubStore {
@@ -56,6 +57,7 @@ impl StubStore {
             state: Mutex::new(StubStoreState {
                 calls: Vec::new(),
                 pre_replay,
+                previous: None,
             }),
         })
     }
@@ -66,6 +68,10 @@ impl StubStore {
 
     fn push(&self, call: StoreCall) {
         self.state.lock().expect("state").calls.push(call);
+    }
+
+    fn set_previous(&self, previous: Map<String, Value>) {
+        self.state.lock().expect("state").previous = Some(previous);
     }
 }
 
@@ -111,22 +117,25 @@ impl EvidenceStoreApi for StubStore {
         Ok(true)
     }
 
-    fn persist_deferred_post_hook_command_activity(
+    fn command_activity_by_request_correlation(
         &self,
-        harness: &str,
-        correlation: Option<&CorrelationHandle>,
-        succeeded: bool,
-        has_command: bool,
-        invocation_preview: Option<&str>,
-    ) -> Result<bool, io::Error> {
-        self.push(StoreCall::DeferredPost {
-            harness: harness.to_owned(),
-            correlation_digest: correlation.map(|handle| handle.digest.clone()),
-            succeeded,
-            has_command,
-            invocation_preview: invocation_preview.map(str::to_owned),
-        });
+        correlation: &CorrelationHandle,
+    ) -> Result<Option<Map<String, Value>>, io::Error> {
+        self.push(StoreCall::ActivityLookup(correlation.digest.clone()));
+        Ok(self.state.lock().expect("state").previous.clone())
+    }
+
+    fn transition_command_activity(&self, current: &Map<String, Value>) -> Result<bool, io::Error> {
+        self.push(StoreCall::Transition(current.clone()));
         Ok(true)
+    }
+
+    fn record_command_activity_observation_conflict(
+        &self,
+        occurred_at: &str,
+    ) -> Result<(), io::Error> {
+        self.push(StoreCall::ObservationConflict(occurred_at.to_owned()));
+        Ok(())
     }
 }
 
@@ -187,6 +196,47 @@ impl CorrelationApi for StubCorrelation {
             unreachable!("object literal");
         };
         Ok(evidence)
+    }
+
+    fn build_unpaired_post_evidence(
+        &self,
+        activity_id: &str,
+        occurred_at: &str,
+        harness: &str,
+        succeeded: bool,
+    ) -> Result<Map<String, Value>, io::Error> {
+        let Value::Object(evidence) = json!({
+            "activity_id": activity_id,
+            "occurred_at": occurred_at,
+            "harness": harness,
+            "execution_status": "unpaired_post",
+            "succeeded": succeeded,
+        }) else {
+            unreachable!("object literal");
+        };
+        Ok(evidence)
+    }
+
+    fn build_correlated_post_activity(
+        &self,
+        previous: &Map<String, Value>,
+        request_correlation: &CorrelationHandle,
+        succeeded: bool,
+    ) -> Result<Map<String, Value>, io::Error> {
+        let mut current = previous.clone();
+        current.insert(
+            "execution_status".to_owned(),
+            Value::from(if succeeded {
+                "confirmed_success"
+            } else {
+                "confirmed_failure"
+            }),
+        );
+        current.insert(
+            "correlation_digest".to_owned(),
+            Value::from(request_correlation.digest.as_str()),
+        );
+        Ok(current)
     }
 }
 
@@ -414,9 +464,20 @@ fn an_exact_pre_replay_is_probed_and_then_dropped() {
     assert!(matches!(calls[0], StoreCall::PreReplayProbe(_)));
 }
 
-#[test]
-fn a_post_event_goes_through_the_deferred_pairing_helper() {
-    let (store, writer) = fixture(false);
+/// A stored pre-hook row in the state the lookup would return it.
+fn stored_row(execution_status: &str) -> Map<String, Value> {
+    let Value::Object(row) = json!({
+        "activity_id": "activity:stored",
+        "harness": "claude-code",
+        "execution_status": execution_status,
+    }) else {
+        unreachable!("object literal");
+    };
+    row
+}
+
+/// Submit one post event and return the calls it produced.
+fn post_event_calls(store: &Arc<StubStore>, writer: RuntimeHookEvidenceWriter) -> Vec<StoreCall> {
     assert!(writer.submit_command_activity(
         "claude-code",
         "PostToolUse",
@@ -428,16 +489,78 @@ fn a_post_event_goes_through_the_deferred_pairing_helper() {
         "none",
     ));
     assert!(writer.stop(5.0), "writer drained");
+    store.calls()
+}
+
+#[test]
+fn an_unpaired_post_event_is_recorded_as_claiming_no_decision() {
+    let (store, writer) = fixture(false);
+
+    let calls = post_event_calls(&store, writer);
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(calls[0], StoreCall::ActivityLookup(BASE_DIGEST.to_owned()));
+    let Some(StoreCall::RecordCommandActivity {
+        evidence,
+        invocation_preview,
+    }) = calls.get(1)
+    else {
+        panic!("{calls:?}");
+    };
+    assert_eq!(evidence["execution_status"], json!("unpaired_post"));
+    assert_eq!(evidence["harness"], json!("claude-code"));
+    assert_eq!(evidence["succeeded"], json!(true));
+    let activity_id = evidence["activity_id"].as_str().expect("activity id");
+    assert!(activity_id.starts_with("activity:"), "{activity_id}");
+    assert_eq!(activity_id.len(), "activity:".len() + 32, "{activity_id}");
+    assert_eq!(invocation_preview.as_deref(), Some("rm -rf …"));
+}
+
+#[test]
+fn a_post_event_promotes_the_pre_hook_row_it_pairs_with() {
+    let (store, writer) = fixture(false);
+    store.set_previous(stored_row("allowed_unconfirmed"));
+
+    let calls = post_event_calls(&store, writer);
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    let Some(StoreCall::Transition(current)) = calls.get(1) else {
+        panic!("{calls:?}");
+    };
+    assert_eq!(current["activity_id"], json!("activity:stored"));
+    assert_eq!(current["execution_status"], json!("confirmed_success"));
+}
+
+#[test]
+fn a_post_event_never_overwrites_a_prevented_row() {
+    let (store, writer) = fixture(false);
+    store.set_previous(stored_row("prevented"));
 
     assert_eq!(
-        store.calls(),
-        vec![StoreCall::DeferredPost {
-            harness: "claude-code".to_owned(),
-            correlation_digest: Some(BASE_DIGEST.to_owned()),
-            succeeded: true,
-            has_command: true,
-            invocation_preview: Some("rm -rf …".to_owned()),
-        }]
+        post_event_calls(&store, writer),
+        vec![StoreCall::ActivityLookup(BASE_DIGEST.to_owned())]
+    );
+}
+
+#[test]
+fn a_repeated_post_event_leaves_the_confirmed_row_alone() {
+    let (store, writer) = fixture(false);
+    store.set_previous(stored_row("confirmed_success"));
+
+    assert_eq!(
+        post_event_calls(&store, writer),
+        vec![StoreCall::ActivityLookup(BASE_DIGEST.to_owned())]
+    );
+}
+
+#[test]
+fn a_post_event_against_an_unexpected_status_records_a_conflict() {
+    let (store, writer) = fixture(false);
+    store.set_previous(stored_row("attempted"));
+
+    let calls = post_event_calls(&store, writer);
+    assert_eq!(calls.len(), 2, "{calls:?}");
+    assert_eq!(
+        calls[1],
+        StoreCall::ObservationConflict("2026-10-17T00:00:00+00:00".to_owned())
     );
 }
 
