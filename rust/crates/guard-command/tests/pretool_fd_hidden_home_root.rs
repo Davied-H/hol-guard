@@ -151,3 +151,28 @@ fn a_root_or_option_that_widens_the_walk_keeps_its_review() {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }
 }
+
+#[test]
+fn a_wildcard_or_a_shared_root_keeps_its_review() {
+    let home = home("wildcard");
+    for command in [
+        // `fd` reads its pattern as a regular expression, so `.` stands for
+        // any character and spells the word it is written around.
+        "fd a..h ~/.codex",
+        "fd t.ken ~/.agents",
+        "fd cr.dentials ~/.agents",
+        "fd id.ed25519 ~/.agents",
+        // A format suffix on its own selects every file of that format the
+        // tree holds, the tool's own login among them.
+        "fd json ~/.codex",
+        "fd yaml ~/.agents",
+        "fd toml ~/.codex",
+        // `~/.config` holds one directory per tool, so a walk below it
+        // prints paths through the credential stores beside them.
+        "fd yml ~/.config",
+        "fd run.sh ~/.config",
+        "fd pr-approve-merge ~/.local/share",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}

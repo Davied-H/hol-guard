@@ -68,9 +68,17 @@ fn unsafe_value(role: SearchValueRole, value: &str, context: ReadContext<'_>) ->
 /// the search never prints a hidden entry, never leaves the tree through a
 /// link and never runs a program per match. What is left is a name walk whose
 /// output the pattern bounds, the same bound `find` carries where a depth
-/// bound would otherwise be required, under the same two conditions: the root
-/// clears the credential-store screen, and the pattern cannot select the file
-/// a tool keeps its own login in.
+/// bound would otherwise be required, under the same three conditions: the
+/// root is one tool's own directory rather than a root several tools keep
+/// their directories under, the pattern names something specific enough to be
+/// a name the agent already had, and it cannot select the file a tool keeps
+/// its own login in.
+///
+/// The root condition is what carries the rest. Below one tool's directory a
+/// name walk prints what a listing of that directory prints, which is the
+/// plan, session and script names Guard admits today; below `~/.config` it
+/// would print the entry names inside `~/.config/gh`, which is a store, and no
+/// pattern makes that safe.
 ///
 /// `--full-path` and `--absolute-path` match the whole path rather than the
 /// entry name, so a directory prefix satisfies the pattern and it bounds
@@ -84,14 +92,45 @@ fn hidden_home_listing(
     pattern.is_some_and(|pattern| {
         !path_matching
             && literal_word(pattern)
+            && !bare_format_suffix(pattern)
             && !crate::credential_store_names::pattern_can_select_secret(pattern)
-            && super::super::read_paths::home_hidden_directory(value, context.home_dir, context.cwd)
+            && super::super::read_paths::home_hidden_tool_directory(
+                value,
+                context.home_dir,
+                context.cwd,
+            )
     })
 }
 
+/// Formats a tool writes its own files in. `fd` matches anywhere in a name, so
+/// a suffix on its own selects every file of that format the tree holds,
+/// including the one the tool keeps its login in: `fd json ~/.codex` prints
+/// `auth.json`. A suffix is not a name an agent already had, so it bounds
+/// nothing and the walk keeps its review.
+const FORMAT_SUFFIXES: &[&str] = &[
+    "cfg",
+    "conf",
+    "config",
+    "ini",
+    "json",
+    "jsonc",
+    "plist",
+    "properties",
+    "toml",
+    "xml",
+    "yaml",
+    "yml",
+];
+
+fn bare_format_suffix(pattern: &str) -> bool {
+    let lowered = pattern.to_ascii_lowercase();
+    FORMAT_SUFFIXES.contains(&lowered.trim_start_matches('.'))
+}
+
 /// A pattern of word characters alone. `fd` reads its pattern as a regular
-/// expression, and one carrying no metacharacter selects the names that hold
-/// that word rather than whatever the tree happens to contain.
+/// expression, and one carrying no metacharacter beyond `.` selects the names
+/// that hold that word rather than whatever the tree happens to contain. A
+/// `.` is a wildcard there, which the screen above reads as one.
 fn literal_word(pattern: &str) -> bool {
     (3..=128).contains(&pattern.len())
         && !pattern.starts_with('.')

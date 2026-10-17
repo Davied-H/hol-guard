@@ -205,3 +205,28 @@ fn a_shared_root_keeps_its_review_once_the_walk_goes_deeper() {
         "allow"
     );
 }
+
+#[test]
+fn a_wildcard_reaches_a_login_through_the_letters_it_stands_for() {
+    let home = home("wildcard");
+    for command in [
+        // `a*uth*` spells `auth` once the wildcards stand for nothing, and
+        // `to*ken` and `cred?ntials` spell what they are named after.
+        "find ~/.codex -maxdepth 4 -name \"a*uth*\"",
+        "find ~/.codex -maxdepth 4 -name \"to*ken*.md\"",
+        "find ~/.codex -maxdepth 4 -name \"cred?ntials*.md\"",
+        "find ~/.codex -maxdepth 4 -name \"*k?y.md\"",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+    // A name that merely holds a secret-bearing word among its letters is an
+    // ordinary name: the screen reads a wildcard-free pattern as a whole
+    // file name, the way a file name is read.
+    for command in [
+        "find ~/.codex -maxdepth 4 -name keyboard",
+        "find ~/.codex -maxdepth 4 -name tokenizer.rs",
+        "find ~/.codex -maxdepth 4 -name accounting.md",
+    ] {
+        assert_eq!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
