@@ -51,6 +51,12 @@ _ITEM_SOURCES = {
 }
 
 
+def inventory_item_kind(artifact_type: object) -> str | None:
+    """Contract kind of a local inventory artifact type, or ``None`` when it is not reported."""
+
+    return _ITEM_KINDS.get(str(artifact_type or ""))
+
+
 def inventory_items(store: GuardStore, *, hash_key: bytes) -> list[dict[str, object]]:
     """Installed items from the local inventory table, in contract shape.
 
@@ -65,7 +71,7 @@ def inventory_items(store: GuardStore, *, hash_key: bytes) -> list[dict[str, obj
             continue
         if row.get("present") in (0, False, "0"):
             continue
-        kind = _ITEM_KINDS.get(str(row.get("artifact_type") or ""))
+        kind = inventory_item_kind(row.get("artifact_type"))
         harness = str(row.get("harness") or "")
         name = str(row.get("artifact_name") or "").strip()
         if kind is None or harness not in HARNESS_IDS or not name:

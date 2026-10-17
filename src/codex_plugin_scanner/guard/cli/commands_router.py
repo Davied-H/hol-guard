@@ -20,6 +20,7 @@ from .commands_lifecycle_gate import (
     restore_missing_native_runtime,
 )
 from .commands_parser_helpers import *
+from .inventory_list_commands import is_inventory_list_command, run_inventory_list_command
 
 _EARLY_HANDLERS = {
     "mdm": "_run_guard_mdm_command",
@@ -184,7 +185,8 @@ def _dispatch_guard_command(
 ) -> int:
     "Route one Guard subcommand to its handler."
 
-    if args.guard_command == "extensions":
+    inventory_list = is_inventory_list_command(args)
+    if args.guard_command == "extensions" and not inventory_list:
         from .extension_builder_commands import run_extension_builder_command
 
         return run_extension_builder_command(args, output_stream=output_stream)
@@ -199,7 +201,7 @@ def _dispatch_guard_command(
                 input_text=input_text,
                 output_stream=output_stream,
             )
-    handler = _resolve_guard_handler(_EARLY_HANDLERS, args.guard_command)
+    handler = None if inventory_list else _resolve_guard_handler(_EARLY_HANDLERS, args.guard_command)
     if callable(handler):
         return _invoke_guard_handler(
             handler,
@@ -287,6 +289,8 @@ def _dispatch_guard_command(
         config = load_guard_config(guard_home, workspace=workspace)
         config = overlay_synced_guard_policy(config, _synced_policy_payload(store))
 
+    if inventory_list:
+        return _invoke_guard_handler(run_inventory_list_command, args, store=store)
     handler = _resolve_guard_handler(_COMMON_HANDLERS, args.guard_command)
     if callable(handler):
         return _invoke_guard_handler(

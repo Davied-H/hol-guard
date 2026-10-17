@@ -1282,6 +1282,40 @@ def _render_inventory(console: Console, payload: dict[str, object]) -> None:
     console.print(table)
 
 
+_INVENTORY_LIST_TITLES = {"extensions": "Plugins and extensions", "mcp": "MCP servers"}
+
+
+def _render_inventory_list(console: Console, payload: dict[str, object]) -> None:
+    items = _coerce_dict_list(payload.get("items"))
+    title = _INVENTORY_LIST_TITLES.get(str(payload.get("kind") or ""), "Local Guard inventory")
+    console.print(
+        Panel.fit(
+            f"[bold]{title}[/bold]\n{len(items)} in the local Guard inventory",
+            border_style="cyan",
+        )
+    )
+    if not items:
+        console.print("[dim]Guard has not recorded any yet.[/dim]")
+        return
+    table = Table(box=box.SIMPLE_HEAVY, show_header=True)
+    table.add_column("Name", style="bold")
+    table.add_column("Harness", style="cyan")
+    table.add_column("Type")
+    table.add_column("Scope")
+    table.add_column("Verdict")
+    table.add_column("Last seen")
+    for item in items:
+        table.add_row(
+            str(item.get("name") or "unknown"),
+            str(item.get("harness") or "unknown"),
+            str(item.get("artifact_type") or "artifact"),
+            str(item.get("source_scope") or "unknown"),
+            _action_text(str(item.get("policy_action") or "warn")),
+            str(item.get("last_seen_at") or "unknown"),
+        )
+    console.print(table)
+
+
 def _render_policies(console: Console, payload: dict[str, object]) -> None:
     if "counts" in payload or payload.get("operation") == "migrate-local-integrity":
         counts = _coerce_object_dict(payload.get("counts"))
@@ -3086,6 +3120,8 @@ _RENDERERS: dict[str, Renderer] = {
     "diff": _render_diff,
     "receipts": _render_receipts,
     "inventory": _render_inventory,
+    "extensions.list": _render_inventory_list,
+    "mcp.list": _render_inventory_list,
     "policies": _render_policies,
     "exceptions": _render_policies,
     "advisories": _render_advisories,
