@@ -465,6 +465,17 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
                     || literal_redirects_only(&text)
                     || data_heredocs(&text).is_some_and(|(shell, _)| plain_after_heredocs(&shell)))
         }
+        // An unquoted `${NAME}` expands to a value the shell splits into
+        // words. Splitting makes operands, never operators, so the text still
+        // names every program it runs, exactly as the `$NAME` and `"${NAME}"`
+        // spellings of the same value do: those two model exactly, while this
+        // one reached an evaluation failure and blocked outright. A command
+        // word built from an expansion, `${ cmd; }` among them, is refused
+        // before any floor is read.
+        Some("parameter_expansion_not_yet_supported") => {
+            let literal = unquoted_literal(&command.normalized_text);
+            !moves_data(&literal) || literal_redirects_only(&command.normalized_text)
+        }
         // A lookup in a substitution is the only one that does not run a
         // program, so a command whose substitutions are all lookups reads
         // like any other compound command.
@@ -1016,3 +1027,7 @@ mod sourced_tests;
 #[cfg(test)]
 #[path = "native_command_unmodeled_bounded_tests.rs"]
 mod bounded_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_expansion_tests.rs"]
+mod expansion_tests;
