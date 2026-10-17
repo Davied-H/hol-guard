@@ -51,7 +51,7 @@ for (const width of [1280, 390]) {
     // Nested names sit together in a family instead of a flat, oddly indented list.
     const typecheck = page.getByRole("region", { name: "typecheck scripts", exact: true });
     await expect(typecheck).toContainText("3 scripts");
-    await expect(page.getByTestId("custom-extension-add-summary")).toContainText("9 scripts");
+    await expect(page.getByTestId("custom-extension-add-summary")).toContainText("9 scripts · 9 allowed");
     await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeInViewport();
     if (process.env.HOL_GUARD_CAPTURE_PROOF === "1") {
       await page.screenshot({ path: testInfo.outputPath(`add-flow-${width}.png`), animations: "disabled" });
@@ -71,9 +71,9 @@ for (const width of [1280, 390]) {
     await expect(page.getByTestId("custom-extension-add-summary")).toContainText("2 scripts");
 
     // A change is marked on the row and counted in the footer.
-    await page.getByRole("radiogroup", { name: "lint protection setting" }).getByRole("radio", { name: "Allow", exact: true }).click();
+    await page.getByRole("radiogroup", { name: "lint protection setting" }).getByRole("radio", { name: "Block", exact: true }).click();
     await expect(page.locator('article[data-command-id="script.lint"]')).toContainText("Changed");
-    await expect(page.getByTestId("custom-extension-add-summary")).toContainText("1 allowed");
+    await expect(page.getByTestId("custom-extension-add-summary")).toContainText("1 allowed · 1 blocked");
 
     // Another folder brings the command field back.
     await selected.getByRole("button", { name: "Change project" }).click();

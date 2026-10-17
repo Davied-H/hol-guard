@@ -760,12 +760,6 @@ function keepsPackageScriptCatalog(query, commands) {
   const needle = packageScriptFilterNeedle(trimmed) || trimmed.toLowerCase();
   return commands.some((command) => commandMatchesQuery$1(command, needle));
 }
-function packageScriptQueryFrom(query, commands) {
-  const trimmed = query.trim();
-  if (!trimmed || looksLikeProjectRelocatePaste(trimmed)) return "";
-  const needle = packageScriptFilterNeedle(trimmed);
-  return needle && commands.some((command) => commandMatchesQuery$1(command, needle)) ? needle : "";
-}
 function commandMatchesQuery$1(command, needle) {
   const haystacks = [command.name, command.usage, command.description];
   if (haystacks.some((value) => value.toLowerCase().includes(needle))) return true;
@@ -4449,92 +4443,6 @@ function ForgetLocalCliButton(props) {
     dialog
   ] });
 }
-function scriptCount(item) {
-  return enrollablePackageScriptCommands(item.commands).length;
-}
-function projectFolderLabel(item) {
-  const folder = item.source_label?.trim();
-  return folder && folder !== item.name ? folder : null;
-}
-function projectMetaLine(item) {
-  const count = scriptCount(item);
-  const folder = projectFolderLabel(item);
-  return [folder, `${count} ${count === 1 ? "script" : "scripts"}`].filter(Boolean).join(" · ");
-}
-function SelectedProject(props) {
-  const listId = reactExports.useId();
-  const [open, setOpen] = reactExports.useState(false);
-  const others = props.projects.filter((project) => project.cli_id !== props.item.cli_id);
-  const toggle = reactExports.useCallback(() => setOpen((current) => !current), []);
-  const choose = reactExports.useCallback((project) => {
-    setOpen(false);
-    props.onSelect(project);
-  }, [props]);
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { "aria-labelledby": "custom-extension-selected", className: "mt-6 max-w-4xl border-b border-slate-200 pb-5", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-start justify-between gap-x-6 gap-y-3", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "custom-extension-selected", className: "break-words text-xl font-semibold tracking-tight text-brand-dark", children: props.item.name }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-brand-dark/70", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-brand-dark", children: props.item.example_label }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "min-w-0 break-words", children: projectMetaLine(props.item) })
-        ] })
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          type: "button",
-          "aria-expanded": open,
-          "aria-controls": listId,
-          disabled: props.disabled,
-          onClick: toggle,
-          className: "inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-brand-dark hover:border-brand-blue/60 disabled:opacity-60",
-          children: [
-            "Change project",
-            /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniChevronDown, { className: `size-4 transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`, "aria-hidden": "true" })
-          ]
-        }
-      )
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { id: listId, hidden: !open, children: open ? /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "mt-4 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white", "aria-label": "Projects on this device", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(ProjectOption, { project: props.item, current: true, onChoose: toggle }) }),
-      others.map((project) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(ProjectOption, { project, current: false, onChoose: choose }) }, project.cli_id)),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          type: "button",
-          onClick: props.onFindAnother,
-          className: "flex min-h-12 w-full items-center gap-2 px-4 text-left text-sm font-semibold text-brand-blue hover:bg-brand-blue/5",
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniPlus, { className: "size-4", "aria-hidden": "true" }),
-            "Use another folder or command"
-          ]
-        }
-      ) })
-    ] }) : null })
-  ] });
-}
-function ProjectOption(props) {
-  const handleChoose = reactExports.useCallback(() => props.onChoose(props.project), [props]);
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "button",
-    {
-      type: "button",
-      onClick: handleChoose,
-      "aria-current": props.current ? "true" : void 0,
-      className: "flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-brand-blue/5 aria-[current]:bg-brand-blue/5",
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "min-w-0", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block truncate text-sm font-semibold text-brand-dark", children: props.project.name }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block truncate text-xs text-brand-dark/65", children: projectMetaLine(props.project) })
-        ] }),
-        props.current ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-blue", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniCheck, { className: "size-4", "aria-hidden": "true" }),
-          "Selected"
-        ] }) : null
-      ]
-    }
-  );
-}
 function enrollableCount(item) {
   return Math.max(enrollablePackageScriptCommands(item.commands).length, 0);
 }
@@ -4599,7 +4507,7 @@ function blockActionLabel(surface) {
 }
 function dialogIntro(hasProjects, surface, discovering = false, mcpHasTools = true, observedMcp = false) {
   if (surface === "package-scripts") {
-    return "Choose how Guard treats each script. Recommended keeps the usual review. Allow stops the prompts for that script, and Block stops it running.";
+    return "Adding this project allows its scripts, so Guard stops asking about them. Block any script you want stopped.";
   }
   if (surface === "mcp") {
     if (observedMcp) return "Review each detected tool before saving. Allow listed applies only to the tools shown here.";
@@ -4737,6 +4645,98 @@ function SuggestionButton(props) {
     ] }),
     props.item.surface === "mcp" ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "shrink-0 text-xs font-semibold text-brand-blue", children: connectorLabel }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "max-w-[55%] truncate font-mono text-xs text-brand-dark/60", children: props.item.example_label })
   ] });
+}
+function scriptCount(item) {
+  return enrollablePackageScriptCommands(item.commands).length;
+}
+function packageScriptQueryFrom(query, commands) {
+  const trimmed = query.trim();
+  if (!trimmed || looksLikeProjectRelocatePaste(trimmed)) return "";
+  const needle = packageScriptFilterNeedle(trimmed);
+  return needle && commands.some((command) => commandMatchesQuery$1(command, needle)) ? needle : "";
+}
+function projectFolderLabel(item) {
+  const folder = item.source_label?.trim();
+  return folder && folder !== item.name ? folder : null;
+}
+function projectMetaLine(item) {
+  const count = scriptCount(item);
+  const folder = projectFolderLabel(item);
+  return [folder, `${count} ${count === 1 ? "script" : "scripts"}`].filter(Boolean).join(" · ");
+}
+function SelectedProject(props) {
+  const listId = reactExports.useId();
+  const [open, setOpen] = reactExports.useState(false);
+  const others = props.projects.filter((project) => project.cli_id !== props.item.cli_id);
+  const toggle = reactExports.useCallback(() => setOpen((current) => !current), []);
+  const choose = reactExports.useCallback((project) => {
+    setOpen(false);
+    props.onSelect(project);
+  }, [props]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { "aria-labelledby": "custom-extension-selected", className: "mt-6 max-w-4xl border-b border-slate-200 pb-5", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-start justify-between gap-x-6 gap-y-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "custom-extension-selected", className: "break-words text-xl font-semibold tracking-tight text-brand-dark", children: props.item.name }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-brand-dark/70", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-brand-dark", children: props.item.example_label }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "min-w-0 break-words", children: projectMetaLine(props.item) })
+        ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          type: "button",
+          "aria-expanded": open,
+          "aria-controls": listId,
+          disabled: props.disabled,
+          onClick: toggle,
+          className: "inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-brand-dark hover:border-brand-blue/60 disabled:opacity-60",
+          children: [
+            "Change project",
+            /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniChevronDown, { className: `size-4 transition-transform duration-150 motion-reduce:transition-none ${open ? "rotate-180" : ""}`, "aria-hidden": "true" })
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { id: listId, hidden: !open, children: open ? /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "mt-4 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white", "aria-label": "Projects on this device", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(ProjectOption, { project: props.item, current: true, onChoose: toggle }) }),
+      others.map((project) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(ProjectOption, { project, current: false, onChoose: choose }) }, project.cli_id)),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          type: "button",
+          onClick: props.onFindAnother,
+          className: "flex min-h-12 w-full items-center gap-2 px-4 text-left text-sm font-semibold text-brand-blue hover:bg-brand-blue/5",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniPlus, { className: "size-4", "aria-hidden": "true" }),
+            "Use another folder or command"
+          ]
+        }
+      ) })
+    ] }) : null })
+  ] });
+}
+function ProjectOption(props) {
+  const handleChoose = reactExports.useCallback(() => props.onChoose(props.project), [props]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "button",
+    {
+      type: "button",
+      onClick: handleChoose,
+      "aria-current": props.current ? "true" : void 0,
+      className: "flex min-h-14 w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-brand-blue/5 aria-[current]:bg-brand-blue/5",
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "min-w-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block truncate text-sm font-semibold text-brand-dark", children: props.project.name }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block truncate text-xs text-brand-dark/65", children: projectMetaLine(props.project) })
+        ] }),
+        props.current ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-blue", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniCheck, { className: "size-4", "aria-hidden": "true" }),
+          "Selected"
+        ] }) : null
+      ]
+    }
+  );
 }
 const isSetupDigest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 function parseRecentMcpSetups(value) {
@@ -5466,9 +5466,15 @@ function AddCustomExtensionWorkspace(props) {
   const bulkEligible = reactExports.useCallback((entry) => recognized?.surface === "mcp" ? mcpToolCanReceiveDirectAllow(entry) : true, [recognized]);
   const applyBulk = reactExports.useCallback((commandIds, state) => {
     setCommands((current) => current.map((entry) => commandIds.has(entry.command_id) && bulkEligible(entry) ? { ...entry, state } : entry));
-    const blocksAll = state === "block" && enrollable.every((entry) => commandIds.has(entry.command_id));
+    const blocksAll = showingPackageCatalog && state === "block" && enrollable.every((entry) => commandIds.has(entry.command_id));
     setPending(blocksAll ? "blocked" : "allowed");
-  }, [bulkEligible, enrollable]);
+  }, [bulkEligible, enrollable, showingPackageCatalog]);
+  const switchProject = reactExports.useCallback((item) => {
+    setCommand("");
+    selectSuggestion(item);
+  }, [selectSuggestion]);
+  const savedStates = recognized === null || pending === null ? null : new Map(enrollmentCommandStates(enrollable, pending, recognized.surface).map((entry) => [entry.command_id, entry.state]));
+  const savedPreview = enrollable.map((entry) => ({ ...entry, state: savedStates?.get(entry.command_id) ?? entry.state }));
   const handleSubmit = reactExports.useCallback(async (event) => {
     event.preventDefault();
     if (recognized === null) {
@@ -5621,7 +5627,7 @@ function AddCustomExtensionWorkspace(props) {
                 item: recognized,
                 projects: rememberedProjects,
                 disabled: busy,
-                onSelect: selectSuggestion,
+                onSelect: switchProject,
                 onFindAnother: findAnotherProject
               }
             ) : /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-5 max-w-3xl", "aria-labelledby": "custom-extension-selected", children: [
@@ -5683,7 +5689,7 @@ function AddCustomExtensionWorkspace(props) {
               browserCopy.unit(enrollable.length)
             ] }),
             " · ",
-            groupStateSummary(enrollable)
+            groupStateSummary(savedPreview)
           ] }) : null,
           /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "submit", disabled: submitDisabled, className: "min-h-11 rounded-xl bg-brand-blue px-5 text-sm font-semibold text-white disabled:opacity-60", children: addDialogSubmitLabel({ recognized, busy, pending, step: recognized ? step : "pick" }) }),
           recognized && confirming && pending === "allowed" ? /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: requestBlock, className: "min-h-11 rounded-xl px-4 text-sm font-semibold text-brand-dark", children: blockActionLabel(recognized.surface) }) : null,

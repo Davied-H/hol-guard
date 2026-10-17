@@ -56,7 +56,7 @@ const mcpItem: LocalCliItem = {
   commands: [],
 };
 
-assert.match(dialogIntro(true, "package-scripts"), /Recommended keeps the usual review/);
+assert.match(dialogIntro(true, "package-scripts"), /allows its scripts/);
 assert.match(dialogIntro(false, "mcp"), /Allow all/);
 assert.match(dialogIntro(false, "mcp", false, false), /List tools again/);
 assert.match(dialogIntro(false, null, true), /Looking for project scripts/);

@@ -8,7 +8,6 @@ import {
   bulkCommandState,
   enrollmentCommandStates,
   filterPackageScriptCommands,
-  packageScriptQueryFrom,
   isLocalCliId,
   normalizeLocalCliItem,
   normalizeLocalCliList,
@@ -23,6 +22,7 @@ import {
   suggestedSeenExtensions,
   waitForMcpDiscoveryJob,
 } from "./local-cli-api";
+import { packageScriptQueryFrom } from "./protection-center/add-custom-extension-project";
 import { parseProtectionRoute, localCliHref, addCustomExtensionHref } from "./local-cli-links";
 import { fetchLocalCliApi } from "./guard-api";
 

@@ -15,7 +15,6 @@ import {
   enrollmentCommandStates,
   filterExtensionSuggestions,
   LocalCliApiError,
-  packageScriptQueryFrom,
   previewLocalCliMutation,
   looksLikePackageScriptPaste,
   keepsPackageScriptCatalog,
@@ -29,7 +28,6 @@ import {
   type LocalCliItem,
   type LocalCliState,
 } from "../local-cli-api";
-import { SelectedProject } from "./add-custom-extension-project";
 import {
   addDialogSubmitLabel,
   allowActionLabel,
@@ -47,6 +45,7 @@ import {
   type EnrollStep,
 } from "./add-custom-extension-support";
 import { CustomExtensionCommandBrowser } from "./custom-extension-command-browser";
+import { packageScriptQueryFrom, SelectedProject } from "./add-custom-extension-project";
 import { groupStateSummary } from "./custom-extension-command-view";
 import { withCommandState } from "./custom-extension-commands";
 import { bulkPolicyCopy, commandBrowserCopy } from "./local-cli-panel-copy";
@@ -241,10 +240,21 @@ export function AddCustomExtensionWorkspace(props: {
     setCommands((current) => current.map((entry) => (
       commandIds.has(entry.command_id) && bulkEligible(entry) ? { ...entry, state } : entry
     )));
-    // Blocking every script blocks the extension; blocking some of them is a custom mix.
-    const blocksAll = state === "block" && enrollable.every((entry) => commandIds.has(entry.command_id));
+    // Blocking every script blocks the project. On a server the bulk choice only covers the
+    // listed tools, so the server stays enrolled and a server-wide block is chosen at confirm.
+    const blocksAll = showingPackageCatalog && state === "block"
+      && enrollable.every((entry) => commandIds.has(entry.command_id));
     setPending(blocksAll ? "blocked" : "allowed");
-  }, [bulkEligible, enrollable]);
+  }, [bulkEligible, enrollable, showingPackageCatalog]);
+  const switchProject = useCallback((item: LocalCliItem) => {
+    setCommand("");
+    selectSuggestion(item);
+  }, [selectSuggestion]);
+  // The footer describes what saving submits, which can differ from the draft rows.
+  const savedStates = recognized === null || pending === null
+    ? null
+    : new Map(enrollmentCommandStates(enrollable, pending, recognized.surface).map((entry) => [entry.command_id, entry.state]));
+  const savedPreview = enrollable.map((entry) => ({ ...entry, state: savedStates?.get(entry.command_id) ?? entry.state }));
   const handleSubmit = useCallback(async (event: FormEvent) => {
     event.preventDefault();
     if (recognized === null) {
@@ -406,7 +416,7 @@ export function AddCustomExtensionWorkspace(props: {
                   item={recognized}
                   projects={rememberedProjects}
                   disabled={busy}
-                  onSelect={selectSuggestion}
+                  onSelect={switchProject}
                   onFindAnother={findAnotherProject}
                 />
               ) : (
@@ -468,7 +478,7 @@ export function AddCustomExtensionWorkspace(props: {
           {recognized && !confirming && enrollable.length > 0 && !showMcpRetry ? (
             <p className="mr-auto text-sm text-brand-dark/75" data-testid="custom-extension-add-summary">
               <span className="font-semibold text-brand-dark">{enrollable.length} {browserCopy.unit(enrollable.length)}</span>
-              {" · "}{groupStateSummary(enrollable)}
+              {" · "}{groupStateSummary(savedPreview)}
             </p>
           ) : null}
           <button type="submit" disabled={submitDisabled} className="min-h-11 rounded-xl bg-brand-blue px-5 text-sm font-semibold text-white disabled:opacity-60">

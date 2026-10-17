@@ -107,7 +107,7 @@ export function dialogIntro(
   observedMcp = false,
 ): string {
   if (surface === "package-scripts") {
-    return "Choose how Guard treats each script. Recommended keeps the usual review. Allow stops the prompts for that script, and Block stops it running.";
+    return "Adding this project allows its scripts, so Guard stops asking about them. Block any script you want stopped.";
   }
   if (surface === "mcp") {
     if (observedMcp) return "Review each detected tool before saving. Allow listed applies only to the tools shown here.";

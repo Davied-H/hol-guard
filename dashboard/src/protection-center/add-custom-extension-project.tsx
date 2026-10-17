@@ -1,10 +1,25 @@
 import { useCallback, useId, useState } from "react";
 import { HiMiniCheck, HiMiniChevronDown, HiMiniPlus } from "react-icons/hi2";
 
-import { enrollablePackageScriptCommands, type LocalCliItem } from "../local-cli-api";
+import {
+  commandMatchesQuery,
+  enrollablePackageScriptCommands,
+  looksLikeProjectRelocatePaste,
+  packageScriptFilterNeedle,
+  type LocalCliCommand,
+  type LocalCliItem,
+} from "../local-cli-api";
 
 function scriptCount(item: LocalCliItem): number {
   return enrollablePackageScriptCommands(item.commands).length;
+}
+
+/** The script to open the browser on when the pasted command names one in this project. */
+export function packageScriptQueryFrom(query: string, commands: readonly LocalCliCommand[]): string {
+  const trimmed = query.trim();
+  if (!trimmed || looksLikeProjectRelocatePaste(trimmed)) return "";
+  const needle = packageScriptFilterNeedle(trimmed);
+  return needle && commands.some((command) => commandMatchesQuery(command, needle)) ? needle : "";
 }
 
 /** The folder a project was found in, when it adds something the package name does not already say. */
