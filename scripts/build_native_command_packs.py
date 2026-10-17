@@ -17,12 +17,13 @@ import tempfile
 from pathlib import Path
 
 import build_native_command_program as legacy
+from command_pack_store import PackReader, durable_directory, publish_object
 
 MAX_OBJECT_BYTES = 64 * 1024
 MAX_OUTPUT_LINE = 96 * 1024
 
 
-def input_stream(root: Path, output) -> int:
+def input_stream(root: Path, output, identities: set[str] | None = None) -> int:
     rows = []
     for directory, kind in (("command-sources", "command"), ("mcp-servers", "mcp")):
         for path in sorted((root / "contributions" / directory).glob("*.json")):
@@ -50,6 +51,8 @@ def input_stream(root: Path, output) -> int:
             if not extension_id.startswith("mcp."):
                 raise ValueError(f"invalid MCP identity: {path.name}")
             extension_id = f"command.mcp-{extension_id[4:]}"
+        if identities is not None:
+            identities.add(extension_id)
         binding_path = root / "contracts/extensions/trust" / f"{extension_id}.v1.json"
         binding = legacy.read_object(binding_path)
         if (
@@ -96,9 +99,11 @@ def stage(compiler: Path, destination: Path) -> dict:
     objects = destination / "objects"
     safe_directory(objects)
     root = None
+    expected_engine = legacy.implementation_digest()
+    identities: set[str] = set()
     reused = created = changed_bytes = 0
     with tempfile.TemporaryFile() as source, tempfile.TemporaryFile() as errors:
-        count = input_stream(legacy.ROOT, source)
+        count = input_stream(legacy.ROOT, source, identities)
         process = subprocess.Popen(
             [str(compiler), "compile-packs"], stdin=source, stdout=subprocess.PIPE, stderr=errors
         )
@@ -128,20 +133,11 @@ def stage(compiler: Path, destination: Path) -> dict:
                     or row.get("sha256") != digest
                 ):
                     raise ValueError("native pack object integrity failure")
-                path = objects / f"{digest}.json"
-                if path.is_symlink():
-                    raise ValueError("pack object must not be a symlink")
-                if path.exists():
-                    with path.open("rb") as cached:
-                        existing = cached.read(MAX_OBJECT_BYTES + 1)
-                    if existing != data:
-                        raise ValueError("existing pack cache object failed integrity")
-                    reused += 1
-                else:
-                    with path.open("xb") as target:
-                        target.write(data)
+                if publish_object(objects, digest, data):
                     created += 1
                     changed_bytes += len(data)
+                else:
+                    reused += 1
             status = process.wait()
             if status or root is None:
                 errors.seek(0)
@@ -156,6 +152,11 @@ def stage(compiler: Path, destination: Path) -> dict:
                 process.stdout.close()
     # A failed build can leave immutable unreferenced objects, but never a new
     # root. Reused objects are byte checked; the cache supplies no policy authority.
+    try:
+        PackReader(objects).verify_release(root, expected_engine, identities)
+    except (OSError, KeyError, TypeError, RecursionError) as error:
+        raise ValueError("pack release references are incomplete or invalid") from error
+    durable_directory(objects)
     root_bytes = legacy.canonical_bytes(root)
     release = destination / "release.json"
     if release.is_symlink():
@@ -168,6 +169,7 @@ def stage(compiler: Path, destination: Path) -> dict:
             os.fsync(target.fileno())
             target.close()
             os.replace(temporary, release)
+            durable_directory(destination)
         finally:
             temporary.unlink(missing_ok=True)
     return {

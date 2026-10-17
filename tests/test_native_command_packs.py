@@ -21,6 +21,7 @@ def generator(tmp_path, monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module.legacy, "ROOT", tmp_path)
+    monkeypatch.setattr(module.legacy, "implementation_digest", lambda: "test")
     (tmp_path / "contributions/command-sources").mkdir(parents=True)
     (tmp_path / "contributions/mcp-servers").mkdir(parents=True)
     (tmp_path / "contracts/extensions/trust").mkdir(parents=True)
@@ -64,17 +65,52 @@ def object_row(data=b'{"schema":"test"}'):
 
 
 def root_row():
-    return {"kind": "root", "schema": "guard.command-pack-release.v1", "extensions": 1, "engine": "test"}
+    return valid_rows()[-1]
+
+
+def valid_rows():
+    rows = {}
+
+    def blob(value):
+        data = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        row = object_row(data)
+        rows[row["sha256"]] = row
+        return {"sha256": row["sha256"], "length": len(data), "expanded_length": len(data), "kind": "data"}
+
+    program = {"schema": "guard.native-command-program.v1", "nodes": {}, "trust_digest": "0" * 64}
+    encoded = json.dumps(program, sort_keys=True, separators=(",", ":")).encode()
+    program["program_digest"] = hashlib.sha256(b"hol-guard.native-command-program.v1\0" + encoded).hexdigest()
+    manifest = {
+        "schema": "guard.command-policy-pack.v1",
+        "extension_id": "command.one",
+        "engine": "test",
+        "semantic_profile": "cpython-3.12-ucd15",
+        "source_digest": "0" * 64,
+        "trust_digest": "0" * 64,
+        "program_digest": program["program_digest"],
+        "cache_key": "0" * 64,
+        "program": blob(program),
+        "catalog": blob([]),
+        "descriptors": blob([]),
+    }
+    index = blob(
+        {"schema": "guard.pack-index.v1", "kind": "leaf", "prefix": "", "entries": [["command.one", blob(manifest)]]}
+    )
+    return [
+        *rows.values(),
+        {"kind": "root", "schema": "guard.command-pack-release.v1", "extensions": 1, "engine": "test", "index": index},
+    ]
 
 
 def test_unchanged_objects_are_verified_and_reused(generator, monkeypatch, tmp_path):
     output = tmp_path / "packs"
-    fake_compiler(generator, monkeypatch, [object_row(), root_row()])
+    fake_compiler(generator, monkeypatch, valid_rows())
     first = generator.stage(Path("compiler"), output)
-    fake_compiler(generator, monkeypatch, [object_row(), root_row()])
+    fake_compiler(generator, monkeypatch, valid_rows())
     second = generator.stage(Path("compiler"), output)
     assert first["release_sha256"] == second["release_sha256"]
-    assert (first["created_objects"], second["created_objects"], second["reused_objects"]) == (1, 0, 1)
+    count = len(valid_rows()) - 1
+    assert (first["created_objects"], second["created_objects"], second["reused_objects"]) == (count, 0, count)
     assert second["changed_object_bytes"] == 0
 
 
@@ -87,6 +123,8 @@ def test_unchanged_objects_are_verified_and_reused(generator, monkeypatch, tmp_p
         ([object_row(), {**root_row(), "extensions": 2}], 0),
         ([{**object_row(), "sha256": "0" * 64}, root_row()], 0),
         ([{**object_row(), "length": 0}, root_row()], 0),
+        ([*valid_rows()[:-1], {**root_row(), "engine": "stale"}], 0),
+        ([*valid_rows()[:-1], {**root_row(), "index": {**root_row()["index"], "sha256": "0" * 64}}], 0),
     ],
 )
 def test_failed_builds_preserve_previous_complete_root(generator, monkeypatch, tmp_path, rows, status):
@@ -102,11 +140,11 @@ def test_failed_builds_preserve_previous_complete_root(generator, monkeypatch, t
 
 def test_poisoned_cache_cannot_substitute_a_pack(generator, monkeypatch, tmp_path):
     output = tmp_path / "packs"
-    fake_compiler(generator, monkeypatch, [object_row(), root_row()])
+    fake_compiler(generator, monkeypatch, valid_rows())
     generator.stage(Path("compiler"), output)
     previous = (output / "release.json").read_bytes()
-    (output / "objects" / f"{object_row()['sha256']}.json").write_bytes(b"poison")
-    fake_compiler(generator, monkeypatch, [object_row(), root_row()])
+    (output / "objects" / f"{valid_rows()[0]['sha256']}.json").write_bytes(b"poison")
+    fake_compiler(generator, monkeypatch, valid_rows())
     with pytest.raises(ValueError, match="failed integrity"):
         generator.stage(Path("compiler"), output)
     assert (output / "release.json").read_bytes() == previous
@@ -136,3 +174,37 @@ def test_symlink_output_is_rejected_before_compilation(generator, tmp_path):
     output.symlink_to(target, target_is_directory=True)
     with pytest.raises(ValueError, match="symlinks"):
         generator.stage(Path("compiler"), output)
+
+
+def test_concurrent_object_writers_publish_only_complete_bytes(generator, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    import command_pack_store as store
+
+    data = b"x" * 65536
+    digest = hashlib.sha256(data).hexdigest()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _: store.publish_object(tmp_path, digest, data), range(32)))
+    assert sum(results) == 1
+    assert (tmp_path / f"{digest}.json").read_bytes() == data
+    assert not list(tmp_path.glob(".obj-*"))
+
+
+def test_interrupted_object_publication_can_be_retried(generator, monkeypatch, tmp_path):
+    import command_pack_store as store
+
+    data = b"completed temporary bytes"
+    digest = hashlib.sha256(data).hexdigest()
+    link = store.os.link
+
+    def interrupt(source, target):
+        assert Path(source).read_bytes() == data
+        raise OSError("simulated interruption before publication")
+
+    monkeypatch.setattr(store.os, "link", interrupt)
+    with pytest.raises(OSError, match="interruption"):
+        store.publish_object(tmp_path, digest, data)
+    assert not (tmp_path / f"{digest}.json").exists()
+    assert not list(tmp_path.glob(".obj-*"))
+    monkeypatch.setattr(store.os, "link", link)
+    assert store.publish_object(tmp_path, digest, data)
