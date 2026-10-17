@@ -26,11 +26,59 @@ const SHORTLOG_FLAGS: [&str; 10] = [
 /// `--format` and `--pretty` are not here. A pretty format expands `%G`,
 /// which verifies signatures through the configured program, so a shortlog
 /// that carries one keeps its review the way every other history read with
-/// one does.
+/// one does. `--group` reaches the same expansion through
+/// `--group=format:<format>`, so [`shortlog_value`] admits only the groupings
+/// that name a field of the commit itself.
 const SHORTLOG_VALUES: [&str; 2] = ["--group", "--max-count"];
+
+/// Whether the value one of those options carries is a proven read.
+fn shortlog_value(name: &str, value: &str) -> bool {
+    match name {
+        "--group" => {
+            matches!(value, "author" | "committer")
+                || value.strip_prefix("trailer:").is_some_and(trailer_token)
+        }
+        "--max-count" => !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()),
+        _ => false,
+    }
+}
+
+/// Whether a `trailer:` grouping names a trailer the way a commit message
+/// writes one: the key before the colon, which is a header name.
+fn trailer_token(token: &str) -> bool {
+    !token.is_empty()
+        && token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
 
 /// `check-ignore` flags. All of them change what is printed and nothing else.
 const CHECK_IGNORE_FLAGS: [&str; 6] = ["-q", "--quiet", "-v", "--verbose", "-z", "--no-index"];
+
+/// Whether the listing reads the index, which can start `core.fsmonitor`.
+/// `check-ignore` consults the index unless `--no-index` is given; a shortlog
+/// reads commits and never the index.
+pub(crate) fn reads_index(subcommand: &str, rest: &[String]) -> bool {
+    subcommand == "check-ignore" && !options(rest).any(|argument| argument == "--no-index")
+}
+
+/// Whether the listing prints the rule that matched and the file it came
+/// from, which `check-ignore` does in its verbose form. That file is
+/// `core.excludesFile` as often as it is the repository's own `.gitignore`.
+pub(crate) fn prints_rule_source(subcommand: &str, rest: &[String]) -> bool {
+    subcommand == "check-ignore"
+        && options(rest).any(|argument| {
+            matches!(argument, "-v" | "--verbose")
+                || (short_bundle(argument, "qvz") && argument.contains('v'))
+        })
+}
+
+/// The words before `--`, which are the only ones Git reads as options.
+fn options(rest: &[String]) -> impl Iterator<Item = &str> {
+    rest.iter()
+        .take_while(|argument| *argument != "--")
+        .map(String::as_str)
+}
 
 /// Whether `subcommand rest...` is a proven listing read.
 pub(crate) fn read_form(subcommand: &str, rest: &[String]) -> bool {
@@ -88,17 +136,20 @@ fn shortlog_read_form(rest: &[String]) -> bool {
         if short_bundle(argument, "nsec") {
             continue;
         }
-        if let Some((name, _)) = argument.split_once('=') {
-            if SHORTLOG_VALUES.contains(&name) {
+        if let Some((name, value)) = argument.split_once('=') {
+            if SHORTLOG_VALUES.contains(&name) && shortlog_value(name, value) {
                 continue;
             }
             return false;
         }
         if SHORTLOG_VALUES.contains(&argument.as_str()) {
-            if arguments.next().is_none() {
+            let Some(value) = arguments.next() else {
                 return false;
+            };
+            if shortlog_value(argument, value) {
+                continue;
             }
-            continue;
+            return false;
         }
         return false;
     }
