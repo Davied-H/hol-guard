@@ -269,6 +269,8 @@ fn saved_response(
         local_once_integrity_key_id: Some(key.key_id.clone()),
         policy_bundle_decision_identities: None,
         probe_groups: None,
+        portable_workspace: None,
+        evidence_binding: None,
     };
     let lookup = |workspace: &str| {
         let request = PolicyDecisionLookupRequestV1 {
@@ -502,4 +504,4 @@ mod review_queue;
 
 #[cfg(test)]
 #[path = "hook_direct_saved_decision_tests.rs"]
-mod tests;
+pub(crate) mod tests;
