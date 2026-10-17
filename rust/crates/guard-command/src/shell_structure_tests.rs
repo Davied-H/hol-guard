@@ -234,3 +234,42 @@ fn an_unescaped_operator_before_a_hash_opens_a_comment() {
         );
     }
 }
+
+#[test]
+fn a_backslash_inside_single_quotes_does_not_consume_the_closing_quote() {
+    // bash takes a backslash literally inside single quotes, so `'a\'` closes
+    // its quote and the next `'` opens one that runs on; `npm install evil` is
+    // a real command and must stay visible.
+    let command = "echo 'a\\'\necho '\n<<EOF\n'\nnpm install evil\nEOF";
+    let heredocs = extract_heredocs(command);
+    assert!(heredocs.is_empty());
+    assert_eq!(mask_heredoc_bodies(command, &heredocs), command);
+}
+
+#[test]
+fn a_line_continuation_carries_the_word_boundary() {
+    // bash joins the lines before it looks for comments. `echo a\` + `#"`
+    // becomes the single word `a#"`, so the quote opens and nothing may be
+    // masked.
+    let command = "echo a\\\n#\"\n<<EOF\n\"\nnpm install evil\nEOF";
+    let heredocs = extract_heredocs(command);
+    assert!(heredocs.is_empty());
+    assert_eq!(mask_heredoc_bodies(command, &heredocs), command);
+
+    // `echo \` + `# <<EOF` joins to `echo # <<EOF`, where `#` is word-initial
+    // and the rest is a comment.
+    let command = "echo \\\n# <<EOF\nnpm install evil\nEOF";
+    let heredocs = extract_heredocs(command);
+    assert!(heredocs.is_empty());
+    assert_eq!(mask_heredoc_bodies(command, &heredocs), command);
+
+    // `echo a\` + `# <<EOF` joins to `echo a# <<EOF`, where `#` is mid-word
+    // and `<<EOF` still declares a heredoc.
+    let command = "echo a\\\n# <<EOF\nnpm install hidden\nEOF\nnpm install after";
+    let heredocs = extract_heredocs(command);
+    assert_eq!(heredocs.len(), 1);
+    assert_eq!(heredocs[0].delimiter, "EOF");
+    let masked = mask_complete_heredocs(command, &heredocs);
+    assert!(!masked.contains("npm install hidden"));
+    assert!(masked.contains("npm install after"));
+}

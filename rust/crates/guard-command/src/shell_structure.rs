@@ -42,9 +42,13 @@ pub fn extract_heredocs(command: &str) -> Vec<ShellHeredoc> {
     // spans declaration lines. Heredoc bodies are not shell syntax, and the
     // cursor jumps past them, so they never advance it.
     let mut state = ShellScanState::new();
+    // A line ending in an unquoted backslash continues the current word onto
+    // the next line, so the word boundary spans lines as well.
+    let mut word_start = true;
     while scan_cursor < n {
         let mut line_end = find_newline(&chars, scan_cursor).unwrap_or(n);
-        let pending = heredoc_declarations(&chars[scan_cursor..line_end], &mut state);
+        let pending =
+            heredoc_declarations(&chars[scan_cursor..line_end], &mut state, &mut word_start);
         if pending.is_empty() {
             if line_end == n {
                 break;
@@ -76,6 +80,8 @@ pub fn extract_heredocs(command: &str) -> Vec<ShellHeredoc> {
             body_cursor = closing_end;
         }
         scan_cursor = body_cursor;
+        // The line after a closing delimiter starts a fresh command.
+        word_start = true;
         line_end = n;
         let _ = line_end;
     }
@@ -122,7 +128,11 @@ struct HeredocDecl {
 }
 
 /// `_heredoc_declarations` (:91-107).
-fn heredoc_declarations(line: &[char], state: &mut ShellScanState) -> Vec<HeredocDecl> {
+fn heredoc_declarations(
+    line: &[char],
+    state: &mut ShellScanState,
+    carried_word_start: &mut bool,
+) -> Vec<HeredocDecl> {
     let mut matches = Vec::new();
     let mut index = 0usize;
     // `#` opens a comment only at the start of a word, so the rest of the line
@@ -133,16 +143,24 @@ fn heredoc_declarations(line: &[char], state: &mut ShellScanState) -> Vec<Heredo
     // preceding character, because `advance` consumes an escape pair or a
     // quoted span in one step: bash reads `echo a\ #` as the single word
     // `a #`, where the `#` is not a comment at all.
-    let mut word_start = true;
+    let mut word_start = *carried_word_start;
+    // A trailing unquoted backslash joins this line to the next, so the word
+    // boundary carries over; anything else ends the command at the newline.
+    let mut continued = false;
+    *carried_word_start = true;
     while index < line.len() {
         let next_index = state.advance(line, index);
         if next_index != index + 1 {
+            continued = line[index] == '\\' && index + 1 == line.len();
+            if !continued {
+                word_start = false;
+            }
             index = next_index;
-            word_start = false;
             continue;
         }
+        continued = false;
         if state.is_top_level() && line[index] == '#' && word_start {
-            break;
+            return matches;
         }
         let next_word_start = state.is_top_level()
             && matches!(
@@ -172,6 +190,9 @@ fn heredoc_declarations(line: &[char], state: &mut ShellScanState) -> Vec<Heredo
         }
         word_start = next_word_start;
         index += 1;
+    }
+    if continued {
+        *carried_word_start = word_start;
     }
     matches
 }
@@ -505,6 +526,15 @@ impl ShellScanState {
     pub fn advance(&mut self, chars: &[char], index: usize) -> usize {
         let n = chars.len();
         let ch = chars[index];
+        // Inside single quotes bash takes every character literally, a
+        // backslash included, so the escape below must not consume the closing
+        // quote and leave the scan holding the opposite quote state to bash.
+        if self.quote == Some('\'') && !self.in_backtick {
+            if ch == '\'' {
+                self.quote = None;
+            }
+            return index + 1;
+        }
         if ch == '\\' {
             return (n).min(index + 2);
         }
@@ -513,12 +543,6 @@ impl ShellScanState {
             return index + 1;
         }
         if self.in_backtick {
-            return index + 1;
-        }
-        if self.quote == Some('\'') {
-            if ch == '\'' {
-                self.quote = None;
-            }
             return index + 1;
         }
         if ch == '\'' && self.quote.is_none() {
