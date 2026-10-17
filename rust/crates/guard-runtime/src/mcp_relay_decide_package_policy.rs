@@ -149,7 +149,13 @@ pub(super) fn package_policy(
         Some(&artifact.artifact_type),
         &execution_context,
     );
-    let facts = hydrate(saved, artifact, &artifact_hash, policy_workspace.as_deref())?;
+    let facts = hydrate(
+        saved,
+        artifact,
+        &artifact_hash,
+        policy_workspace.as_deref(),
+        process.cwd,
+    )?;
     let request = PackagePolicyResolveRequestV1 {
         schema: PACKAGE_AUTHORITY_REQUEST_SCHEMA.to_owned(),
         request_id: REQUEST_ID.to_owned(),
@@ -231,13 +237,14 @@ fn hydrate(
     artifact: &GuardArtifact,
     artifact_hash: &str,
     policy_workspace: Option<&str>,
+    cwd: &str,
 ) -> Result<Facts, &'static str> {
     let mut decision: Option<Value> = None;
     let mut ignored_integrity = false;
     // `policy_workspace` is the one runtime identity or none at all, so there
     // is a single row to read rather than a list to walk.
     if let Some(workspace) = policy_workspace {
-        let lookup = saved.package_candidate(&probe(artifact, artifact_hash, workspace))?;
+        let lookup = saved.package_candidate(&probe(artifact, artifact_hash, workspace), cwd)?;
         let found = lookup.get("decision").cloned().unwrap_or(Value::Null);
         ignored_integrity = lookup
             .get("ignored_local_integrity")

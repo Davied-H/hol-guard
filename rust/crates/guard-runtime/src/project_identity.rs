@@ -46,9 +46,14 @@ pub(crate) enum PortableIdentity {
     Unknown,
 }
 
-/// The identity `resolve_portable_project_identity(workspace)` returns.
+/// The identity `resolve_portable_project_identity(workspace)` returns for a
+/// workspace that names an absolute path.
 pub(crate) fn resolve(workspace: &str) -> PortableIdentity {
-    match derive(workspace) {
+    identity_of(None, workspace)
+}
+
+fn identity_of(base: Option<&str>, workspace: &str) -> PortableIdentity {
+    match derive(base, workspace) {
         Ok(Some(identity)) => PortableIdentity::Identity(identity),
         Ok(None) => PortableIdentity::Absent,
         Err(Unmirrored) => PortableIdentity::Unknown,
@@ -73,11 +78,25 @@ pub(crate) fn is_portable_project_identity(value: &str) -> bool {
 /// already names a portable identity, and the identity its Git metadata
 /// derives otherwise.
 pub(crate) fn portable_workspace(workspace: &str) -> PortableIdentity {
+    portable_identity_of(None, workspace)
+}
+
+/// `_portable_project_workspace(workspace)` for a workspace selector that is
+/// not a path. Python resolves one like any other workspace:
+/// `Path(selector).resolve(strict=False)` joins the process cwd, and the
+/// repository walk starts at that directory, so a selector resolves to the
+/// identity of the project the process is running in. `cwd` is that process's
+/// own — the relaying proxy's, read from its interpreter, not the resident's.
+pub(crate) fn portable_workspace_in(cwd: &str, workspace: &str) -> PortableIdentity {
+    portable_identity_of(Some(cwd), workspace)
+}
+
+fn portable_identity_of(base: Option<&str>, workspace: &str) -> PortableIdentity {
     let stripped = python_strip(workspace);
     if is_portable_project_identity(stripped) {
         return PortableIdentity::Identity(stripped.to_owned());
     }
-    resolve(stripped)
+    identity_of(base, stripped)
 }
 
 /// The errors `pathlib._ignore_error` reads as a false predicate; Python
@@ -119,20 +138,51 @@ fn is_symlink(metadata: &Option<Metadata>) -> bool {
 }
 
 /// `_workspace_path`: the stripped workspace, mirrored only where
-/// `expanduser().resolve(strict=False)` leaves it as it is.
-fn workspace_path(workspace: &str) -> Mirror<Option<PathBuf>> {
+/// `expanduser().resolve(strict=False)` leaves it as it is. A workspace that
+/// is not a path resolves against `base`, the cwd of the process whose lookup
+/// this is, and is mirrored only where joining it is the whole resolution.
+fn workspace_path(base: Option<&str>, workspace: &str) -> Mirror<Option<PathBuf>> {
     let stripped = python_strip(workspace);
     if stripped.is_empty() {
         // project_identity.py:_workspace_path: a blank workspace is None.
         return Ok(None);
     }
-    if !cfg!(unix) || !stripped.starts_with('/') {
+    if !cfg!(unix) {
         return Err(Unmirrored);
+    }
+    if !stripped.starts_with('/') {
+        return joined(base.ok_or(Unmirrored)?, stripped);
     }
     match fs::canonicalize(stripped) {
         Ok(resolved) if resolved.as_os_str() == stripped => Ok(Some(resolved)),
         _ => Err(Unmirrored),
     }
+}
+
+/// `cwd` joined to a relative workspace, mirrored only where `resolve` has
+/// nothing of its own to follow: a cwd already canonical, a single plain
+/// component, and no file at the joined path whose links `resolve` would
+/// read through.
+fn joined(cwd: &str, workspace: &str) -> Mirror<Option<PathBuf>> {
+    if !cwd.starts_with('/')
+        || workspace.starts_with('~')
+        || workspace.contains('/')
+        || workspace == "."
+        || workspace == ".."
+    {
+        return Err(Unmirrored);
+    }
+    let Ok(resolved) = fs::canonicalize(cwd) else {
+        return Err(Unmirrored);
+    };
+    if resolved.as_os_str() != cwd {
+        return Err(Unmirrored);
+    }
+    let path = resolved.join(workspace);
+    if status(&path, false)?.is_some() {
+        return Err(Unmirrored);
+    }
+    Ok(Some(path))
 }
 
 struct Repository<'w> {
@@ -310,19 +360,24 @@ fn identity(workspace: &Path, repository: &Repository<'_>) -> Mirror<Option<Stri
     )))
 }
 
-fn derive(workspace: &str) -> Mirror<Option<String>> {
-    let Some(path) = workspace_path(workspace)? else {
+fn derive(base: Option<&str>, workspace: &str) -> Mirror<Option<String>> {
+    let Some(path) = workspace_path(base, workspace)? else {
         return Ok(None);
     };
     let Some(repository) = discover(&path)? else {
         return Ok(None);
     };
-    let key = cache::Key::new(
-        python_strip(workspace),
-        &repository.git_dir,
-        &repository.config,
-        &repository.head_log,
-    );
+    // The resolved path, not the workspace text: one selector resolves to a
+    // different project under every cwd it is read from, and this cache is
+    // the resident's, shared by all of them.
+    let key = path.to_str().and_then(|text| {
+        cache::Key::new(
+            text,
+            &repository.git_dir,
+            &repository.config,
+            &repository.head_log,
+        )
+    });
     if let Some(identity) = key.as_ref().and_then(cache::get) {
         return Ok(Some(identity));
     }

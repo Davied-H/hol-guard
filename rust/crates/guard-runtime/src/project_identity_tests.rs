@@ -231,3 +231,75 @@ fn a_workspace_already_naming_an_identity_is_its_own() {
     assert!(!is_portable_project_identity(&"a".repeat(64)));
     assert_eq!(portable_workspace("   "), PortableIdentity::Absent);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_selector_resolves_against_the_cwd_it_was_read_in() {
+    let root = scratch("selector");
+    repository(&root);
+    let cwd = root.to_str().expect("utf-8");
+    let selector = "package-request-workspace-exact:v2:abc";
+    // `Path(selector).resolve()` joins the cwd, so the walk starts in the
+    // project the proxy is running in and the selector is its relative name.
+    let PortableIdentity::Identity(derived) = portable_workspace_in(cwd, selector) else {
+        panic!("the selector resolves");
+    };
+    let PortableIdentity::Identity(project) = resolve(cwd) else {
+        panic!("the repository resolves");
+    };
+    assert_ne!(derived, project, "the relative name is part of the digest");
+    // The same selector under another project is another identity, and under
+    // no project at all it is absent.
+    let other = scratch("selector-other");
+    repository(&other);
+    let elsewhere = other.to_str().expect("utf-8");
+    assert_ne!(
+        portable_workspace_in(elsewhere, selector),
+        PortableIdentity::Identity(derived)
+    );
+    let bare = scratch("selector-bare");
+    assert_eq!(
+        portable_workspace_in(bare.to_str().expect("utf-8"), selector),
+        PortableIdentity::Absent
+    );
+    fs::remove_dir_all(&root).ok();
+    fs::remove_dir_all(&other).ok();
+    fs::remove_dir_all(&bare).ok();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_join_resolve_would_rewrite_is_unknown() {
+    let root = scratch("join");
+    repository(&root);
+    let cwd = root.to_str().expect("utf-8");
+    // Only the plain join is mirrored: a nested or home-relative name, a cwd
+    // `resolve` would rewrite, and a name that is already a file or a link
+    // all leave the resolution to Python.
+    for workspace in ["nested/scope", "~/scope", ".", ".."] {
+        assert_eq!(
+            portable_workspace_in(cwd, workspace),
+            PortableIdentity::Unknown
+        );
+    }
+    assert_eq!(
+        portable_workspace_in(&format!("{cwd}/"), "scope"),
+        PortableIdentity::Unknown
+    );
+    assert_eq!(
+        portable_workspace_in("relative", "scope"),
+        PortableIdentity::Unknown
+    );
+    write(&root.join("scope"), "");
+    assert_eq!(
+        portable_workspace_in(cwd, "scope"),
+        PortableIdentity::Unknown
+    );
+    // A workspace that already names an identity is its own, whatever the cwd.
+    let named = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "a".repeat(64));
+    assert_eq!(
+        portable_workspace_in(cwd, &named),
+        PortableIdentity::Identity(named)
+    );
+    fs::remove_dir_all(&root).ok();
+}

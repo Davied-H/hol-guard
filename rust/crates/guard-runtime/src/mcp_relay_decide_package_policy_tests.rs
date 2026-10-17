@@ -106,6 +106,11 @@ fn resolve(home: &Path, evaluation: &Map<String, Value>) -> Result<PackagePolicy
     let saved = store::saved(&connection, &binding(), home.to_str().unwrap(), HARNESS)?
         .expect("saved rows");
     let environment = environment();
+    // The package lookup resolves its workspace scope against this cwd, the
+    // way `Path(scope).resolve()` resolves it in the proxy. A temporary
+    // directory reached through a symlinked root is not one the resident
+    // mirrors, so the fixture names the canonical path the proxy would read.
+    let cwd = std::fs::canonicalize(home).expect("a canonical home");
     package_policy(
         &saved,
         &view(),
@@ -115,7 +120,7 @@ fn resolve(home: &Path, evaluation: &Map<String, Value>) -> Result<PackagePolicy
         home.to_str().unwrap(),
         &ProcessFacts {
             environment: &environment,
-            cwd: home.to_str().unwrap(),
+            cwd: cwd.to_str().unwrap(),
             home: "/home/dev",
         },
     )

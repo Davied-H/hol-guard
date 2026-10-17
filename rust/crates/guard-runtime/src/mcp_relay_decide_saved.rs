@@ -23,7 +23,7 @@ use crate::context_digest::python_strip;
 use crate::mcp_tool_policy_lookup::{most_restrictive, without_permission_elevation};
 use crate::memory_pattern::{verdict, MemoryRequest};
 use crate::policy_decision_lookup_op::evaluate_non_consuming;
-use crate::project_identity::{portable_workspace, PortableIdentity};
+use crate::project_identity::{portable_workspace, portable_workspace_in, PortableIdentity};
 use guard_contracts::{ApprovalReuseDiagnosticRequestV1, APPROVAL_REUSE_DIAGNOSTIC_REQUEST_SCHEMA};
 use serde_json::{json, Value};
 
@@ -136,23 +136,39 @@ impl Saved<'_> {
     /// (`_portable_project_workspace`). A workspace that already names a
     /// portable identity is its own, and one whose identity the resident
     /// does not resolve exactly defers the call.
-    fn portable_identity(&self, workspace: Option<&str>) -> Result<Option<String>, &'static str> {
-        let Some(workspace) = workspace else {
-            return Ok(None);
-        };
-        match portable_workspace(workspace) {
+    fn named(&self, identity: PortableIdentity) -> Result<Option<String>, &'static str> {
+        match identity {
             PortableIdentity::Absent => Ok(None),
             PortableIdentity::Identity(identity) => Ok(Some(identity)),
             PortableIdentity::Unknown => Err(SAVED_PORTABLE),
         }
     }
 
+    /// The identity of a workspace the proxy named as a path.
+    fn portable_identity(&self, workspace: Option<&str>) -> Result<Option<String>, &'static str> {
+        let Some(workspace) = workspace else {
+            return Ok(None);
+        };
+        self.named(portable_workspace(workspace))
+    }
+
     /// One candidate for a lane that names its own probe rather than a need
     /// the resident sent. The portable identity is resolved here, as
     /// `resolve_policy_decision_lookup` resolves it for every lookup it
     /// answers, so a caller cannot read the local row alone by mistake.
-    pub(super) fn package_candidate(&self, probe: &Probe<'_>) -> Result<Value, &'static str> {
-        let identity = self.portable_identity(probe.workspace)?;
+    ///
+    /// A package lookup's workspace is a scope selector rather than a path,
+    /// so it resolves against `cwd`, the cwd of the proxy whose lookup this
+    /// is, exactly as `Path(selector).resolve()` resolves it in that process.
+    pub(super) fn package_candidate(
+        &self,
+        probe: &Probe<'_>,
+        cwd: &str,
+    ) -> Result<Value, &'static str> {
+        let identity = match probe.workspace {
+            None => None,
+            Some(workspace) => self.named(portable_workspace_in(cwd, workspace))?,
+        };
         self.candidate(probe, identity.as_deref())
     }
 
