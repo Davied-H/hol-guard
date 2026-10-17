@@ -57,7 +57,7 @@ pub(in crate::pretool) const SECRET_EXTENSIONS: &[&str] = &[
 
 /// Names-only recursive listing (`ls -R`).
 pub(in crate::pretool) fn safe_recursive_target(value: &str, context: ReadContext<'_>) -> bool {
-    safe_walk_target(value, context, &[], &[], false)
+    safe_walk_target(value, context, &[], &[], false, false)
         || super::agent_root::agent_root_listing(value, context, true)
 }
 
@@ -68,16 +68,20 @@ pub(in crate::pretool) fn safe_recursive_search_target(
     value: &str,
     context: ReadContext<'_>,
 ) -> bool {
-    safe_recursive_target_excluding(value, context, &[], &[], false)
+    safe_recursive_target_excluding(value, context, &[], &[], false, false)
 }
 
 /// `git_metadata` lets a `grep -r` walk read a screened `.git` entry.
+/// `follow_links` is `grep -R`, which reads through every link it finds and so
+/// must prove what they point at; plain `-r` only follows a link named as an
+/// operand.
 pub(super) fn safe_recursive_target_excluding(
     value: &str,
     context: ReadContext<'_>,
     excluded_files: &[&str],
     excluded_directories: &[&str],
     git_metadata: bool,
+    follow_links: bool,
 ) -> bool {
     if expanded_operand(value, context).is_some_and(|root| inside_agent_state(&root, context)) {
         return false;
@@ -88,6 +92,7 @@ pub(super) fn safe_recursive_target_excluding(
         excluded_files,
         excluded_directories,
         git_metadata,
+        follow_links,
     )
 }
 
@@ -105,6 +110,7 @@ fn safe_walk_target(
     excluded_files: &[&str],
     excluded_directories: &[&str],
     git_metadata: bool,
+    follow_links: bool,
 ) -> bool {
     // A recursive walk through `..` reaches a sibling tree whose ignore rules
     // were never inspected; only the sibling-repository proof admits that.
@@ -117,7 +123,13 @@ fn safe_walk_target(
     let Some(root) = expanded_operand(value, context) else {
         return false;
     };
-    walk(root, excluded_files, excluded_directories, git_metadata)
+    walk(
+        root,
+        excluded_files,
+        excluded_directories,
+        git_metadata,
+        follow_links,
+    )
 }
 
 /// A recursive `ls` operand that the shell passes through literally. Only
@@ -130,7 +142,7 @@ pub(in crate::pretool) fn safe_literal_bracket_tree(
     let Some(root) = checked_directory(value, context) else {
         return false;
     };
-    !recursive || walk(root, &[], &[], false)
+    !recursive || walk(root, &[], &[], false, false)
 }
 
 /// A glob operand that is expanded here, component by component. Every
@@ -152,7 +164,7 @@ pub(in crate::pretool) fn safe_glob_operand(
         .is_some_and(|part| part.len() > 1 && part.bytes().all(|byte| byte == b'*'));
     matches.into_iter().all(|path| {
         if recursive || final_globstar {
-            walk(path, &[], &[], false)
+            walk(path, &[], &[], false, false)
         } else {
             true
         }
@@ -200,7 +212,7 @@ pub(in crate::pretool) fn safe_glob_search_operand(value: &str, context: ReadCon
     expand_glob(value, context).is_some_and(|matches| {
         matches
             .into_iter()
-            .all(|path| !inside_agent_state(&path, context) && walk(path, &[], &[], false))
+            .all(|path| !inside_agent_state(&path, context) && walk(path, &[], &[], false, false))
     })
 }
 
@@ -256,11 +268,24 @@ fn hidden_allowed(name: &str) -> bool {
     BENIGN_HIDDEN_NAMES.contains(&name.to_ascii_lowercase().as_str())
 }
 
+/// `node_modules/.bin` holds a package manager's executable shims. The name is
+/// hidden, but the directory is part of every install, and what it holds is
+/// links into packages this walk screens entry by entry. Refusing it on the
+/// name alone sends every recursive search of an installed checkout to review.
+fn package_store_bin(path: &Path, name: &str) -> bool {
+    name == ".bin"
+        && path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|parent| parent.to_str())
+            .is_some_and(|parent| parent == "node_modules")
+}
+
 pub(super) fn descendant_allowed(path: &Path, root: &Path, is_file: bool) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
-    if (name.starts_with('.') && !hidden_allowed(name))
+    if (name.starts_with('.') && !hidden_allowed(name) && !package_store_bin(path, name))
         || guard_secure_fs::sensitive_path_family(path).is_some()
     {
         return false;
@@ -328,18 +353,21 @@ pub(super) fn walk(
     excluded_files: &[&str],
     excluded_directories: &[&str],
     git_metadata: bool,
+    follow_links: bool,
 ) -> bool {
     super::walk_memo::memoized(
         &root,
         excluded_files,
         excluded_directories,
         git_metadata,
+        follow_links,
         || {
             walk_uncached(
                 root.clone(),
                 excluded_files,
                 excluded_directories,
                 git_metadata,
+                follow_links,
             )
         },
     )
@@ -350,6 +378,7 @@ fn walk_uncached(
     excluded_files: &[&str],
     excluded_directories: &[&str],
     git_metadata: bool,
+    follow_links: bool,
 ) -> bool {
     let mut pending = vec![(root.clone(), 0_usize)];
     let mut inspected = 0_usize;
@@ -394,7 +423,14 @@ fn walk_uncached(
                 pending.push((entry.path(), depth + 1));
             }
         } else if !metadata.is_file() {
-            return false;
+            // A recursive tool lists a link without reading through it unless
+            // it was asked to dereference one. The name was screened above;
+            // the target belongs to whatever tree owns it, which this walk has
+            // not proven. An operand named on the command line is followed by
+            // every such tool, so it still needs proof of its own.
+            if follow_links || depth == 0 {
+                return false;
+            }
         }
     }
     true
