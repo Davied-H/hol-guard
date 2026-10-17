@@ -13,7 +13,7 @@ import pytest
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.harness_judge import assess_harness_case
 from ci.gauntlet.harness_suite import lane_catalog
-from ci.gauntlet.harnesses import claude_tools
+from ci.gauntlet.harnesses import adapter, claude_tools
 from ci.gauntlet.proofs import required_checks
 
 # Oh My Pi's own tools. No other lane has anything to map them onto.
@@ -79,22 +79,22 @@ def test_every_selected_case_is_handed_the_tools_it_requires() -> None:
             assert set(scenario.required_tools) <= _granted(scenario), scenario.id
 
 
-def _allow_row(tool: str) -> dict:
+def _allow_row(tool: str, harness: str) -> dict:
     """One quiet Guard review of a call the harness made."""
     name = {"bash": "Bash", "read": "Read", "write": "Write", "edit": "Edit"}[tool]
     return {
-        "route_harness": "claude-code",
+        "route_harness": harness,
         "payload": {"hook_event_name": "PreToolUse", "tool_name": name, "tool_input": {}},
         "response": {},
-        "receipt": {"harness": "claude-code", "event_name": "PreToolUse", "decision": "allow", "reason_code": None},
+        "receipt": {"harness": harness, "event_name": "PreToolUse", "decision": "allow", "reason_code": None},
     }
 
 
-def _case(scenario, tools: tuple[str, ...]) -> dict:
+def _case(scenario, tools: tuple[str, ...], harness: str = "claude-code") -> dict:
     """One finished case whose transcript used exactly ``tools``."""
     return {
-        "harness": "claude-code",
-        "guard_rows": [_allow_row(tool) for tool in tools],
+        "harness": harness,
+        "guard_rows": [_allow_row(tool, harness) for tool in tools],
         "transcript": {
             "calls": [
                 {"id": str(i), "name": tool, "tool": tool, "args": {}, "is_error": False}
@@ -127,3 +127,20 @@ def test_a_shell_fallback_does_not_pass_as_a_structured_read() -> None:
     assert "read" in shell_only["reason"]
     used = assess_harness_case(scenario, _case(scenario, tuple(scenario.required_tools)))
     assert used["outcome"] == "pass"
+
+
+def test_a_lane_without_a_tool_is_not_held_to_a_name_it_cannot_call() -> None:
+    """``required_tools`` outside ``native-tools`` is Oh My Pi's grant list.
+
+    Codex does its reading and writing through the shell, and ``lane_catalog``
+    still hands it the task cases. Screening their tool names would fail those
+    cases on every run for a tool the lane has never had.
+    """
+    scenario = next(
+        s
+        for s in lane_catalog("codex")
+        if s.oracle in {"settings-task", "home-task", "home-copy-task"}
+        and set(s.required_tools) - adapter("codex").native_tools
+    )
+    assessed = assess_harness_case(scenario, _case(scenario, ("bash",), harness="codex"))
+    assert assessed["outcome"] == "pass", assessed
