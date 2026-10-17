@@ -6,9 +6,10 @@ import json
 import sqlite3
 from collections.abc import Callable
 from hashlib import sha256
+from pathlib import Path
 
 from .runtime.composio_discovery import ComposioActionSchema
-from .runtime.mcp_classification import classify_mcp_action
+from .runtime.mcp_classification import classify_mcp_actions
 from .runtime.observed_mcp_tools import ObservedMcpTool
 
 _MAX_ACTIONS = 10_000
@@ -144,6 +145,7 @@ def read_provider_actions(
     cli_id: str,
     identity_hash: str,
     *,
+    guard_home: Path,
     limit: int = 100,
     offset: int = 0,
     search: str = "",
@@ -177,6 +179,19 @@ def read_provider_actions(
         order by a.toolkit asc, a.tool_slug asc limit ? offset ?""",
         (cli_id, identity_hash, pattern, pattern, pattern, limit + 1, offset),
     ).fetchall()
+    page = rows[:limit]
+    described = classify_mcp_actions(
+        [
+            {
+                "name": slug,
+                "schema": json.loads(raw_schema),
+                "provider": "composio",
+                "full_schema": bool(full),
+            }
+            for slug, _, _, full, _, _, _, raw_schema in page
+        ],
+        guard_home=guard_home,
+    )
     return {
         "actions": [
             {
@@ -190,14 +205,11 @@ def read_provider_actions(
                 "allow_supported": False,
                 "account_binding": "unverified",
                 "source": "observed-provider-result",
-                "classification": classify_mcp_action(
-                    slug,
-                    json.loads(raw_schema),
-                    provider="composio",
-                    full_schema=bool(full),
-                ),
+                "classification": classification,
             }
-            for slug, toolkit, description, full, revision, updated_at, state, raw_schema in rows[:limit]
+            for (slug, toolkit, description, full, revision, updated_at, state, _), classification in zip(
+                page, described, strict=True
+            )
         ],
         "next_offset": offset + limit if len(rows) > limit else None,
         "coverage": "discovery-subset",

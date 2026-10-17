@@ -158,6 +158,7 @@ class StoreLocalMcpMixin:
                 connection,
                 cli_id,
                 observation[0],
+                guard_home=cast("GuardStore", self).guard_home,
                 limit=limit,
                 offset=offset,
                 search=search,

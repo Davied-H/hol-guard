@@ -428,6 +428,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::McpToolCallIdentity(request) => {
                 crate::mcp_tool_call_identity_op::evaluate_mcp_tool_call_identity_request(&request)
             }
+            ResidentOperationV1::McpClassify(request) => {
+                crate::mcp_classification_op::evaluate_mcp_classification_request(&request)
+            }
             ResidentOperationV1::PackageAdvisoryIds(request) => {
                 crate::package_authority_op::evaluate_package_advisory_ids(&request)
             }

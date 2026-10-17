@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .local_cli_errors import LocalCliCatalogLimitError
@@ -17,7 +18,7 @@ from .runtime.local_cli_commands import (
 )
 from .runtime.local_cli_identity import UnlistedCliIdentity, is_local_cli_id
 from .runtime.local_mcp_stdio import McpCatalogResult
-from .runtime.mcp_classification import classify_mcp_action
+from .runtime.mcp_classification import classify_mcp_actions
 from .store_custom_extension_continuity import _write_local_cli_grant
 from .store_local_cli_retention import mark_shared_enrolled_servers, utc_now_iso
 from .store_local_cli_rows import (
@@ -37,6 +38,7 @@ from .store_mcp_provider_catalog import load_provider_catalog_summaries
 
 class StoreLocalCliMixin:
     if TYPE_CHECKING:
+        guard_home: Path
 
         def _connect(self) -> AbstractContextManager[sqlite3.Connection]: ...
 
@@ -132,6 +134,7 @@ class StoreLocalCliMixin:
                 }
             )
         _with_suggestions(items)
+        undescribed: list[tuple[dict[str, object], Mapping[str, object]]] = []
         mark_shared_enrolled_servers(items, grants)
         authority_revision = 0 if revision_row is None else _row_int(revision_row[0])
         for item in items:
@@ -153,13 +156,22 @@ class StoreLocalCliMixin:
                 for command in command_map.get(str(item["cli_id"]), []):
                     definition = by_name.get(command.get("usage"))
                     if definition is not None:
-                        command["classification"] = classify_mcp_action(
-                            str(definition["name"]),
-                            definition.get("inputSchema"),
-                            annotations=definition.get("annotations"),
-                        )
+                        undescribed.append((command, definition))
             if str(item["cli_id"]) in provider_map:
                 item["provider_catalog"] = provider_map[str(item["cli_id"])]
+        described = classify_mcp_actions(
+            [
+                {
+                    "name": str(definition["name"]),
+                    "schema": definition.get("inputSchema"),
+                    "annotations": definition.get("annotations"),
+                }
+                for _, definition in undescribed
+            ],
+            guard_home=self.guard_home,
+        )
+        for (command, _), classification in zip(undescribed, described, strict=True):
+            command["classification"] = classification
         return items
 
     def read_local_cli_grant(self, cli_id: str) -> dict[str, object] | None:
