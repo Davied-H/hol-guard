@@ -366,6 +366,14 @@ pub(super) fn safe_search_arguments_with_context(
     }
 }
 
+pub(super) fn safe_rg_segment(
+    model: &crate::CanonicalCommandV1,
+    segment: &crate::CommandSegmentV1,
+    context: ReadContext<'_>,
+) -> bool {
+    rg::safe_rg_segment(model, segment, context)
+}
+
 pub(super) fn safe_grep_stdin_arguments(arguments: &[String]) -> bool {
     grep::safe_stdin_arguments(arguments)
 }
