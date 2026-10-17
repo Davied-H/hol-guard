@@ -63,6 +63,9 @@ pub struct ReadonlySnapshotRun<'a> {
     pub cancel: &'a AtomicBool,
     pub job_limits: guard_runtime_windows_process::ResourceLimits,
     pub build: Option<BuildRun<'a>>,
+    /// Copy the executable next to the snapshot, as a build does, so a
+    /// per-user install the LPAC token cannot read still starts.
+    pub stage_executable: bool,
 }
 
 pub struct BuildRun<'a> {
@@ -147,6 +150,8 @@ pub fn run_readonly_snapshot(run: ReadonlySnapshotRun<'_>) -> io::Result<Capture
             let source = Directory::open(source)?;
             copy_tree(&source, Path::new("."), &target, &limits, &mut budget)?;
         }
+    }
+    if run.build.is_some() || run.stage_executable {
         executable = stage_executable(run.executable, &staging.path().join("bin"))?;
         grant_snapshot(&container, executable.parent().unwrap_or(staging.path()))?;
     }

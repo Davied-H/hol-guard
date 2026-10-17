@@ -88,8 +88,8 @@ static PYTHON_EFFECTS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
         r"\.\s*(?:write_text|write_bytes|touch|mkdir|unlink|rmdir|rename|symlink_to|hardlink_to|link_to|chmod|lchmod)\s*\(",
         r"|\bos\s*\.\s*(?:system|popen|exec\w*|spawn\w*|posix_spawn\w*|fork\w*|kill\w*|remove|unlink|rmdir|removedirs|mkdir|makedirs|rename|renames|replace|chmod|chown|lchown|link|symlink|truncate|ftruncate|write|open|mkfifo|mknod|utime|startfile|putenv|unsetenv)\b",
-        r"|\b(?:eval|exec|compile|__import__|breakpoint)\s*\(",
-        r#"|\bopen\s*\([^)\n]*["'][rbtU]*[wax+]"#,
+        r"|(?:^|[^.\w])(?:eval|exec|compile|__import__|breakpoint)\s*\(|\b__builtins__\b",
+        r#"|\bopen\s*\([^)\n]*,\s*(?:mode\s*=\s*)?["'][rbtU]*[wax+]"#,
     ))
     .unwrap()
 });
@@ -120,6 +120,9 @@ pub(in crate::pretool) fn read_only(language: Language, path: &Path) -> bool {
     let Some(source) = read_text(path) else {
         return false;
     };
+    // A backslash continues a Python statement, such as an import, onto the
+    // next line.
+    let source = source.replace("\\\r\n", " ").replace("\\\n", " ");
     match language {
         Language::Python => !PYTHON_EFFECTS.is_match(&source) && python_imports_read_only(&source),
         Language::Node => {

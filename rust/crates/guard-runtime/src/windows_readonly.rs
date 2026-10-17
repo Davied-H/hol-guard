@@ -9,7 +9,9 @@
 //! runner: a credential-filtered copy of the workspace, private HOME/TEMP, no
 //! network capability and a kill-on-close job. The live workspace and the
 //! user profile are never granted to the container.
-use guard_command::contained_argv::{inline_eval, node_runtime_args, python_runtime_args};
+use guard_command::contained_argv::{
+    inline_eval, node_runtime_args, node_script_index, python_runtime_args,
+};
 use guard_command::restricted_command::{normalized_command, RestrictedPytestError};
 use regex::Regex;
 use serde_json::{json, Value};
@@ -241,6 +243,12 @@ fn plan_inline(input: &Value) -> Result<Value, RestrictedPytestError> {
         .get(index)
         .is_some_and(|flag| inline.contains(&flag.as_str()))
     {
+        // Node skips the same neutral flags `inline_eval` admitted.
+        let index = if node {
+            node_script_index(&argv, index).ok_or_else(invalid)?
+        } else {
+            index
+        };
         let script = argv
             .get(index)
             .and_then(|script| canonical(&cwd.join(script)));
@@ -529,6 +537,7 @@ fn launch(arguments: &[String]) -> Result<i32, RestrictedPytestError> {
                 active_processes: Some(32),
             },
             build,
+            stage_executable: launch.node,
         },
     )
     .map_err(|failure| {

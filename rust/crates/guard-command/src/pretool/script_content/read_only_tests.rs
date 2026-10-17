@@ -47,6 +47,11 @@ fn report_scripts_only_read() {
         "import sys\nname = sys.argv[0].replace('_', ' ')\nprint(name)\n",
     );
     assert!(read_only(Language::Python, &text));
+    let (_pattern, pattern) = script(
+        "grep.py",
+        "import re\nfrom pathlib import Path\nWORD = re.compile(r'\\w+')\nwith open(Path('notes.md'), encoding='ascii') as f:\n    print(len(WORD.findall(f.read())))\n",
+    );
+    assert!(read_only(Language::Python, &pattern));
 }
 
 #[test]
@@ -61,6 +66,10 @@ fn writes_launches_and_packages_keep_review() {
         "exec(open('x.py').read())\n",
         "import yaml\n",
         "from pathlib import Path\nPath('a').rename('b')\n",
+        "from yaml \\\nimport safe_load\n",
+        "import os, \\\n    subprocess\n",
+        "open('out.txt', mode='a')\n",
+        "__builtins__.exec('1')\n",
     ] {
         let (_directory, path) = script("report.py", source);
         assert!(!read_only(Language::Python, &path), "{source}");
@@ -140,6 +149,7 @@ fn windows_route_takes_only_read_only_workspace_scripts() {
         "python scripts/missing.py",
         "python ../report.py",
         "node scripts/report.mjs | head",
+        "node.exe scripts/report.mjs",
         "FOO=1 node scripts/report.mjs",
         "bash scripts/report.mjs",
     ] {
