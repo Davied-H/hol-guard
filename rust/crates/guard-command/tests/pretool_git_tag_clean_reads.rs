@@ -7,8 +7,8 @@ fn decide(
     command: &str,
     home: &std::path::Path,
     repository: &std::path::Path,
-) -> String {
-    evaluate_pre_tool_envelope_with_context(
+) -> (String, String) {
+    let result = evaluate_pre_tool_envelope_with_context(
         harness,
         "PreToolUse",
         &json!({"tool_name":"bash", "tool_input":{"command":command}}),
@@ -16,8 +16,10 @@ fn decide(
         None,
         home.to_str(),
         repository.to_str(),
-    )
-    .decision
+    );
+    // The reason code says which rule answered, so a surprising decision
+    // names it instead of leaving the reader to guess.
+    (result.decision, result.reason_code)
 }
 
 fn repository_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
@@ -93,11 +95,17 @@ fn tag_listing_is_allowed_and_tag_writes_stay_reviewed() {
     ] {
         std::fs::write(&config, settings).unwrap();
         for harness in ["omp", "zcode"] {
-            let decision = decide(harness, command, &home, &repository);
+            let (decision, reason_code) = decide(harness, command, &home, &repository);
             if expected == "review" {
-                assert_ne!(decision, "allow", "{harness}: {command}: {settings}");
+                assert_ne!(
+                    decision, "allow",
+                    "{harness}: {command}: {settings}: {reason_code}"
+                );
             } else {
-                assert_eq!(decision, expected, "{harness}: {command}: {settings}");
+                assert_eq!(
+                    decision, expected,
+                    "{harness}: {command}: {settings}: {reason_code}"
+                );
             }
         }
     }
@@ -153,11 +161,17 @@ fn clean_preview_is_allowed_and_removal_stays_reviewed() {
     ] {
         std::fs::write(&config, settings).unwrap();
         for harness in ["omp", "zcode"] {
-            let decision = decide(harness, command, &home, &repository);
+            let (decision, reason_code) = decide(harness, command, &home, &repository);
             if expected == "review" {
-                assert_ne!(decision, "allow", "{harness}: {command}: {settings}");
+                assert_ne!(
+                    decision, "allow",
+                    "{harness}: {command}: {settings}: {reason_code}"
+                );
             } else {
-                assert_eq!(decision, expected, "{harness}: {command}: {settings}");
+                assert_eq!(
+                    decision, expected,
+                    "{harness}: {command}: {settings}: {reason_code}"
+                );
             }
         }
     }
@@ -239,11 +253,17 @@ fn apply_check_is_allowed_and_patching_stays_reviewed() {
     ] {
         std::fs::write(&config, settings).unwrap();
         for harness in ["omp", "zcode"] {
-            let decision = decide(harness, command, &home, &repository);
+            let (decision, reason_code) = decide(harness, command, &home, &repository);
             if expected == "review" {
-                assert_ne!(decision, "allow", "{harness}: {command}: {settings}");
+                assert_ne!(
+                    decision, "allow",
+                    "{harness}: {command}: {settings}: {reason_code}"
+                );
             } else {
-                assert_eq!(decision, expected, "{harness}: {command}: {settings}");
+                assert_eq!(
+                    decision, expected,
+                    "{harness}: {command}: {settings}: {reason_code}"
+                );
             }
         }
     }
