@@ -15,9 +15,10 @@
 //! and not plainly ignored, and any `.ignore` or `.rgignore` file sends the
 //! search to review. A negated pattern in a `.gitignore` or the repository's
 //! `info/exclude` is admitted only when it re-includes a literal path, such
-//! as `!.gitkeep` or `!.vscode/settings.json`, whose name is not a secret and
-//! that this walk does not prune; hidden entries with that name are then
-//! screened like any other descendant.
+//! as `!.gitkeep` or `!.env.example`, that this walk does not prune; hidden
+//! entries with that name are then screened like any other descendant, where
+//! the walk meets them. A rule at the repository root therefore holds only
+//! the searches that can reach the file it names.
 use super::{tree, ReadContext};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -90,7 +91,7 @@ fn reachable_by_default(root: &Path, operand: &Path, ignored: &mut Ignored) -> b
             return false;
         }
         directory.push(name);
-        if directory != operand && !ignored.admit_ignore_file(root, &directory) {
+        if directory != operand && !ignored.admit_ignore_file(&directory) {
             return false;
         }
     }
@@ -142,20 +143,22 @@ impl Ignored {
 
     /// Reads the `.gitignore` in `directory`, if any, and admits its
     /// negated patterns.
-    fn admit_ignore_file(&mut self, root: &Path, directory: &Path) -> bool {
+    fn admit_ignore_file(&mut self, directory: &Path) -> bool {
         match optional_ignore_lines(&directory.join(".gitignore")) {
-            Some(Some(lines)) => self.admit_negations(root, directory, &lines),
+            Some(Some(lines)) => self.admit_negations(&lines),
             Some(None) => true,
             None => false,
         }
     }
 
     /// Records the negated patterns among `lines`, read from an ignore file
-    /// that applies below `base`. A negation may only re-include a literal
+    /// that applies to the tree being walked. A negation may only re-include a literal
     /// path whose components this walk never prunes, so a plainly ignored
-    /// directory stays out of `rg`'s reach, and whose name is not a secret
-    /// the descendant screen would refuse.
-    fn admit_negations(&mut self, root: &Path, base: &Path, lines: &[String]) -> bool {
+    /// directory stays out of `rg`'s reach. Whether the name it re-includes
+    /// is one the descendant screen refuses is decided where the walk meets
+    /// the file, so a root rule naming a template beside the searched
+    /// directory does not answer for a search that never reaches it.
+    fn admit_negations(&mut self, lines: &[String]) -> bool {
         for line in lines {
             let Some(pattern) = line.strip_prefix('!') else {
                 continue;
@@ -173,9 +176,6 @@ impl Ignored {
             let Some(name) = components.last().filter(|_| literal && !pruned) else {
                 return false;
             };
-            if !tree::descendant_allowed(&base.join(pattern), root, true) {
-                return false;
-            }
             self.whitelisted.push((*name).to_owned());
         }
         true
@@ -218,8 +218,7 @@ fn ignored_names(root: &Path) -> Option<Ignored> {
             ignored.anywhere.push(name.to_owned());
         }
     }
-    (ignored.admit_negations(root, root, &excludes) && ignored.admit_negations(root, root, &lines))
-        .then_some(ignored)
+    (ignored.admit_negations(&excludes) && ignored.admit_negations(&lines)).then_some(ignored)
 }
 
 /// The git directories whose `info/exclude` `rg` may read: `.git` itself, or
@@ -284,7 +283,7 @@ fn walk(root: &Path, operand: &Path, ignored: &mut Ignored) -> bool {
         }
         // The directory's own `.gitignore` applies to its entries, so its
         // negations are admitted before any entry is screened.
-        if directory != root && !ignored.admit_ignore_file(root, &directory) {
+        if directory != root && !ignored.admit_ignore_file(&directory) {
             return false;
         }
         let Ok(entries) = std::fs::read_dir(&directory) else {
