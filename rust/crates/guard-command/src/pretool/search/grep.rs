@@ -1,5 +1,5 @@
 use super::{
-    options, short_search_option, tree, unsafe_search_value, ReadContext, SearchValueRole,
+    options, short_search_option, sibling, tree, unsafe_search_value, ReadContext, SearchValueRole,
 };
 
 /// Which missing operands a proof may accept.
@@ -266,6 +266,7 @@ fn arguments_pass(
             targets.push(argument.as_str());
             let proven = recursive
                 || proven_glob(argument, context)
+                || sibling::named_path(argument, context, absent.plain)
                 || (absent.plain && absent_target(argument, context));
             if !proven && unsafe_search_value(SearchValueRole::Path, argument, context) {
                 return false;
@@ -297,7 +298,14 @@ fn arguments_pass(
                     &excluded_directories,
                     true,
                     dereference,
-                ) || (!dereference && proven_glob(target, context))
+                ) || (!dereference
+                    && (sibling::grep_walk_root(
+                        target,
+                        context,
+                        &excluded_files,
+                        &excluded_directories,
+                        true,
+                    ) || proven_glob(target, context)))
             };
             recursive_targets_proven(&targets, proven, absent.recursive.then_some(context))
         })

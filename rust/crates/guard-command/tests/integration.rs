@@ -58,6 +58,7 @@ pub mod pretool_find_hidden_home_match;
 pub mod pretool_forged_worktree;
 pub mod pretool_generic;
 pub mod pretool_generic_powershell;
+pub mod pretool_grep_sibling_tree;
 pub mod pretool_git_branch_listing;
 pub mod pretool_git_branch_rename;
 pub mod pretool_git_cd_reads;

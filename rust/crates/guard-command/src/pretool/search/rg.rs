@@ -246,7 +246,7 @@ fn rg_arguments_pass(
             if unsafe_search_value(SearchValueRole::Path, argument, context)
                 && !tree::rg_root_inside_cwd(argument, context)
                 && !sibling::rg_sibling_repository_root(argument, context)
-                && !sibling::rg_sibling_repository_path(argument, context, allow_absent)
+                && !sibling::named_path(argument, context, allow_absent)
                 && !tree::safe_recursive_search_target(argument, context)
                 && (!argument.contains(['*', '?', '['])
                     || !tree::safe_glob_search_operand(argument, context))
