@@ -322,6 +322,9 @@ mod guard_store_local_cli_grants;
 #[cfg(test)]
 mod guard_store_local_cli_vectors_tests;
 mod guard_store_local_mcp_observation;
+mod guard_store_native_receipts;
+#[cfg(test)]
+mod guard_store_native_receipts_tests;
 mod guard_store_native_review_consume;
 #[cfg(test)]
 mod guard_store_native_review_consume_tests;
@@ -496,6 +499,7 @@ mod mcp_tool_policy_lookup;
 mod mcp_tool_policy_proxy;
 mod mcp_tool_policy_revalidate;
 mod memory_pattern;
+mod native_decision_receipt;
 mod native_exact_action_op;
 mod native_hook_receipt;
 mod native_review_link;

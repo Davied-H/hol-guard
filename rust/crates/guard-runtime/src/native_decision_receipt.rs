@@ -271,7 +271,7 @@ fn valid_policy(receipt: &PyVal) -> bool {
 }
 
 /// `json.dumps(value, sort_keys=True, separators=(",", ":"), ...)`.
-pub(super) fn dumps_sorted(value: &PyVal, ensure_ascii: bool) -> String {
+pub(crate) fn dumps_sorted(value: &PyVal, ensure_ascii: bool) -> String {
     let mut out = String::new();
     dumps(&sorted(value), ensure_ascii, false, &mut out);
     out
@@ -324,7 +324,7 @@ fn canonical_identity(receipt: &PyVal) -> String {
 }
 
 /// `validate_native_decision_receipt(value) is not None`.
-pub(super) fn valid(receipt: &PyVal) -> bool {
+pub(crate) fn valid(receipt: &PyVal) -> bool {
     let Some(entries) = receipt.as_dict() else {
         return false;
     };

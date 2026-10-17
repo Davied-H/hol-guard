@@ -49,6 +49,7 @@ use crate::guard_store_inventory as inventory;
 use crate::guard_store_local_cli as local_cli;
 use crate::guard_store_local_cli_grants as local_cli_grants;
 use crate::guard_store_local_mcp_observation as local_mcp;
+use crate::guard_store_native_receipts as native_receipts;
 use crate::guard_store_native_review_consume as native_review_consume;
 use crate::guard_store_observed_mcp as observed_mcp;
 use crate::guard_store_outbox_binding::{
@@ -373,6 +374,7 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "next_aibom_trust_attestation_sequence"
         | "add_receipt"
         | "record_tool_call_evidence"
+        | "record_native_decision_receipt"
         | "set_receipt_action_envelope"
         | "update_receipt_policy_decision"
         | "update_receipt_approval_context"
@@ -553,6 +555,9 @@ fn dispatch(
         "add_receipt" => receipt_writes::add_receipt(connection, args),
         "record_tool_call_evidence" => {
             tool_call_evidence::record_tool_call_evidence(connection, args)
+        }
+        "record_native_decision_receipt" => {
+            native_receipts::record_native_decision_receipt(connection, args)
         }
         "set_receipt_action_envelope" => receipt_writes::set_action_envelope(connection, args),
         "update_receipt_policy_decision" => {
