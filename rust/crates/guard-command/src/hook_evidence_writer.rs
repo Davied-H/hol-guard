@@ -2003,3 +2003,11 @@ pub use receipt::{
     canonical_receipt_bytes, valid_prompt_risk_classes, validate_native_decision_receipt,
     NativeReceiptValidation,
 };
+
+#[path = "hook_evidence_preview.rs"]
+mod preview;
+
+pub use preview::{
+    build_invocation_preview, build_invocation_preview_from_payload, checked_command_from_payload,
+    INVOCATION_PREVIEW_MAX_CHARS,
+};
