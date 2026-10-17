@@ -84,7 +84,7 @@ pub fn parse_dependencies(present: bool, text: Option<&str>) -> Value {
         return invalid();
     };
     if !keys_are(&manifest, ["schema_version", "tools"])
-        || manifest["schema_version"] != Value::from(MANIFEST_SCHEMA)
+        || manifest["schema_version"] != MANIFEST_SCHEMA
     {
         return invalid();
     }
