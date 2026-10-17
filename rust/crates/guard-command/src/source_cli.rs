@@ -4,8 +4,8 @@
 
 use crate::native_command_program::packaged_command_program_bytes;
 use crate::native_command_program::source::{
-    compare_programs, compile_build_request, compile_source_stream, descriptor_schema,
-    evaluate_batch, run_fixtures, source_schema, MAX_SOURCE_INPUT_BYTES,
+    compare_programs, compile_build_request, compile_pack_stream, compile_source_stream,
+    descriptor_schema, evaluate_batch, run_fixtures, source_schema, MAX_SOURCE_INPUT_BYTES,
 };
 use serde_json::{json, Value};
 use std::io::{BufRead, Read, Write};
@@ -125,6 +125,7 @@ pub fn is_command(arguments: &[String]) -> bool {
         | "validate"
         | "compile"
         | "compile-stream"
+        | "compile-packs"
         | "test"
         | "compare"
         | "evaluate-batch" => arguments.len() == 1,
@@ -222,7 +223,10 @@ pub fn main(arguments: Vec<String>) -> i32 {
     if arguments == ["github-classify-serve"] {
         return github_classify_serve();
     }
-    let result = if arguments == ["compile-stream"] {
+    let result = if arguments == ["compile-packs"] {
+        compile_pack_stream(std::io::stdin().lock(), std::io::stdout().lock())
+            .map_err(|code| (code, String::new()))
+    } else if arguments == ["compile-stream"] {
         compile_source_stream(std::io::stdin().lock())
             .and_then(|output| {
                 serde_json::to_value(output).map_err(|_| "command_source_encoding_failed".into())

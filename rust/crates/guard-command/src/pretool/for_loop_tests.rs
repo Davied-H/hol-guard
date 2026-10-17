@@ -41,6 +41,12 @@ fn read_only_loops_match_their_unrolled_form() {
             "echo src/*.ts; echo tests/*.ts",
         ),
         ("for d in src/*/; do echo $d; done", "echo src/*/"),
+        // Inside double quotes a backslash before an ordinary character is
+        // part of the word, so `fi\le` is not the loop variable's name.
+        (
+            "for file in a b; do echo \"fi\\le\" \"$file\"; done",
+            "echo \"fi\\le\" \"a\"; echo \"fi\\le\" \"b\"",
+        ),
     ] {
         assert_eq!(decide(looped), decide(unrolled), "{looped}");
         assert_eq!(decide(looped).0, "allow", "{looped}");
@@ -117,6 +123,14 @@ fn unsupported_loops_fall_back_to_review() {
         "for f in README.md; do unset f; cat $f; done",
         "for f in a,b; do export IFS=,; cat $f; done",
         "for f in README.md; do cat $f \u{1}; done",
+        // Quoting splits the name in the written text, not in the word the
+        // shell builds.
+        "for file in README.md; do fi''le=secret; cat $file; done",
+        "for file in README.md; do fi\"\"le=secret; cat $file; done",
+        "for file in README.md; do fi\\le=secret; cat $file; done",
+        "for file in README.md; do read fi''le; cat $file; done",
+        "for file in README.md; do printf -v fi''le %s secret; cat $file; done",
+        "for file in a,b; do export I''FS=,; cat $file; done",
     ] {
         assert_eq!(decide(command).0, "review", "{command}");
     }
