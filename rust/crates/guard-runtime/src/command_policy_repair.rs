@@ -11,7 +11,6 @@
 
 use std::path::Path;
 
-use guard_contracts::NativeCommandControlBindingV1;
 use serde_json::{Map, Value};
 
 use crate::native_review_link::{repair_page_url, RepairPage};
@@ -33,15 +32,11 @@ const APPROVAL_REASON_WITHOUT_URL: &str = concat!(
 ///
 /// Everything else is left exactly as the native evaluation produced it,
 /// including a block this module cannot compose a link for byte for byte.
-pub(crate) fn apply(
-    result: &mut Value,
-    binding: Option<&NativeCommandControlBindingV1>,
-    guard_home: &Path,
-) {
+pub(crate) fn apply(result: &mut Value, health: Option<&str>, guard_home: &Path) {
     let Some(object) = result.as_object() else {
         return;
     };
-    if !repairable(object, binding) {
+    if !repairable(object, health) {
         return;
     }
     let url = match repair_url(guard_home) {
@@ -73,15 +68,12 @@ pub(crate) fn apply(
     );
 }
 
-fn repairable(
-    object: &Map<String, Value>,
-    binding: Option<&NativeCommandControlBindingV1>,
-) -> bool {
+fn repairable(object: &Map<String, Value>, health: Option<&str>) -> bool {
     let text = |key: &str| object.get(key).and_then(Value::as_str).unwrap_or_default();
     text("reason_code") == AUTHORITY_BLOCK_REASON
         && text("minimum_action") != "allow"
         && object.get("decision") != Some(&Value::String("allow".to_owned()))
-        && binding.is_some_and(|binding| REPAIRABLE_HEALTH.contains(&binding.health.as_str()))
+        && health.is_some_and(|health| REPAIRABLE_HEALTH.contains(&health))
 }
 
 /// The page shape the daemon never writes, which Python would still sign.

@@ -425,7 +425,9 @@ fn evaluate_validated_envelope(
     if event_name == "PreToolUse" {
         crate::command_policy_repair::apply(
             &mut result,
-            policy_snapshot.and_then(|snapshot| snapshot.command_extensions.as_ref()),
+            policy_snapshot
+                .and_then(|snapshot| snapshot.command_extensions.as_ref())
+                .map(guard_command::native_command_controls::CompiledNativeCommandControls::health),
             std::path::Path::new(&envelope.source.guard_home),
         );
     }

@@ -7,21 +7,6 @@ use serde_json::json;
 
 use crate::claude_hook_bridge_fixture::{write_private, GuardHome};
 
-fn binding(health: &str) -> NativeCommandControlBindingV1 {
-    NativeCommandControlBindingV1 {
-        schema: "native-command-control-binding.v1".to_owned(),
-        program_digest: "0".repeat(64),
-        catalog_digest: "0".repeat(64),
-        trust_digest: "0".repeat(64),
-        health: health.to_owned(),
-        revision: 1,
-        managed_revision: 1,
-        effective_digest: "0".repeat(64),
-        layers: Vec::new(),
-        authority: None,
-    }
-}
-
 fn authority_block() -> Value {
     json!({
         "decision": "deny",
@@ -35,7 +20,7 @@ fn authority_block() -> Value {
 fn without_locator(health: &str) -> Value {
     let home = GuardHome::new(&format!("repair-{health}"));
     let mut result = authority_block();
-    apply(&mut result, Some(&binding(health)), &home.home);
+    apply(&mut result, Some(health), &home.home);
     result
 }
 
@@ -99,7 +84,7 @@ fn only_a_denied_authority_block_is_repaired() {
         json!({"decision": "deny", "minimum_action": "block"}),
     ] {
         let mut result = case.clone();
-        apply(&mut result, Some(&binding("tampered")), &home.home);
+        apply(&mut result, Some("tampered"), &home.home);
         assert_eq!(result, case);
     }
 }
@@ -116,7 +101,7 @@ fn an_unbound_snapshot_repairs_nothing() {
 fn a_live_locator_signs_the_repair_page_for_its_own_surface() {
     let home = with_locator("repair-signed", 4310);
     let mut result = authority_block();
-    apply(&mut result, Some(&binding("tampered")), &home.home);
+    apply(&mut result, Some("tampered"), &home.home);
 
     let url = result["repair_url"].as_str().expect("repair url");
     let (page, token) = url.split_once("#guard-token=").expect("signed fragment");
@@ -149,7 +134,7 @@ fn a_locator_the_state_does_not_vouch_for_is_ignored() {
     home.write_state(&state);
 
     let mut result = authority_block();
-    apply(&mut result, Some(&binding("tampered")), &home.home);
+    apply(&mut result, Some("tampered"), &home.home);
     assert_eq!(result["reason"], APPROVAL_REASON_WITHOUT_URL);
     assert!(result.get("repair_url").is_none());
 }
@@ -173,7 +158,7 @@ fn a_stopped_daemon_leaves_no_link() {
     .unwrap();
 
     let mut result = authority_block();
-    apply(&mut result, Some(&binding("tampered")), &home.home);
+    apply(&mut result, Some("tampered"), &home.home);
     assert_eq!(result["reason"], APPROVAL_REASON_WITHOUT_URL);
     assert!(result.get("repair_url").is_none());
 }

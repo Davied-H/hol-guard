@@ -33,6 +33,11 @@ impl CompiledNativeCommandControls {
         Self::for_program(binding, packaged_command_program()?)
     }
 
+    /// The authority health the bound control program reported.
+    pub fn health(&self) -> &str {
+        &self.binding.health
+    }
+
     // Production always supplies the packaged, attested program through new().
     // The crate-local seam also lets diagnostic tests vary real compiled
     // catalogs without duplicating any control admission or evaluation logic.
