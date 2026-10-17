@@ -6,7 +6,7 @@ pub(super) struct Evaluation<'a> {
     pub(super) program: &'a NativeCommandProgram,
     pub(super) command: &'a CanonicalCommandV1,
     pub(super) deadline: Option<Instant>,
-    pub(super) memo: Vec<Option<MatchResult>>,
+    pub(super) memo: NodeMemo,
 }
 
 impl Evaluation<'_> {
@@ -16,7 +16,7 @@ impl Evaluation<'_> {
 
     pub(super) fn evaluate(&mut self, index: usize) -> MatchResult {
         self.check_deadline()?;
-        if let Some(value) = &self.memo[index] {
+        if let Some(value) = self.memo.get(index) {
             return value.clone();
         }
         let program = self.program;
@@ -94,7 +94,7 @@ impl Evaluation<'_> {
             }
         };
         self.check_deadline()?;
-        self.memo[index] = Some(value.clone());
+        self.memo.insert(index, value.clone())?;
         value
     }
 

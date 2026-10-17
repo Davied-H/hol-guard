@@ -1,7 +1,7 @@
 //! Immutable, content-bound command extension program. No Python or IPC runs
 //! here. The only production program input is packaged with the resident.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
@@ -76,8 +76,14 @@ mod admission;
 pub(crate) use admission::{public_ipv4, public_ipv6};
 #[path = "native_command_program_compile.rs"]
 mod compile;
+#[path = "native_command_program_dispatch.rs"]
+mod dispatch;
 #[path = "native_command_program_evaluation.rs"]
 mod evaluation;
+pub(crate) use dispatch::CommandCandidateIndex;
+#[path = "native_command_program_memo.rs"]
+mod memo;
+use memo::{MemoLayout, NodeMemo};
 #[path = "native_command_program_observations.rs"]
 mod observations;
 #[path = "native_command_source.rs"]
@@ -269,6 +275,8 @@ pub struct NativeCommandProgram {
     keyword_index: BTreeMap<String, Vec<usize>>,
     unindexed: Vec<usize>,
     rule_indices: BTreeMap<String, usize>,
+    extension_rule_indices: Vec<Vec<usize>>,
+    baseline_allow_permissions: BTreeSet<String>,
 }
 
 pub fn packaged_command_program() -> Result<Arc<NativeCommandProgram>, &'static str> {
@@ -324,38 +332,23 @@ fn bounded_id(value: &str) -> bool {
 }
 
 impl NativeCommandProgram {
+    pub(crate) fn permission_baseline_allows(&self, id: &str) -> bool {
+        self.baseline_allow_permissions.contains(id)
+    }
+
+    pub(crate) fn extension_rules(&self, index: usize) -> impl Iterator<Item = &ProgramRule> {
+        self.extension_rule_indices[index]
+            .iter()
+            .map(|index| &self.rules[*index])
+    }
+
     pub fn candidate_rule_indices(&self, command: &CanonicalCommandV1) -> Vec<usize> {
-        let mut candidates = vec![false; self.rules.len()];
-        for index in &self.unindexed {
-            candidates[*index] = true;
-        }
-        for segment in &command.segments {
-            if let Some(executable) = segment.executable.as_deref() {
-                if let Some(indices) = self
-                    .executable_index
-                    .get(&lowercase_for_ascii_comparison(basename(executable)))
-                {
-                    for index in indices {
-                        candidates[*index] = true;
-                    }
-                }
-            }
-            for token in &segment.tokens {
-                if let Some(indices) = self
-                    .keyword_index
-                    .get(&lowercase_for_ascii_comparison(token))
-                {
-                    for index in indices {
-                        candidates[*index] = true;
-                    }
-                }
-            }
-        }
-        candidates
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, selected)| selected.then_some(index))
-            .collect()
+        dispatch::candidates(
+            command,
+            &self.executable_index,
+            &self.keyword_index,
+            &self.unindexed,
+        )
     }
 
     pub fn runtime_coverage(&self) -> Vec<(&str, bool)> {
@@ -391,11 +384,7 @@ impl NativeCommandProgram {
             .iter()
             .map(|name| lowercase_for_ascii_comparison(basename(name)))
             .collect();
-        for rule in self
-            .rules
-            .iter()
-            .filter(|rule| rule.extension_index == extension_index)
-        {
+        for rule in self.extension_rules(extension_index) {
             match rule.matcher {
                 Some(node) => names.extend(self.required_executables(node, 0)?),
                 None => names.extend(compatibility?.iter().map(|name| (*name).to_owned())),

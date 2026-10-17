@@ -477,7 +477,11 @@ impl NativeCommandProgram {
             .map(|(index, rule)| (rule.rule_id.clone(), index))
             .collect();
         observe_phase("rule_candidate_indexes");
+        let (extension_rule_indices, baseline_allow_permissions) =
+            dispatch::admission_indexes(&raw.extensions, &rules);
         Ok(Self {
+            baseline_allow_permissions,
+            extension_rule_indices,
             rule_indices,
             program_digest: raw.program_digest,
             catalog_digest: raw.catalog_digest,

@@ -10,7 +10,9 @@ use guard_contracts::{
     NATIVE_COMMAND_RECEIPT_BINDING_SCHEMA,
 };
 
-use crate::native_command_program::{digest_value, packaged_command_program, NativeCommandProgram};
+use crate::native_command_program::{
+    digest_value, packaged_command_program, CommandCandidateIndex, NativeCommandProgram,
+};
 use crate::CanonicalCommandV1;
 
 #[path = "native_command_controls_risk.rs"]
@@ -21,6 +23,7 @@ pub struct CompiledNativeCommandControls {
     program: Arc<NativeCommandProgram>,
     binding: NativeCommandControlBindingV1,
     active_extensions: BTreeSet<String>,
+    candidate_index: CommandCandidateIndex,
     blocked_extensions: BTreeSet<String>,
     blocked_permissions: BTreeSet<String>,
     explicitly_enabled_permissions: BTreeSet<String>,
@@ -173,6 +176,7 @@ impl CompiledNativeCommandControls {
             .map(|(index, rule)| (rule.rule_id.clone(), index))
             .collect();
         Ok(Self {
+            candidate_index: CommandCandidateIndex::for_active(&program, &active_extensions),
             program,
             binding: binding.clone(),
             active_extensions,

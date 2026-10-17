@@ -147,12 +147,13 @@ impl CompiledNativeCommandControls {
         context: crate::pretool::PathContext<'_>,
         environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
     ) -> Result<(NativeCommandObservationBatchV1, Option<&'static str>), &'static str> {
-        match self.program.observe_in(
+        match self.program.observe_in_with_dispatch(
             command,
             &self.active_extensions,
             deadline,
             context,
             environment,
+            Some(&self.candidate_index),
         ) {
             Err(error) if UNMODELED_ERRORS.contains(&error) => self
                 .unmodeled_floor(command, context)
@@ -272,10 +273,8 @@ impl CompiledNativeCommandControls {
             return None;
         }
         let mut floor = "review";
-        for (index, extension) in self.program.extensions.iter().enumerate() {
-            if !self.active_extensions.contains(&extension.extension_id) {
-                continue;
-            }
+        for &index in self.candidate_index.extension_indices() {
+            let extension = &self.program.extensions[index];
             let compatibility = COMPATIBILITY_EXECUTABLES
                 .iter()
                 .find(|(id, _)| *id == extension.extension_id)
@@ -311,11 +310,11 @@ impl CompiledNativeCommandControls {
     /// command names. An unknown name set fails closed: that extension can
     /// match without a known program, so it is treated as owning the command.
     fn external_source_names_a_program(&self, named: &BTreeSet<String>) -> bool {
-        self.program
-            .extensions
+        self.candidate_index
+            .extension_indices()
             .iter()
-            .enumerate()
-            .any(|(index, extension)| {
+            .any(|&index| {
+                let extension = &self.program.extensions[index];
                 if extension.trust_class != "external"
                     || !self.active_extensions.contains(&extension.extension_id)
                 {
@@ -345,9 +344,7 @@ impl CompiledNativeCommandControls {
             return "block";
         }
         self.program
-            .rules
-            .iter()
-            .filter(|rule| rule.extension_index == index)
+            .extension_rules(index)
             .map(|rule| {
                 if self
                     .explicitly_enabled_permissions
