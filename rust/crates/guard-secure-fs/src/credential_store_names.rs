@@ -218,6 +218,59 @@ pub fn secret_bearing_file_name(name: &str) -> bool {
     SECRET_BEARING_STEMS.contains(&bare.split('.').next().unwrap_or(bare))
 }
 
+/// Whether a search pattern can select a file a secret is kept in.
+///
+/// A pattern is not a file name: it selects whatever it matches, so a word the
+/// pattern merely contains is a word the printed names can carry, and
+/// `*config*` reaches `config.toml` as surely as `config.toml` does. The stems
+/// and suffixes [`secret_bearing_file_name`] reads as a whole name are
+/// therefore read here as substrings, and `env` and `id_` with them, because
+/// an environment file and a private key are named for what they hold
+/// wherever they sit.
+///
+/// A wildcard is read as the wildcard it is rather than as a character of its
+/// own. `fd` takes its pattern as a regular expression and `find -name` takes
+/// a glob, so `t.ken`, `cred?ntials` and `to*ken` each name the thing the
+/// plain spelling does; a screen that reads the pattern's literal characters
+/// alone sees three words it has never heard of. The pattern is matched
+/// against each word in both directions, so a pattern shorter than the word
+/// and one longer than it are both caught, and `*` is tried as nothing at all
+/// as well as as a character, which is what lets `to*ken` reach `token`.
+pub fn pattern_can_select_secret(pattern: &str) -> bool {
+    let lowered = pattern.to_ascii_lowercase();
+    let spellings = [lowered.replace('*', ""), lowered];
+    SECRET_BEARING_STEMS
+        .iter()
+        .chain(SECRET_BEARING_SUFFIXES.iter())
+        .chain(["env", "id_"].iter())
+        .any(|word| {
+            spellings
+                .iter()
+                .any(|spelling| wildcards_reach(spelling, word))
+        })
+}
+
+/// Whether `pattern`, whose `.`, `?` and `*` stand for any character, and
+/// `word` name the same thing anywhere they overlap.
+pub fn wildcards_reach(pattern: &str, word: &str) -> bool {
+    let pattern: Vec<char> = pattern.chars().collect();
+    let word: Vec<char> = word.chars().collect();
+    if pattern.is_empty() || word.is_empty() {
+        return false;
+    }
+    let aligned = |pattern: &[char], word: &[char]| {
+        pattern
+            .iter()
+            .zip(word)
+            .all(|(spelled, letter)| matches!(spelled, '.' | '?' | '*') || spelled == letter)
+    };
+    if pattern.len() >= word.len() {
+        pattern.windows(word.len()).any(|at| aligned(at, &word))
+    } else {
+        word.windows(pattern.len()).any(|at| aligned(&pattern, at))
+    }
+}
+
 /// Download caches. A cache holds third-party bytes a package manager
 /// fetched, which is not what this rule was opened for, and the package
 /// source rule already refuses to treat one as an install root.

@@ -76,6 +76,24 @@ fn migration_script_stem(stem: &str) -> bool {
         .any(|word| DEFINITION_WORDS.contains(&word) || MIGRATION_WORDS.contains(&word))
 }
 
+/// Whether any directory on the way to `path` stores credentials, whatever
+/// the path's last component is called.
+///
+/// [`credential_named_path`] answers for one file and stands aside as soon as
+/// that file is source code, so `secrets/service.ts` clears it. A rule that
+/// takes a path as a walk root, or as the repository a later screen measures
+/// its descendants against, needs the other half of the question: a store on
+/// the way down keeps its review even where the name at the end does not look
+/// like a credential's.
+pub fn credential_directory_path(path: &Path) -> bool {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .split('/')
+        .map(win32_name)
+        .filter(|part| !part.is_empty())
+        .any(credential_directory)
+}
+
 /// A directory named for credentials: a marker on its own (`secrets`,
 /// `.auth`, `token`), or a compound naming stored secrets with a plural
 /// marker (`prod-secrets`, `aws_credentials`, `api-tokens`). A compound with

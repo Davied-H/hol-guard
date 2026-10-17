@@ -138,36 +138,36 @@ const DOCUMENT_SUFFIXES: [&str; 3] = [".md", ".markdown", ".rst"];
 ///
 /// A wildcard stands for whatever the tree happens to hold, so a pattern
 /// built around one selects names the agent never wrote: `*.json` prints
-/// `auth.json`, `aut*` and `a?th.json` print it too, and `*h.json` gets past
-/// a check that reads the literal characters alone. Deciding which names a
-/// glob can reach means deciding it for every secret-bearing spelling, so
-/// this screen does not try: below a home dot-directory a pattern has to be
-/// the name itself, read the way a file name is read, with the stems and
-/// suffixes a token, key or settings file is written under refused, along
-/// with anything aimed at a hidden entry, which is where a tool keeps its own
-/// login. `.env` files are refused by name rather than by stem, because an
-/// environment file is named for what it holds wherever it sits.
+/// `auth.json`, `aut*` and `a?th.json` print it too. Deciding which names a
+/// glob can reach means deciding it for every secret-bearing spelling, so a
+/// glob survives only as a document suffix anchored at the end of the name:
+/// `find ~/.codex -name "*.md"` is how an agent finds the notes a harness
+/// keeps, and every path it can print is prose. What is left of such a
+/// pattern is still read through [`pattern_can_select_secret`], which lets a
+/// wildcard stand for the letters it could take, so `cred?ntials*.md` is
+/// refused along with the name it spells.
 ///
-/// The one glob that survives is a document suffix. `find ~/.codex -name
-/// "*.md"` is how an agent finds the notes a harness keeps, and the suffix is
-/// anchored at the end of the name, so every path it can print is prose.
+/// Without a wildcard the pattern is the name itself, so it is read the way a
+/// file name is read: the stems and suffixes a token, key or login file is
+/// written under, refused as whole names rather than as letters appearing
+/// somewhere, which is what keeps `keyboard` a name and not a key. `.env`
+/// files are refused wherever the word appears, because an environment file
+/// is named for what it holds wherever it sits, and a pattern aimed at a
+/// hidden entry is refused outright: that is where a tool keeps its own
+/// login.
 fn selects_ordinary_names(pattern: &str) -> bool {
     let lowered = pattern.to_ascii_lowercase();
-    if lowered.starts_with('.')
-        || lowered.contains(['/', '\\'])
-        || lowered.contains("..")
-        || lowered.contains("env")
-    {
+    if lowered.starts_with('.') || lowered.contains(['/', '\\']) || lowered.contains("..") {
         return false;
     }
-    if DOCUMENT_SUFFIXES
-        .iter()
-        .any(|suffix| lowered.ends_with(suffix))
-    {
-        return true;
+    if lowered.contains(['*', '?', '[', ']', '{', '}']) {
+        return DOCUMENT_SUFFIXES
+            .iter()
+            .any(|suffix| lowered.ends_with(suffix))
+            && !crate::credential_store_names::pattern_can_select_secret(&lowered);
     }
-    !lowered.contains(['*', '?', '[', ']', '{', '}'])
-        && lowered.chars().count() >= 3
+    lowered.chars().count() >= 3
+        && !lowered.contains("env")
         && !crate::credential_store_names::secret_bearing_file_name(&lowered)
 }
 

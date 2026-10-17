@@ -12,11 +12,29 @@ pub(in crate::pretool) fn safe_rg_stdin_arguments(arguments: &[String]) -> bool 
         crate::pretool::PathContext::default(),
         true,
         true,
+        true,
     )
 }
 
 pub(super) fn safe_rg_arguments(arguments: &[String], context: ReadContext<'_>) -> bool {
-    safe_rg_arguments_inner(arguments, context, false, true)
+    safe_rg_arguments_inner(arguments, context, false, true, true)
+}
+
+/// An `rg` segment inside its command. A missing operand is proven only
+/// while it stays missing: no other segment may create a file, directory or
+/// link there, because `rg` reads whatever appears at that path and walks it
+/// when it turns out to be a directory.
+pub(super) fn safe_rg_segment(
+    model: &crate::CanonicalCommandV1,
+    segment: &crate::CommandSegmentV1,
+    context: ReadContext<'_>,
+) -> bool {
+    let absent = model
+        .segments
+        .iter()
+        .filter(|other| other.span != segment.span)
+        .all(|other| super::grep::creates_nothing(other, true));
+    safe_rg_arguments_inner(&segment.arguments, context, false, true, absent)
 }
 
 /// A review reason for a lone `rg` held back only because an ignore file
@@ -36,8 +54,8 @@ pub(in crate::pretool) fn rg_hidden_whitelist_reason(
         && model.wrapper_chain.is_empty()
         && segment.environment_names.is_empty()
         && super::super::executable_basename(segment.executable.as_deref()?) == "rg"
-        && safe_rg_arguments_inner(&segment.arguments, context, false, false)
-        && !safe_rg_arguments_inner(&segment.arguments, context, false, true);
+        && safe_rg_arguments_inner(&segment.arguments, context, false, false, true)
+        && !safe_rg_arguments_inner(&segment.arguments, context, false, true, true);
     held.then(|| {
         "HOL Guard requires review because an ignore file here re-includes a hidden file (for example a `!.env.example` rule), so rg would read that file too. Name the directories to search, such as `rg PATTERN src docs`, or list names with `rg --files`."
             .to_owned()
@@ -49,8 +67,16 @@ fn safe_rg_arguments_inner(
     context: ReadContext<'_>,
     stdin_only: bool,
     prove_roots: bool,
+    allow_absent: bool,
 ) -> bool {
-    rg_arguments_pass(arguments, context, stdin_only, prove_roots, false)
+    rg_arguments_pass(
+        arguments,
+        context,
+        stdin_only,
+        prove_roots,
+        false,
+        allow_absent,
+    )
 }
 
 /// One pass over `rg` arguments. With `pattern_from_option`, every
@@ -61,6 +87,7 @@ fn rg_arguments_pass(
     stdin_only: bool,
     prove_roots: bool,
     pattern_from_option: bool,
+    allow_absent: bool,
 ) -> bool {
     let mut pending_value: Option<SearchValueRole> = None;
     // `-g`/`--glob` (not the case-blind `--iglob`) awaiting its value.
@@ -219,6 +246,7 @@ fn rg_arguments_pass(
             if unsafe_search_value(SearchValueRole::Path, argument, context)
                 && !tree::rg_root_inside_cwd(argument, context)
                 && !sibling::rg_sibling_repository_root(argument, context)
+                && !sibling::rg_sibling_repository_path(argument, context, allow_absent)
                 && !tree::safe_recursive_search_target(argument, context)
                 && (!argument.contains(['*', '?', '['])
                     || !tree::safe_glob_search_operand(argument, context))
@@ -233,7 +261,14 @@ fn rg_arguments_pass(
     // `-f` supplies one, wherever that option appears: in `rg .env -e KEY`,
     // `.env` is a path. Check again with every positional as a path.
     if pattern_option_seen && !pattern_from_option {
-        return rg_arguments_pass(arguments, context, stdin_only, prove_roots, true);
+        return rg_arguments_pass(
+            arguments,
+            context,
+            stdin_only,
+            prove_roots,
+            true,
+            allow_absent,
+        );
     }
     // An inherited RIPGREP_CONFIG_PATH prepends its lines to these
     // arguments, so `--pre`, `--hidden` or `--no-ignore` there would undo

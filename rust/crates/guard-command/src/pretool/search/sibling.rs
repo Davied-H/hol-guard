@@ -326,3 +326,114 @@ fn walk(root: &Path, operand: &Path, ignored: &mut Ignored) -> bool {
     }
     true
 }
+
+/// True when `value` names one file inside a git working tree below home, or
+/// a path that does not exist inside one.
+///
+/// `rg` searches a file named on its command line whatever the ignore rules
+/// say, so the walk the directory rule performs has nothing to decide here:
+/// the command opens that one file and no other. What is left is the screen
+/// every descendant of a sibling root already passes — no hidden component on
+/// the way down, and a name that is not a credential's. A path that does not
+/// exist reads nothing at all: it prints an error, as a probe `ls` of the
+/// same path does, and agents spell one whenever they guess at a file name.
+/// It is admitted under the same component screen, so anything that turns up
+/// there before the command runs is a file this rule would have read anyway.
+pub(in crate::pretool) fn rg_sibling_repository_path(
+    value: &str,
+    context: ReadContext<'_>,
+    allow_absent: bool,
+) -> bool {
+    if value.is_empty()
+        || value.len() > 4096
+        || value.contains(tree::HAZARDS)
+        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || (value.starts_with('~') && value != "~" && !value.starts_with("~/"))
+        // A parent step resolves somewhere this screen cannot read off the
+        // spelling, and the directory rule already covers the roots agents
+        // reach that way.
+        || value.split(['/', '\\']).any(|part| part == "..")
+        || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
+    {
+        return false;
+    }
+    let Some(operand) = tree::expanded_operand(value, context) else {
+        return false;
+    };
+    let Some((present, missing)) = nearest_present(&operand) else {
+        return false;
+    };
+    let Some(root) = present
+        .ancestors()
+        .find(|path| std::fs::symlink_metadata(path.join(".git")).is_ok())
+    else {
+        return false;
+    };
+    let Ok(relative) = present.strip_prefix(root) else {
+        return false;
+    };
+    if !super::super::git_routes::repository_below_home(root, context) {
+        return false;
+    }
+    let mut named = root.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(name) = component else {
+            return false;
+        };
+        named.push(name);
+        if !tree::descendant_allowed(&named, root, false) {
+            return false;
+        }
+    }
+    // Everything below the repository root is screened relative to it, so no
+    // screen above sees the directories the repository itself sits in, and
+    // `credential_named_path` stands aside as soon as the last component is
+    // source code: a repository kept inside a store
+    // (`~/Code/secrets/service.ts`) would clear both and open everything it
+    // holds. Only the path down to the root is read here. The components
+    // below it keep the screen they already have, which is the one that
+    // knows a test tree's fixtures from a store and a source file from a
+    // credential, so `src/auth.ts` stays the source file it is named after.
+    if guard_secure_fs::credential_directory_path(root) {
+        return false;
+    }
+    if missing.is_empty() {
+        return present.is_file() && tree::descendant_allowed(&present, root, true);
+    }
+    // Every missing name is screened as a file, not only the last one. The
+    // screen answers for the path as it stands when the command is prepared,
+    // and a name that is absent then may be anything by the time `rg` opens
+    // it; holding each one to the narrower screen means the thing that turns
+    // up there cannot be a store `rg` would then walk.
+    allow_absent
+        && present.is_dir()
+        && missing.iter().all(|name| {
+            named.push(name);
+            tree::descendant_allowed(&named, root, true)
+        })
+}
+
+/// The resolved nearest existing ancestor of `path`, and the names missing
+/// below it, outermost first. `None` when a component cannot be read at all.
+fn nearest_present(path: &Path) -> Option<(PathBuf, Vec<String>)> {
+    let mut missing: Vec<String> = Vec::new();
+    let mut present = path;
+    loop {
+        match std::fs::symlink_metadata(present) {
+            Ok(_) => {
+                missing.reverse();
+                // The spelled path may cross a link, so the screen reads the
+                // place it lands rather than the name it was given.
+                return std::fs::canonicalize(present)
+                    .ok()
+                    .map(|present| (present, missing));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name = present.file_name()?.to_str()?;
+                missing.push(name.to_owned());
+                present = present.parent()?;
+            }
+            Err(_) => return None,
+        }
+    }
+}
