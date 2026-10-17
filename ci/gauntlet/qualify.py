@@ -26,6 +26,7 @@ from typing import Any
 
 from . import qualify_setup
 from .fixtures import create_numbered_dir
+from .lane_coverage import lane_coverage
 from .parallel import terminate_as_exit
 from .source_identity import SHA
 from .timing import PhaseTimings
@@ -439,6 +440,9 @@ def main(args: Any) -> int:
             "sha": sha,
             "candidate_sha": args.candidate_sha,
             "qualified": qualified,
+            # One lane of twelve. The rest carry the work a person actually does,
+            # so the record names them rather than letting `qualified` stand for them.
+            "coverage": lane_coverage(),
             "prepare_only": args.prepare_only,
             "candidate": str(candidate) if prepared and error is None and candidate is not None else None,
             "independent_verifier": info.get("independent_verifier"),
