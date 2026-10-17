@@ -5,72 +5,9 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 const MAX_RUNTIME_BYTES: u64 = 128 * 1024 * 1024;
-const VERIFIED_RUNTIME_CAPACITY: usize = 8;
-
-/// Process lifetimes whose image this process already hashed and matched.
-///
-/// A running process cannot change its image, and the start marker rules out
-/// PID reuse, so one digest per lifetime proves the runtime for the rest of
-/// it. Long-lived client streams reach a onefile resident whose extracted path
-/// never equals their own; without this they hash the whole runtime on every
-/// request.
-#[derive(PartialEq, Eq)]
-struct VerifiedRuntime {
-    process_id: u32,
-    start_marker: String,
-    path: PathBuf,
-    digest: String,
-}
-
-static VERIFIED_RUNTIMES: Mutex<Vec<VerifiedRuntime>> = Mutex::new(Vec::new());
-
-fn runtime_already_verified(candidate: &VerifiedRuntime) -> bool {
-    VERIFIED_RUNTIMES
-        .lock()
-        .is_ok_and(|verified| verified.contains(candidate))
-}
-
-fn remember_verified_runtime(candidate: VerifiedRuntime) {
-    if let Ok(mut verified) = VERIFIED_RUNTIMES.lock() {
-        if verified.contains(&candidate) {
-            return;
-        }
-        if verified.len() >= VERIFIED_RUNTIME_CAPACITY {
-            verified.remove(0);
-        }
-        verified.push(candidate);
-    }
-}
-
-/// Prove the process runs `expected_digest` and started as recorded, hashing
-/// its image only the first time this lifetime is seen.
-fn validate_process_runtime_digest(
-    process_id: u32,
-    expected_start_marker: &str,
-    process_path: PathBuf,
-    expected_digest: &str,
-) -> Result<(), String> {
-    let candidate = VerifiedRuntime {
-        process_id,
-        start_marker: expected_start_marker.to_owned(),
-        path: process_path,
-        digest: expected_digest.to_owned(),
-    };
-    let cached = runtime_already_verified(&candidate);
-    if !cached && executable_digest(&candidate.path)? != expected_digest {
-        return Err("native_resident_process_identity_mismatch".to_owned());
-    }
-    validate_process_start_marker(process_id, expected_start_marker)?;
-    if !cached {
-        remember_verified_runtime(candidate);
-    }
-    Ok(())
-}
-
 pub(crate) fn executable_missing(path: &Path) -> bool {
     path.metadata()
         .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
@@ -202,7 +139,7 @@ pub(crate) fn validate_package_process_identity(
     if process_path != expected_path {
         // Onefile launchers extract identical signed runtimes into distinct
         // directories. Bind to the runtime bytes, not that temporary path.
-        return validate_process_runtime_digest(
+        return crate::resident_runtime_verification::validate_process_runtime_digest(
             process_id,
             expected_start_marker,
             process_path,
@@ -271,7 +208,7 @@ pub(crate) fn validate_runtime_process_identity(
     expected_digest: &str,
 ) -> Result<(), String> {
     let process_path = process_executable_path(process_id)?;
-    validate_process_runtime_digest(
+    crate::resident_runtime_verification::validate_process_runtime_digest(
         process_id,
         expected_start_marker,
         process_path,
@@ -336,7 +273,7 @@ fn process_executable_path(process_id: u32) -> Result<PathBuf, String> {
         .map_err(|_| "native_resident_process_identity_unavailable".to_owned())
 }
 
-fn executable_digest(executable: &Path) -> Result<String, String> {
+pub(crate) fn executable_digest(executable: &Path) -> Result<String, String> {
     let metadata = fs::symlink_metadata(executable)
         .map_err(|_| "native_resident_process_identity_unavailable".to_owned())?;
     if metadata.file_type().is_symlink()
