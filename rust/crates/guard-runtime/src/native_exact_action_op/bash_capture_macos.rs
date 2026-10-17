@@ -394,7 +394,8 @@ pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubject
     let mut outputs = BTreeMap::new();
     for effect in &graph.writes {
         resolver.check()?;
-        if effect.redirect.path.is_empty() || effect.redirect.path.ends_with('/') {
+        let leaf = effect.redirect.path.rsplit('/').next().unwrap_or("");
+        if matches!(leaf, "" | "." | "..") {
             return Err("bash_output_path_invalid");
         }
         if guard_command::bash_approval::is_descriptor_reference(&effect.redirect.path) {

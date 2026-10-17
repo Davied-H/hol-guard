@@ -250,9 +250,11 @@ fn bash_resident_inspection_rejects_unbindable_report_targets_without_mutation()
         std::fs::write(&entry, format!(": > '{target}'")).unwrap();
         assert_eq!(inspect(&request), Err("bash_process_descriptor_unproven"));
     }
-    std::fs::write(&entry, ": > \"$HOME/report/\"").unwrap();
-    assert_eq!(inspect(&request), Err("bash_output_path_invalid"));
-    assert!(!Path::new(&request.home_dir).join("report").exists());
+    for suffix in ["/", "/.", "/.."] {
+        std::fs::write(&entry, format!(": > \"$HOME/report{suffix}\"")).unwrap();
+        assert_eq!(inspect(&request), Err("bash_output_path_invalid"));
+        assert!(!Path::new(&request.home_dir).join("report").exists());
+    }
 }
 
 #[test]
