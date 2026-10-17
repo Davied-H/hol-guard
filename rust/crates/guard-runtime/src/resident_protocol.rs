@@ -227,7 +227,7 @@ pub(crate) enum ResidentOperationV1 {
     PackagePosture(PackagePostureRequestV1),
     PackageAuditProjection(PackageAuditProjectionRequestV1),
     WorkspaceInventory(WorkspaceInventoryRequestV1),
-    PolicyDecisionLookup(PolicyDecisionLookupRequestV1),
+    PolicyDecisionLookup(Box<PolicyDecisionLookupRequestV1>),
     PolicyDocumentDecide(guard_contracts::PolicyDocumentDecisionRequestV1),
     CommandPolicyDecide(guard_contracts::CommandPolicyDecisionRequestV1),
     CommandExpressionValidate(guard_contracts::CommandExpressionValidationRequestV1),
