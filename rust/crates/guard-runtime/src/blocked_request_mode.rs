@@ -29,7 +29,9 @@ const INBOX_APPROVAL_OFFER: &str = " Approve it in the HOL Guard inbox (choose A
      repeated read-only command), or split it into simpler commands.";
 
 /// `_CONNECTOR_SETUP_WAIT`: a connector setup review is one decision for the
-/// connector, not an approval of this action.
+/// connector, not an approval of this action. Only the vector-checked
+/// `connector_setup_reason` reads it until the resident renders this text.
+#[cfg_attr(not(test), allow(dead_code))]
 const CONNECTOR_SETUP_WAIT: &str = "Setting it up is a one-time decision for the user in the HOL \
      Guard inbox (`hol-guard approvals`), not an approval of this action. Do not retry it, in this \
      or another spelling, until it is set up; continue with other work meanwhile.";
@@ -40,6 +42,9 @@ const CONNECTOR_SETUP_REASON_PREFIX: &str = "HOL Guard has not been set up for `
 /// default mode names the computed redirect (if any) and appends
 /// `SAFE_ALTERNATIVE_GUIDANCE`, with no link and no request to ask the user;
 /// `ask` mode says it waits in the inbox, and the caller adds the link.
+/// The resident has no caller yet: the daemon renders this text and the vector
+/// test keeps the two byte-identical until the resident takes over rendering.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn connector_setup_reason(
     name: &str,
     surface: &str,
