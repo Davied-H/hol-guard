@@ -109,7 +109,7 @@ def _queue(
         "native_review_policy_binding": lambda **_k: None,
         "native_review_binding": lambda *_a, **_k: "binding",
         "native_exact_action": lambda **_k: (None, None),
-        "native_review_extension_allow_hint": lambda *_a, **_k: None,
+        "native_review_hint": lambda *_a, **_k: None,
         "_native_review_action_envelope": lambda **_k: {},
     }.items():
         monkeypatch.setattr(review, name, value)
