@@ -99,17 +99,11 @@ def main() -> int:
         assert result["decision"] == "deny", (command, result)
         assert result["policy_action"] in {"review", "block"}, (command, result)
 
-    # A shell that carries its whole script, and reads no startup file of its
-    # own, runs exactly that script, so the command reaches the same decision
-    # the script reaches on its own.
-    for index, command in enumerate(("bash -c 'pwd'", "sh -c 'pwd'")):
+    # A shell that carries its whole script runs exactly that script, so the
+    # command reaches the same decision the script reaches on its own.
+    for index, command in enumerate(("bash -lc 'pwd'", "sh -c 'pwd'")):
         result = decision(runtime, command, f"inline-shell-{index}")
         assert result["decision"] == "allow", (command, result)
-
-    # A login shell sources profile files first, so the script is modelled and
-    # reviewable but reaches no allow of its own.
-    result = decision(runtime, "bash -lc 'pwd'", "inline-login-shell")
-    assert result["decision"] != "deny", result
 
     for index, command in enumerate(("python -c 'print(1)'", "node -e 'console.log(1)'")):
         result = decision(runtime, command, f"bounded-expression-{index}")

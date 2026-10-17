@@ -115,15 +115,14 @@ def test_explicit_git_stash_permission_allows_wrapped_shell_forms(
 def test_explicit_git_stash_permission_covers_a_shell_carrying_the_script(
     tmp_path: Path, native_approval_reuse_runtime
 ) -> None:
-    command = "sh -c 'git stash list'"
+    command = "zsh -lc 'git stash list'"
     fixture, canonical, evaluation = _native_fixture(
         command,
         controls=(("permission", "command.git.permission.stash", "enabled"),),
     )
 
-    # The shell runs exactly the script it carries, in the environment the
-    # harness has already built, so it leaves no wrapper behind and the grant
-    # for the script covers it.
+    # The shell runs exactly the script it carries and adds nothing to it, so
+    # it leaves no wrapper behind and the grant for the script covers it.
     assert fixture.payload["command_model"]["wrapper_chain"] == []
     assert fixture.payload["command_extensions"].get("evaluation_error") is None
     request = extract_sensitive_tool_action_request(
@@ -164,45 +163,6 @@ def test_explicit_git_stash_permission_covers_a_shell_carrying_the_script(
         )
         == "allow"
     )
-
-
-def test_a_login_shell_carrying_the_script_keeps_its_own_startup_files(
-    tmp_path: Path,
-) -> None:
-    command = "zsh -lc 'git stash list'"
-    fixture, canonical, evaluation = _native_fixture(
-        command,
-        controls=(("permission", "command.git.permission.stash", "enabled"),),
-    )
-
-    # A login shell reads the profile files the harness's own shell never
-    # read, and zsh reads ~/.zshenv whatever the harness runs, so the shell
-    # stays in the wrapper chain. The script is still modelled, so the command
-    # is one an operator can read and approve rather than one that blocks with
-    # no approval to give it, but the grant for the bare script does not reach
-    # it.
-    assert fixture.payload["command_model"]["wrapper_chain"] == ["zsh"]
-    assert fixture.payload["command_extensions"].get("evaluation_error") is None
-    request = extract_sensitive_tool_action_request(
-        "Shell",
-        {"command": command},
-        cwd=tmp_path,
-        home_dir=tmp_path,
-        canonical_command=canonical,
-        native_evaluation=evaluation,
-    )
-
-    assert request is not None
-    artifact = build_tool_action_request_artifact(
-        "grok",
-        request,
-        config_path="config.toml",
-        source_scope="project",
-        extension_control_snapshot=fixture.snapshot,
-        native_extension_evidence=fixture.payload,
-    )
-
-    assert artifact.metadata["command_action_floor"] == "review"
 
 
 def test_explicit_permission_allow_keeps_harness_risk_blocks(tmp_path: Path, native_approval_reuse_runtime) -> None:

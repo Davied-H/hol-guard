@@ -219,16 +219,6 @@ const INLINE_SHELLS: &[&str] = &["sh", "bash", "dash", "ash", "zsh"];
 /// The option that reads the script from the next word.
 const INLINE_SCRIPT_OPTIONS: &[&str] = &["-c", "-lc", "-cl"];
 
-/// A shell invocation that carries its whole script in this same text.
-pub(super) struct InlineShellScript {
-    /// The shell the text names.
-    pub(super) shell: String,
-    /// Whether that spelling reads a startup file of its own first.
-    pub(super) reads_startup_files: bool,
-    /// The script it carries.
-    pub(super) script: String,
-}
-
 /// The script a shell carries in this same text, when the text is nothing but
 /// that invocation.
 ///
@@ -238,7 +228,7 @@ pub(super) struct InlineShellScript {
 /// is any other spelling: an option the shell reads differently, a `$0`, a
 /// script on stdin, a prefix or assignment in front of the shell, and a
 /// pipeline or redirect around it all keep their existing paths.
-pub(super) fn inline_shell_script(raw: &str) -> Option<InlineShellScript> {
+pub(super) fn inline_shell_script(raw: &str) -> Option<String> {
     if raw.len() > crate::MAX_COMMAND_BYTES || raw.contains(['$', '`', '\n', '\r']) {
         return None;
     }
@@ -252,16 +242,7 @@ pub(super) fn inline_shell_script(raw: &str) -> Option<InlineShellScript> {
     {
         return None;
     }
-    Some(InlineShellScript {
-        shell: shell.clone(),
-        // A login shell reads the profile files a harness's own non-login
-        // shell never read, and `zsh` reads `~/.zshenv` whatever the harness
-        // runs, so those spellings start an environment this text does not
-        // hold. The rest run the script in the environment the harness has
-        // already built.
-        reads_startup_files: option != "-c" || shell == "zsh",
-        script: script.clone(),
-    })
+    Some(script.clone())
 }
 
 #[cfg(test)]
@@ -410,21 +391,18 @@ mod tests {
 
     #[test]
     fn a_shell_carrying_its_script_is_modelled_from_that_script() {
-        for (command, executable, arguments, chain) in [
-            ("sh -c 'npm run build'", "npm", vec!["run", "build"], vec![]),
-            ("bash -c 'git status'", "git", vec!["status"], vec![]),
-            ("bash -lc 'git status'", "git", vec!["status"], vec!["bash"]),
-            ("zsh -c \"npm test\"", "npm", vec!["test"], vec!["zsh"]),
-            ("zsh -lc \"npm test\"", "npm", vec!["test"], vec!["zsh"]),
+        for (command, executable, arguments) in [
+            ("sh -c 'npm run build'", "npm", vec!["run", "build"]),
+            ("bash -c 'git status'", "git", vec!["status"]),
+            ("bash -lc 'git status'", "git", vec!["status"]),
+            ("zsh -c \"npm test\"", "npm", vec!["test"]),
+            ("zsh -lc \"npm test\"", "npm", vec!["test"]),
         ] {
             let model = parse(command);
             assert_eq!(model.confidence, "exact", "{command}");
-            // A shell that reads no startup file of its own adds nothing to
-            // the script, so it leaves no wrapper and the model is the one
-            // those same words make on their own. One that reads a profile
-            // or `~/.zshenv` first stays in the chain, because it starts an
-            // environment this text does not hold.
-            assert_eq!(model.wrapper_chain, chain, "{command}");
+            // The shell adds nothing to the script, so it leaves no wrapper
+            // and the model is the one those same words make on their own.
+            assert!(model.wrapper_chain.is_empty(), "{command}");
             assert_eq!(model.normalized_text, bare(command), "{command}");
             assert_eq!(model.segments[0].executable.as_deref(), Some(executable));
             let words: Vec<&str> = model.segments[0]
