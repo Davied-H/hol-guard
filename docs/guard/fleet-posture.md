@@ -11,13 +11,15 @@ as before.
 | Section | Contents |
 | --- | --- |
 | `client` | Guard version, release channel (`stable` or `alpha`), runtime, and auto-update status. |
-| `machine` | OS name, OS version, CPU architecture, and a SHA-256 hash of the host name. |
+| `machine` | OS name, OS version, CPU architecture, and a keyed hash of the host name. |
 | `aiTools` | One row per supported AI tool: tool version when known, setup status, protection state, hook coverage, blind spots, posture override, artifact count, last activity, and an inventory digest. |
 | `inventory` | Installed skills, plugins, MCP servers and similar items, as full, delta or digest-only (see below). |
 | `policy` | Applied bundle version and hash, applied policy version number, status (`applied`, `validated`, `rejected` or `none`), error code and apply time. |
 
 Guard does not send file contents, prompts, command lines, environment values, user names or raw paths.
-Item locations are sent as a SHA-256 hash of the config path.
+Item locations are sent as a keyed hash of the config path. The key is a random secret kept in the local Guard
+store and never sent, so the hashes cannot be reversed by guessing user names or paths. Reinstalling Guard on a
+machine creates a new key, which changes these hashes.
 
 ## Protection state
 
@@ -26,10 +28,10 @@ Each AI tool gets one `protectionState`:
 | State | When |
 | --- | --- |
 | `protected` | Guard setup for the tool is active. |
-| `broken` | Setup is partial or broken: hooks or config exist but do not work. |
-| `needs_setup` | The tool is installed (its config is on disk) but Guard is not set up for it. |
+| `broken` | Guard is set up for the tool but its hooks or config do not work. |
+| `needs_setup` | The tool is installed (its config or command is present) but Guard is not set up for it. |
 | `paused` | Protection for the tool is turned off in Guard (the `watch` posture). |
-| `stale` | The tool was detected before, but nothing has been seen for 7 days. |
+| `stale` | Guard is set up for the tool, but the last activity Guard saw was more than 7 days ago. |
 | `not_detected` | The tool is not installed on this machine. |
 
 ## Inventory modes and size limit
@@ -41,7 +43,9 @@ Each AI tool gets one `protectionState`:
   not even one item fits in a request.
 
 A request carries at most 250 items and 65,536 bytes. A larger inventory streams over several syncs as
-delta chunks, each chunk as large as fits. Guard only records a report as sent after Guard Cloud accepts
+delta chunks, each chunk as large as fits. A full refresh that needs several chunks keeps going across
+syncs even if Guard Cloud asks for another full inventory, and removals that did not fit in one chunk are sent
+in later ones. Guard only records a report as sent after Guard Cloud accepts
 the request, so a failed sync repeats the same changes next time.
 
 ### Digest

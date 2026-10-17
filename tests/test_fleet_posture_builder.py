@@ -153,6 +153,7 @@ def test_every_protection_state_is_derived(
         FakeAdapter("kimi", status="broken"),
         FakeAdapter("grok", status="not_found", config_paths=("/cfg",)),
         FakeAdapter("pi", status="not_found", config_paths=()),
+        FakeAdapter("antigravity"),
     ]
     config = _config(harness_postures={"cursor": "watch"})
     built = _build(store, context, adapters, config=config)
@@ -162,9 +163,10 @@ def test_every_protection_state_is_derived(
         "claude-code": "protected",
         "codex": "stale",
         "cursor": "paused",
-        "gemini": "broken",
+        "gemini": "needs_setup",
         "kimi": "broken",
         "grok": "needs_setup",
+        "antigravity": "protected",
     }
     assert "pi" not in tools
     assert tools["cursor"]["postureOverride"] == "off"
@@ -179,7 +181,12 @@ def test_not_detected_tools_are_reported_once_they_disappear(
     _set_receipts(monkeypatch, store, {"codex": NOW})
     first = _build(store, context, [FakeAdapter("codex")])
     fp.commit_fleet_posture_sent(store, first, now=_iso(NOW))
-    second = _build(store, context, [FakeAdapter("codex", status="not_found", config_paths=())])
+    second = _build(
+        store,
+        context,
+        [FakeAdapter("codex", status="not_found", config_paths=())],
+        diagnostics_ttl_seconds=0,
+    )
     assert _tools(second)["codex"]["protectionState"] == "not_detected"
     _validate(second.payload)
 
@@ -421,3 +428,159 @@ def test_client_section_reflects_auto_update_state(
         "lastCheckedAt": "2026-10-16T06:00:00Z",
         "lastResult": "update_available",
     }
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ({"last_update_exit_code": 1, "last_update_at": "2026-10-16T06:00:00+00:00"}, "failed"),
+        ({"last_update_exit_code": 0, "last_update_at": "2026-10-16T06:00:00+00:00"}, "updated"),
+        ({"last_update_error": True}, "failed"),
+        ({}, "update_available"),
+    ],
+)
+def test_failed_auto_update_attempt_is_reported_as_failed(
+    store: GuardStore,
+    context: HarnessContext,
+    monkeypatch: pytest.MonkeyPatch,
+    state: dict[str, object],
+    expected: str,
+) -> None:
+    _set_inventory(store, monkeypatch, [])
+    _set_receipts(monkeypatch, store, {})
+    store.set_sync_payload(
+        fp.AUTO_UPDATE_STATE_KEY,
+        {
+            "last_check_at": "2026-10-16T06:00:00+00:00",
+            "last_status": {"auto_updatable": True, "update_available": True, "release_channel": "stable"},
+            **state,
+        },
+        _iso(NOW),
+    )
+    client = _build(store, context, []).payload["client"]
+    assert client["autoUpdate"]["lastResult"] == expected  # type: ignore[index]
+
+
+def test_unreadable_inventory_raises_instead_of_reporting_an_empty_one(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(harness: str | None = None) -> list[dict[str, object]]:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(store, "list_inventory", broken)
+    _set_receipts(monkeypatch, store, {})
+    with pytest.raises(RuntimeError):
+        _build(store, context, [])
+    assert store.get_sync_payload(fp.LAST_SENT_STATE_KEY) in (None, {})
+
+
+def test_inventory_beyond_five_thousand_items_is_digested_and_tracked(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = [_row(f"item-{index:05d}") for index in range(5200)]
+    _set_inventory(store, monkeypatch, rows)
+    _set_receipts(monkeypatch, store, {})
+    built = _build(store, context, [])
+    assert built.next_state["inventoryItemsTracked"] == 5200
+    assert built.mode == "delta"
+    _set_inventory(store, monkeypatch, rows[:-1])
+    shorter = _build(store, context, [])
+    assert shorter.payload["inventory"]["digest"] != built.payload["inventory"]["digest"]  # type: ignore[index]
+
+
+def test_forced_full_refresh_streams_every_item_even_when_requested_on_every_reply(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = [_row(f"{index:03d}-" + "x" * 120) for index in range(600)]
+    _set_inventory(store, monkeypatch, rows)
+    _set_receipts(monkeypatch, store, {})
+    seen: set[str] = set()
+    for _ in range(40):
+        fp.request_full_inventory(store, source="cloud", now=_iso(NOW))
+        built = _build(store, context, [])
+        assert built.payload_bytes <= fp.MAX_PAYLOAD_BYTES
+        seen.update(item["name"] for item in built.payload["inventory"]["items"])  # type: ignore[index]
+        fp.commit_fleet_posture_sent(store, built, now=_iso(NOW))
+        if not built.next_state["fullStreaming"]:
+            break
+    assert seen == {str(row["artifact_name"]) for row in rows}
+    assert built.next_state["fullStreaming"] is False
+    assert built.next_state["fullSentAt"] == _iso(NOW)
+
+
+def test_removals_beyond_one_chunk_are_not_forgotten(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows = [_row(f"item-{index:03d}") for index in range(520)]
+    _set_inventory(store, monkeypatch, rows)
+    _set_receipts(monkeypatch, store, {})
+    for _ in range(12):
+        built = _build(store, context, [])
+        fp.commit_fleet_posture_sent(store, built, now=_iso(NOW))
+        if not built.next_state["fullStreaming"]:
+            break
+    _set_inventory(store, monkeypatch, [])
+    removed: set[str] = set()
+    for _ in range(12):
+        built = _build(store, context, [])
+        removed.update(entry["name"] for entry in built.payload["inventory"]["removed"])  # type: ignore[index]
+        fp.commit_fleet_posture_sent(store, built, now=_iso(NOW))
+    assert removed == {str(row["artifact_name"]) for row in rows}
+
+
+def test_removal_is_suppressed_while_another_path_still_holds_the_same_item(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _row("shared")
+    second = {**_row("shared"), "config_path": "/other/place/shared"}
+    _set_inventory(store, monkeypatch, [first, second])
+    _set_receipts(monkeypatch, store, {})
+    fp.commit_fleet_posture_sent(store, _build(store, context, []), now=_iso(NOW))
+    _set_inventory(store, monkeypatch, [first])
+    built = _build(store, context, [])
+    assert built.payload["inventory"]["removed"] == []  # type: ignore[index]
+    fp.commit_fleet_posture_sent(store, built, now=_iso(NOW))
+    _set_inventory(store, monkeypatch, [])
+    gone = _build(store, context, [])
+    assert [entry["name"] for entry in gone.payload["inventory"]["removed"]] == ["shared"]  # type: ignore[index]
+
+
+def test_path_and_host_hashes_are_keyed_per_install(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import hashlib
+
+    row = _row("one")
+    _set_inventory(store, monkeypatch, [row])
+    _set_receipts(monkeypatch, store, {})
+    built = _build(store, context, [])
+    path_hash = built.payload["inventory"]["items"][0]["pathHash"]  # type: ignore[index]
+    plain = "sha256:" + hashlib.sha256(str(row["config_path"]).encode()).hexdigest()
+    assert path_hash != plain
+    assert _build(store, context, []).payload["inventory"]["items"][0]["pathHash"] == path_hash  # type: ignore[index]
+    other = GuardStore(tmp_path / "other-guard")
+    _set_inventory(other, monkeypatch, [row])
+    _set_receipts(monkeypatch, other, {})
+    assert _build(other, context, []).payload["inventory"]["items"][0]["pathHash"] != path_hash  # type: ignore[index]
+    _validate(built.payload)
+
+
+def test_tool_diagnostics_are_cached_between_builds(
+    store: GuardStore, context: HarnessContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_inventory(store, monkeypatch, [])
+    _set_receipts(monkeypatch, store, {})
+    adapter = FakeAdapter("claude-code")
+    calls: list[str] = []
+    original = adapter.diagnostics
+
+    def counting(context: HarnessContext) -> dict[str, object]:
+        calls.append("probe")
+        return original(context)
+
+    monkeypatch.setattr(adapter, "diagnostics", counting)
+    _build(store, context, [adapter])
+    _build(store, context, [adapter])
+    assert calls == ["probe"]
+    _build(store, context, [adapter], diagnostics_ttl_seconds=0)
+    assert calls == ["probe", "probe"]

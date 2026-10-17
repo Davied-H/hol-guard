@@ -19,8 +19,8 @@ credential is involved.
   accepted send, plus `removed`) or `digest_only` (no item rows, only digests).
 - Digests are `sha256:<64 hex>`. They are computed over rows sorted lexicographically and serialized as
   compact JSON. See the [Fleet posture guide](../../../docs/guard/fleet-posture.md) for the exact rows.
-- File paths and host names are never sent in the clear. `hostnameHash` and `pathHash` are SHA-256
-  digests.
+- File paths and host names are never sent in the clear. `hostnameHash` and `pathHash` are
+  `sha256:` digests computed as an HMAC-SHA-256 under a random per-install secret that never leaves the machine.
 - Timestamps are UTC and end in `Z` or `+00:00`.
 
 ## Receiver behaviour
