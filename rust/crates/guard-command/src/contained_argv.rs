@@ -54,13 +54,22 @@ pub fn test_script(script: &str) -> bool {
     named_test_script(script, false)
 }
 
-fn named_test_script(script: &str, node: bool) -> bool {
-    static NAME: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(
-            r"^(?:test_[A-Za-z0-9_-]*|[A-Za-z0-9_-]*_test|test|tests|runtests|run_tests)\.py$",
-        )
-        .unwrap()
-    });
+/// A workspace script under any plain name. Windows has no workspace sandbox,
+/// so there the read-only boundary also runs an ordinary script that the
+/// pre-tool check found reads no network, credential store or write; it
+/// authorizes the resolved launch again before running it.
+fn windows_plain_script(script: &str, node: bool) -> bool {
+    static NAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.py$").unwrap());
+    static NODE_NAME: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:js|mjs|cjs)$").unwrap());
+    let name = if node { &NODE_NAME } else { &NAME };
+    cfg!(windows)
+        && workspace_script_path(script)
+        && name.is_match(script.rsplit('/').next().unwrap_or(""))
+}
+
+fn workspace_script_path(script: &str) -> bool {
     !script.is_empty()
         && !script.starts_with(['-', '/', '~', '$'])
         && !script.contains(['\\', '$', '`'])
@@ -68,6 +77,16 @@ fn named_test_script(script: &str, node: bool) -> bool {
             .trim_end_matches('/')
             .split('/')
             .all(|v| !v.is_empty() && v != "..")
+}
+
+fn named_test_script(script: &str, node: bool) -> bool {
+    static NAME: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"^(?:test_[A-Za-z0-9_-]*|[A-Za-z0-9_-]*_test|test|tests|runtests|run_tests)\.py$",
+        )
+        .unwrap()
+    });
+    workspace_script_path(script)
         && if node {
             static NODE_NAME: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new(r"^(?:[A-Za-z0-9_.-]*(?:\.test|\.spec|_test)|test_[A-Za-z0-9_.-]*|tests?)\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$").unwrap()
@@ -91,7 +110,7 @@ pub fn node_script_index(command: &[String], start: usize) -> Option<usize> {
     }
     command
         .get(index)
-        .filter(|value| named_test_script(value, true))
+        .filter(|value| named_test_script(value, true) || windows_plain_script(value, true))
         .map(|_| index)
 }
 
@@ -150,7 +169,12 @@ pub fn python_runtime_args(command: &[String]) -> Option<Vec<String>> {
         && command[index + 2..]
             .iter()
             .all(|value| !value.contains(['<', '>', '|', '&', ';', '`', '$']));
-    if !inline && !unittest && !command.get(index).is_some_and(|v| test_script(v)) {
+    if !inline
+        && !unittest
+        && !command
+            .get(index)
+            .is_some_and(|v| test_script(v) || windows_plain_script(v, false))
+    {
         return None;
     }
     Some(command[1..index].to_vec())
