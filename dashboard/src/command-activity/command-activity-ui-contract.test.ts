@@ -32,7 +32,7 @@ assert(workspace.includes("commandExecutionEvidenceCopy(props.harness ?? null"),
 assert(workspace.includes("Showing the last loaded command activity page"), "refresh failures retain prior valid page data");
 assert(workspace.includes('activity.page.kind === "empty"'), "empty command pages render an explicit state");
 assert(filters.includes("preserveActiveOption"), "deep-linked stable filters remain represented outside aggregate options");
-assert(filters.includes('<option value="attempted">Attempt recorded</option>'), "all valid execution states remain selectable");
+assert(filters.includes('{ value: "attempted", label: "Attempt recorded" }'), "all valid execution states remain selectable");
 const summary = readSource("command-activity/command-activity-summary.tsx");
 assert(
   summary.includes("Summary and trend totals do not include every active filter below."),

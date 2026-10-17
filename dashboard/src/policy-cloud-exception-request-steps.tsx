@@ -1,4 +1,5 @@
 import type { ChangeEvent } from "react";
+import { Select } from "./select";
 import {
   HiMiniArrowTopRightOnSquare,
   HiMiniCheckCircle,
@@ -115,8 +116,7 @@ export function CloudExceptionSourceStep({
     onDraftChange(patch);
   };
 
-  const handleReceiptSelect = (event: ChangeEvent<HTMLSelectElement>) => {
-    const receiptId = event.target.value;
+  const handleReceiptSelect = (receiptId: string) => {
     const receipt = receipts.find((entry) => entry.receipt_id === receiptId);
     onDraftChange({
       sourceReceiptId: receiptId,
@@ -125,8 +125,7 @@ export function CloudExceptionSourceStep({
     });
   };
 
-  const handleApprovalSelect = (event: ChangeEvent<HTMLSelectElement>) => {
-    const requestId = event.target.value;
+  const handleApprovalSelect = (requestId: string) => {
     const approval = approvals.find((entry) => entry.request_id === requestId);
     onDraftChange({
       sourceReviewItemId: requestId,
@@ -217,36 +216,30 @@ export function CloudExceptionSourceStep({
       {draft.sourceMode === "receipt" && hasReceipts ? (
         <label className="block space-y-1">
           <span className="text-sm font-medium text-brand-dark">Choose evidence receipt</span>
-          <select
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          <Select
+            className="w-full"
             value={draft.sourceReceiptId}
-            onChange={handleReceiptSelect}
-            required
-          >
-            {receipts.map((receipt) => (
-              <option key={receipt.receipt_id} value={receipt.receipt_id}>
-                {harnessDisplayName(receipt.harness)} · {receipt.artifact_name ?? receipt.artifact_id}
-              </option>
-            ))}
-          </select>
+            onValueChange={handleReceiptSelect}
+            options={receipts.map((receipt) => ({
+              value: receipt.receipt_id,
+              label: `${harnessDisplayName(receipt.harness)} · ${receipt.artifact_name ?? receipt.artifact_id}`,
+            }))}
+          />
         </label>
       ) : null}
 
       {draft.sourceMode === "approval" && hasApprovals ? (
         <label className="block space-y-1">
           <span className="text-sm font-medium text-brand-dark">Choose approval record</span>
-          <select
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          <Select
+            className="w-full"
             value={draft.sourceReviewItemId}
-            onChange={handleApprovalSelect}
-            required
-          >
-            {approvals.map((approval) => (
-              <option key={approval.request_id} value={approval.request_id}>
-                {harnessDisplayName(approval.harness)} · {approval.artifact_name || approval.artifact_id}
-              </option>
-            ))}
-          </select>
+            onValueChange={handleApprovalSelect}
+            options={approvals.map((approval) => ({
+              value: approval.request_id,
+              label: `${harnessDisplayName(approval.harness)} · ${approval.artifact_name || approval.artifact_id}`,
+            }))}
+          />
         </label>
       ) : null}
 
@@ -422,18 +415,12 @@ export function CloudExceptionScopeStep({
       {(draft.scope === "harness" || draft.scope === "artifact") && (
         <label className="block space-y-1">
           <span className="text-sm font-medium text-brand-dark">App</span>
-          <select
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          <Select
+            className="w-full"
             value={draft.harness}
-            onChange={(event) => onDraftChange({ harness: event.target.value })}
-            required
-          >
-            {harnessOptions.map((option) => (
-              <option key={option} value={option}>
-                {harnessDisplayName(option)}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => onDraftChange({ harness: value })}
+            options={harnessOptions.map((option) => ({ value: option, label: harnessDisplayName(option) }))}
+          />
         </label>
       )}
 

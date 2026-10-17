@@ -13,6 +13,7 @@ import {
 import { Badge, EmptyState, Tag } from "./approval-center-primitives";
 import { formatRelativeTime, harnessDisplayName, scopeLabel } from "./approval-center-utils";
 import type { GuardCloudException } from "./guard-types";
+import { Select } from "./select";
 import type { GuardCloudExceptionRequestItem } from "./guard-api";
 import {
   isCloudExceptionAckFailure,
@@ -238,11 +239,11 @@ function ExceptionFilters({
     [onSearchChange],
   );
   const handleScopeChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onScopeFilterChange(event.target.value),
+    (value: string) => onScopeFilterChange(value),
     [onScopeFilterChange],
   );
   const handleActionChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onActionFilterChange(event.target.value),
+    (value: string) => onActionFilterChange(value),
     [onActionFilterChange],
   );
 
@@ -260,28 +261,28 @@ function ExceptionFilters({
         />
       </div>
       <div className="flex flex-wrap gap-2">
-        <select
+        <Select
           value={scopeFilter}
-          onChange={handleScopeChange}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-brand-dark"
+          onValueChange={handleScopeChange}
           aria-label="All scopes"
-        >
-          <option value="all">All scopes</option>
-          <option value="artifact">Once</option>
-          <option value="publisher">This cwd</option>
-          <option value="workspace">This project</option>
-          <option value="harness">This harness</option>
-          <option value="global">Team policy</option>
-        </select>
-        <select
+          options={[
+            { value: "all", label: "All scopes" },
+            { value: "artifact", label: "Once" },
+            { value: "publisher", label: "This cwd" },
+            { value: "workspace", label: "This project" },
+            { value: "harness", label: "This harness" },
+            { value: "global", label: "Team policy" },
+          ]}
+        />
+        <Select
           value={actionFilter}
-          onChange={handleActionChange}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-brand-dark"
+          onValueChange={handleActionChange}
           aria-label="All actions"
-        >
-          <option value="all">All actions</option>
-          <option value="allow">Allow</option>
-        </select>
+          options={[
+            { value: "all", label: "All actions" },
+            { value: "allow", label: "Allow" },
+          ]}
+        />
       </div>
     </div>
   );

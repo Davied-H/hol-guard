@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { chooseSelectOption } from "./select-option";
 
 function requiredEnvironment(name: string): string {
   const value = process.env[name];
@@ -36,14 +37,14 @@ test("installed dashboard reconciles command analytics, filters, details, health
   await expect(page.getByLabel("Command activity records").getByRole("row")).toHaveCount(expectedCount + 1);
   await page.screenshot({ path: testInfo.outputPath("installed-command-activity-overview.png"), fullPage: true });
 
-  await page.getByRole("combobox", { name: "App", exact: true }).selectOption("cursor");
+  await chooseSelectOption(page, "App", "cursor");
   await expect(page.getByText("1 records on this page", { exact: true })).toBeVisible();
   const cursorTable = page.getByLabel("Command activity records");
   await expect(cursorTable.getByRole("cell", { name: "cursor", exact: true })).toBeVisible();
   await expect(cursorTable.getByRole("cell", { name: "Prevented before execution", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("installed-command-activity-filtered.png"), fullPage: true });
 
-  await page.getByRole("combobox", { name: "App", exact: true }).selectOption("");
+  await chooseSelectOption(page, "App", "All apps");
   await expect(page.getByText(`${expectedCount} records on this page`, { exact: true })).toBeVisible();
   const confirmedRow = page.getByRole("row").filter({ hasText: "Execution confirmed successful" });
   await expect(confirmedRow).toHaveCount(1);

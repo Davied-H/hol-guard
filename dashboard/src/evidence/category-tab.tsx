@@ -15,6 +15,7 @@ import { plainEnglishDescription, resolveActionTitle, resolveActionTitleTooltip,
 import { formatRelativeTime, harnessDisplayName } from "../approval-center-utils";
 import { DecisionBadge } from "./decision-badge";
 import { Badge } from "../approval-center-primitives";
+import { Select } from "../select";
 
 interface CategoryTabProps {
   receipts: GuardReceipt[];
@@ -128,26 +129,26 @@ function CategoryTabRaw({ receipts, onFilterCategory }: CategoryTabProps) {
             <HiMiniFunnel className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Filter:</span>
           </div>
-          <select
+          <Select
             value={decisionFilter}
-            onChange={(e) => setDecisionFilter(e.target.value)}
-            className="min-h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue/20"
-          >
-            <option value="all">All decisions</option>
-            <option value="allow">Allowed</option>
-            <option value="ask">Review</option>
-            <option value="block">Stopped</option>
-          </select>
-          <select
+            onValueChange={setDecisionFilter}
+            size="sm"
+            options={[
+              { value: "all", label: "All decisions" },
+              { value: "allow", label: "Allowed" },
+              { value: "ask", label: "Review" },
+              { value: "block", label: "Stopped" },
+            ]}
+          />
+          <Select
             value={harnessFilter}
-            onChange={(e) => setHarnessFilter(e.target.value)}
-            className="min-h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue/20"
-          >
-            <option value="">All apps</option>
-            {harnesses.map((h) => (
-              <option key={h} value={h}>{harnessDisplayName(h)}</option>
-            ))}
-          </select>
+            onValueChange={setHarnessFilter}
+            size="sm"
+            options={[
+              { value: "", label: "All apps" },
+              ...harnesses.map((h) => ({ value: h, label: harnessDisplayName(h) })),
+            ]}
+          />
           {(decisionFilter !== "all" || harnessFilter) && (
             <button
               type="button"

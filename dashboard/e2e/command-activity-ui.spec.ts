@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { chooseSelectOption } from "./select-option";
 import {
   defaultSettingsPayload,
   emptyInventoryPayload,
@@ -224,10 +225,10 @@ test("Commands deep links keep active filters visible outside aggregate options"
   await expect.poll(() => new URL(page.url()).searchParams.get("command_harness")).toBe("cursor");
   await expect.poll(() => new URL(page.url()).searchParams.get("command_extension")).toBe("command.custom");
   await expect.poll(() => new URL(page.url()).searchParams.get("command_rule")).toBe("command.custom.read");
-  await expect(page.getByRole("combobox", { name: "App", exact: true })).toHaveValue("cursor");
-  await expect(page.getByRole("combobox", { name: "Extension", exact: true })).toHaveValue("command.custom");
-  await expect(page.getByRole("combobox", { name: "Rule", exact: true })).toHaveValue("command.custom.read");
-  await expect(page.getByRole("combobox", { name: "Run result" })).toHaveValue("attempted");
+  await expect(page.getByRole("combobox", { name: "App", exact: true })).toHaveAttribute("data-select-value", "cursor");
+  await expect(page.getByRole("combobox", { name: "Extension", exact: true })).toHaveAttribute("data-select-value", "command.custom");
+  await expect(page.getByRole("combobox", { name: "Rule", exact: true })).toHaveAttribute("data-select-value", "command.custom.read");
+  await expect(page.getByRole("combobox", { name: "Run result" })).toHaveAttribute("data-select-value", "attempted");
   await expect.poll(() => fixture.activityQueries.some((query) => {
     const params = new URLSearchParams(query);
     return params.get("harness") === "cursor"
@@ -245,7 +246,7 @@ test("App Commands view enforces exact harness scope", async ({ page }) => {
   await expect.poll(() => fixture.activityQueries.some((query) => new URLSearchParams(query).get("harness") === "codex")).toBe(true);
   await expect(page.getByRole("combobox", { name: "App", exact: true })).toHaveCount(0);
   fixture.setActivityDelay(250);
-  await page.getByRole("combobox", { name: "Run result" }).selectOption("confirmed_success");
+  await chooseSelectOption(page, "Run result", "Confirmed success");
   await expect(page.getByLabel("Loading command activity", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Command activity records")).toHaveCount(0);
   await expect(page.getByText("Summary and trend totals do not include every active filter below.")).toBeVisible();

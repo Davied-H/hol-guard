@@ -9,6 +9,7 @@ import {
 import type { EvidenceFilterState, EvidenceDecision, EvidenceTimeFilter } from "./evidence-types";
 import { EVIDENCE_TIME_LABELS, EVIDENCE_DECISION_LABELS } from "./evidence-types";
 import { harnessDisplayName } from "../approval-center-utils";
+import { Select } from "../select";
 
 interface EvidenceFilterBarProps {
   filters: EvidenceFilterState;
@@ -114,29 +115,29 @@ export function EvidenceFilterBar({
   );
 
   const handleTimeChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      onChange({ time: e.target.value as EvidenceTimeFilter, day: "" });
+    (value: string) => {
+      onChange({ time: value as EvidenceTimeFilter, day: "" });
     },
     [onChange]
   );
 
   const handleDecisionChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      onChange({ decision: e.target.value as EvidenceDecision });
+    (value: string) => {
+      onChange({ decision: value as EvidenceDecision });
     },
     [onChange]
   );
 
   const handleHarnessChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      onChange({ harness: e.target.value });
+    (value: string) => {
+      onChange({ harness: value });
     },
     [onChange]
   );
 
   const handleCategoryChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      onChange({ category: e.target.value });
+    (value: string) => {
+      onChange({ category: value });
     },
     [onChange]
   );
@@ -204,35 +205,27 @@ export function EvidenceFilterBar({
       <div className="flex flex-wrap items-center gap-1.5">
         <SearchInput value={filters.search} onChange={handleSearchChange} />
 
-        <select
+        <Select
           value={filters.time}
-          onChange={handleTimeChange}
+          onValueChange={handleTimeChange}
           aria-label="Time period"
-          className="min-h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {(Object.entries(EVIDENCE_TIME_LABELS) as [EvidenceTimeFilter, string][]).map(
-            ([val, label]) => (
-              <option key={val} value={val}>
-                {label}
-              </option>
-            )
+          size="sm"
+          testId="evidence-time-filter"
+          options={(Object.entries(EVIDENCE_TIME_LABELS) as [EvidenceTimeFilter, string][]).map(
+            ([val, label]) => ({ value: val, label }),
           )}
-        </select>
+        />
 
-        <select
+        <Select
           value={filters.decision}
-          onChange={handleDecisionChange}
+          onValueChange={handleDecisionChange}
           aria-label="Decision filter"
-          className="min-h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {(Object.entries(EVIDENCE_DECISION_LABELS) as [EvidenceDecision, string][]).map(
-            ([val, label]) => (
-              <option key={val} value={val}>
-                {label}
-              </option>
-            )
+          size="sm"
+          testId="evidence-decision-filter"
+          options={(Object.entries(EVIDENCE_DECISION_LABELS) as [EvidenceDecision, string][]).map(
+            ([val, label]) => ({ value: val, label }),
           )}
-        </select>
+        />
 
         <button
           type="button"
@@ -253,33 +246,27 @@ export function EvidenceFilterBar({
       {showMore && (
         <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-slate-50/60 p-2">
           {!hideHarnessFilter && (
-            <select
+            <Select
               value={filters.harness}
-              onChange={handleHarnessChange}
+              onValueChange={handleHarnessChange}
               aria-label="App filter"
-              className="min-h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-            >
-              <option value="all">All apps</option>
-              {harnesses.map((h) => (
-                <option key={h} value={h}>
-                  {harnessDisplayName(h)}
-                </option>
-              ))}
-            </select>
+              size="sm"
+              testId="evidence-app-filter"
+              options={[
+                { value: "all", label: "All apps" },
+                ...harnesses.map((h) => ({ value: h, label: harnessDisplayName(h) })),
+              ]}
+            />
           )}
 
-          <select
+          <Select
             value={filters.category}
-            onChange={handleCategoryChange}
+            onValueChange={handleCategoryChange}
             aria-label="Category filter"
-            className="min-h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          >
-            {CATEGORY_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            size="sm"
+            testId="evidence-category-filter"
+            options={CATEGORY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
+          />
 
           <label className="flex items-center gap-1.5 text-xs text-brand-dark">
             <span className="shrink-0 text-xs font-medium text-slate-500">

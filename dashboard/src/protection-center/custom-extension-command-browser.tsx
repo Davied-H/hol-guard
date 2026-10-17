@@ -2,6 +2,7 @@ import { useCallback, useId, useMemo, useState, type ChangeEvent } from "react";
 import { HiMiniChevronRight, HiMiniMagnifyingGlass, HiMiniXMark } from "react-icons/hi2";
 
 import { bulkCommandState, type LocalCliCommand, type LocalCliCommandState, type LocalCliSurface } from "../local-cli-api";
+import { Select } from "../select";
 import { BulkPolicyPicker } from "./add-custom-extension-catalog";
 import { CommandDraftControl, CustomExtensionCommandRow, emptyCommandCopy } from "./custom-extension-commands";
 import {
@@ -131,15 +132,15 @@ export function CustomExtensionCommandBrowser(props: BrowserProps) {
           </label>
           <label className="inline-flex min-h-11 items-center gap-2 text-sm text-brand-dark/70">
             Sort
-            <select
+            <Select
               value={sort}
-              onChange={(event: ChangeEvent<HTMLSelectElement>) => setSort(event.target.value as CommandSort)}
-              className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-brand-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-blue"
-            >
-              <option value="catalog">{copy.catalogOrder}</option>
-              <option value="name">Name</option>
-              <option value="state">Setting</option>
-            </select>
+              onValueChange={(value) => setSort(value as CommandSort)}
+              options={[
+                { value: "catalog", label: copy.catalogOrder },
+                { value: "name", label: "Name" },
+                { value: "state", label: "Setting" },
+              ]}
+            />
           </label>
           {families.length > 0 && !narrowed ? (
             <button type="button" onClick={toggleAll}

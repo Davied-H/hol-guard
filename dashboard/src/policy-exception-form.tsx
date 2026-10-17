@@ -5,6 +5,7 @@ import { ActionButton, SectionLabel } from "./approval-center-primitives";
 import { harnessDisplayName } from "./approval-center-utils";
 import { savePolicyDecision } from "./guard-api";
 import type { DecisionScope, GuardPolicyDecision } from "./guard-types";
+import { Select } from "./select";
 
 const ACTION_FAMILIES = [
   { id: "package-request", label: "Package installs", example: "npm, pip, pnpm installs" },
@@ -86,12 +87,12 @@ export function PolicyExceptionForm({ policies, onSaved, onCancel }: PolicyExcep
     return [...new Set(fromPolicies)].sort();
   }, [policies]);
 
-  const handleWorkspaceSelect = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    setWorkspace(event.target.value);
+  const handleWorkspaceSelect = useCallback((value: string) => {
+    setWorkspace(value);
   }, []);
 
-  const handleHarnessChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    setHarness(event.target.value);
+  const handleHarnessChange = useCallback((value: string) => {
+    setHarness(value);
   }, []);
 
   const handleReasonChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
@@ -209,19 +210,16 @@ export function PolicyExceptionForm({ policies, onSaved, onCancel }: PolicyExcep
           <label htmlFor="exception-harness" className="text-sm font-medium text-brand-dark">
             Which app should this apply to?
           </label>
-          <select
+          <Select
             id="exception-harness"
             value={harness}
-            onChange={handleHarnessChange}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          >
-            <option value="">Select an app</option>
-            {harnessOptions.map((option) => (
-              <option key={option} value={option}>
-                {harnessDisplayName(option)}
-              </option>
-            ))}
-          </select>
+            onValueChange={handleHarnessChange}
+            className="w-full"
+            options={[
+              { value: "", label: "Select an app" },
+              ...harnessOptions.map((option) => ({ value: option, label: harnessDisplayName(option) })),
+            ]}
+          />
         </div>
       ) : null}
 
@@ -277,19 +275,19 @@ export function PolicyExceptionForm({ policies, onSaved, onCancel }: PolicyExcep
                 Which project folder?
               </label>
               {workspaceOptions.length > 0 ? (
-                <select
+                <Select
                   id="exception-workspace"
                   value={workspace}
-                  onChange={handleWorkspaceSelect}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                >
-                  <option value="">Select a remembered project</option>
-                  {workspaceOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option.startsWith("workspace:") ? "This project (from a prior approval)" : option}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={handleWorkspaceSelect}
+                  className="w-full"
+                  options={[
+                    { value: "", label: "Select a remembered project" },
+                    ...workspaceOptions.map((option) => ({
+                      value: option,
+                      label: option.startsWith("workspace:") ? "This project (from a prior approval)" : option,
+                    })),
+                  ]}
+                />
               ) : (
                 <input
                   id="exception-workspace"

@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   HiMiniArrowDown,
   HiMiniArrowUp,
@@ -9,6 +8,7 @@ import {
 } from "react-icons/hi2";
 import { ActionButton, IconActionButton } from "./approval-center-primitives";
 import { GuardModalLayer } from "./guard-modal-layer";
+import { Select } from "./select";
 import type {
   PackageWorkbenchFilters,
   PackageWorkbenchSortKey,
@@ -40,15 +40,15 @@ function FilterModalContent({
   }, [ecosystems]);
 
   const handleEcosystemChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onEcosystemChange(event.target.value),
+    (value: string) => onEcosystemChange(value),
     [onEcosystemChange],
   );
   const handleDecisionChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onDecisionChange(event.target.value as PackageWorkbenchFilters["decision"]),
+    (value: string) => onDecisionChange(value as PackageWorkbenchFilters["decision"]),
     [onDecisionChange],
   );
   const handleSeverityChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onSeverityChange(event.target.value as PackageWorkbenchFilters["severity"]),
+    (value: string) => onSeverityChange(value as PackageWorkbenchFilters["severity"]),
     [onSeverityChange],
   );
 
@@ -56,45 +56,39 @@ function FilterModalContent({
     <div className="space-y-4">
       <label className="block">
         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Ecosystem</span>
-        <select
+        <Select
           value={filters.ecosystem}
-          onChange={handleEcosystemChange}
-          className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-brand-dark transition-colors focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {options.ecosystems.map((value) => (
-            <option key={value} value={value}>
-              {value === "all" ? "All ecosystems" : value}
-            </option>
-          ))}
-        </select>
+          onValueChange={handleEcosystemChange}
+          className="mt-1.5 w-full"
+          options={options.ecosystems.map((value) => ({
+            value,
+            label: value === "all" ? "All ecosystems" : value,
+          }))}
+        />
       </label>
       <label className="block">
         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Decision</span>
-        <select
+        <Select
           value={filters.decision}
-          onChange={handleDecisionChange}
-          className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-brand-dark transition-colors focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {options.decisions.map((value) => (
-            <option key={value} value={value}>
-              {value === "all" ? "All decisions" : value}
-            </option>
-          ))}
-        </select>
+          onValueChange={handleDecisionChange}
+          className="mt-1.5 w-full"
+          options={options.decisions.map((value) => ({
+            value,
+            label: value === "all" ? "All decisions" : value,
+          }))}
+        />
       </label>
       <label className="block">
         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Severity</span>
-        <select
+        <Select
           value={filters.severity}
-          onChange={handleSeverityChange}
-          className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-brand-dark transition-colors focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {options.severities.map((value) => (
-            <option key={value} value={value}>
-              {value === "all" ? "All severities" : value}
-            </option>
-          ))}
-        </select>
+          onValueChange={handleSeverityChange}
+          className="mt-1.5 w-full"
+          options={options.severities.map((value) => ({
+            value,
+            label: value === "all" ? "All severities" : value,
+          }))}
+        />
       </label>
     </div>
   );
@@ -110,7 +104,7 @@ function SortModalContent({
   onSortChange: (sortKey: PackageWorkbenchSortKey) => void;
 }) {
   const handleSortChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => onSortChange(event.target.value as PackageWorkbenchSortKey),
+    (value: string) => onSortChange(value as PackageWorkbenchSortKey),
     [onSortChange],
   );
   const toggleDirection = useCallback(() => {
@@ -121,16 +115,17 @@ function SortModalContent({
     <div className="space-y-4">
       <label className="block">
         <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Sort by</span>
-        <select
+        <Select
           value={sortKey}
-          onChange={handleSortChange}
-          className="mt-1.5 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-brand-dark transition-colors focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          <option value="severity">Severity</option>
-          <option value="package">Package</option>
-          <option value="ecosystem">Ecosystem</option>
-          <option value="decision">Decision</option>
-        </select>
+          onValueChange={handleSortChange}
+          className="mt-1.5 w-full"
+          options={[
+            { value: "severity", label: "Severity" },
+            { value: "package", label: "Package" },
+            { value: "ecosystem", label: "Ecosystem" },
+            { value: "decision", label: "Decision" },
+          ]}
+        />
       </label>
       <button
         type="button"

@@ -39,6 +39,7 @@ import {
   revokeApprovalGateCooldown,
 } from "./guard-api";
 import { commitDashboardLocation } from "./dashboard-location";
+import { Select } from "./select";
 import { approvalGateCooldownLabel } from "./approval-gate-utils";
 import { GuardHookRemovalPanel } from "./guard-hook-removal-panel";
 import { GuardRepairControl } from "./guard-repair-control";
@@ -620,17 +621,17 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
   }, []);
 
   const handleStringChange = useCallback(
-    (key: keyof GuardSettings) => (event: ChangeEvent<HTMLSelectElement | HTMLInputElement>) => {
-      setDraft((value) => value === null ? value : { ...value, [key]: event.target.value });
+    (key: keyof GuardSettings) => (value: string) => {
+      setDraft((draftValue) => draftValue === null ? draftValue : { ...draftValue, [key]: value });
       setSaveError(null);
     },
     []
   );
 
-  const handlePresentationModeChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    const nextMode = parsePresentationMode(event.target.value);
+  const handlePresentationModeChange = useCallback((value: string) => {
+    const nextMode = parsePresentationMode(value);
     if (nextMode === null) return;
-    setDraft((value) => value === null ? value : applyPresentationMode(value, nextMode));
+    setDraft((draftValue) => draftValue === null ? draftValue : applyPresentationMode(draftValue, nextMode));
     setSaveError(null);
   }, []);
 
@@ -655,20 +656,20 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
   }, [handleSecurityLevelChange]);
 
   const handleRiskActionChange = useCallback(
-    (riskKey: string) => (event: ChangeEvent<HTMLSelectElement>) => {
-      setDraft((value) => {
-        if (value === null) return value;
-        return { ...value, security_level: "custom", risk_actions: { ...value.risk_actions, [riskKey]: event.target.value }, risk_action_overrides: { ...value.risk_action_overrides, [riskKey]: event.target.value } };
+    (riskKey: string) => (value: string) => {
+      setDraft((draftValue) => {
+        if (draftValue === null) return draftValue;
+        return { ...draftValue, security_level: "custom", risk_actions: { ...draftValue.risk_actions, [riskKey]: value }, risk_action_overrides: { ...draftValue.risk_action_overrides, [riskKey]: value } };
       });
       setSaveError(null);
     },
     []
   );
 
-  const handleCodexSecretReadChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    setDraft((value) => {
-      if (value === null) return value;
-      return { ...value, security_level: "custom", harness_risk_actions: { ...value.harness_risk_actions, codex: { ...(value.harness_risk_actions.codex ?? {}), local_secret_read: event.target.value } } };
+  const handleCodexSecretReadChange = useCallback((value: string) => {
+    setDraft((draftValue) => {
+      if (draftValue === null) return draftValue;
+      return { ...draftValue, security_level: "custom", harness_risk_actions: { ...draftValue.harness_risk_actions, codex: { ...(draftValue.harness_risk_actions.codex ?? {}), local_secret_read: value } } };
     });
     setSaveError(null);
   }, []);
@@ -811,8 +812,8 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
     setTotpActionError(null);
   }, [totpEnrollment]);
 
-  const handleApprovalGateCooldownChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    const next = Number(event.target.value);
+  const handleApprovalGateCooldownChange = useCallback((value: string) => {
+    const next = Number(value);
     setApprovalGateCooldown(next);
     setDraft((value) =>
       value === null
@@ -1772,7 +1773,7 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
                       name="blocked-request-mode"
                       value={option.value}
                       checked={(draft.blocked_request_mode ?? "safe-alternative") === option.value}
-                      onChange={handleStringChange("blocked_request_mode")}
+                      onChange={(event) => handleStringChange("blocked_request_mode")(event.target.value)}
                       className="mt-1 h-4 w-4 shrink-0 accent-brand-blue"
                     />
                     <span>
@@ -2192,22 +2193,19 @@ function SettingSelect(props: {
   label: string;
   value: string;
   options: Array<{ value: string; label: string }>;
-  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onChange: (value: string) => void;
   disabled?: boolean;
 }) {
   return (
     <label className="block">
       <span className="text-xs font-medium text-slate-500">{props.label}</span>
-      <select
+      <Select
         value={props.value}
-        onChange={props.onChange}
+        onValueChange={props.onChange}
+        options={props.options}
         disabled={props.disabled}
-        className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {props.options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+        className="mt-1 w-full"
+      />
     </label>
   );
 }
@@ -2287,7 +2285,7 @@ type RiskControlRowProps = {
   risk: { key: string; label: string; description: string; consequence?: { example: string; impact: string } | undefined };
   value: string;
   disabled: boolean;
-  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onChange: (value: string) => void;
   showConsequence?: boolean;
 };
 
@@ -2339,7 +2337,7 @@ type ApprovalGateCardProps = {
   onOpenTotpSetup: () => void;
   onCloseTotpSetup: () => void;
   onStrictAllDecisionsChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onCooldownChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onCooldownChange: (value: string) => void;
   onStartTotpEnrollment: () => void;
   onVerifyTotpEnrollment: () => void;
   onDisableTotp: () => void;
@@ -2402,18 +2400,15 @@ function ApprovalGateCard(props: ApprovalGateCardProps) {
             />
             <label className="block">
               <span className="text-xs font-medium text-slate-500">Cooldown after approval</span>
-              <select
+              <Select
                 id="settings-approval-gate-cooldown"
                 value={String(effectiveCooldownSeconds)}
-                onChange={props.onCooldownChange}
+                onValueChange={props.onCooldownChange}
                 disabled={totpEnabled}
-                aria-describedby={totpEnabled ? "settings-approval-gate-cooldown-help" : undefined}
-                className="mt-1 min-h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
-              >
-                {cooldownOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+                describedBy={totpEnabled ? "settings-approval-gate-cooldown-help" : undefined}
+                className="mt-1 w-full"
+                options={cooldownOptions.map((opt) => ({ value: opt.value, label: opt.label }))}
+              />
               {totpEnabled ? (
                 <span id="settings-approval-gate-cooldown-help" className="mt-1 block text-xs leading-5 text-slate-500">
                   Authenticator approvals do not use the password cooldown. Your saved password cooldown applies when Authenticator is off.

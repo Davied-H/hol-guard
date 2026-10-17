@@ -1,4 +1,3 @@
-import type { ChangeEvent } from "react";
 import {
   HiMiniArrowRight,
   HiMiniBeaker,
@@ -9,6 +8,7 @@ import { ActionButton, Badge, SectionLabel } from "./approval-center-primitives"
 import { policyActionLabel } from "./approval-center-utils";
 import { POLICY_PANEL_CARD_CLASS, STRICT_CONFIG_SCENARIOS, STRICT_CONFIG_WHAT_CHANGES } from "./policy-strict-config-surfaces";
 import type { StrictPolicySimulationResult, StrictScenarioId } from "./policy-strict-config-utils";
+import { Select } from "./select";
 
 function resolveExpectedActionTone(action: string): "success" | "destructive" | "warning" | "default" {
   if (action === "block") {
@@ -32,7 +32,7 @@ type PolicyStrictConfigRightRailProps = {
   simulationVisible: boolean;
   simulation: StrictPolicySimulationResult | null;
   onOpenInbox?: () => void;
-  onScenarioChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onScenarioChange: (value: StrictScenarioId) => void;
   onRunSimulation: () => void;
 };
 
@@ -109,17 +109,12 @@ export function PolicyStrictConfigRightRail({
         </div>
         <label className="mt-4 block space-y-1.5">
           <span className="text-sm font-medium text-brand-dark">Scenario</span>
-          <select
+          <Select
             value={scenarioId}
-            onChange={onScenarioChange}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-brand-dark"
-          >
-            {STRICT_CONFIG_SCENARIOS.map((scenario) => (
-              <option key={scenario.id} value={scenario.id}>
-                {scenario.label}
-              </option>
-            ))}
-          </select>
+            onValueChange={(value) => onScenarioChange(value as StrictScenarioId)}
+            className="w-full"
+            options={STRICT_CONFIG_SCENARIOS.map((scenario) => ({ value: scenario.id, label: scenario.label }))}
+          />
         </label>
         <div className="mt-4 space-y-2">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Expected action</p>

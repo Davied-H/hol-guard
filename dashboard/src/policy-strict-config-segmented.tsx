@@ -1,6 +1,7 @@
 import { useCallback, type ComponentType } from "react";
 import type { GuardSettings } from "./guard-types";
 import { STRICT_CONFIG_ACTION_OPTIONS } from "./policy-strict-config-utils";
+import { Select } from "./select";
 
 const PRIMARY_STRICT_ACTIONS = [
   { value: "allow", label: "Allow" },
@@ -81,18 +82,13 @@ export function StrictConfigActionSegmented({
         {showAdvanced ? (
           <label className="mt-2 block space-y-1">
             <span className="text-xs font-medium text-slate-500">Advanced fallback</span>
-            <select
+            <Select
               value={value}
               disabled={disabled}
-              onChange={(event) => handleSelect(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-brand-dark disabled:cursor-not-allowed disabled:bg-slate-50"
-            >
-              {STRICT_CONFIG_ACTION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={handleSelect}
+              className="w-full"
+              options={STRICT_CONFIG_ACTION_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            />
           </label>
         ) : null}
       </div>

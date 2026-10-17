@@ -10,6 +10,7 @@ import { guardActionDisposition } from "../guard-action";
 import { harnessDisplayName, formatRelativeTime } from "../approval-center-utils";
 import { isConnectableAppHarness } from "../apps/harness-setup-target";
 import { detectCategory, getCategoryInfo } from "./categories";
+import { Select } from "../select";
 import { guardAwareHref } from "../guard-api";
 import { Sparkline } from "./sparkline";
 import { ScopedEvidenceTable } from "./scoped-evidence-table";
@@ -142,8 +143,7 @@ function AppTabRaw({ receipts }: AppTabProps) {
     setCategoryFilter(category);
   }, []);
 
-  const handleDecisionFilterChange = useCallback((event: React.ChangeEvent<HTMLSelectElement>) => {
-    const nextValue = event.target.value;
+  const handleDecisionFilterChange = useCallback((nextValue: string) => {
     if (nextValue === "all" || nextValue === "allow" || nextValue === "ask" || nextValue === "block") {
       setDecisionFilter(nextValue);
     }
@@ -216,29 +216,26 @@ function AppTabRaw({ receipts }: AppTabProps) {
             <HiMiniFunnel className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Filter:</span>
           </div>
-          <select
+          <Select
             value={decisionFilter}
-            onChange={handleDecisionFilterChange}
-            className="min-h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue/20"
-          >
-            <option value="all">All decisions</option>
-            <option value="allow">Allowed</option>
-            <option value="ask">Review</option>
-            <option value="block">Stopped</option>
-          </select>
-          <select
+            onValueChange={handleDecisionFilterChange}
+            size="sm"
+            options={[
+              { value: "all", label: "All decisions" },
+              { value: "allow", label: "Allowed" },
+              { value: "ask", label: "Review" },
+              { value: "block", label: "Stopped" },
+            ]}
+          />
+          <Select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="min-h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue/20"
-          >
-            <option value="">All categories</option>
-            {categories.map((cat) => {
-              const info = getCategoryInfo(cat);
-              return (
-                <option key={cat} value={cat}>{info.label}</option>
-              );
-            })}
-          </select>
+            onValueChange={setCategoryFilter}
+            size="sm"
+            options={[
+              { value: "", label: "All categories" },
+              ...categories.map((cat) => ({ value: cat, label: getCategoryInfo(cat).label })),
+            ]}
+          />
           {(decisionFilter !== "all" || categoryFilter) && (
             <button
               type="button"

@@ -1,4 +1,6 @@
-import { useCallback, useId, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useId, type ReactNode } from "react";
+
+import { Select } from "../select";
 
 export interface SettingsFormSectionProps {
   title: string;
@@ -85,7 +87,7 @@ export interface SettingsSelectRowProps {
   description?: string;
   value: string;
   options: Array<{ value: string; label: string }>;
-  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onChange: (value: string) => void;
   disabled?: boolean;
 }
 
@@ -112,20 +114,15 @@ export function SettingsSelectRow({
           </p>
         ) : null}
       </div>
-      <select
+      <Select
         id={selectId}
         value={value}
-        onChange={onChange}
+        onValueChange={onChange}
+        options={options}
         disabled={disabled}
-        aria-describedby={description ? descriptionId : undefined}
-        className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue/20 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        describedBy={description ? descriptionId : undefined}
+        className="w-full"
+      />
     </div>
   );
 }

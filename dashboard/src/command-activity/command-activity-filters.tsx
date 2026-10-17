@@ -1,8 +1,9 @@
-import { useCallback, useMemo, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useMemo } from "react";
 
 import type { CommandActivityFilters } from "./command-activity-state";
 import { safeEvidenceId } from "./command-activity-presenters";
 import type { CommandActivityAnalytics, CommandExtensionsPage } from "./command-activity-types";
+import { Select, type SelectOption } from "../select";
 
 interface FilterOption {
   label: string;
@@ -19,19 +20,18 @@ function preserveActiveOption(options: FilterOption[], activeValue: string | nul
 function SelectField(props: {
   label: string;
   value: string;
-  onChange: (event: ChangeEvent<HTMLSelectElement>) => void;
-  children: ReactNode;
+  onChange: (value: string) => void;
+  options: readonly SelectOption[];
 }) {
   return (
     <label className="min-w-0 text-xs font-medium text-slate-600">
       <span className="mb-1 block">{props.label}</span>
-      <select
+      <Select
         value={props.value}
-        onChange={props.onChange}
-        className="h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/15"
-      >
-        {props.children}
-      </select>
+        onValueChange={props.onChange}
+        className="w-full"
+        options={props.options}
+      />
     </label>
   );
 }
@@ -76,28 +76,27 @@ export function CommandActivityFiltersPanel(props: {
   );
 
   const handleHarness = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => props.onChange({ harness: event.target.value || null }),
+    (value: string) => props.onChange({ harness: value || null }),
     [props.onChange],
   );
   const handleExtension = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => props.onChange({ extension_id: event.target.value || null, rule_id: null }),
+    (value: string) => props.onChange({ extension_id: value || null, rule_id: null }),
     [props.onChange],
   );
   const handleRule = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => props.onChange({ rule_id: event.target.value || null }),
+    (value: string) => props.onChange({ rule_id: value || null }),
     [props.onChange],
   );
   const handleExecution = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => props.onChange({ execution_status: (event.target.value || null) as CommandActivityFilters["execution_status"] }),
+    (value: string) => props.onChange({ execution_status: (value || null) as CommandActivityFilters["execution_status"] }),
     [props.onChange],
   );
   const handleProof = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => props.onChange({ proof_level: (event.target.value || null) as CommandActivityFilters["proof_level"] }),
+    (value: string) => props.onChange({ proof_level: (value || null) as CommandActivityFilters["proof_level"] }),
     [props.onChange],
   );
   const handlePrompted = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const value = event.target.value;
+    (value: string) => {
       let prompted: boolean | null = null;
       if (value === "prompted") prompted = true;
       if (value === "not_prompted") prompted = false;
@@ -106,7 +105,7 @@ export function CommandActivityFiltersPanel(props: {
     [props.onChange],
   );
   const handleReuse = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => props.onChange({ approval_reuse_status: (event.target.value || null) as CommandActivityFilters["approval_reuse_status"] }),
+    (value: string) => props.onChange({ approval_reuse_status: (value || null) as CommandActivityFilters["approval_reuse_status"] }),
     [props.onChange],
   );
 
@@ -114,53 +113,80 @@ export function CommandActivityFiltersPanel(props: {
     <section aria-label="Command activity filters" className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         {props.lockedHarness === null ? (
-          <SelectField label="App" value={props.filters.harness ?? ""} onChange={handleHarness}>
-            <option value="">All apps</option>
-            {harnesses.map((harness) => <option key={harness.value} value={harness.value}>{harness.label}</option>)}
-          </SelectField>
+          <SelectField
+            label="App"
+            value={props.filters.harness ?? ""}
+            onChange={handleHarness}
+            options={[
+              { value: "", label: "All apps" },
+              ...harnesses.map((harness) => ({ value: harness.value, label: harness.label })),
+            ]}
+          />
         ) : null}
-        <SelectField label="Extension" value={props.filters.extension_id ?? ""} onChange={handleExtension}>
-          <option value="">All extensions</option>
-          {extensions.map((extension) => (
-            <option key={extension.value} value={extension.value}>{extension.label}</option>
-          ))}
-        </SelectField>
-        <SelectField label="Rule" value={props.filters.rule_id ?? ""} onChange={handleRule}>
-          <option value="">All rules</option>
-          {rules.map((rule) => (
-            <option key={rule.value} value={rule.value}>{rule.label}</option>
-          ))}
-        </SelectField>
-        <SelectField label="Run result" value={props.filters.execution_status ?? ""} onChange={handleExecution}>
-          <option value="">All run results</option>
-          <option value="attempted">Attempt recorded</option>
-          <option value="prevented">Prevented</option>
-          <option value="allowed_unconfirmed">Result not recorded</option>
-          <option value="confirmed_success">Confirmed success</option>
-          <option value="confirmed_failure">Confirmed failure</option>
-          <option value="unpaired_post">Unpaired post proof</option>
-        </SelectField>
-        <SelectField label="Proof source" value={props.filters.proof_level ?? ""} onChange={handleProof}>
-          <option value="">All proof sources</option>
-          <option value="pre_hook">Pre-execution only</option>
-          <option value="post_hook">Post-execution</option>
-          <option value="unpaired_post">Unpaired post proof</option>
-        </SelectField>
+        <SelectField
+          label="Extension"
+          value={props.filters.extension_id ?? ""}
+          onChange={handleExtension}
+          options={[
+            { value: "", label: "All extensions" },
+            ...extensions.map((extension) => ({ value: extension.value, label: extension.label })),
+          ]}
+        />
+        <SelectField
+          label="Rule"
+          value={props.filters.rule_id ?? ""}
+          onChange={handleRule}
+          options={[
+            { value: "", label: "All rules" },
+            ...rules.map((rule) => ({ value: rule.value, label: rule.label })),
+          ]}
+        />
+        <SelectField
+          label="Run result"
+          value={props.filters.execution_status ?? ""}
+          onChange={handleExecution}
+          options={[
+            { value: "", label: "All run results" },
+            { value: "attempted", label: "Attempt recorded" },
+            { value: "prevented", label: "Prevented" },
+            { value: "allowed_unconfirmed", label: "Result not recorded" },
+            { value: "confirmed_success", label: "Confirmed success" },
+            { value: "confirmed_failure", label: "Confirmed failure" },
+            { value: "unpaired_post", label: "Unpaired post proof" },
+          ]}
+        />
+        <SelectField
+          label="Proof source"
+          value={props.filters.proof_level ?? ""}
+          onChange={handleProof}
+          options={[
+            { value: "", label: "All proof sources" },
+            { value: "pre_hook", label: "Pre-execution only" },
+            { value: "post_hook", label: "Post-execution" },
+            { value: "unpaired_post", label: "Unpaired post proof" },
+          ]}
+        />
         <SelectField
           label="Interaction"
           value={interactionValue}
           onChange={handlePrompted}
-        >
-          <option value="">All interactions</option>
-          <option value="prompted">Review requested</option>
-          <option value="not_prompted">No review prompt</option>
-        </SelectField>
-        <SelectField label="Authorization reuse" value={props.filters.approval_reuse_status ?? ""} onChange={handleReuse}>
-          <option value="">All reuse states</option>
-          <option value="accepted">Accepted</option>
-          <option value="rejected">Rejected</option>
-          <option value="not-applicable">Not applicable</option>
-        </SelectField>
+          options={[
+            { value: "", label: "All interactions" },
+            { value: "prompted", label: "Review requested" },
+            { value: "not_prompted", label: "No review prompt" },
+          ]}
+        />
+        <SelectField
+          label="Authorization reuse"
+          value={props.filters.approval_reuse_status ?? ""}
+          onChange={handleReuse}
+          options={[
+            { value: "", label: "All reuse states" },
+            { value: "accepted", label: "Accepted" },
+            { value: "rejected", label: "Rejected" },
+            { value: "not-applicable", label: "Not applicable" },
+          ]}
+        />
       </div>
       <p className="mt-2 min-h-5 text-xs text-slate-500" aria-live="polite">
         {props.resultCount === null ? "Loading command activity…" : `${props.resultCount.toLocaleString()} records on this page`}

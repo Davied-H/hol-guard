@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { createCommandPolicyExceptionRequest } from "./guard-api";
+import { Select } from "./select";
 import type {
   GuardCommandPolicyExceptionRequestInput,
   GuardCommandPolicyExceptionRequestResult,
@@ -130,15 +131,12 @@ export function CommandCloudExceptionRequestDialog({
         {/* Duration */}
         <div className="mb-4">
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Duration</label>
-          <select
+          <Select
             value={duration}
-            onChange={(e) => setDuration(e.target.value as GuardCommandPolicyRequestedDuration)}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-          >
-            {DURATION_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+            onValueChange={(value) => setDuration(value as GuardCommandPolicyRequestedDuration)}
+            className="w-full"
+            options={DURATION_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
+          />
         </div>
 
         {error ? (

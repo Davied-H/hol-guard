@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { fetchMcpProviderActions, type McpProviderAction } from "../local-cli-api";
 import { McpClassificationEvidence } from "./mcp-classification-evidence";
+import { Select } from "../select";
 
 function actionTitle(action: McpProviderAction): string {
   const prefix = `${action.toolkit.toUpperCase()}_`;
@@ -82,13 +83,17 @@ export function McpProviderActions(props: {
                   </div>
                   <label className="flex items-center gap-2 text-xs font-semibold text-brand-dark">
                     <span className="sr-only">Permission for {actionTitle(action)}</span>
-                    <select disabled={props.disabled} aria-label={`Permission for ${actionTitle(action)}`}
+                    <Select
+                      disabled={props.disabled}
+                      aria-label={`Permission for ${actionTitle(action)}`}
+                      testId={`mcp-permission-${action.tool_slug}`}
                       value={props.drafts[action.tool_slug]?.state ?? action.permission_state}
-                      onChange={(event) => props.onChange(action, event.target.value as "review" | "block")}
-                      className="min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm">
-                      <option value="review">Ask</option>
-                      <option value="block">Deny</option>
-                    </select>
+                      onValueChange={(value) => props.onChange(action, value as "review" | "block")}
+                      options={[
+                        { value: "review", label: "Ask" },
+                        { value: "block", label: "Deny" },
+                      ]}
+                    />
                   </label>
                 </div>
                 <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-brand-dark/75">{action.description.slice(0, 260)}</p>

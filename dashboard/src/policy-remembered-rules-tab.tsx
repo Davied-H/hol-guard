@@ -4,6 +4,7 @@ import { HiMiniAdjustmentsHorizontal, HiMiniArrowDownTray, HiMiniMagnifyingGlass
 import { ActionButton } from "./approval-center-primitives";
 import { harnessDisplayName, policyActionLabel } from "./approval-center-utils";
 import type { GuardPolicyDecision, GuardRuntimeSnapshot } from "./guard-types";
+import { Select } from "./select";
 import { PolicyActiveModeCard } from "./policy-active-mode-card";
 import { downloadPolicies } from "./policy-export";
 import { PolicyGuardCloudBundleCard } from "./policy-guard-cloud-bundle-card";
@@ -202,32 +203,27 @@ export function PolicyRememberedRulesTab({
 
           {showFilters ? (
             <div className="flex flex-wrap gap-2">
-              <select
+              <Select
                 value={appFilter}
-                onChange={(event) => setAppFilter(event.target.value)}
+                onValueChange={setAppFilter}
                 aria-label="Filter by app"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-brand-dark"
-              >
-                <option value="">All assets</option>
-                {appOptions.map((app) => (
-                  <option key={app} value={app}>
-                    {harnessDisplayName(app)}
-                  </option>
-                ))}
-              </select>
-              <select
+                options={[
+                  { value: "", label: "All assets" },
+                  ...appOptions.map((app) => ({ value: app, label: harnessDisplayName(app) })),
+                ]}
+              />
+              <Select
                 value={familyFilter}
-                onChange={(event) => setFamilyFilter(event.target.value)}
+                onValueChange={setFamilyFilter}
                 aria-label="Filter by action type"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-brand-dark"
-              >
-                <option value="">All action types</option>
-                {[...familyCounts.entries()].map(([family, count]) => (
-                  <option key={family} value={family}>
-                    {resolveFamilyFilterLabel(family)} ({count})
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "All action types" },
+                  ...[...familyCounts.entries()].map(([family, count]) => ({
+                    value: family,
+                    label: `${resolveFamilyFilterLabel(family)} (${count})`,
+                  })),
+                ]}
+              />
             </div>
           ) : null}
         </div>

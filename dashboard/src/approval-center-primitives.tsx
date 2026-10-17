@@ -1,5 +1,6 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, AnchorHTMLAttributes, ChangeEvent, ReactNode, Ref } from "react";
+import { Select } from "./select";
 import {
   HiMiniArrowTopRightOnSquare,
   HiMiniCommandLine,
@@ -64,8 +65,8 @@ export function ShellHeader(props: {
   onReinstallGuard?: () => void;
   updatePhase?: GuardUpdatePhase;
 }) {
-  function handleMobileNavigationChange(event: ChangeEvent<HTMLSelectElement>) {
-    props.onNavigate(event.target.value);
+  function handleMobileNavigationChange(value: string) {
+    props.onNavigate(value);
   }
 
   const countDisplay = props.queuedCount > 99 ? "99+" : String(props.queuedCount);
@@ -84,20 +85,14 @@ export function ShellHeader(props: {
           <span className="font-mono text-base font-semibold tracking-tight text-white hidden sm:inline">HOL Guard</span>
         </a>
         <div className="min-w-0 flex-1">
-          <select
+          <Select
             id="guard-mobile-navigation"
-            name="guard-mobile-navigation"
             aria-label="Navigate Guard sections"
-            className="h-11 w-full rounded-full border border-white/25 bg-white/95 px-4 text-sm font-medium text-brand-dark shadow-none transition-colors duration-150 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-            onChange={handleMobileNavigationChange}
+            className="h-11 w-full rounded-full border-white/25 bg-white/95 px-4"
+            onValueChange={handleMobileNavigationChange}
             value={sidebarLinks.find((item) => item.view === props.view)?.href ?? (hubViews.has(props.view) ? "/supply-chain" : "/")}
-          >
-            {sidebarLinks.map((item) => (
-              <option key={item.href} value={item.href}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            options={sidebarLinks.map((item) => ({ value: item.href, label: item.label }))}
+          />
         </div>
         {props.onOpenMobileQueue && props.view === "inbox" && props.queuedCount > 0 && (
           <button
@@ -524,7 +519,7 @@ export function ListControls(props: {
   filterOptions: string[];
   allLabel: string;
   onSearchChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onFilterChange: (event: ChangeEvent<HTMLSelectElement>) => void;
+  onFilterChange: (value: string) => void;
   className?: string;
 }) {
   return (
@@ -541,18 +536,15 @@ export function ListControls(props: {
       </label>
       <label className="block">
         <span className="sr-only">{props.filterLabel}</span>
-        <select
+        <Select
           value={props.filterValue}
-          onChange={props.onFilterChange}
-          className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-brand-dark transition-colors duration-150 focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          <option value="all">{props.allLabel}</option>
-          {props.filterOptions.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+          onValueChange={props.onFilterChange}
+          className="min-h-11 w-full"
+          options={[
+            { value: "all", label: props.allLabel },
+            ...props.filterOptions.map((option) => ({ value: option, label: option })),
+          ]}
+        />
       </label>
     </div>
   );

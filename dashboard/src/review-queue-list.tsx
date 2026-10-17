@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useMemo, useState, type ChangeEvent } from "re
 import { EmptyState, SectionLabel } from "./approval-center-primitives";
 import { harnessDisplayName } from "./approval-center-utils";
 import type { GuardApprovalRequest } from "./guard-types";
+import { Select } from "./select";
 import {
   resolveQueueCategory,
   REVIEW_SEMANTIC_GROUPS,
@@ -118,8 +119,8 @@ export const ReviewQueueList = forwardRef<HTMLDivElement, {
   const handleCategoryChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     onCategoryFilterChange(event.target.value as QueueCategoryId | "all");
   }, [onCategoryFilterChange]);
-  const handleSortChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    onSortDirectionChange(event.target.value as QueueSortDirection);
+  const handleSortChange = useCallback((value: string) => {
+    onSortDirectionChange(value as QueueSortDirection);
   }, [onSortDirectionChange]);
   const handleDateFromChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     onDateFromChange(event.target.value);
@@ -278,17 +279,18 @@ export const ReviewQueueList = forwardRef<HTMLDivElement, {
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Sort by date
               </span>
-              <select
+              <Select
                 value={sortDirection}
-                onChange={handleSortChange}
+                onValueChange={handleSortChange}
                 aria-label="Sort review queue"
-                className="min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-brand-dark focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-              >
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="highest_risk">Highest risk first</option>
-                <option value="category">Category</option>
-              </select>
+                className="w-full"
+                options={[
+                  { value: "newest", label: "Newest first" },
+                  { value: "oldest", label: "Oldest first" },
+                  { value: "highest_risk", label: "Highest risk first" },
+                  { value: "category", label: "Category" },
+                ]}
+              />
             </label>
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block">

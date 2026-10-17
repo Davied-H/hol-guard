@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { initialize, mount, showCustomExtensions } from "./extension-control-fixtures";
+import { chooseSelectOption } from "./select-option";
 
 for (const width of [1280, 390]) {
   test(`catalog refresh preserves drafts and scopes bulk choices at ${width}px`, async ({ page }, testInfo) => {
@@ -161,10 +162,10 @@ for (const width of [1280, 390]) {
     await expect(provider.getByRole("heading", { name: "Send message", exact: true })).toBeVisible();
     await expect(provider.getByRole("heading", { name: "Search messages", exact: true })).toHaveCount(0);
     await expect(provider.getByText("slack · Account not verified", { exact: true })).toBeVisible();
-    await provider.getByRole("combobox", { name: "Permission for Send message", exact: true }).selectOption("block");
+    await chooseSelectOption(page, "Permission for Send message", "Deny");
     await expect(detail.getByRole("button", { name: "Review 1 action changes", exact: true })).toBeVisible();
     await provider.getByRole("searchbox", { name: "Search actions or apps", exact: true }).fill("");
-    await expect(provider.getByRole("combobox", { name: "Permission for Send message", exact: true })).toHaveValue("block");
+    await expect(provider.getByRole("combobox", { name: "Permission for Send message", exact: true })).toHaveAttribute("data-select-value", "block");
     await expect(detail.getByRole("heading", { name: "2 tools cached · Refresh failed", exact: true })).toBeVisible();
     const read = detail.getByRole("radiogroup", { name: "Read records protection setting" });
     await read.getByRole("radio", { name: "Allow", exact: true }).click();
