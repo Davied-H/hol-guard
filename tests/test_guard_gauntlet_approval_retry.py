@@ -54,8 +54,6 @@ def test_lane_catalog_carries_identical_env_prefixed_reworded_and_unbindable_ret
     # for it would defeat the lane.
     assert by_id["approved-retry-identical-command"].commands == ("ls -la",)
     assert by_id["approved-retry-unbindable-command"].commands == ("git status --short",)
-    # An environment prefix binds the retry to the settings as spelled, so the
-    # same approval must let the identical prefixed command run.
     assert by_id["approved-retry-env-prefixed-command"].commands == ("LC_ALL=C ls -la",)
     assert by_id["approved-retry-reworded-command"].commands == ()
 
@@ -285,7 +283,7 @@ def _lane_case() -> dict:
 
 
 def _lane_scenario() -> Scenario:
-    return load_catalog(APPROVAL_RETRY_CATALOG)[0]
+    return next(s for s in load_catalog(APPROVAL_RETRY_CATALOG) if s.commands == ("git status --short",))
 
 
 @pytest.mark.parametrize(

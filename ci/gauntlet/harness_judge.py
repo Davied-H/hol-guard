@@ -13,7 +13,7 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
-from .approval_retry import retry_assessment
+from .approval_retry import pinned_retry_outcome, retry_assessment
 from .catalog import Scenario
 from .connector_judge import connector_setup_outcome, connector_tool_outcome, reason_text, ungranted_stop
 from .interruptions import case_interruptions, describe
@@ -236,7 +236,10 @@ def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
         # which fails any stop and any approval row — cannot judge it.
         if not calls:
             return "not-exercised", "the model made no tool call"
-        return retry_assessment(case, decisions)
+        outcome = retry_assessment(case, decisions)
+        if outcome[0] == "pass" and (pinned := pinned_retry_outcome(scenario.commands, decisions)):
+            return pinned
+        return outcome
     if scenario.oracle == "mixed-read-batch":
         return _mixed_reads(case, decisions)
     if scenario.oracle == "connector-tool" and (tool_result := connector_tool_outcome(scenario, decisions, calls)):
