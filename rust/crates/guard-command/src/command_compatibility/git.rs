@@ -206,6 +206,8 @@ pub(super) fn inspection_arguments<'a>(
                 | "show-ref"
                 | "for-each-ref"
                 | "rev-list"
+                | "shortlog"
+                | "check-ignore"
         )
     )
     .then_some(remaining)

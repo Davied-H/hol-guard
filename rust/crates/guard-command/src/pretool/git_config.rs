@@ -66,6 +66,8 @@ pub(super) fn execution_free_paging(
             | "show-ref"
             | "for-each-ref"
             | "rev-list"
+            | "shortlog"
+            | "check-ignore"
     ) {
         return None;
     }
@@ -85,6 +87,11 @@ pub(super) fn execution_free_paging(
     }
     if matches!(operation, "blame" | "describe" | "reflog")
         && !super::git_history_reads::read_form(operation, &remaining[1..])
+    {
+        return None;
+    }
+    if matches!(operation, "shortlog" | "check-ignore")
+        && !super::git_listing_reads::read_form(operation, &remaining[1..])
     {
         return None;
     }
