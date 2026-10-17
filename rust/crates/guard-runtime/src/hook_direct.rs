@@ -93,8 +93,6 @@ const EVENT_NAME_FIELDS: [&str; 6] = [
 ];
 const PRE_TOOL_USE: &str = "PreToolUse";
 const POST_TOOL_USE: &str = "PostToolUse";
-/// The denial the daemon adds a command-control repair link to.
-const REPAIRABLE_BLOCK_REASON: &str = "native_command_control_authority_block";
 const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
 const USER_PROMPT_EVENT_NAMES: [&str; 3] = ["prompt", "userpromptsubmit", "userpromptsubmitted"];
 const CLAUDE_CODE: &str = "claude-code";
