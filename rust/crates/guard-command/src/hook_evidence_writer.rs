@@ -159,8 +159,11 @@ pub trait ComposioApi {
 /// Journal filesystem seam (`runtime_hook_evidence_journal` helpers +
 /// `datetime.now(timezone.utc)` inside `append_journal`).
 pub trait EvidenceJournalApi {
-    /// `append_journal(path, record)` — lock + O_APPEND + fsync + best-effort
-    /// sidecar; `Err` = `OSError`.
+    /// `append_journal(path, record)` — lock, `O_APPEND`, fsync, then the
+    /// preview sidecar. The sidecar write shares the record's fate, as it does
+    /// in Python: a failure there truncates the appended record back off the
+    /// journal rather than leaving a record whose preview was never stored.
+    /// `Err` = `OSError`.
     fn append_journal(&self, path: &Path, record: &EvidenceRecord) -> Result<(), io::Error>;
     /// `rewrite_journal(path, *, remove_record_id=, max_bytes=)` — returns
     /// the count of dropped invalid records; `Err` = `OSError`.
