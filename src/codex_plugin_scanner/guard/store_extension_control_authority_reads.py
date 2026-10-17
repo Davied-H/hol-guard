@@ -313,6 +313,20 @@ class ExtensionControlAuthorityReadsMixin:
                 previous = self._read_extension_control_authority_locked(stored_catalog_digest)
                 if previous.health is not AuthorityHealth.PROTECTED:
                     raise ExtensionControlAuthorityError("extension control catalog migration source unavailable")
+                if self._catalog_migration_oscillates(
+                    revision,
+                    migrated_from=catalog_digest,
+                    migrated_to=stored_catalog_digest,
+                    key=key,
+                ):
+                    # Two runtimes with different catalogs are migrating this
+                    # authority back and forth. Both have already recorded the
+                    # move once; committing another revision only hands the
+                    # loop back to the other side, and the committed revision
+                    # then advances faster than a dashboard draft can be
+                    # applied. Rebind the controls in memory instead, exactly
+                    # as a migration would, and leave the stored revision alone.
+                    return self._rebind_extension_control_catalog(previous, registry=migration_registry, key=key)
                 return self._migrate_extension_control_catalog(previous, registry=migration_registry, key=key)
             payload = verify_authenticated_record(
                 str(row["snapshot_json"]),
