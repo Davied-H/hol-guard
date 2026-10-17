@@ -114,6 +114,28 @@ def native_claude_approval_copy(
     return rendered[1].get("value")
 
 
+def native_evaluation_has_terminal_policy_action(
+    harness: str,
+    evaluation: Mapping[str, object],
+    *,
+    guard_home: Path | None = None,
+) -> bool | None:
+    """Whether an approval could still change this evaluation; ``None`` when unavailable.
+
+    A ``block`` or ``sandbox-required`` policy action is terminal: no answer a
+    user gives can lift it, so the caller does not open an approval flow for
+    it. Ranking those actions is the resident's own verdict about the
+    evaluation it produced, so Python asks rather than re-reads it.
+    """
+
+    params: dict[str, object] = {"evaluation": {"artifacts": evaluation.get("artifacts")}}
+    rendered = native_render_cli("terminal_policy_action", harness, params, guard_home=guard_home)
+    if rendered is None or rendered[1] is None:
+        return None
+    value = rendered[1].get("value")
+    return value if isinstance(value, bool) else None
+
+
 # The payload fields the artifact-id rule reads to name an event.
 _ARTIFACT_ID_PAYLOAD_FIELDS = (
     "source_scope",
@@ -199,6 +221,7 @@ __all__ = [
     "HOOK_RENDER_FEATURE",
     "native_artifact_id_from_event",
     "native_claude_approval_copy",
+    "native_evaluation_has_terminal_policy_action",
     "native_render_cli",
     "native_render_pre_tool",
     "native_render_pre_tool_review",

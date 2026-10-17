@@ -221,3 +221,33 @@ fn artifact_id_kind_requires_the_canonical_harness() {
     assert_eq!(result.status, "error");
     assert_eq!(result.code, "native_hook_render_invalid");
 }
+
+#[test]
+fn terminal_policy_action_kind_answers_whether_an_approval_could_still_matter() {
+    let mut req = request("terminal_policy_action");
+    req.cli = Some(json!({
+        "evaluation": {"artifacts": [{"policy_action": "block"}]},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], true);
+
+    // A reviewable action still has a question worth asking.
+    req.cli = Some(json!({
+        "evaluation": {"artifacts": [{"policy_action": "review"}]},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], false);
+}
+
+#[test]
+fn terminal_policy_action_kind_requires_an_evaluation_object() {
+    let mut req = request("terminal_policy_action");
+    req.cli = Some(json!({"evaluation": "block"}));
+    let result = decode(evaluate_hook_render_request(&req).expect("encoded"));
+    assert_eq!(result.status, "error");
+    assert_eq!(result.code, "native_hook_render_invalid");
+}

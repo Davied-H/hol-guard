@@ -14,6 +14,7 @@ import sys
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
+from ..native_hook_render import native_evaluation_has_terminal_policy_action
 from .native_hook_exit_code import native_hook_verdict_exit_code
 
 
@@ -430,7 +431,14 @@ def _headless_approval_resolver(
     should_wait_for_approvals = not bool(getattr(args, "json", False))
 
     def resolve(detection, payload):
-        if evaluation_has_terminal_policy_action(payload):
+        # A block or sandbox-required answer is not a question to put to a
+        # user, and the resident that produced the evaluation decides that. A
+        # resident that cannot answer leaves the verdict standing rather than
+        # opening an approval flow that could only reach the wrong outcome.
+        terminal = native_evaluation_has_terminal_policy_action(
+            args.harness, payload, guard_home=context.guard_home
+        )
+        if terminal is None or terminal:
             return payload
         managed_install = _managed_install_for(store, args.harness)
         approval_flow = approval_prompt_flow(args.harness, managed_install=managed_install)

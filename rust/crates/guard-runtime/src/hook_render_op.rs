@@ -16,8 +16,8 @@ use guard_command::hook_responses::cli_documents::{
 };
 use guard_command::hook_responses::{pre_tool, pre_tool_review, recording_only_pre_tool, Object};
 use guard_contracts::{
-    artifact_id_from_event, HookRenderRequestV1, HookRenderResultV1, HOOK_RENDER_MAX_BYTES,
-    HOOK_RENDER_RESULT_SCHEMA,
+    artifact_id_from_event, evaluation_has_terminal_policy_action, HookRenderRequestV1,
+    HookRenderResultV1, HOOK_RENDER_MAX_BYTES, HOOK_RENDER_RESULT_SCHEMA,
 };
 use serde_json::{json, Value};
 
@@ -91,6 +91,20 @@ fn render(request: &HookRenderRequestV1) -> Result<Value, &'static str> {
         document.insert(
             "value".into(),
             Value::String(artifact_id_from_event(harness, canonical_harness, &payload)),
+        );
+        return Ok(cli_payload(CliOutcome::Document(document)));
+    }
+    if request.kind == "terminal_policy_action" {
+        // Whether an approval could still change the outcome is a verdict about
+        // the verdict: a block or sandbox-required answer is not a question to
+        // put to a user. The resident reads its own evaluation rather than
+        // letting the caller re-rank the actions it just returned.
+        let params = object_of(request.cli.as_ref()).ok_or("native_hook_render_invalid")?;
+        let evaluation = object_of(params.get("evaluation")).ok_or("native_hook_render_invalid")?;
+        let mut document = Object::new();
+        document.insert(
+            "value".into(),
+            Value::Bool(evaluation_has_terminal_policy_action(evaluation)),
         );
         return Ok(cli_payload(CliOutcome::Document(document)));
     }
