@@ -21,7 +21,13 @@ def test_scenario_tool_inventory_matches_actual_task():
 
     for scenario in load_catalog():
         tools = set(_scenario_tools(scenario).split(","))
-        if scenario.oracle == "home-copy-task":
+        if scenario.oracle == "native-tools":
+            expected = set(scenario.required_tools) | ({"bash"} if scenario.commands else set())
+            # The SDK requires the actual read tool behind eval's tool.read.
+            if "eval" in scenario.required_tools:
+                expected.add("read")
+            assert tools == expected
+        elif scenario.oracle == "home-copy-task":
             assert tools == {"bash", "read"}
         elif scenario.commands:
             assert tools == {"bash"}
@@ -70,6 +76,7 @@ def observed_case(command="echo fixture", *, blocked=False):
                 "input": dict(args),
                 "input_sha256": input_digest(args),
                 "observed_input_sha256": "c" * 64,
+                "rendered_fields": [],
                 "tool": "bash",
                 "decision": "deny" if blocked else "allow",
                 "http_status": 200,
@@ -86,6 +93,7 @@ def observed_case(command="echo fixture", *, blocked=False):
                     "input": dict(args),
                     "input_sha256": input_digest(args),
                     "observed_input_sha256": "c" * 64,
+                    "rendered_fields": [],
                     "tool": "bash",
                     "decision": "allow",
                     "http_status": 200,
@@ -356,6 +364,35 @@ def test_completed_leader_does_not_leave_a_term_ignoring_descendant(tmp_path):
     assert not state.stdout.strip() or state.stdout.strip().startswith("Z")
 
 
+def test_agent_process_reads_a_closed_stdin(tmp_path):
+    """The prompt is in argv; an inherited open stdin made agents wait to the deadline."""
+    import os
+    import sys
+
+    from ci.gauntlet.host_process import run_process
+
+    if os.name != "posix":
+        pytest.skip("Gauntlet process containment is POSIX-only")
+    read, write = os.pipe()
+    saved = os.dup(0)
+    os.dup2(read, 0)
+    try:
+        code, timed_out = run_process(
+            [sys.executable, "-c", "import sys; sys.stdout.write(repr(sys.stdin.read()))"],
+            cwd=tmp_path,
+            env=dict(os.environ),
+            output=tmp_path / "stdout.log",
+            error_output=tmp_path / "stderr.log",
+            timeout=10,
+        )
+    finally:
+        os.dup2(saved, 0)
+        for fd in (saved, read, write):
+            os.close(fd)
+    assert (code, timed_out) == (0, False)
+    assert (tmp_path / "stdout.log").read_text() == "''"
+
+
 def test_interrupt_during_termination_still_kills_and_reaps(tmp_path, monkeypatch):
     """An exception in the graceful wait must run the final kill and reap."""
     import os
@@ -466,6 +503,22 @@ def test_command_placeholders_are_shell_quoted_without_changing_native_paths(wor
         {workspace: "{{workspace}}", shlex.quote(workspace): "{{workspace}}"},
     )
     assert exported[0]["args"]["command"] == scenario.commands[0]
+
+
+def test_windows_placeholders_render_as_unquoted_forward_slash_paths():
+    """Keep `{{home}}/suffix` one argument in bash and PowerShell, and redact it back."""
+    import shlex
+
+    from ci.gauntlet.input_evidence import fixture_path_aliases, redact_value
+
+    home = "C:\\Users\\tester\\work\\case-05\\home"
+    scenario = Scenario("windows-root", "allow", "commands", "Read {{home}}/notes.md", ("cat {{home}}/notes.md",))
+    rendered = scenario.render({"home": home})
+    assert rendered.prompt == "Read C:/Users/tester/work/case-05/home/notes.md"
+    assert rendered.commands == ("cat C:/Users/tester/work/case-05/home/notes.md",)
+    assert shlex.split(rendered.commands[0]) == ["cat", "C:/Users/tester/work/case-05/home/notes.md"]
+    replacements = fixture_path_aliases({home: "{{home}}"})
+    assert redact_value(rendered.commands[0], replacements) == scenario.commands[0]
 
 
 @pytest.mark.parametrize("name", ["id", "expectation", "oracle", "prompt", "path"])

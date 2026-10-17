@@ -51,55 +51,39 @@ runs:
     shell: bash
     run: bash scripts/ci/setup_sonar_rust.sh
     if: inputs.has-token == 'true'
-  - name: Select successful current-attempt full Rust coverage
+  - name: Select complete source-bound Rust coverage
     id: rust-coverage-selection
+    if: inputs.has-token == 'true'
     shell: bash
-    run: uv run --no-sync python -m scripts.ci.rust_coverage_report select
     env:
       GITHUB_TOKEN: ${{ github.token }}
-    if: inputs.has-token == 'true'
-  - name: Download verified full Rust coverage execution
-    uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+    run: uv run --no-sync python -m scripts.ci.rust_coverage_reports select
+  - name: Download complete Rust coverage partitions
+    uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
     with:
-      artifact-ids: ${{ steps.rust-coverage-selection.outputs.artifact-id }}
-      path: rust-coverage
-      merge-multiple: true
+      artifact-ids: ${{ steps.rust-coverage-selection.outputs.artifact-ids }}
+      path: rust-coverage-data
     if: inputs.has-token == 'true'
-  - name: Select successful native consumer producer metadata
-    id: native-consumer-metadata-selection
+  - name: Merge verified Rust coverage with LCOV
     shell: bash
-    run: uv run --no-sync python -m scripts.ci.native_consumer_coverage select-metadata
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
+    run: |
+      if ! command -v lcov >/dev/null 2>&1; then
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends lcov
+      fi
+      uv run --no-sync pytest --noconftest -q tests/test_rust_coverage_reports.py
+      uv run --no-sync python -m scripts.ci.rust_coverage_reports merge
     if: inputs.has-token == 'true'
-  - name: Download matching native consumer producer metadata
-    uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+  - name: Preserve merged Rust coverage evidence
+    if: inputs.has-token == 'true'
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
     with:
-      artifact-ids: ${{ steps.native-consumer-metadata-selection.outputs.artifact-id }}
-      path: native-consumer-metadata
-      merge-multiple: true
-    if: inputs.has-token == 'true'
-  - name: Select every successful current-attempt native coverage shard
-    id: rust-consumer-selection
-    shell: bash
-    run: uv run --no-sync python -m scripts.ci.rust_coverage_report select-shards
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
-    if: inputs.has-token == 'true'
-  - name: Download exact native execution coverage shards
-    uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-    with:
-      artifact-ids: ${{ steps.rust-consumer-selection.outputs.artifact-ids }}
-      path: rust-consumer-coverage
-      merge-multiple: false
-    if: inputs.has-token == 'true'
-  - name: Verify and merge full Rust plus actual native consumer coverage
-    shell: bash
-    run: uv run --no-sync python -m scripts.ci.rust_coverage_report merge
-    env:
-      GITHUB_TOKEN: ${{ github.token }}
-    if: inputs.has-token == 'true'
-
+      name: rust-coverage-merged-${{ github.run_attempt }}
+      path: |
+        coverage-reports/rust-lcov.info
+        rust-coverage-selection.json
+      if-no-files-found: error
+      retention-days: 7
   - name: Wait for successful current-attempt strict Clippy report
     id: clippy-selection
     shell: bash

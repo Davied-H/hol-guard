@@ -19,7 +19,42 @@ use crate::resident_diagnostics::{observe, Phase};
 pub(crate) struct ExpectedProcessIdentity<'a> {
     pub(crate) process_id: u32,
     pub(crate) start_marker: &'a str,
-    pub(crate) digest: Option<&'a str>,
+    pub(crate) runtime: ExpectedRuntime<'a>,
+}
+
+/// How a client proves the peer runs the runtime it expects.
+pub(crate) enum ExpectedRuntime<'a> {
+    /// The peer shares this executable's path, or its bytes hash to this
+    /// runtime's digest. A onefile launcher extracts identical runtimes into
+    /// distinct directories, so this reads the peer's runtime when the paths
+    /// differ.
+    Package,
+    /// The peer's runtime hashes to this digest.
+    Digest(&'a str),
+    /// The peer shares this executable's path, or its state records the digest
+    /// that this executable's own durable copy is published under. A caller on
+    /// the hook path takes this because it can afford no runtime hash.
+    DurableCopy {
+        recorded: &'a str,
+        published: &'a str,
+    },
+}
+
+impl<'a> ExpectedRuntime<'a> {
+    /// What a direct-lane client requires of the resident it connects to.
+    ///
+    /// A durable copy knows its own digest from the directory it was published
+    /// under, so it can accept the resident its state records without reading a
+    /// runtime. Any other launcher keeps the package expectation it had before.
+    pub(crate) fn for_direct_lane(recorded: &'a str, durable_digest: Option<&'a str>) -> Self {
+        match durable_digest {
+            Some(published) => Self::DurableCopy {
+                recorded,
+                published,
+            },
+            None => Self::Package,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -60,16 +95,72 @@ fn read_exact(
         .map_err(|_| ResidentClientError::fatal("native_client_frame_read_failed".to_owned()))
 }
 
+/// Longest the client waits for the connect and authentication handshake.
+const AUTH_WINDOW_MAX: Duration = Duration::from_secs(2);
+
+/// Handshake window for a request with the given total budget.
+///
+/// Short budgets, such as hook decisions, keep the fixed 250 ms window.  A
+/// request that was granted a long budget (lifecycle and approval-gate calls)
+/// gets a proportionally longer handshake so a briefly slow resident does not
+/// turn into a permanent failure.  It never exceeds the request budget, and an
+/// expired window still fails closed.
+fn auth_window(timeout: Duration) -> Duration {
+    (timeout / 4)
+        .clamp(AUTH_TIMEOUT, AUTH_WINDOW_MAX)
+        .min(timeout)
+}
+
+/// Read the server proof, bounding the whole read (not each read call) by `deadline`.
+///
+/// A socket timeout restarts on every read, so a peer that drips the proof a few
+/// bytes at a time could otherwise hold the handshake open past its window.
+fn read_proof_within(
+    stream: &mut dyn crate::ResidentStream,
+    output: &mut [u8],
+    deadline: std::time::Instant,
+) -> Result<(), ResidentClientError> {
+    let mut filled = 0;
+    while filled < output.len() {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(ResidentClientError::fatal(
+                "native_client_frame_read_failed".to_owned(),
+            ));
+        }
+        stream
+            .set_resident_read_timeout(Some(remaining))
+            .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
+        match stream.read(&mut output[filled..]) {
+            Ok(0) => {
+                return Err(ResidentClientError::fatal(
+                    "native_client_frame_read_failed".to_owned(),
+                ))
+            }
+            Ok(read) => filled += read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => {
+                return Err(ResidentClientError::fatal(
+                    "native_client_frame_read_failed".to_owned(),
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
 fn authenticate(
     stream: &mut dyn crate::ResidentStream,
     token: &[u8],
     timeout: Duration,
 ) -> Result<[u8; AUTH_NONCE_BYTES], ResidentClientError> {
+    let started = std::time::Instant::now();
+    let window = auth_window(timeout);
     stream
-        .set_resident_read_timeout(Some(timeout.min(AUTH_TIMEOUT)))
+        .set_resident_read_timeout(Some(window))
         .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
     stream
-        .set_resident_write_timeout(Some(timeout.min(AUTH_TIMEOUT)))
+        .set_resident_write_timeout(Some(window))
         .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
     let _ = stream.configure_low_latency();
     let mut nonce = [0u8; AUTH_NONCE_BYTES];
@@ -84,9 +175,11 @@ fn authenticate(
     // A server-proof read happens after the client has sent its nonce.  Even
     // an EOF that looks like a transport teardown at this phase is not safe
     // to replay: the peer has not completed authentication.
-    read_exact(stream, &mut server_proof).map_err(|error| ResidentClientError {
-        code: error.code,
-        retryable_teardown: false,
+    read_proof_within(stream, &mut server_proof, started + window).map_err(|error| {
+        ResidentClientError {
+            code: error.code,
+            retryable_teardown: false,
+        }
     })?;
     let expected = hmac_sha256(token, SERVER_PROOF_LABEL, &nonce);
     if !constant_time_eq(&server_proof, &expected) {
@@ -96,15 +189,26 @@ fn authenticate(
 }
 
 fn validate_runtime_owner(identity: &ExpectedProcessIdentity<'_>) -> Result<(), String> {
-    match identity.digest {
-        Some(digest) => crate::resident_state::validate_runtime_process_identity(
+    match identity.runtime {
+        ExpectedRuntime::Digest(digest) => {
+            crate::resident_state::validate_runtime_process_identity(
+                identity.process_id,
+                identity.start_marker,
+                digest,
+            )
+        }
+        ExpectedRuntime::Package => crate::resident_state::validate_package_process_identity(
             identity.process_id,
             identity.start_marker,
-            digest,
         ),
-        None => crate::resident_state::validate_package_process_identity(
+        ExpectedRuntime::DurableCopy {
+            recorded,
+            published,
+        } => crate::resident_state::validate_direct_lane_process_identity(
             identity.process_id,
             identity.start_marker,
+            recorded,
+            Some(published),
         ),
     }
 }
@@ -131,7 +235,7 @@ fn connect_loopback_with_digest(
         return Err("native_client_endpoint_invalid".to_owned());
     }
     validate_runtime_owner(identity)?;
-    let stream = TcpStream::connect_timeout(&address, timeout.min(AUTH_TIMEOUT))
+    let stream = TcpStream::connect_timeout(&address, auth_window(timeout))
         .map_err(|_| "native_client_connect_failed".to_owned())?;
     revalidate_runtime_owner(identity)?;
     Ok(Box::new(stream))

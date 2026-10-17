@@ -171,9 +171,10 @@ def _rule_version_registry() -> tuple[CommandSafetyExtensionRegistry, str]:
     rule = extension.rules[0]
     versioned_rule = replace(rule, rule_version="99.0.0")
     versioned_extension = replace(extension, rules=(versioned_rule, *extension.rules[1:]))
-    return CommandSafetyExtensionRegistry((versioned_extension, *extensions[1:])), extension.permissions[
-        0
-    ].permission_id
+    permission_id = next(
+        permission.permission_id for permission in extension.permissions if rule.rule_id in permission.rule_ids
+    )
+    return CommandSafetyExtensionRegistry((versioned_extension, *extensions[1:])), permission_id
 
 
 def _matcher_contract_registry() -> tuple[CommandSafetyExtensionRegistry, str]:
@@ -205,12 +206,13 @@ def _proof(
     key: str,
     actor_id: str,
     nonce: str,
+    catalog_digest: str = BUILT_IN_COMMAND_EXTENSION_REGISTRY.catalog_digest,
 ) -> ExtensionControlProof:
     return issue_extension_control_proof(
         store.guard_home,
         ExtensionControlMutation(
             previous_revision=revision,
-            catalog_digest=BUILT_IN_COMMAND_EXTENSION_REGISTRY.catalog_digest,
+            catalog_digest=catalog_digest,
             layers=layers,
             actor_id=actor_id,
             idempotency_key=key,

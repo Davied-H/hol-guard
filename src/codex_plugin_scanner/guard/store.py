@@ -6,16 +6,15 @@ from __future__ import annotations
 from .store_base import *
 from .store_base import (
     SystemKeyringSecretStore,
-    _global_runtime_scoped_exact_match_key,
     _is_runtime_scoped_exact_match_key,
     _runtime_scoped_exact_match_key,
-    browser_mcp_exact_match_context,
     runtime_tool_action_exact_match_context,
     runtime_tool_action_policy_artifact_id,
     runtime_tool_action_portable_match_context,
 )
 from .store_approval_facade import StoreApprovalsMixin
 from .store_approval_queries import StoreApprovalQueriesMixin
+from .store_advisory_cache import StoreAdvisoryCacheMixin
 from .store_cloud_events import StoreCloudEventsMixin
 from .store_command_activity import StoreCommandActivityMixin
 from .store_command_activity_api import StoreCommandActivityApiMixin
@@ -59,9 +58,6 @@ from .store_sessions import StoreSessionsMixin
 from .store_storage_maintenance import StoreStorageMaintenanceMixin
 from .store_temporary_mcp import StoreTemporaryMcpMixin
 from .store_workflow_capabilities import StoreWorkflowCapabilitiesMixin
-from .store_workflow_capability_lookup import StoreWorkflowCapabilityLookupMixin
-from .store_workflow_capability_receipt_lookup import StoreWorkflowCapabilityReceiptLookupMixin
-from .store_workflow_capability_revocation import StoreWorkflowCapabilityRevocationMixin
 from .store_workflow_capability_secret_control import StoreWorkflowCapabilitySecretControlMixin
 
 
@@ -89,6 +85,7 @@ class GuardStore(
     StoreReviewPolicyMemoryMixin,
     StorePolicyIntegrityAdminMixin,
     StoreCloudEventsMixin,
+    StoreAdvisoryCacheMixin,
     StoreReceiptsRuntimeMixin,
     StoreApprovalQueriesMixin,
     StoreApprovalsMixin,
@@ -106,9 +103,6 @@ class GuardStore(
     StoreReadStateMixin,
     StoreTemporaryMcpMixin,
     StoreWorkflowCapabilitiesMixin,
-    StoreWorkflowCapabilityLookupMixin,
-    StoreWorkflowCapabilityReceiptLookupMixin,
-    StoreWorkflowCapabilityRevocationMixin,
 ):
     """Local SQLite store for Guard state."""
 

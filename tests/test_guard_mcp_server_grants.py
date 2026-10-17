@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from codex_plugin_scanner.guard.config import GuardConfig
-from codex_plugin_scanner.guard.local_cli_trust import apply_local_mcp_extension_decision, utc_now
+from codex_plugin_scanner.guard.local_cli_trust import utc_now
 from codex_plugin_scanner.guard.mcp_tool_calls import (
     build_tool_call_artifact,
     build_tool_call_hash,
@@ -31,10 +31,10 @@ from codex_plugin_scanner.guard.runtime.extension_control_contract import (
 from codex_plugin_scanner.guard.runtime.local_cli_commands import LocalCliCommand
 from codex_plugin_scanner.guard.runtime.local_cli_identity import UnlistedCliIdentity
 from codex_plugin_scanner.guard.runtime.mcp_protection import build_mcp_server_identity
-from codex_plugin_scanner.guard.runtime.mcp_server_grants import apply_contributed_mcp_decision
 from codex_plugin_scanner.guard.store import GuardStore
 
 from .local_cli_native_fixture import native_local_cli_grant_resident, native_test_guard_home  # noqa: F401
+from .mcp_extension_driver import apply_contributed_mcp_decision, apply_local_mcp_extension_decision
 
 
 def _identity():
@@ -93,7 +93,9 @@ class _AuthorityStore:
         """No device grant rows exist, so an unavailable resident cannot hide one."""
         return False
 
-    def read_extension_control_authority_for_registry(self, registry: object) -> ExtensionControlAuthorityView:
+    def read_extension_control_authority_for_registry(
+        self, registry: object, **_kwargs
+    ) -> ExtensionControlAuthorityView:
         digest = getattr(registry, "catalog_digest", "0" * 64)
         assert isinstance(digest, str)
         return ExtensionControlAuthorityView(
@@ -244,7 +246,7 @@ def test_evaluate_write_file_blocks_after_local_enable(tmp_path: Path, monkeypat
         catalog_digest=BUILT_IN_COMMAND_EXTENSION_REGISTRY.catalog_digest,
         layers=(_layer(ControlLayerKind.LOCAL_ADMIN, "command.mcp-filesystem", ControlState.ENABLED),),
     )
-    monkeypatch.setattr(store, "read_extension_control_authority_for_registry", lambda _registry: view)
+    monkeypatch.setattr(store, "read_extension_control_authority_for_registry", lambda _registry, **_kwargs: view)
     artifact = _artifact(identity, "write_file")
     arguments = {"path": "notes.txt", "contents": "hi"}
     decision = evaluate_tool_call(

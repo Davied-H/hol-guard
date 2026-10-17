@@ -5,16 +5,19 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import time
-from contextlib import suppress
 from pathlib import Path
 
 import pytest
 
 
+def _require(condition: bool, detail: object = "") -> None:
+    if not condition:
+        pytest.fail(repr(detail) if detail != "" else "requirement failed", pytrace=False)
+
+
 def _run_core(executable: Path, args: list[str], *, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    result = subprocess.run(
         [str(executable), *args],
         env=env,
         capture_output=True,
@@ -22,24 +25,9 @@ def _run_core(executable: Path, args: list[str], *, env: dict[str, str]) -> subp
         text=True,
         timeout=60,
     )
-
-
-def _print_failure_metadata(guard_home: Path, commands: list[dict[str, object]]) -> None:
-    """Keep finite lifecycle phases and command times in the existing pytest log."""
-
-    # Import outside the suppression so a renamed helper fails loudly instead of
-    # silently dropping every diagnostic.
-    from codex_plugin_scanner.guard.daemon.lifecycle_journal import load_bounded_incident_lifecycle_events
-
-    with suppress(Exception):
-        events, journal_status = load_bounded_incident_lifecycle_events(guard_home, limit=20)
-        fields = {"recorded_at_ns", "pid", "port", "event", "reason"}
-        metadata = {
-            "commands": commands[-12:],
-            "journal_status": journal_status,
-            "lifecycle": [{key: value for key, value in event.items() if key in fields} for event in events],
-        }
-        print("frozen_daemon_failure_metadata=" + json.dumps(metadata, sort_keys=True), file=sys.stderr)
+    if result.returncode != 0:
+        print(f"Packaged daemon failure diagnostics: {_diagnostics(env)}")
+    return result
 
 
 def _json_result(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
@@ -68,21 +56,140 @@ def _assert_windows_process_stopped(pid: object) -> None:
         time.sleep(0.1)
 
 
+def _diagnostics(env: dict[str, str]) -> str:
+    guard_home = Path(env["HOL_GUARD_HOME"])
+    lines = []
+    journal = guard_home / "daemon-lifecycle"
+    if journal.is_dir():
+        for entry in sorted(journal.iterdir()):
+            try:
+                event = json.loads(entry.read_text())
+                lines.append(
+                    f"{event.get('recorded_at_ns')}:{event.get('event')}:{event.get('pid')}:{event.get('reason', '')}"
+                )
+            except (OSError, ValueError):
+                lines.append("unreadable")
+    logs = guard_home / "logs"
+    if logs.is_dir():
+        for entry in sorted(logs.rglob("*"))[-6:]:
+            if entry.is_file():
+                lines.append(f"{entry.name}={_safe_read(entry)[-300:]!r}")
+    for entry in guard_home.rglob("managed-resident-phases.v1.log"):
+        text = _safe_read(entry)
+        if text.startswith("<"):
+            # The resident may hold the file without read sharing; say so instead of dropping the evidence.
+            lines.append(f"{entry.name}={text}")
+            continue
+        phases = [line for line in text.splitlines() if line.startswith("native_resident_phase ")]
+        lines.extend(phases[-96:])
+    return " | ".join(lines)
+
+
+def _process_and_listener_snapshot(guard_home: Path) -> str:
+    """Name the live Guard processes, loopback listeners and resident state files for a failed step.
+
+    A resident that is listed in state but never answers authentication leaves no phase evidence of its
+    own, so record whether it is alive, what it listens on and whether its phase file exists.
+    """
+
+    lines = ["--- process and listener snapshot ---"]
+    for command in (
+        ["tasklist", "/FI", "IMAGENAME eq hol-guard*", "/FO", "CSV", "/NH"],
+        ["tasklist", "/FI", "IMAGENAME eq guard-runtime*", "/FO", "CSV", "/NH"],
+        ["netstat", "-ano", "-p", "TCP"],
+    ):
+        try:
+            result = subprocess.run(command, capture_output=True, check=False, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError) as error:
+            lines.append(f"{command[0]}: {error!r}")
+            continue
+        output = result.stdout
+        if command[0] == "netstat":
+            output = "\n".join(line for line in output.splitlines() if "127.0.0.1" in line and "LISTENING" in line)
+        lines.append(output.strip())
+    runtime_dir = guard_home / "native-runtime"
+    if runtime_dir.is_dir():
+        for entry in sorted(runtime_dir.rglob("*")):
+            try:
+                size = entry.stat().st_size if entry.is_file() else "dir"
+            except OSError as error:
+                size = repr(error)
+            lines.append(f"{entry.relative_to(runtime_dir)} size={size}")
+    return "\n".join(lines)
+
+
+def _start_timeline(env: dict[str, str]) -> str:
+    """Bounded daemon startup events and phase timings, printed even when the test passes."""
+
+    daemon_log = Path(env["HOL_GUARD_HOME"]) / "logs" / "daemon.log"
+    lines = []
+    for raw in _safe_read(daemon_log).splitlines():
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        event = str(record.get("event", ""))
+        if event in _TIMELINE_EVENTS or event == "startup_phase":
+            lines.append(f"{record.get('timestamp', '')[11:23]} {event} {record.get('detail', '')}".rstrip())
+    for entry in Path(env["HOL_GUARD_HOME"]).rglob("managed-resident-phases.v1.log"):
+        phases = [line for line in _safe_read(entry).splitlines() if line.startswith("native_resident_phase ")]
+        lines.extend(phases[-64:])
+    return "\n".join(lines[-300:])
+
+
+_TIMELINE_EVENTS = frozenset(
+    {
+        "daemon_listen_ready",
+        "daemon_ready",
+        "runtime_artifact_reconciliation_completed",
+        "onefile_extraction_reclaimed",
+    }
+)
+
+
+def _full_diagnostics(env: dict[str, str]) -> str:
+    """Complete daemon journal records and complete log files for a failed packaged step."""
+
+    guard_home = Path(env["HOL_GUARD_HOME"])
+    sections = [_diagnostics(env), _process_and_listener_snapshot(guard_home)]
+    journal = guard_home / "daemon-lifecycle"
+    if journal.is_dir():
+        for entry in sorted(journal.iterdir()):
+            if entry.is_file():
+                sections.append(f"--- journal {entry.name} ---\n{_safe_read(entry)}")
+    logs = guard_home / "logs"
+    if logs.is_dir():
+        for entry in sorted(logs.rglob("*")):
+            if entry.is_file():
+                sections.append(f"--- {entry.name} ---\n{_safe_read(entry)}")
+    return "\n".join(sections)
+
+
+def _safe_read(path: Path) -> str:
+    try:
+        return path.read_text(errors="replace")
+    except OSError as error:
+        return f"<{error!r}>"
+
+
 def _stop_and_assert_process_stopped(
-    result: subprocess.CompletedProcess[str],
+    executable: Path,
+    stop_args: list[str],
     *,
+    env: dict[str, str],
     pid: object,
 ) -> dict[str, object]:
-    stopped = _json_result(result)
+    stopped = _json_result(_run_core(executable, stop_args, env=env))
     assert stopped["running"] is False, stopped
-    assert stopped["stopped"] is True, stopped
+    assert stopped["stopped"] is True, (stopped, _diagnostics(env))
     assert stopped["pid"] == pid, stopped
     _assert_windows_process_stopped(pid)
     return stopped
 
 
 @pytest.mark.skipif(os.name != "nt", reason="exercises the packaged Windows frozen runtime")
-def test_packaged_windows_core_bootstrap_retry_and_repair(tmp_path: Path) -> None:
+@pytest.mark.parametrize("native_diagnostics", ["0", "1"])
+def test_packaged_windows_core_bootstrap_retry_and_repair(tmp_path: Path, native_diagnostics: str) -> None:
     executable_value = os.environ.get("HOL_GUARD_FROZEN_TEST_EXECUTABLE")
     if not executable_value:
         pytest.fail("HOL_GUARD_FROZEN_TEST_EXECUTABLE must point to the PyInstaller binary")
@@ -107,6 +214,11 @@ def test_packaged_windows_core_bootstrap_retry_and_repair(tmp_path: Path) -> Non
             "LOCALAPPDATA": str(local_appdata),
             "HOL_GUARD_HOME": str(guard_home),
             "HOL_GUARD_DESKTOP": "1",
+            "HOL_GUARD_NATIVE_DIAGNOSTIC": native_diagnostics,
+            # The guard home lives under pytest's tmp path, which opts the daemon into
+            # a 5 s idle shutdown. Each packaged CLI step here takes longer than that
+            # on a cold runner, so keep the daemon up between steps.
+            "GUARD_DAEMON_IDLE_TIMEOUT_SECONDS": "600",
         }
     )
 
@@ -123,46 +235,41 @@ def test_packaged_windows_core_bootstrap_retry_and_repair(tmp_path: Path) -> Non
     stop_args = ["daemon", "stop", "--guard-home", str(guard_home), "--json"]
     repair_args = ["daemon", "repair", "--guard-home", str(guard_home), "--json"]
 
-    command_trace: list[dict[str, object]] = []
-
-    def run_core(args: list[str]) -> subprocess.CompletedProcess[str]:
-        entry: dict[str, object] = {
-            "phase": "_".join(args[:2]),
-            "started_at_ns": time.time_ns(),
-        }
-        command_trace.append(entry)
-        try:
-            result = _run_core(executable, args, env=env)
-            entry["returncode"] = result.returncode
-            return result
-        finally:
-            entry["finished_at_ns"] = time.time_ns()
-
     try:
-        bootstrap = _json_result(run_core(bootstrap_args))
-        assert bootstrap["schema"] == "guard-desktop-bootstrap.v1"
-        first_status = _json_result(run_core(status_args))
-        assert first_status["running"] is True, first_status
+        bootstrap = _json_result(_run_core(executable, bootstrap_args, env=env))
+        _require(bootstrap["schema"] == "guard-desktop-bootstrap.v1")
+        first_status = _json_result(_run_core(executable, status_args, env=env))
+        _require(first_status["running"] is True, (first_status, bootstrap, _diagnostics(env)))
         first_pid = first_status["pid"]
 
-        _stop_and_assert_process_stopped(run_core(stop_args), pid=first_pid)
+        _stop_and_assert_process_stopped(
+            executable,
+            stop_args,
+            env=env,
+            pid=first_pid,
+        )
 
-        retry_bootstrap = _json_result(run_core(bootstrap_args))
-        assert retry_bootstrap["schema"] == "guard-desktop-bootstrap.v1"
-        retry_status = _json_result(run_core(status_args))
-        assert retry_status["running"] is True
+        retry_bootstrap = _json_result(_run_core(executable, bootstrap_args, env=env))
+        _require(retry_bootstrap["schema"] == "guard-desktop-bootstrap.v1")
+        retry_status = _json_result(_run_core(executable, status_args, env=env))
+        _require(retry_status["running"] is True, (retry_status, retry_bootstrap, _diagnostics(env)))
         retry_pid = retry_status["pid"]
-        _stop_and_assert_process_stopped(run_core(stop_args), pid=retry_pid)
+        _stop_and_assert_process_stopped(
+            executable,
+            stop_args,
+            env=env,
+            pid=retry_pid,
+        )
 
-        repaired = _json_result(run_core(repair_args))
-        assert repaired["runtime_status"] == "restarted"
-        repaired_status = _json_result(run_core(status_args))
-        assert repaired_status["running"] is True
-    except BaseException:
-        _print_failure_metadata(guard_home, command_trace)
-        raise
+        repaired = _json_result(_run_core(executable, repair_args, env=env))
+        _require(repaired["runtime_status"] == "restarted")
+        repaired_status = _json_result(_run_core(executable, status_args, env=env))
+        _require(repaired_status["running"] is True)
+    except (Exception, pytest.fail.Exception) as error:
+        pytest.fail(f"{error!r}\n{_full_diagnostics(env)}", pytrace=False)
     finally:
-        cleanup = run_core(stop_args)
+        print(f"Packaged daemon start timeline:\n{_start_timeline(env)}")
+        cleanup = _run_core(executable, stop_args, env=env)
         assert cleanup.returncode == 0, f"stdout={cleanup.stdout!r}\nstderr={cleanup.stderr!r}"
         cleanup_payload = _json_result(cleanup)
         if isinstance(cleanup_payload.get("pid"), int):

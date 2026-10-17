@@ -38,10 +38,12 @@ mod fault_tests;
 mod fixture_tests;
 #[path = "policy_store_migration_tests.rs"]
 mod migration_tests;
+#[path = "policy_store_verify_once_tests.rs"]
+mod verify_once_tests;
 
 use fixture_tests::policy;
 
-fn policy_with_default(default_action: &str) -> EffectiveNativePolicyV3 {
+pub(super) fn policy_with_default(default_action: &str) -> EffectiveNativePolicyV3 {
     let mut value = policy();
     value.default_action = default_action.to_owned();
     value
@@ -74,7 +76,7 @@ pub(super) fn signed_snapshot(generation: u64, key: &[u8], guard_home: &Path) ->
     signed_snapshot_with_policy(generation, key, guard_home, policy())
 }
 
-fn signed_snapshot_with_policy(
+pub(super) fn signed_snapshot_with_policy(
     generation: u64,
     key: &[u8],
     guard_home: &Path,
@@ -100,7 +102,8 @@ fn signed_snapshot_with_policy(
         command_extensions: None,
         business_policy: None,
         issued_at_ms: now_ms().unwrap().saturating_sub(1),
-        expires_at_ms: now_ms().unwrap() + 60_000,
+        // Long enough that a loaded runner cannot outlast it mid-test.
+        expires_at_ms: now_ms().unwrap() + 3_600_000,
         integrity: SnapshotIntegrityV3 {
             algorithm: POLICY_SNAPSHOT_INTEGRITY_ALGORITHM.into(),
             key_id: verifier_key_id(key),
@@ -342,6 +345,7 @@ fn restarted_resident_applies_installed_policy_without_request_time_io() {
             source_ref_external_allowed: false,
             execution_environment: None,
         },
+        recording_only: false,
     };
     let result = crate::edge::evaluate_envelope_with_store(envelope, &restarted).unwrap();
     let result: GuardHookEdgeResultV2 = serde_json::from_slice(&result).unwrap();
@@ -383,6 +387,7 @@ fn authenticated_edge_preserves_clean_default_warning() {
             source_ref_external_allowed: false,
             execution_environment: None,
         },
+        recording_only: false,
     };
     let result = crate::edge::evaluate_envelope_with_store(envelope, &store).unwrap();
     let result: GuardHookEdgeResultV2 = serde_json::from_slice(&result).unwrap();
@@ -427,6 +432,7 @@ fn authenticated_observe_edge_preserves_intrinsic_pretool_floor() {
             source_ref_external_allowed: false,
             execution_environment: None,
         },
+        recording_only: false,
     };
     let result = crate::edge::evaluate_envelope_with_store(envelope, &store).unwrap();
     let result: GuardHookEdgeResultV2 = serde_json::from_slice(&result).unwrap();

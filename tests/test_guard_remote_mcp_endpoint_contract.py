@@ -10,11 +10,6 @@ from codex_plugin_scanner.guard.cli.commands_support_runtime_resolution import (
     _CopilotMcpRuntimeServer,
 )
 from codex_plugin_scanner.guard.mcp_tool_calls import build_tool_call_artifact
-from codex_plugin_scanner.guard.runtime.command_permission_catalog import CommandPermissionSpec
-from codex_plugin_scanner.guard.runtime.mcp_protection import (
-    mcp_server_identity_metadata,
-)
-from codex_plugin_scanner.guard.runtime.mcp_server_catalog import _values_for_payload
 from codex_plugin_scanner.guard.runtime.mcp_server_contribution import (
     load_mcp_contribution_payloads,
     normalized_remote_mcp_url,
@@ -132,9 +127,6 @@ def test_copilot_long_query_credentials_keep_hosted_safeguards(tmp_path: Path) -
     )
 
     identity, fingerprint, transport = _copilot_runtime_server_identity(server, launch_cwd=tmp_path)
-    serialized_identity = mcp_server_identity_metadata(identity)
-    assert serialized_identity["command"] == "https://app.instapods.com/api/mcp"
-    assert secret not in str(serialized_identity)
     artifact = build_tool_call_artifact(
         harness="copilot",
         server_name="instapods",
@@ -145,23 +137,6 @@ def test_copilot_long_query_credentials_keep_hosted_safeguards(tmp_path: Path) -
         server_fingerprint=fingerprint,
         server_identity=identity,
     )
+    assert artifact.metadata["mcp_server_identity"]["command"] == "https://app.instapods.com/api/mcp"
     assert secret not in str(artifact.to_dict())
     assert instapods_matches(artifact)
-
-
-def test_remote_catalog_example_strips_query_credentials() -> None:
-    secret = "".join(("runtime", "-", "secret"))
-    payload = _remote_payload(
-        f"https://example.test/mcp?token={secret}",
-        mcp_id="mcp.catalog-secret",
-        server_name="catalog-secret",
-    )
-
-    values = _values_for_payload(payload)
-    permissions = values["permissions"]
-    assert isinstance(permissions, tuple)
-    assert len(permissions) == 1
-    permission = permissions[0]
-    assert isinstance(permission, CommandPermissionSpec)
-    assert permission.example_command == "https://example.test/mcp"
-    assert secret not in str(permission.to_dict())

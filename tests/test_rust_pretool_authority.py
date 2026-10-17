@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -192,59 +193,10 @@ def test_policy_floor_fails_closed_when_native_is_forced_unavailable(
     )
 
 
-def test_policy_floor_skips_when_native_mode_is_off(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.native_pretool.review_pre_tool_native",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.native_pretool.native_runtime_status",
-        lambda: runtime.NativeRuntimeStatus(mode="off", available=True, compatible=True, reason="off"),
-    )
-    assert (
-        pretool.native_pre_tool_policy_floor(
-            "pwd",
-            guard_home=tmp_path,
-            cwd=tmp_path,
-            home_dir=tmp_path,
-        )
-        is None
-    )
-
-
-def test_hook_worker_returns_fail_safe_when_native_off(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("codex_plugin_scanner.guard.daemon.hook_worker.native_mode", lambda: "off")
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.review_raw_hook_native",
-        lambda *_args, **_kwargs: _native_allow("pwd"),
-    )
-    worker = HookWorker(store=GuardStore(tmp_path / "guard-home"))
-    result = worker.review_http_payload(
-        payload={"hook_event_name": "PreToolUse", "tool_input": {"command": "pwd"}},
-        params={},
-        default_harness="codex",
-        home_dir=tmp_path / "home",
-        guard_home=tmp_path / "guard-home",
-        workspace=tmp_path / "workspace",
-    )
-    assert result["reason_code"] == "native_hook_disabled"
-    assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
-
-
 def test_hook_worker_fails_closed_when_forced_native_is_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.native_mode",
-        lambda: "force",
-    )
     monkeypatch.setattr(
         "codex_plugin_scanner.guard.daemon.hook_worker.review_raw_hook_native",
         lambda *_args, **_kwargs: None,
@@ -275,10 +227,6 @@ def test_hook_worker_fails_closed_when_auto_pretool_native_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.native_mode",
-        lambda: "auto",
-    )
-    monkeypatch.setattr(
         "codex_plugin_scanner.guard.daemon.hook_worker.review_raw_hook_native",
         lambda *_args, **_kwargs: None,
     )
@@ -303,42 +251,10 @@ def test_hook_worker_fails_closed_when_auto_pretool_native_is_unavailable(
     assert result["decision"] == "deny"
 
 
-def test_hook_worker_falls_back_when_native_mode_is_off(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.native_mode",
-        lambda: "off",
-    )
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.review_raw_hook_native",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.native_runtime_status",
-        lambda: runtime.NativeRuntimeStatus(mode="off", available=True, compatible=True, reason="off"),
-    )
-    worker = HookWorker(store=GuardStore(tmp_path / "guard-home"))
-    result = worker.review_http_payload(
-        payload={"hook_event_name": "PreToolUse", "tool_input": {"command": "pwd"}},
-        params={},
-        default_harness="pi",
-        home_dir=tmp_path / "home",
-        guard_home=tmp_path / "guard-home",
-        workspace=tmp_path / "workspace",
-    )
-    assert result["reason_code"] == "native_hook_disabled"
-
-
 def test_hook_worker_denies_unreviewed_non_command_pretool_without_native_result(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.native_mode",
-        lambda: "auto",
-    )
     monkeypatch.setattr(
         "codex_plugin_scanner.guard.daemon.hook_worker.review_raw_hook_native",
         lambda *_args, **_kwargs: None,
@@ -360,22 +276,163 @@ def test_hook_worker_leaves_out_of_scope_events_to_existing_handling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "codex_plugin_scanner.guard.daemon.hook_worker.native_mode",
-        lambda: "auto",
-    )
-    monkeypatch.setattr(
         "codex_plugin_scanner.guard.daemon.hook_worker.review_raw_hook_native",
         lambda *_args, **_kwargs: None,
     )
     worker = HookWorker(store=GuardStore(tmp_path / "guard-home"))
     result = worker.review_http_payload(
-        # Claude permission dialogs have their own passthrough route; Codex
-        # permission events still reach the native fail-safe.
+        # Claude, Codex, Copilot, Devin and ZCode permission dialogs have
+        # their own passthrough routes; other harnesses' permission events
+        # still reach the native fail-safe.
         payload={"hook_event_name": "PermissionRequest", "tool_input": {"command": "pwd"}},
         params={},
-        default_harness="codex",
+        default_harness="kimi",
         home_dir=tmp_path / "home",
         guard_home=tmp_path / "guard-home",
         workspace=tmp_path / "workspace",
     )
-    assert result["reason_code"] == "native_hook_event_unavailable" and result["continue"] is True
+    assert (
+        result["reason_code"] == "native_hook_event_unavailable"
+        and result["hookSpecificOutput"]["decision"]["behavior"] == "deny"
+    )
+
+
+def _status(
+    tmp_path: Path,
+    features: tuple[str, ...],
+) -> runtime.NativeRuntimeStatus:
+    runtime_path = tmp_path / "hol-guard-runtime"
+    runtime_path.write_bytes(b"runtime")
+    return runtime.NativeRuntimeStatus(
+        mode="auto",
+        available=True,
+        compatible=True,
+        reason="ready",
+        identity=runtime.NativeRuntimeIdentity(
+            path=runtime_path,
+            size=runtime_path.stat().st_size,
+            mtime_ns=runtime_path.stat().st_mtime_ns,
+            sha256="0" * 64,
+        ),
+        capabilities=runtime.NativeRuntimeCapabilities(
+            protocol_version=2,
+            runtime_version="test",
+            rule_digest="1" * 64,
+            build_sha="2" * 40,
+            target="test",
+            features=features,
+        ),
+    )
+
+
+def _sent_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    features: tuple[str, ...],
+    execution_environment: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    monkeypatch.setattr(
+        "codex_plugin_scanner.guard.native_pretool.native_runtime_status",
+        lambda: _status(tmp_path, features),
+    )
+    sent: dict[str, Any] = {}
+
+    class SentError(Exception):
+        """Stops the review once the request has been read."""
+
+    def capture(**kwargs: Any) -> bytes | None:
+        sent.update(json.loads(kwargs["payload"]))
+        raise SentError
+
+    monkeypatch.setattr(
+        "codex_plugin_scanner.guard.native_pretool.native_resident_client_request",
+        capture,
+    )
+    routes.reset_native_hook_route()
+    with pytest.raises(SentError):
+        pretool.review_pre_tool_native(
+            "rg -n fixture ../service-api",
+            guard_home=tmp_path,
+            cwd=tmp_path / "app-portal",
+            home_dir=tmp_path,
+            execution_environment=execution_environment,
+        )
+    return sent
+
+
+def test_pre_tool_request_carries_the_directories_the_command_runs_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        ("pre-tool-command-authority-v1", "resident-protocol-v2", "pre-tool-path-context-v1"),
+    )
+    assert sent["request"]["cwd"] == str(tmp_path / "app-portal")
+    assert sent["request"]["home_dir"] == str(tmp_path)
+
+
+def test_the_request_carries_the_shell_the_command_will_run_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runtime cannot read the agent's shell, so the hook says what it is.
+
+    A resident daemon is started with its own sanitized environment, so the
+    variables it can read are not the ones the command inherits. Every rule
+    that proves an inherited variable away — a ``RIPGREP_CONFIG_PATH`` that
+    prepends options to ``rg``, an npm or rustup variable that moves what a
+    tool loads — is answered from this stamp or not at all.
+    """
+
+    stamp = {"path": "/usr/bin:/bin", "environment_names": ["PATH"], "environment_digest": "0" * 64}
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        (
+            "pre-tool-command-authority-v1",
+            "resident-protocol-v2",
+            "pre-tool-path-context-v1",
+            "pre-tool-execution-environment-v1",
+        ),
+        execution_environment=stamp,
+    )
+    assert sent["request"]["execution_environment"] == stamp
+
+
+def test_a_caller_that_cannot_name_the_shell_sends_no_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unstamped request leaves the environment proofs unproven.
+
+    The alternative is worse than a review: the runtime would answer them
+    from its own variables, and a shell that exports a search config would
+    have the command admitted because the daemon exports none.
+    """
+
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        (
+            "pre-tool-command-authority-v1",
+            "resident-protocol-v2",
+            "pre-tool-path-context-v1",
+            "pre-tool-execution-environment-v1",
+        ),
+    )
+    assert "execution_environment" not in sent["request"]
+
+
+def test_a_runtime_without_the_feature_is_asked_the_question_it_understands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        ("pre-tool-command-authority-v1", "resident-protocol-v2"),
+    )
+    assert "cwd" not in sent["request"]
+    assert "home_dir" not in sent["request"]

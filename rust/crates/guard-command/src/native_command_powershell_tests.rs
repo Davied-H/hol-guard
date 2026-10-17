@@ -1,6 +1,6 @@
 use super::*;
 use crate::powershell_parser_tests::{FAIL_CLOSED, WRITE_ALL_TEXT};
-use crate::powershell_reads::with_windows_powershell_reads;
+use crate::powershell_reads::{with_posix_powershell_host, with_windows_powershell_reads};
 
 fn binding_with_layers(layers: serde_json::Value) -> NativeCommandControlBindingV1 {
     let program = packaged_command_program().unwrap();
@@ -43,7 +43,7 @@ fn evaluate(
     if windows {
         with_windows_powershell_reads(run)
     } else {
-        run()
+        with_posix_powershell_host(run)
     }
 }
 
@@ -73,6 +73,8 @@ fn write_all_text_reviews_like_set_content() {
         "native_command_extension_evaluation_failed"
     );
     assert_eq!(off.minimum_action, "block");
+    let encoded = "[System.IO.File]::WriteAllText('docs/change.md', \"Retry limit increased from 3 to 5.`n\", [System.Text.UTF8Encoding]::new($false))";
+    assert_eq!(action(encoded), action(WRITE_ALL_TEXT));
 }
 
 #[test]
@@ -85,10 +87,37 @@ fn mapped_effects_match_posix_decisions() {
         ),
         ("Remove-Item -Recurse -Force src", "rm -rf src"),
         ("[IO.File]::Delete('a.txt')", "rm a.txt"),
+        ("Get-ChildItem src", "ls src"),
+        ("Get-Location", "pwd"),
+        ("Test-Path node_modules", "test -e node_modules"),
+        ("Write-Output done", "echo done"),
+        (
+            "Select-String -Path README.md -Pattern TODO",
+            "grep -i -e TODO README.md",
+        ),
+        (
+            "Get-Content package.json | ConvertFrom-Json",
+            "cat package.json | head",
+        ),
+        ("New-Item -ItemType Directory build", "mkdir -p build"),
+        ("Get-ChildItem src | Select-Object Name", "ls src | head"),
     ] {
         assert_eq!(action(powershell), action(posix), "{powershell}");
     }
     assert_ne!(action("[IO.File]::ReadAllText('.env')").0, "allow");
+    // A formatting cmdlet opens no file, so the pipeline adds no read floor.
+    assert_eq!(
+        action("Get-ChildItem src | Select-Object Name").0,
+        action("Get-ChildItem src").0
+    );
+    for command in [
+        "Get-Content 'Env:GITHUB_TOKEN'",
+        "Get-ChildItem 'Env:'",
+        "gci env:",
+        "Select-String -Path .env -Pattern KEY",
+    ] {
+        assert_ne!(action(command).0, "allow", "{command}");
+    }
 }
 
 #[test]

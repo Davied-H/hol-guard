@@ -5,15 +5,9 @@ import json
 import pytest
 
 from scripts.ci import clippy_report as report
-from scripts.ci.successful_job_artifact import select
 
 
-@pytest.fixture(params=[("Rust workspace (clippy)", "clippy-report"), ("Rust workspace (test)", "rust-coverage")])
-def producer(request):
-    return request.param
-
-
-def inventory(job_name, artifact_prefix):
+def inventory():
     run = {
         "id": 12,
         "run_attempt": 2,
@@ -23,7 +17,7 @@ def inventory(job_name, artifact_prefix):
     }
     job = {
         "id": 21,
-        "name": job_name,
+        "name": "Rust workspace (clippy)",
         "run_id": 12,
         "run_attempt": 2,
         "head_sha": "a" * 40,
@@ -35,7 +29,7 @@ def inventory(job_name, artifact_prefix):
     }
     artifact = {
         "id": 31,
-        "name": f"{artifact_prefix}-2",
+        "name": "clippy-report-2",
         "expired": False,
         "created_at": "2026-01-01T00:00:02Z",
         "workflow_run": {"id": 12, "head_sha": "a" * 40},
@@ -51,19 +45,14 @@ def inventory(job_name, artifact_prefix):
     return run, job, artifact, fetch
 
 
-def test_only_successful_current_attempt_is_selected(producer):
-    job_name, artifact_prefix = producer
-    _, _, artifact, fetch = inventory(job_name, artifact_prefix)
-    assert (
-        select("owner/repo", 12, 2, job_name=job_name, artifact_prefix=artifact_prefix, fetch=fetch)["id"]
-        == artifact["id"]
-    )
+def test_only_successful_current_attempt_is_selected():
+    _, _, artifact, fetch = inventory()
+    assert report.select("owner/repo", 12, 2, fetch=fetch)["id"] == artifact["id"]
 
 
 @pytest.mark.parametrize("boundary", ["attempt", "failure", "inherited", "wrong-run", "expired", "before-job", "head"])
-def test_selection_rejects_stale_or_unsuccessful_producer(producer, boundary):
-    job_name, artifact_prefix = producer
-    run, job, artifact, fetch = inventory(job_name, artifact_prefix)
+def test_selection_rejects_stale_or_unsuccessful_producer(boundary):
+    run, job, artifact, fetch = inventory()
     if boundary == "attempt":
         run["run_attempt"] = 1
     elif boundary == "failure":
@@ -79,21 +68,18 @@ def test_selection_rejects_stale_or_unsuccessful_producer(producer, boundary):
     else:
         job["head_sha"] = "b" * 40
     with pytest.raises(ValueError):
-        select("owner/repo", 12, 2, job_name=job_name, artifact_prefix=artifact_prefix, fetch=fetch)
+        report.select("owner/repo", 12, 2, fetch=fetch)
 
 
-def test_missing_current_attempt_report_times_out_without_using_previous_attempt(producer):
-    job_name, artifact_prefix = producer
-    _, _, artifact, fetch = inventory(job_name, artifact_prefix)
-    artifact["name"] = f"{artifact_prefix}-1"
+def test_missing_current_attempt_report_times_out_without_using_previous_attempt():
+    _, _, artifact, fetch = inventory()
+    artifact["name"] = "clippy-report-1"
     now = [0.0]
     with pytest.raises(ValueError, match="Timed out"):
-        select(
+        report.select(
             "owner/repo",
             12,
             2,
-            job_name=job_name,
-            artifact_prefix=artifact_prefix,
             fetch=fetch,
             clock=lambda: now[0],
             sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
@@ -101,54 +87,29 @@ def test_missing_current_attempt_report_times_out_without_using_previous_attempt
         )
 
 
-@pytest.mark.parametrize("boundary", ["last-failure", "last-stale", "last-missing-artifact", "last-late-artifact"])
-def test_bulk_selection_cannot_return_only_the_other_127_successful_consumer_shards(boundary):
-    from urllib.parse import parse_qs, urlsplit
+def test_artifact_uploaded_during_the_last_sleep_is_found_at_the_deadline():
+    _, _, artifact, fetch = inventory()
+    name = artifact["name"]
+    now = [0.0]
+    sleeps = []
 
-    from scripts.ci.successful_job_artifact import select_many
-    from scripts.ci.wait_for_pytest_shards import ShardWaitError
+    def sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += seconds
+        artifact["name"] = name if now[0] >= 40 else "not-yet"
 
-    run, template_job, template_artifact, _ = inventory("Rust workspace (test)", "rust-coverage")
-    names = {f"coverage (3.12, {index})": f"rust-consumer-coverage-2-3.12-{index}" for index in range(128)}
-    jobs = [dict(template_job, id=100 + index, name=name) for index, name in enumerate(names)]
-    artifacts = [dict(template_artifact, id=500 + index, name=name) for index, name in enumerate(names.values())]
-    if boundary == "last-failure":
-        jobs[-1]["conclusion"] = "failure"
-    elif boundary == "last-stale":
-        jobs[-1]["run_attempt"] = 1
-    elif boundary == "last-missing-artifact":
-        artifacts.pop()
-    else:
-        artifacts[-1]["created_at"] = "2026-01-01T00:00:04Z"
-
-    def fetch(endpoint, timeout):
-        url = urlsplit(endpoint)
-        page = int(parse_qs(url.query).get("page", ["1"])[0])
-        if url.path.endswith("/jobs"):
-            return {"total_count": len(jobs), "jobs": jobs[(page - 1) * 100 : page * 100]}
-        if url.path.endswith("/artifacts"):
-            return {"total_count": len(artifacts), "artifacts": artifacts[(page - 1) * 100 : page * 100]}
-        return run
-
-    now = [0]
-    failures = {
-        "last-failure": (ShardWaitError, r"coverage \(3\.12, 127\) completed with failure"),
-        "last-stale": (ValueError, r"coverage \(3\.12, 127\) producer identity mismatch"),
-        "last-missing-artifact": (ValueError, r"Timed out waiting for current-attempt successful reports"),
-        "last-late-artifact": (ValueError, r"rust-consumer-coverage-2-3\.12-127 artifact is not bound"),
-    }
-    error_type, message = failures[boundary]
-    with pytest.raises(error_type, match=message):
-        select_many(
-            "owner/repo",
-            12,
-            2,
-            producers=names,
-            fetch=fetch,
-            clock=lambda: now[0],
-            sleep=lambda seconds: now.__setitem__(0, now[0] + seconds),
-            timeout=6,
-        )
+    artifact["name"] = "not-yet"
+    selected = report.select(
+        "owner/repo",
+        12,
+        2,
+        fetch=fetch,
+        clock=lambda: now[0],
+        sleep=sleep,
+        timeout=40,
+    )
+    assert selected is artifact
+    assert sleeps == [30.0, 10.0]
 
 
 def test_diagnostics_survive_partial_json_and_exclude_non_diagnostic_records(tmp_path, capsys):

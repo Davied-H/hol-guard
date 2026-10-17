@@ -2,7 +2,8 @@
 //! (`runtime/shell_structure.py`).
 
 /// `ShellHeredoc` (:10-23).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ShellHeredoc {
     pub delimiter: String,
     pub body: String,
@@ -16,7 +17,7 @@ pub struct ShellHeredoc {
 }
 
 /// `ShellCommandSubstitution` (:25-34).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 #[allow(dead_code)]
 pub struct ShellCommandSubstitution {
     pub kind: &'static str, // "dollar" | "backtick"
@@ -75,6 +76,37 @@ pub fn extract_heredocs(command: &str) -> Vec<ShellHeredoc> {
         let _ = line_end;
     }
     results
+}
+
+/// Top-level `<<` operators, the same places `extract_heredocs` looks. A
+/// quoted `<<`, as in `echo '<<'`, is text.
+pub(crate) fn heredoc_operators(text: &str) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let mut state = ShellScanState::new();
+    let mut index = 0;
+    let mut operators = 0;
+    while index < chars.len() {
+        // Declarations are read one line at a time, with a fresh state. A
+        // quote still open at a newline is a different `<<` than the next
+        // line's, so the two counts are not the same operator.
+        if chars[index] == '\n' {
+            if !state.is_top_level() {
+                return usize::MAX;
+            }
+            state = ShellScanState::new();
+        }
+        if state.is_top_level()
+            && chars.get(index) == Some(&'<')
+            && chars.get(index + 1) == Some(&'<')
+            && chars.get(index.wrapping_sub(1)) != Some(&'<')
+            && chars.get(index + 2) != Some(&'<')
+        {
+            operators += 1;
+        }
+        let next = state.advance(&chars, index);
+        index = if next > index { next } else { index + 1 };
+    }
+    operators
 }
 
 struct HeredocDecl {
@@ -306,13 +338,15 @@ fn extract_command_substitution_spans_impl(
         }
         if quote != Some('\'') && starts_with(&chars, index, "$(") {
             let (extracted, end_index) = extract_parenthesized(&chars, index + 2);
-            if !extracted.trim().is_empty() {
+            let whitespace = crate::command_option_parsing::python_is_whitespace;
+            if !extracted.trim_matches(whitespace).is_empty() {
                 let body_start = index + 2;
-                let leading = extracted.len() - extracted.trim_start().len();
-                let trailing = extracted.trim_end().len();
+                let leading = extracted.chars().count()
+                    - extracted.trim_start_matches(whitespace).chars().count();
+                let trailing = extracted.trim_end_matches(whitespace).chars().count();
                 substitutions.push(ShellCommandSubstitution {
                     kind: "dollar",
-                    body: extracted.trim().to_owned(),
+                    body: extracted.trim_matches(whitespace).to_owned(),
                     start: index,
                     body_start: body_start + leading,
                     body_end: body_start + trailing,
@@ -324,13 +358,15 @@ fn extract_command_substitution_spans_impl(
         }
         if quote != Some('\'') && ch == '`' {
             let (extracted, end_index) = extract_backtick(&chars, index + 1);
-            if !extracted.trim().is_empty() {
+            let whitespace = crate::command_option_parsing::python_is_whitespace;
+            if !extracted.trim_matches(whitespace).is_empty() {
                 let body_start = index + 1;
-                let leading = extracted.len() - extracted.trim_start().len();
-                let trailing = extracted.trim_end().len();
+                let leading = extracted.chars().count()
+                    - extracted.trim_start_matches(whitespace).chars().count();
+                let trailing = extracted.trim_end_matches(whitespace).chars().count();
                 substitutions.push(ShellCommandSubstitution {
                     kind: "backtick",
-                    body: extracted.trim().to_owned(),
+                    body: extracted.trim_matches(whitespace).to_owned(),
                     start: index,
                     body_start: body_start + leading,
                     body_end: body_start + trailing,
@@ -405,6 +441,31 @@ pub struct ShellScanState {
 }
 
 impl ShellScanState {
+    pub fn from_snapshot(value: &serde_json::Value) -> Result<Self, &'static str> {
+        let v = value.as_array().ok_or("shell_helpers_invalid_state")?;
+        if v.len() != 3 {
+            return Err("shell_helpers_invalid_state");
+        }
+        let quote = match v[0].as_str() {
+            Some("'") => Some('\''),
+            Some("\"") => Some('"'),
+            None if v[0].is_null() => None,
+            _ => return Err("shell_helpers_invalid_state"),
+        };
+        let subshell_depth = usize::try_from(v[1].as_u64().ok_or("shell_helpers_invalid_state")?)
+            .map_err(|_| "shell_helpers_invalid_state")?;
+        if subshell_depth.checked_add(256 * 1024).is_none() {
+            return Err("shell_helpers_invalid_state");
+        }
+        Ok(Self {
+            quote,
+            subshell_depth,
+            in_backtick: v[2].as_bool().ok_or("shell_helpers_invalid_state")?,
+        })
+    }
+    pub fn snapshot(&self) -> (Option<char>, usize, bool) {
+        (self.quote, self.subshell_depth, self.in_backtick)
+    }
     pub fn new() -> Self {
         ShellScanState {
             quote: None,

@@ -1,5 +1,4 @@
-#[path = "support/git_helper_fixture.rs"]
-pub mod fixture;
+use crate::git_helper_fixture as fixture;
 use fixture::*;
 use serde_json::json;
 
@@ -71,6 +70,17 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
             "git diff --no-ext-diff --no-textconv",
             "deny",
         ),
+        // A read that starts no helper does not need the probe in a chain.
+        (
+            "[core]\npager = ./synthetic-never-execute\n[pager]\nlog = false\n",
+            "git log --oneline -1 && git rev-parse HEAD",
+            "allow",
+        ),
+        (
+            "[core]\npager = ./synthetic-never-execute\n",
+            "git rev-parse HEAD; git log --oneline -1",
+            "deny",
+        ),
     ] {
         std::fs::write(&config, settings).unwrap();
         for harness in ["omp", "zcode"] {
@@ -99,6 +109,7 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
         pager_disabled: false,
         xdg_config_home: None,
         git_config_no_system: true,
+        library_search_paths: Default::default(),
     };
     for (command, expected) in [
         ("git status --short", "deny"),
@@ -114,6 +125,11 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
                 home_dir: home.to_str(),
                 cwd: repository.to_str(),
                 cdpath_unset: false,
+                rustup_override_absent: false,
+                npm_config_inert: false,
+                shell_home_matches: false,
+                ripgrep_config_absent: false,
+                psql_environment: Default::default(),
             },
             Some(&context),
         );
@@ -142,6 +158,11 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
                 home_dir: home.to_str(),
                 cwd: repository.to_str(),
                 cdpath_unset: false,
+                rustup_override_absent: false,
+                npm_config_inert: false,
+                shell_home_matches: false,
+                ripgrep_config_absent: false,
+                psql_environment: Default::default(),
             },
             Some(&caller),
         );
@@ -185,6 +206,11 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
                 home_dir: home.to_str(),
                 cwd: repository.to_str(),
                 cdpath_unset: false,
+                rustup_override_absent: false,
+                npm_config_inert: false,
+                shell_home_matches: false,
+                ripgrep_config_absent: false,
+                psql_environment: Default::default(),
             },
             Some(&caller),
         );
@@ -226,6 +252,7 @@ fn empty_git_pager_overrides_a_custom_pager_variable() {
         pager_disabled: false,
         xdg_config_home: None,
         git_config_no_system: true,
+        library_search_paths: Default::default(),
     };
     let mut without_git_pager = caller.clone();
     without_git_pager
@@ -243,6 +270,11 @@ fn empty_git_pager_overrides_a_custom_pager_variable() {
                 home_dir: home.to_str(),
                 cwd: repository.to_str(),
                 cdpath_unset: false,
+                rustup_override_absent: false,
+                npm_config_inert: false,
+                shell_home_matches: false,
+                ripgrep_config_absent: false,
+                psql_environment: Default::default(),
             },
             Some(context),
         );
@@ -279,6 +311,7 @@ fn piped_git_output_never_starts_a_configured_pager() {
         pager_disabled: false,
         xdg_config_home: None,
         git_config_no_system: true,
+        library_search_paths: Default::default(),
     };
     for (command, expected) in [
         ("git log --oneline -2 | cat", "allow"),
@@ -302,6 +335,11 @@ fn piped_git_output_never_starts_a_configured_pager() {
                 home_dir: home.to_str(),
                 cwd: repository.to_str(),
                 cdpath_unset: false,
+                rustup_override_absent: false,
+                npm_config_inert: false,
+                shell_home_matches: false,
+                ripgrep_config_absent: false,
+                psql_environment: Default::default(),
             },
             Some(&context),
         );

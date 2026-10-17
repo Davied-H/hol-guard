@@ -71,6 +71,7 @@ def _receipt(**overrides: object) -> dict[str, object]:
                 "decision_id",
                 "origin_authentication",
                 "execution_intent_digest",
+                "review_anchor_digest",
             }
         },
     }
@@ -147,6 +148,18 @@ def test_execution_intent_evidence_is_optional_and_not_decision_identity() -> No
     for invalid in (None, 1, "", "f" * 63, "F" * 64, "f" * 65):
         malformed = dict(evidence)
         malformed["execution_intent_digest"] = invalid
+        assert validate_native_decision_receipt(malformed) is None
+
+
+def test_review_anchor_is_optional_and_not_decision_identity() -> None:
+    legacy = _receipt()
+    anchored = _receipt(review_anchor_digest="a" * 64)
+    assert validate_native_decision_receipt(anchored) == anchored
+    assert anchored["decision_id"] == legacy["decision_id"]
+    assert canonical_receipt_bytes(anchored) == canonical_receipt_bytes(legacy)
+    for invalid in (None, 1, "", "a" * 63, "A" * 64, "a" * 65):
+        malformed = dict(anchored)
+        malformed["review_anchor_digest"] = invalid
         assert validate_native_decision_receipt(malformed) is None
 
 
@@ -385,12 +398,20 @@ def test_receipt_sqlite_failure_is_recoverable_and_bounded(tmp_path: Path) -> No
     assert recovered.stats()["receipt_durable_pending"] == 0
 
 
+def _receipt_row_count(store: GuardStore) -> int:
+    with store._connect() as connection:
+        return connection.execute(
+            "select (select count(*) from native_hook_decision_receipts) + "
+            "(select count(*) from native_prompt_decision_receipts)"
+        ).fetchone()[0]
+
+
 def test_store_receipt_insert_is_idempotent(tmp_path: Path) -> None:
     store = GuardStore(tmp_path / "guard-home")
     receipt = _receipt()
     assert store.record_native_decision_receipt(receipt)
     assert store.record_native_decision_receipt(receipt)
-    assert store.native_decision_receipt_count() == 1
+    assert _receipt_row_count(store) == 1
 
 
 def test_prompt_receipt_persists_without_rewriting_tool_receipt_schema(tmp_path: Path) -> None:
@@ -406,7 +427,7 @@ def test_prompt_receipt_persists_without_rewriting_tool_receipt_schema(tmp_path:
     )
     assert store.record_native_decision_receipt(tool)
     assert store.record_native_decision_receipt(prompt)
-    assert store.native_decision_receipt_count() == 2
+    assert _receipt_row_count(store) == 2
     tool_id, prompt_id = tool["decision_id"], prompt["decision_id"]
     assert isinstance(tool_id, str) and isinstance(prompt_id, str)
     assert store.get_native_decision_receipt(tool_id) == tool

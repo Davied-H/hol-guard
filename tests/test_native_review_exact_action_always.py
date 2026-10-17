@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +14,9 @@ import pytest
 
 from codex_plugin_scanner.guard.approval_scope_support import request_scope_contract
 from codex_plugin_scanner.guard.approvals import apply_approval_resolution
+from codex_plugin_scanner.guard.daemon.hook_native_exact_action import native_exact_action
 from codex_plugin_scanner.guard.daemon.hook_native_saved_approval import (
     EXACT_ACTION_CONTEXT_TOKEN_KEY,
-    native_exact_action_token,
     native_saved_decision_response,
 )
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
@@ -80,7 +81,7 @@ def _token(
     default_result, default_receipt = _verdict()
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(workspace)}
     payload.update(payload_extra or {})
-    return native_exact_action_token(
+    return native_exact_action(
         harness=_HARNESS,
         tool_name="Bash",
         payload=payload,
@@ -88,7 +89,7 @@ def _token(
         native_receipt=receipt or default_receipt,
         workspace=workspace,
         home_dir=workspace.parent / "home",
-    )
+    )[0]
 
 
 def test_token_is_stable_across_sessions_and_binds_the_installed_runner(
@@ -113,7 +114,7 @@ def test_camel_case_harness_payload_offers_the_same_token(
     expected = _token("npx wrangler --version", workspace)
     assert expected is not None
     result, receipt = _verdict()
-    camel = native_exact_action_token(
+    camel, _reason = native_exact_action(
         harness=_HARNESS,
         tool_name="Bash",
         payload={
@@ -139,7 +140,11 @@ def test_token_changes_when_native_rules_change(
     for value in (changed_result["command_extensions"]["binding"], changed_receipt["command_extensions"]):
         value["control_revision"] += 1
     identity = {
-        **{key: value for key, value in changed_receipt.items() if key not in {"authority", "decision_id"}},
+        **{
+            key: value
+            for key, value in changed_receipt.items()
+            if key not in {"authority", "decision_id", "review_anchor_digest"}
+        },
         "schema": "guard-native-hook-decision-identity.v1",
     }
     changed_receipt["decision_id"] = hashlib.sha256(
@@ -148,6 +153,42 @@ def test_token_changes_when_native_rules_change(
     original = _token("cat package.json", workspace, result=result, receipt=receipt)
     assert original is not None
     assert _token("cat package.json", workspace, result=changed_result, receipt=changed_receipt) not in {None, original}
+
+
+def _node_script(workspace: Path) -> Path:
+    library = workspace / "scripts" / "lib"
+    library.mkdir(parents=True, exist_ok=True)
+    (workspace / "scripts" / "report.mjs").write_text(
+        "import path from 'node:path';\nimport { total } from './lib/sum.mjs';\nconsole.log(total([1, 2]), path.sep);\n"
+    )
+    (library / "sum.mjs").write_text("export const total = (xs) => xs.length;\n")
+    return library / "sum.mjs"
+
+
+def test_node_script_token_binds_the_code_it_imports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_context_digest: Path
+) -> None:
+    workspace = _wrangler_workspace(tmp_path, monkeypatch)
+    # A native binary: a script-backed `node` never gets a reusable identity.
+    node = tmp_path / "manager-bin" / "node"
+    shutil.copyfile("/bin/echo", node)
+    node.chmod(0o755)
+    imported = _node_script(workspace)
+    first = _token("node scripts/report.mjs", workspace)
+    assert first is not None
+    assert _token("node scripts/report.mjs", workspace) == first
+    assert _token("node scripts/report.mjs --dry-run", workspace) not in {None, first}
+
+    imported.write_text("export const total = () => 0;\n")
+    assert _token("node scripts/report.mjs", workspace) not in {None, first}
+
+    imported.write_text("import { execSync } from 'node:child_process';\nexport const total = () => execSync('id');\n")
+    assert _token("node scripts/report.mjs", workspace) is None
+    imported.write_text("export const total = () => 0;\n")
+    assert _token("node -e 1", workspace) is None
+    assert _token("cd scripts && node report.mjs", workspace) is None
+    monkeypatch.setenv("NODE_OPTIONS", "--require ./preload.js")
+    assert _token("node scripts/report.mjs", workspace) is None
 
 
 @pytest.mark.parametrize(
@@ -279,8 +320,6 @@ def _hook_worker(
 ) -> tuple[HookWorker, GuardStore]:
     from codex_plugin_scanner.guard.config import update_guard_settings
 
-    monkeypatch.setattr("codex_plugin_scanner.guard.daemon.hook_worker.native_mode", lambda: "auto")
-
     def review_raw_hook_native(*_args: object, **_kwargs: object) -> dict[str, object]:
         bound_receipt = copy.deepcopy(receipt)
         bound_receipt["decision_id"] = hashlib.sha256(canonical_receipt_bytes(bound_receipt)).hexdigest()
@@ -380,15 +419,15 @@ def test_native_review_derives_the_exact_action_token_once(
     result, receipt = _verdict()
     worker, store = _hook_worker(tmp_path, monkeypatch, result, receipt)
     calls: list[str | None] = []
-    real = hook_native_saved_approval.native_exact_action_token
+    real = hook_native_saved_approval.native_exact_action
 
-    def counting(**kwargs: Any) -> str | None:
-        token = real(**kwargs)
-        calls.append(token)
-        return token
+    def counting(**kwargs: Any) -> tuple[str | None, str | None]:
+        decision = real(**kwargs)
+        calls.append(decision[0])
+        return decision
 
-    monkeypatch.setattr(hook_native_review_approval, "native_exact_action_token", counting)
-    monkeypatch.setattr(hook_native_saved_approval, "native_exact_action_token", counting)
+    monkeypatch.setattr(hook_native_review_approval, "native_exact_action", counting)
+    monkeypatch.setattr(hook_native_saved_approval, "native_exact_action", counting)
     payload = {
         "hook_event_name": "PreToolUse",
         "session_id": "once",
@@ -426,7 +465,7 @@ def test_precomputed_token_binds_the_saved_decision_lookup(
     store = GuardStore(tmp_path / "guard-home")
     monkeypatch.setattr(
         hook_native_saved_approval,
-        "native_exact_action_token",
+        "native_exact_action",
         lambda **_kwargs: pytest.fail("a precomputed token must not be re-derived"),
     )
     kwargs: dict[str, Any] = {
@@ -467,7 +506,7 @@ def _local_bin(workspace: Path, package: str, name: str) -> None:
         "awk -f program.awk input.txt",
         "awk '{ print }' input.txt",
         "git -c alias.x=!./payload x",
-        "git status",
+        "git push origin main",
         "find . -name '*.txt' -exec ./payload {} ;",
         "xargs ./payload",
     ],

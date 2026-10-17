@@ -12,16 +12,17 @@ import sys
 from pathlib import Path
 
 from .catalog import load_catalog
+from .parallel import qualification_jobs
 from .provider import REASONING_EFFORTS
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Dispatch Gauntlet commands and return a process exit status."""
     parser = argparse.ArgumentParser(description="Guard Gauntlet: real agents, real tools, observed protection")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="List the fixed required scenarios without running them")
     run = sub.add_parser("run", help="Run actual Oh My Pi with a live inference provider")
-    run.add_argument("--expected-source-sha", required=True)
+    run.add_argument("--expected-source-sha")
     run.add_argument("--candidate-sha", help="PR head when testing its exact two-parent merge")
     run.add_argument("--output", type=Path, required=True)
     run.add_argument("--provider-url", default=os.environ.get("GUARD_GAUNTLET_PROVIDER_URL"))
@@ -40,6 +41,11 @@ def main() -> int:
         action="store_true",
         help="Run OpenAI Luna (openai-codex/gpt-6-luna) through the existing Oh My Pi ChatGPT login; "
         "medium effort unless --reasoning-effort high or low",
+    )
+    run.add_argument(
+        "--native-route",
+        metavar="PROVIDER/MODEL",
+        help="Like --native-luna-route, through another pinned native OMP backend (for example devin/swe-2)",
     )
     run.add_argument("--sdk-root", type=Path, help="Pinned SDK directory for --native-luna-route (default: from omp)")
     run.add_argument("--case", action="append", dest="cases", help="Targeted runs are never full-profile qualification")
@@ -93,14 +99,59 @@ def main() -> int:
     run.add_argument("--work-root", type=Path, help="Parent for newly created disposable fixtures")
     run.add_argument(
         "--profile",
-        choices=("core", "contained-bun-vitest"),
+        choices=("core", "contained-bun-vitest", "full-tasks", "approval-retry"),
         default="core",
-        help="Complete core qualification or the additive contained Bun/Vitest profile",
+        help="Complete core qualification, the additive contained Bun/Vitest profile, full developer tasks, "
+        "or the approve-then-retry lane (only core qualifies a merge)",
+    )
+    run.add_argument(
+        "--full-task-mode",
+        choices=("discover", "enforce"),
+        default="enforce",
+        help="discover runs full tasks under Watch and lists every would-have-stopped verdict",
     )
     run.add_argument(
         "--contained-test-project",
         type=Path,
         help="Explicit fixture project for --profile contained-bun-vitest; dependencies are never installed",
+    )
+    from . import full_task_cli
+
+    full_task_cli.add_arguments(run)
+    installed = sub.add_parser(
+        "installed",
+        help="Installed acceptance: run the shipped executable's own install and hooks (never a merge gate)",
+    )
+    installed.add_argument("--runtime", type=Path, required=True, help="The hol-guard executable under test")
+    installed.add_argument(
+        "--harness",
+        nargs="+",
+        default=["claude-code", "codex", "omp"],
+        help="Harnesses to install and check",
+    )
+    installed.add_argument(
+        "--repeat",
+        type=int,
+        default=10,
+        help="Times each replay case runs against identical input; any disagreement fails the lane",
+    )
+    installed.add_argument(
+        "--require-frozen",
+        action="store_true",
+        help="Refuse a wheel console script; accept only the frozen bundle the Desktop app installs",
+    )
+    installed.add_argument(
+        "--no-aged-store",
+        dest="aged_store",
+        action="store_false",
+        help="Skip the pass that installs over a home with upgrade history",
+    )
+    installed.add_argument("--output", type=Path, required=True)
+    installed.add_argument("--keep-work", action="store_true", help="Keep the lane's homes even when it passes")
+    installed.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Write and print the findings but exit 0; for runs that test the lane rather than the build",
     )
     verify = sub.add_parser("verify", help="Independently reconcile a complete evidence package")
     verify.add_argument("directory", type=Path)
@@ -123,7 +174,12 @@ def main() -> int:
     qualify.add_argument("--sha", required=True, help="Full commit of the tested source or test merge")
     qualify.add_argument("--candidate-sha", help="PR head when qualifying its exact two-parent test merge")
     qualify.add_argument("--attempts", type=int, default=2, help="Bounded fresh runs (1-3)")
-    qualify.add_argument("--jobs", type=int, default=4)
+    qualify.add_argument(
+        "--jobs",
+        type=int,
+        default=qualification_jobs(),
+        help="Concurrent isolated cases (default: half the host CPUs, bounded to 1-8)",
+    )
     qualify.add_argument(
         "--host-slots",
         type=int,
@@ -154,12 +210,26 @@ def main() -> int:
         type=Path,
         help="Parent for the short per-attempt fixture work directories (default /tmp/hol-guard-gauntlet-<uid>/w)",
     )
-    qualify.add_argument("--wheel", type=Path, help="Prebuilt native wheel; required off macOS")
+    qualify.add_argument(
+        "--wheel", type=Path, help="Prebuilt native wheel; required on hosts other than macOS and Linux x86_64"
+    )
+    qualify.add_argument(
+        "--release-profile-wheel",
+        action="store_true",
+        help="Build the tested wheel with the production release profile (fat LTO) "
+        "instead of the faster development profile",
+    )
     qualify.add_argument("--sdk-root", type=Path, help="Pinned SDK directory; skips the lock-keyed SDK cache")
     qualify.add_argument("--keep-work", action="store_true", help="Keep passing attempts' work roots")
+    qualify.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Set up the SDK, wheel and installed candidate, print their paths and stop; "
+        "for local `run` invocations, never qualifies",
+    )
     qualify.add_argument("--timeout", type=float, default=300)
     qualify.add_argument("--max-inference-rounds", type=int, default=32)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         if args.command == "list":
             print(
@@ -168,6 +238,29 @@ def main() -> int:
                 )
             )
             return 0
+        if args.command == "installed":
+            from .installed_lane import run_lane
+
+            if not 1 <= args.repeat <= 100:
+                raise ValueError("--repeat is supported from 1 through 100")
+            evidence = run_lane(
+                runtime_path=args.runtime,
+                harnesses=list(args.harness),
+                repeat=args.repeat,
+                require_frozen=args.require_frozen,
+                aged_store=args.aged_store,
+                output=args.output,
+                work_root=(args.output / "work") if args.keep_work else None,
+            )
+            print(json.dumps({key: evidence[key] for key in ("version", "accepted", "failures") if key in evidence}))
+            # The lane asserts against the shipped build, so a run on a pull
+            # request that only changes the lane would fail for defects the
+            # change did not introduce and cannot fix. Report-only keeps those
+            # findings visible without turning the product's current state into
+            # a merge gate; the scheduled and dispatched runs stay strict.
+            if args.report_only:
+                return 0
+            return 0 if evidence.get("accepted") else 1
         if args.command == "pack":
             from .bundle import pack as pack_bundle
             from .verify import verify_report
@@ -207,18 +300,29 @@ def main() -> int:
             from .qualify import main as qualify_main
 
             return qualify_main(args)
+        full_task_cli.validate(args)
+        if args.profile == "approval-retry" and args.harness == "omp":
+            raise ValueError("--profile approval-retry runs through an installed harness CLI, not the omp lane")
         if args.harness != "omp":
             return _run_harness(args)
         if args.harness_cli or args.harness_model:
             raise ValueError("--harness-cli and --harness-model need --harness claude-code, codex or cursor")
+        backend = None
+        if args.native_route:
+            from .luna_route import parse_backend
+
+            backend = parse_backend(args.native_route)
+            args.native_luna_route = True
         if args.native_luna_route:
             if args.provider_url or args.model or args.provider_identity or args.allow_loopback_provider:
                 raise ValueError("--native-luna-route selects the provider, model, identity and loopback itself")
-            from .luna_route import DEFAULT_EFFORT, EFFORTS
+            from .luna_route import BACKEND, BACKENDS, DEFAULT_EFFORT
 
+            efforts = BACKENDS[backend or BACKEND]
             args.reasoning_effort = args.reasoning_effort or DEFAULT_EFFORT
-            if args.reasoning_effort not in EFFORTS:
-                raise ValueError("--native-luna-route supports Luna " + " or ".join(EFFORTS))
+            if args.reasoning_effort not in efforts:
+                label = "/".join(backend) if backend else "Luna"
+                raise ValueError(f"--native-luna-route supports {label} " + " or ".join(efforts))
         elif not args.provider_url or not args.model or not args.provider_identity:
             raise ValueError("live provider URL, model and provider identity are required; there is no mock fallback")
         if not 30 <= args.timeout <= 1800 or not 1 <= args.max_inference_rounds <= 128:
@@ -229,8 +333,14 @@ def main() -> int:
         from .parallel import MAX_SLOTS, validate_jobs
 
         validate_jobs(args.jobs)
-        if args.profile == "contained-bun-vitest" and args.jobs != 1:
-            raise ValueError("--jobs is only supported by the core profile")
+        if args.profile not in ("core", "full-tasks") and args.jobs != 1:
+            raise ValueError("--jobs is only supported by the core and full-tasks profiles")
+        if args.profile != "full-tasks" and args.full_task_mode != "enforce":
+            raise ValueError("--full-task-mode requires --profile full-tasks")
+        if args.profile == "full-tasks" and (
+            args.fail_fast or args.host_slots is not None or args.max_load is not None
+        ):
+            raise ValueError("--fail-fast, --host-slots and --max-load are only supported by the core profile")
         if args.profile == "core" and args.contained_test_project is not None:
             raise ValueError("--contained-test-project requires --profile contained-bun-vitest")
         if args.profile == "contained-bun-vitest" and args.contained_test_project is None:
@@ -272,7 +382,12 @@ def main() -> int:
                     signal.signal(name, lambda number, _frame: sys.exit(128 + number))
 
                 route = stack.enter_context(
-                    NativeLunaRoute(omp=args.omp, sdk_root=args.sdk_root, effort=args.reasoning_effort)
+                    NativeLunaRoute(
+                        omp=args.omp,
+                        sdk_root=args.sdk_root,
+                        effort=args.reasoning_effort,
+                        **({"backend": backend} if backend else {}),
+                    )
                 )
                 provider = route.provider(max_rounds=args.max_inference_rounds, timeout=min(args.timeout, 120))
             else:
@@ -286,7 +401,9 @@ def main() -> int:
                     "timeout": min(args.timeout, 120),
                     "reasoning_effort": args.reasoning_effort,
                 }
-            if args.profile == "contained-bun-vitest":
+            if args.profile == "full-tasks":
+                report = full_task_cli.run_profile(args, provider)
+            elif args.profile == "contained-bun-vitest":
                 report = run_contained_profile(
                     expected_source_sha=args.expected_source_sha,
                     output=args.output,
@@ -335,6 +452,7 @@ def _run_harness(args: argparse.Namespace) -> int:
     """Drive a non-omp agent CLI; inference goes through that CLI's own login."""
     if (
         args.native_luna_route
+        or args.native_route
         or args.provider_url
         or args.provider_identity
         or args.allow_loopback_provider
@@ -345,28 +463,50 @@ def _run_harness(args: argparse.Namespace) -> int:
         raise ValueError("--harness uses the CLI's own login and model; omit provider, Luna and omp options")
     if args.fail_fast or args.host_slots is not None or args.slot_dir is not None or args.max_load is not None:
         raise ValueError("--fail-fast, --host-slots and --max-load are only supported by the omp harness")
-    if args.profile != "core":
-        raise ValueError("--harness supports only the core profile")
+    if args.profile not in {"core", "full-tasks", "approval-retry"}:
+        raise ValueError("--harness supports only the core, full-tasks and approval-retry profiles")
+    if args.profile != "full-tasks" and args.full_task_mode != "enforce":
+        raise ValueError("--full-task-mode requires --profile full-tasks")
     if not 30 <= args.timeout <= 1800:
         raise ValueError("host timeout is outside supported bounds")
-    from .harness_suite import run_harness_suite
+    if args.profile == "full-tasks":
+        from .full_task_cli import run_harness_profile
 
-    report = run_harness_suite(
-        harness=args.harness,
-        expected_source_sha=args.expected_source_sha,
-        output=args.output,
-        model_timeout=args.timeout,
-        selected_ids=args.cases,
-        executable=args.harness_cli,
-        model=args.harness_model,
-        work_root=args.work_root,
-        candidate_sha=args.candidate_sha,
-        jobs=args.jobs,
-    )
+        report = run_harness_profile(args)
+    elif args.profile == "approval-retry":
+        from .approval_retry_suite import run_approval_retry_suite
+
+        report = run_approval_retry_suite(
+            harness=args.harness,
+            expected_source_sha=args.expected_source_sha,
+            output=args.output,
+            model_timeout=args.timeout,
+            selected_ids=args.cases,
+            executable=args.harness_cli,
+            model=args.harness_model,
+            work_root=args.work_root,
+            candidate_sha=args.candidate_sha,
+        )
+    else:
+        from .harness_suite import run_harness_suite
+
+        report = run_harness_suite(
+            harness=args.harness,
+            expected_source_sha=args.expected_source_sha,
+            output=args.output,
+            model_timeout=args.timeout,
+            selected_ids=args.cases,
+            executable=args.harness_cli,
+            model=args.harness_model,
+            work_root=args.work_root,
+            candidate_sha=args.candidate_sha,
+            jobs=args.jobs,
+        )
     print(
         json.dumps(
             {
                 "harness": args.harness,
+                "profile": args.profile,
                 "pass": report["pass"],
                 "merge_qualified": False,
                 "scenarios": len(report["cases"]),

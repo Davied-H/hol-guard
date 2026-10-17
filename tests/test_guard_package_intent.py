@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.guard.runtime.package_intent import (
+from codex_plugin_scanner.guard.runtime.package_intent_parser import (
     extract_package_intent_request,
     parse_package_intent,
 )
@@ -28,9 +28,12 @@ def test_extract_uses_selected_guard_home_over_ambient_home(
     foreign_home.mkdir()
     request = {"command": "npm install left-pad@1.3.0"}
 
-    assert extract_package_intent_request(
-        "shell", request, action_envelope_command=None, workspace=tmp_path, guard_home=foreign_home
-    ) is None
+    assert (
+        extract_package_intent_request(
+            "shell", request, action_envelope_command=None, workspace=tmp_path, guard_home=foreign_home
+        )
+        is None
+    )
 
     monkeypatch.setattr(config, "resolve_guard_home", lambda: foreign_home)
     selected = extract_package_intent_request(
@@ -39,6 +42,34 @@ def test_extract_uses_selected_guard_home_over_ambient_home(
     assert selected is not None
     assert selected.targets[0].package_name == "left-pad"
     assert selected.targets[0].requested_specifier == "1.3.0"
+
+
+def test_extract_resolves_every_command_in_the_environment_it_is_given(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A caller parsing another process's call binds that process's `PATH`."""
+
+    from codex_plugin_scanner.guard.runtime import package_intent_parser
+
+    seen: list[tuple[str, object]] = []
+
+    def parse(command_text: str, **kwargs: object) -> None:
+        seen.append((command_text, kwargs["environment"]))
+        return None
+
+    monkeypatch.setattr(package_intent_parser, "parse_package_intent", parse)
+    environment = {"PATH": "/usr/bin:/bin"}
+
+    assert (
+        extract_package_intent_request(
+            "shell",
+            {"command": "npm install left-pad"},
+            action_envelope_command="pip install requests",
+            environment=environment,
+        )
+        is None
+    )
+
+    # Every command the call carries, the envelope's included.
+    assert seen == [("npm install left-pad", environment), ("pip install requests", environment)]
 
 
 def test_parse_package_intent_npm_install_supports_aliases_tags_versions_and_flags(tmp_path: Path) -> None:

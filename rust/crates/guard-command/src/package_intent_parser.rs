@@ -70,6 +70,10 @@ mod tests;
 #[path = "package_intent_parser/uvx_value_options_tests.rs"]
 mod uvx_value_options_tests;
 
+#[cfg(test)]
+#[path = "package_intent_parser/bun_value_options_tests.rs"]
+mod bun_value_options_tests;
+
 // ---------------------------------------------------------------------------
 // Module constants  (package_intent_parser.py :51-131)
 // ---------------------------------------------------------------------------
@@ -273,6 +277,18 @@ pub fn parse_package_intent(
         } else {
             None
         };
+        let package_cwd = manager_install_cwd(
+            &name,
+            &segment.tokens,
+            segment.context_complete,
+            segment.effective_cwd.as_deref(),
+            workspace,
+        );
+        let discovery_workspace = match &package_cwd {
+            ManagerCwd::Inside(directory) => Some(directory.as_path()),
+            ManagerCwd::Unresolved => None,
+            ManagerCwd::NotDeclared => segment_workspace.as_deref(),
+        };
         let mut intent = if LOCAL_EXECUTION_COMMANDS.contains(name.as_str()) {
             parse_exec_intent(
                 &segment.tokens,
@@ -285,13 +301,37 @@ pub fn parse_package_intent(
                 segment.context_complete,
             )
         } else {
-            dispatch_intent(&name, &segment.tokens, segment_workspace.as_deref())
+            dispatch_intent(&name, &segment.tokens, discovery_workspace)
         };
         if let Some(mut i) = intent.take() {
-            if segment.context_complete && segment_workspace.is_some() {
-                i = rebase_intent_paths(i, segment_workspace.as_deref().unwrap(), workspace);
-            } else if let Some(reason) = &segment.context_reason_code {
-                i.notes.push(reason.clone());
+            match &package_cwd {
+                ManagerCwd::Unresolved => {
+                    // Do not keep the caller's manifests: they are not the
+                    // project `--cwd` named, and an empty intent would allow.
+                    i.manifest_paths.clear();
+                    i.lockfile_paths.clear();
+                    if !i
+                        .notes
+                        .iter()
+                        .any(|note| note == PACKAGE_CWD_UNRESOLVED_NOTE)
+                    {
+                        i.notes.push(PACKAGE_CWD_UNRESOLVED_NOTE.to_owned());
+                    }
+                }
+                ManagerCwd::Inside(directory) => {
+                    i = rebase_intent_paths(i, directory, workspace);
+                }
+                ManagerCwd::NotDeclared => {
+                    if segment.context_complete && segment_workspace.is_some() {
+                        i = rebase_intent_paths(
+                            i,
+                            segment_workspace.as_deref().unwrap(),
+                            workspace,
+                        );
+                    } else if let Some(reason) = &segment.context_reason_code {
+                        i.notes.push(reason.clone());
+                    }
+                }
             }
             if segment.cwd_source.starts_with("shell_")
                 || segment.cwd_source.starts_with("env_chdir")
@@ -349,19 +389,30 @@ fn dispatch_intent(
     }
 }
 
+/// Whether `extract_package_intent_request` reads the arguments of
+/// `tool_name` as shell commands (`_SHELL_TOOL_NAMES`).
+pub fn shell_tool_name(tool_name: &str) -> bool {
+    normalize_tool_name(tool_name).is_some_and(|name| SHELL_TOOL_NAMES.contains(&name.as_str()))
+}
+
 /// `extract_package_intent_request`  (package_intent_parser.py :1541-…).
+///
+/// `environment` is the one each `parse_package_intent` resolves the launch
+/// in; the Python caller passes none, which the resident request binds to the
+/// caller's `PATH` (`_resident_environment`).
 pub fn extract_package_intent_request(
     tool_name: &str,
     arguments: &Value,
     action_envelope_command: Option<&str>,
     workspace: Option<&Path>,
     home_dir: Option<&Path>,
+    environment: Option<&BTreeMap<String, String>>,
 ) -> Option<PackageIntent> {
     if let Some(normalized_tool_name) = normalize_tool_name(tool_name) {
         if SHELL_TOOL_NAMES.contains(&normalized_tool_name.as_str()) {
             for command_text in candidate_command_texts(arguments) {
                 if let Some(intent) =
-                    parse_package_intent(&command_text, workspace, home_dir, None, None)
+                    parse_package_intent(&command_text, workspace, home_dir, None, environment)
                 {
                     return Some(intent);
                 }
@@ -369,7 +420,7 @@ pub fn extract_package_intent_request(
         }
     }
     if let Some(command) = action_envelope_command {
-        return parse_package_intent(command, workspace, home_dir, None, None);
+        return parse_package_intent(command, workspace, home_dir, None, environment);
     }
     None
 }

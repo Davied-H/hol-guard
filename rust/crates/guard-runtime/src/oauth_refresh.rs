@@ -96,6 +96,15 @@ fn parked_reauthorization_message(state: &Value) -> &'static str {
     }
 }
 
+/// A refresh that Cloudflare blocked or challenged is a network failure, not a
+/// revoked sign-in, so it keeps its own reason instead of the reconnect copy.
+fn failed_refresh_error(reason: String) -> EvalError {
+    if guard_command::guard_sync_transport::is_cloud_edge_block_reason(&reason) {
+        return EvalError::Validation(reason);
+    }
+    EvalError::Validation(format!("{RECONNECT_AFTER_REVOKED} {reason}"))
+}
+
 fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -672,9 +681,8 @@ pub(crate) fn refresh_oauth_access_token(
                 if attempt >= INVALID_GRANT_MAX_ATTEMPTS {
                     break;
                 }
-                std::thread::sleep(std::time::Duration::from_secs_f64(
-                    INVALID_GRANT_RETRY_DELAY_SECONDS,
-                ));
+                // The caller waits before it performs the retry exchange.
+                guard_command::egress_broker::pause(INVALID_GRANT_RETRY_DELAY_SECONDS);
                 if let Some((rt, mat)) = credential_reloader() {
                     let pk = mat
                         .get("private_key_pem")
@@ -691,11 +699,7 @@ pub(crate) fn refresh_oauth_access_token(
                 }
                 continue;
             }
-            OAuthRefreshOutcome::Failed(reason) => {
-                return Err(EvalError::Validation(format!(
-                    "{RECONNECT_AFTER_REVOKED} {reason}"
-                )));
-            }
+            OAuthRefreshOutcome::Failed(reason) => return Err(failed_refresh_error(reason)),
         }
     }
     // Second invalid_grant post-rotation = genuinely revoked: record the
@@ -707,6 +711,21 @@ pub(crate) fn refresh_oauth_access_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refresh_blocked_by_cloudflare_is_not_reported_as_a_revoked_sign_in() {
+        let edge = "Guard Cloud is unreachable from this network: Cloudflare in front of Guard Cloud challenged the request (HTTP 403).";
+        match failed_refresh_error(edge.to_owned()) {
+            EvalError::Validation(reason) => assert_eq!(reason, edge),
+            other => panic!("unexpected error: {other:?}"),
+        }
+        match failed_refresh_error("HTTP Error 400".to_owned()) {
+            EvalError::Validation(reason) => {
+                assert_eq!(reason, format!("{RECONNECT_AFTER_REVOKED} HTTP Error 400"))
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
 
     #[test]
     fn parked_rejected_circuit_reports_reauthorization() {

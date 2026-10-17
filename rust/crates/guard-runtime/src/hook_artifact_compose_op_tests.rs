@@ -1,11 +1,18 @@
 //! Recorded vectors and transport binding checks for `HookArtifactCompose`.
 
-use guard_contracts::{HookArtifactComposeQueryV1, HOOK_ARTIFACT_COMPOSE_REQUEST_SCHEMA};
+use flate2::read::GzDecoder;
+use guard_contracts::{
+    GuardAction, HookArtifactComposeQueryV1, NativeEdgeFactsV1, PolicyConfigFactsV1,
+    HOOK_ARTIFACT_COMPOSE_REQUEST_SCHEMA,
+};
 use serde_json::{json, Value};
+use std::io::Read;
 
-use super::compose;
+use super::{compose, native_edge_floor};
 
 const VECTORS: &str = include_str!("../tests/fixtures/hook_artifact_compose_vectors.json");
+const CONFIG_ACTION_VECTORS: &[u8] =
+    include_bytes!("../tests/fixtures/config_action_vectors.json.gz");
 
 #[test]
 fn matches_recorded_vectors() {
@@ -15,7 +22,92 @@ fn matches_recorded_vectors() {
         let name = vector["name"].as_str().unwrap();
         let query: HookArtifactComposeQueryV1 = serde_json::from_value(vector["query"].clone())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        assert_eq!(compose(&query), vector["expected"], "{name}");
+        assert_eq!(compose(&query).unwrap(), vector["expected"], "{name}");
+    }
+}
+
+#[test]
+fn fused_decision_copy_preserves_recorded_factory_and_overlay_outcomes() {
+    let decisions: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/decision_authority_vectors.json"
+    ))
+    .unwrap();
+    let copies: Vec<Value> = serde_json::from_str(VECTORS).unwrap();
+    let mut checked = 0;
+    for decision in decisions["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["kind"] == "decision_legacy" && v["expected"]["status"] == "ok")
+    {
+        for copy in copies
+            .iter()
+            .filter(|v| v["query"]["kind"] == "decision_copy")
+        {
+            let mut original = copy["query"].clone();
+            original["policy_action"] = decision["args"]["action"].clone();
+            let mut expected = decision["expected"]["value"].clone();
+            for field in ["user_body", "harness_message", "dashboard_primary_detail"] {
+                original[format!("base_{field}")] = expected[field].clone();
+            }
+            let query = serde_json::from_value(original.clone()).unwrap();
+            let overlay = compose(&query).unwrap();
+            expected
+                .as_object_mut()
+                .unwrap()
+                .extend(overlay["decision_overrides"].as_object().unwrap().clone());
+            original.as_object_mut().unwrap().remove("kind");
+            // Caller-supplied base copy cannot replace the canonical native base.
+            for field in [
+                "base_user_body",
+                "base_harness_message",
+                "base_dashboard_primary_detail",
+            ] {
+                original[field] = json!("forged caller copy");
+            }
+            let fused = serde_json::from_value(json!({
+                "kind": "decision_build_copy", "copy": original,
+                "reason": decision["args"]["reason"], "signals": decision["args"]["signals"],
+            }))
+            .unwrap();
+            let actual = compose(&fused).unwrap();
+            assert_eq!(actual["decision_v2"], expected);
+            assert_eq!(actual["risk_headline"], overlay["risk_headline"]);
+            checked += 1;
+        }
+    }
+    assert!(checked >= 600);
+}
+
+#[test]
+fn config_action_matches_recorded_python_vectors() {
+    let mut text = String::new();
+    GzDecoder::new(CONFIG_ACTION_VECTORS)
+        .read_to_string(&mut text)
+        .unwrap();
+    let vectors: Vec<Value> = serde_json::from_str(&text).unwrap();
+    assert!(vectors.len() >= 900);
+    for vector in vectors {
+        let name = vector["name"].as_str().unwrap();
+        let mut query = vector["query"].clone();
+        query["kind"] = json!("config_action");
+        let query: HookArtifactComposeQueryV1 =
+            serde_json::from_value(query).unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(compose(&query).unwrap(), vector["expected"], "{name}");
+        // The previous Python hook evaluation sent this configured data-flow
+        // action; an unrecognised value never became an action.
+        let config: PolicyConfigFactsV1 =
+            serde_json::from_value(vector["query"]["policy_config"].clone()).unwrap();
+        for (key, strong) in [("weak", false), ("strong", true)] {
+            let expected = vector["data_flow"][key]
+                .as_str()
+                .and_then(GuardAction::from_canonical);
+            assert_eq!(
+                crate::hook_policy_config::data_flow_configured_action(&config, strong),
+                expected,
+                "{name} {key}"
+            );
+        }
     }
 }
 
@@ -85,4 +177,99 @@ fn unknown_actions_never_lower_the_composed_action() {
     ] {
         assert_eq!(reply["payload"][key], "review", "{key}");
     }
+}
+
+fn edge(event: &str, fields: Value) -> NativeEdgeFactsV1 {
+    NativeEdgeFactsV1 {
+        event_name: Some(event.to_owned()),
+        policy_action: fields["policy_action"].clone(),
+        minimum_action: fields["minimum_action"].clone(),
+        decision: fields["decision"].clone(),
+        reason_code: fields["reason_code"].clone(),
+        package_request: fields["package_request"].as_bool().unwrap_or(false),
+    }
+}
+
+#[test]
+fn edge_floors_after_execution_only_through_reapproval() {
+    let deny = json!({"decision": "deny"});
+    assert_eq!(
+        native_edge_floor(&edge("PreToolUse", deny.clone()), None),
+        None
+    );
+    let block = json!({"decision": "deny", "policy_action": "block"});
+    assert_eq!(
+        native_edge_floor(&edge("UserPromptSubmit", block), None),
+        None
+    );
+    assert_eq!(
+        native_edge_floor(&edge("PostToolUse", deny.clone()), None),
+        Some(GuardAction::RequireReapproval)
+    );
+    assert_eq!(
+        native_edge_floor(&edge("PostToolUse", deny), Some("warn")),
+        None
+    );
+    let allow = json!({"policy_action": "allow"});
+    assert_eq!(
+        native_edge_floor(&edge("PostToolUse", allow), None),
+        Some(GuardAction::Allow)
+    );
+    let reapproval = json!({"policy_action": "require-reapproval"});
+    assert_eq!(
+        native_edge_floor(&edge("PostToolUse", reapproval), Some("warn")),
+        Some(GuardAction::RequireReapproval)
+    );
+}
+
+#[test]
+fn a_terminal_pre_tool_edge_cannot_be_relaxed_to_review() {
+    for (action, expected) in [
+        ("block", GuardAction::Block),
+        ("sandbox-required", GuardAction::SandboxRequired),
+    ] {
+        let terminal = json!({"decision": "deny", "policy_action": action});
+        assert_eq!(
+            native_edge_floor(&edge("PreToolUse", terminal), Some("warn")),
+            Some(expected)
+        );
+    }
+    for action in ["review", "allow"] {
+        let soft = json!({"policy_action": action});
+        assert_eq!(native_edge_floor(&edge("PreToolUse", soft), None), None);
+    }
+    // An unrecognized edge action fails closed.
+    let unknown = json!({"policy_action": "teleport"});
+    assert_eq!(
+        native_edge_floor(&edge("PreToolUse", unknown), None),
+        Some(GuardAction::Block)
+    );
+}
+
+#[test]
+fn the_package_evaluator_owns_command_control_failures_but_not_secret_denies() {
+    let failure = |package_request| {
+        edge(
+            "PreToolUse",
+            json!({
+                "policy_action": "block",
+                "reason_code": "native_command_extension_evaluation_failed",
+                "package_request": package_request,
+            }),
+        )
+    };
+    assert_eq!(native_edge_floor(&failure(true), None), None);
+    assert_eq!(
+        native_edge_floor(&failure(false), None),
+        Some(GuardAction::Block)
+    );
+    let secret = edge(
+        "PreToolUse",
+        json!({
+            "policy_action": "block",
+            "reason_code": "native_secret_exfiltration",
+            "package_request": true,
+        }),
+    );
+    assert_eq!(native_edge_floor(&secret, None), Some(GuardAction::Block));
 }

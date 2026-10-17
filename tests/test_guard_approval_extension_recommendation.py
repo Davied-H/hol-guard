@@ -28,13 +28,10 @@ from codex_plugin_scanner.guard.runtime.extension_control_contract import (
 from codex_plugin_scanner.guard.runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
 from codex_plugin_scanner.guard.store import GuardStore
 from codex_plugin_scanner.guard.store_approvals import (
-    add_approval_request,
-    approval_index_statements,
-    approval_schema_statement,
-    get_approval_extension_allow_hint,
     get_approval_request,
     list_approval_requests,
 )
+from tests.native_approval_writes import add_approval_request, native_approval_connection
 
 REGISTRY = BUILT_IN_COMMAND_EXTENSION_REGISTRY
 GIT_ADD = "command.git.permission.add"
@@ -120,22 +117,24 @@ def _request(request_id: str, *, hint: dict[str, object] | None) -> GuardApprova
 
 
 def _connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(":memory:")
-    connection.row_factory = sqlite3.Row
-    connection.execute(approval_schema_statement())
-    for statement in approval_index_statements():
-        connection.execute(statement)
-    return connection
+    return native_approval_connection()
+
+
+def _stored_hint(connection: sqlite3.Connection, request_id: str) -> object:
+    row = connection.execute(
+        "select extension_allow_hint_json from approval_requests where request_id = ?", (request_id,)
+    ).fetchone()
+    return json.loads(row[0]) if row is not None and row[0] is not None else None
 
 
 def test_store_round_trips_and_refreshes_hint_on_dedupe() -> None:
     connection = _connection()
     add_approval_request(connection, _request("req-1", hint=None), "2026-10-09T10:00:00+00:00")
-    assert get_approval_extension_allow_hint(connection, "req-1") is None
+    assert _stored_hint(connection, "req-1") is None
 
     add_approval_request(connection, _request("req-2", hint=_hint(GIT_ADD)), "2026-10-09T10:01:00+00:00")
 
-    assert get_approval_extension_allow_hint(connection, "req-1") == _hint(GIT_ADD)
+    assert _stored_hint(connection, "req-1") == _hint(GIT_ADD)
     stored = get_approval_request(connection, "req-1")
     assert stored is not None
     assert "extension_allow_hint" not in stored
@@ -146,11 +145,8 @@ def test_store_round_trips_and_refreshes_hint_on_dedupe() -> None:
 
 def test_existing_store_gains_hint_column(tmp_path: Path) -> None:
     guard_home = tmp_path / "guard-home"
-    guard_home.mkdir()
+    GuardStore(guard_home).add_approval_request(_request("req-old", hint=None), "2026-10-08T10:00:00+00:00")
     legacy = sqlite3.connect(guard_home / "guard.db")
-    legacy.row_factory = sqlite3.Row
-    legacy.execute(approval_schema_statement())
-    add_approval_request(legacy, _request("req-old", hint=None), "2026-10-08T10:00:00+00:00")
     # Recreate a pre-upgrade table: same row, no hint column.
     legacy.execute("alter table approval_requests drop column extension_allow_hint_json")
     legacy.commit()

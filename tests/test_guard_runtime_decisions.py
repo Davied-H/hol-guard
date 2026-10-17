@@ -12,6 +12,8 @@ from codex_plugin_scanner.guard.runtime.decisions import (
 )
 from codex_plugin_scanner.guard.runtime.signals import RiskSignalV2
 
+pytestmark = pytest.mark.usefixtures("native_prompt_runtime")
+
 
 def _signal() -> RiskSignalV2:
     return RiskSignalV2(
@@ -197,6 +199,7 @@ def test_rejected_mcp_approval_copy_does_not_invent_argument_changes() -> None:
         summary="Prior approval could not be claimed.",
         approval_reuse_status="rejected",
         approval_reuse_reason_code="approval_reuse_claim_failed",
+        policy_action="require-reapproval",
     )
     action = resolve_tool_call_policy_action(rejected)
     decision = decision_from_legacy_policy_action(action, reason="approval_reuse_claim_failed")

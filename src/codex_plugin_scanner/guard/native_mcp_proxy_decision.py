@@ -15,17 +15,20 @@ request is repeated. A supplier receives the resident's ``need`` reply. Anything
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from .native_context import _canonical_request_sha256, ensure_resident_prerequisite
 from .native_execution import _resident_request
+from .native_resident_prerequisite_reason import prerequisite_unavailable_code
 from .native_runtime import native_runtime_status
 from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
 
 MCP_PROXY_DECISION_FEATURE = "mcp-proxy-decision-v1"
+MCP_PROXY_ARCHIVE_VERIFY_FEATURE = "mcp-proxy-archive-verify-v1"
 _REQUEST_SCHEMA = "guard-mcp-proxy-decision-request.v1"
 _RESULT_SCHEMA = "guard-mcp-proxy-decision-result.v1"
 _OPERATION = "mcp_proxy_decide"
@@ -44,7 +47,9 @@ def _fail(code: str) -> NativeMcpProxyDecisionError:
     return NativeMcpProxyDecisionError(code)
 
 
-def _round_trip(query: Mapping[str, object], guard_home: Path) -> tuple[dict[str, Any], str, str]:
+def _round_trip(
+    query: Mapping[str, object], guard_home: Path, required_feature: str
+) -> tuple[dict[str, Any], str, str]:
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
         "request_id": f"mcp-proxy-decision-{uuid4().hex}",
@@ -55,13 +60,13 @@ def _round_trip(query: Mapping[str, object], guard_home: Path) -> tuple[dict[str
     except (TypeError, ValueError) as error:
         raise _fail("native_mcp_proxy_decision_request_invalid") from error
     if not ensure_resident_prerequisite(guard_home):
-        raise _fail("native_mcp_proxy_decision_prerequisite_unavailable")
+        raise _fail(prerequisite_unavailable_code("native_mcp_proxy_decision_prerequisite_unavailable", guard_home))
     response = _resident_request(
         operation=_OPERATION,
         request=request,
         guard_home=guard_home,
         timeout_seconds=_TIMEOUT_SECONDS,
-        required_feature=MCP_PROXY_DECISION_FEATURE,
+        required_feature=required_feature,
         response_schema=_RESULT_SCHEMA,
         max_request_bytes=_MAX_REQUEST_BYTES,
         record_success=False,
@@ -94,12 +99,13 @@ def native_mcp_proxy_decide(
     *,
     guard_home: Path,
     supply: Mapping[str, Supplier] | None = None,
+    required_feature: str = MCP_PROXY_DECISION_FEATURE,
 ) -> dict[str, Any]:
     """Return the resident's payload for ``query``, resolving ``need`` replies."""
 
     current = dict(query)
     for _ in range(_MAX_NEED_ROUNDS):
-        payload, _digest, _request_id = _round_trip(current, guard_home)
+        payload, _digest, _request_id = _round_trip(current, guard_home, required_feature)
         need = payload.get("need")
         if need is None:
             _record_success(guard_home)
@@ -155,3 +161,65 @@ def cursor_fact(cursor: object) -> dict[str, object]:
     if isinstance(cursor, str):
         return {"kind": "string", "value": cursor}
     return {"kind": "other"}
+
+
+def native_external_archive_bind(
+    params: Any,
+    downloads: Sequence[Any],
+    *,
+    requires_binding: bool,
+    guard_home: Path,
+) -> Any | None:
+    """``params`` (request params or a launch argv) bound to verified local archives.
+
+    The resident re-verifies every download (single-link, read-only regular file
+    with the recorded size and SHA-256) before binding. ``None`` means it refused
+    (fail closed). Only the resident's edits are applied, so key order and number
+    formatting of the forwarded request stay what the client sent.
+    """
+
+    payload = native_mcp_proxy_decide(
+        {
+            "check": "external_archive_bind",
+            "params": params,
+            "downloads": [
+                {
+                    "source_url": download.source_url,
+                    "path": str(download.path),
+                    "size": download.size,
+                    "sha256": download.sha256,
+                }
+                for download in downloads
+            ],
+            "requires_binding": requires_binding,
+        },
+        guard_home=guard_home,
+        required_feature=MCP_PROXY_ARCHIVE_VERIFY_FEATURE,
+    )
+    kind = payload.get("kind")
+    if kind == "unchanged":
+        return deepcopy(params)
+    edits = payload.get("edits")
+    if kind != "bound" or not isinstance(edits, list):
+        return None
+    bound = deepcopy(params)
+    for edit in edits:
+        slot: Any = bound
+        *parents, last = edit["path"]
+        for step in parents:
+            slot = slot[step]
+        slot[last] = edit["value"]
+    return bound
+
+
+def native_package_reason_signals(reasons: Sequence[object], *, guard_home: Path) -> tuple[dict[str, Any], ...]:
+    """The risk signals the resident projects from a package evaluation's reasons."""
+
+    payload = native_mcp_proxy_decide(
+        {"check": "package_reason_signals", "reasons": list(reasons)},
+        guard_home=guard_home,
+    )
+    signals = payload.get("signals")
+    if not isinstance(signals, list):
+        raise _fail("native_mcp_proxy_decision_payload_invalid")
+    return tuple(signals)

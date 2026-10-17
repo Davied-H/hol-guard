@@ -41,7 +41,12 @@ export function normalizeHarnessPostures(value: unknown): Record<string, GuardPr
   return result;
 }
 
-function globalPosture(settings: GuardSettings): GuardProtectionPostureValue {
+/**
+ * The posture every app inherits: the explicit machine posture when set, the
+ * legacy observe mode as Watch, otherwise Protected. Rows and every summary
+ * line must derive their label from this one function so they cannot disagree.
+ */
+export function globalPosture(settings: GuardSettings): GuardProtectionPostureValue {
   if (isProtectionPosture(settings.protection_posture)) return settings.protection_posture;
   if (settings.mode === "observe") return "watch";
   return "protected";
@@ -192,6 +197,32 @@ export function harnessPostureSummary(rows: HarnessPostureRow[]): string {
   if (watching.length === 0) return "Every app is protected.";
   if (watching.length === rows.length) return "Every app is in Watch.";
   return `${watching.length} of ${rows.length} apps in Watch: ${joinNames(watching.map((row) => row.displayName))}.`;
+}
+
+/** Whether a row should read as protected (calm) or Watch (attention) at a glance. */
+export function harnessRowTone(row: HarnessPostureRow): "protected" | "watch" {
+  return row.effective === "watch" ? "watch" : "protected";
+}
+
+/** One-line caption for a row that says where its level comes from. */
+export function harnessRowStatus(row: HarnessPostureRow): string {
+  if (row.effective === "watch") {
+    return row.hasOverride ? "Watch · recording only" : "Watch · follows the machine setting";
+  }
+  if (!row.hasOverride) return "Follows the machine setting";
+  return "Set for this app";
+}
+
+/** Rows in Watch first so a weaker posture is impossible to miss, then the given order. */
+export function sortHarnessRows(rows: HarnessPostureRow[]): HarnessPostureRow[] {
+  const watching = rows.filter((row) => row.effective === "watch");
+  const rest = rows.filter((row) => row.effective !== "watch");
+  return [...watching, ...rest];
+}
+
+/** Rows that carry their own entry instead of inheriting the machine posture. */
+export function overrideRows(rows: HarnessPostureRow[]): HarnessPostureRow[] {
+  return rows.filter((row) => row.hasOverride);
 }
 
 /** Confirmation copy for putting one app in Watch, given what the other apps will do. */

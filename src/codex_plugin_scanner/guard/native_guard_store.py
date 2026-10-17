@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from .native_context import _canonical_request_sha256, ensure_resident_prerequisite
 from .native_execution import _resident_request
+from .native_resident_prerequisite_reason import prerequisite_unavailable_code
 from .native_runtime import native_runtime_status
 from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
 
@@ -77,6 +78,8 @@ def _raise_for_code(code: object, payload: object) -> None:
     text = message if isinstance(message, str) else "Guard store operation failed."
     if code == "native_guard_store_value_error":
         raise ValueError(text)
+    if code == "native_guard_store_runtime_error":
+        raise RuntimeError(text)
     if code == "native_guard_store_integrity_error":
         raise sqlite3.IntegrityError(text)
     if code == "native_guard_store_busy":
@@ -102,6 +105,7 @@ def native_guard_store_call(
     method: str,
     args: Mapping[str, object],
     deadline_monotonic: float,
+    busy_timeout_seconds: float | None = None,
 ) -> tuple[Any, int | None]:
     """Run one store method in the resident; return ``(payload, outbox_generation)``.
 
@@ -112,7 +116,7 @@ def native_guard_store_call(
     """
 
     if not ensure_resident_prerequisite(guard_home):
-        raise _unavailable("native_guard_store_prerequisite_unavailable")
+        raise _unavailable(prerequisite_unavailable_code("native_guard_store_prerequisite_unavailable", guard_home))
     remaining_seconds = deadline_monotonic - time.monotonic()
     if remaining_seconds <= 0:
         raise TimeoutError("Guard storage operation deadline expired.")
@@ -123,7 +127,13 @@ def native_guard_store_call(
         "guard_home": str(guard_home),
         "method": method,
         "source": source,
-        "busy_timeout_ms": max(1, int(remaining_seconds * 1000)),
+        "busy_timeout_ms": max(
+            1,
+            int(
+                (remaining_seconds if busy_timeout_seconds is None else min(remaining_seconds, busy_timeout_seconds))
+                * 1000
+            ),
+        ),
         "args": dict(args),
     }
     try:

@@ -1013,7 +1013,7 @@ function withGuardAuthForToken(
   };
 }
 
-async function fetchWithGuardAuth(input: RequestInfo, init?: RequestInit): Promise<Response> {
+export async function fetchWithGuardAuth(input: RequestInfo, init?: RequestInit): Promise<Response> {
   const requestInput = guardApiInput(input);
   const guardToken = readGuardToken();
   const response = await fetch(requestInput, withGuardAuthForToken(init, guardToken));
@@ -1072,6 +1072,21 @@ export async function fetchLocalCliApi(input: RequestInfo, init?: RequestInit): 
     /^\/v1\/local-clis(?:\/(?:preview|apply|recognize|discover|forget|provider-actions|provider-workflows|registry-search|registry-setup|refresh-job|skills|mcp-skills))?$/.test(input);
   if (!approvedPath) {
     throw new Error("Invalid local CLI API path");
+  }
+  return fetchWithGuardAuth(input, init);
+}
+
+/**
+ * Sponsored extension discovery: authenticated daemon routes only. The
+ * browser never calls Guard Cloud directly (connect-src stays 'self'), and
+ * these fixed paths are the whole allowlist.
+ */
+export async function fetchExtensionDiscoveryApi(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  const approvedPath =
+    typeof input === "string" &&
+    /^\/v1\/discovery\/extensions\/(?:placements|renders|events|settings)$/.test(input);
+  if (!approvedPath) {
+    throw new Error("Invalid extension discovery API path");
   }
   return fetchWithGuardAuth(input, init);
 }
@@ -2272,6 +2287,7 @@ export async function fetchSettings(): Promise<GuardSettingsPayload> {
 export type CloudReviewSettingsStatus = {
   enabled: boolean;
   connected: boolean;
+  reconnect_required: boolean;
   reason: string | null;
   expires_at: string | null;
   workspace_id: string | null;

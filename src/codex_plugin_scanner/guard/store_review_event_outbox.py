@@ -19,6 +19,7 @@ from typing import Any
 from . import store_review_event_outbox_schema
 from .native_guard_store import native_guard_store_call
 from .sqlite_errors import sqlite_error_is_busy_locked
+from .sqlite_tuning import sqlite_operation_deadline_monotonic
 from .store_base import sqlite_connect_timeout_seconds
 
 _SENTINEL = "\u0000requeued\u0000"
@@ -53,13 +54,18 @@ def _marker_parts(marker_payload: Mapping[str, object]) -> list[str]:
 
 
 class StoreReviewEventOutboxMixin:
-    def _native_store_call(self, method: str, args: Mapping[str, object]) -> Any:
+    def _native_store_call(
+        self, method: str, args: Mapping[str, object], *, busy_timeout_seconds: float | None = None
+    ) -> Any:
         timeout_seconds = sqlite_connect_timeout_seconds()
         if timeout_seconds <= 0:
             raise TimeoutError("Guard storage operation deadline expired.")
         # One deadline for the whole call: the gate wait, startup, SQLite busy
         # wait and transport all draw from it, so none can outlast the caller.
-        deadline = time.monotonic() + timeout_seconds
+        # A caller operation clock bounds the call; the lock-wait cap bounds
+        # only the SQLite busy wait inside it.
+        operation_deadline = sqlite_operation_deadline_monotonic()
+        deadline = time.monotonic() + timeout_seconds if operation_deadline is None else operation_deadline
         failure: sqlite3.DatabaseError | None = None
         generation: int | None = None
         payload: Any = None
@@ -74,6 +80,9 @@ class StoreReviewEventOutboxMixin:
                     method=method,
                     args=args,
                     deadline_monotonic=deadline,
+                    busy_timeout_seconds=timeout_seconds
+                    if busy_timeout_seconds is None
+                    else min(timeout_seconds, busy_timeout_seconds),
                 )
             except sqlite3.DatabaseError as error:
                 failure = error

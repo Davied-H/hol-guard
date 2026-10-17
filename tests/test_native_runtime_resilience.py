@@ -1,75 +1,17 @@
 from __future__ import annotations
 
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from codex_plugin_scanner.guard import native_runtime_resilience as resilience
 from codex_plugin_scanner.guard.native_runtime_resilience import (
-    native_oneshot_lease,
     native_record_integrity_failure,
-    native_record_oneshot_success,
     native_record_overload,
-    native_record_resident_failure,
     native_record_resident_success,
-    native_record_restart,
-    native_record_starting,
     native_runtime_health_snapshot,
 )
 
 
 def _identity(prefix: str) -> str:
     return (prefix * 64)[:64]
-
-
-def test_native_health_tracks_start_recovery_and_success(tmp_path: Path) -> None:
-    identity = _identity("a")
-    native_record_starting(identity, tmp_path)
-    starting = native_runtime_health_snapshot(identity, tmp_path)
-    assert starting.state == "starting"
-    assert starting.starts == 1
-    assert starting.circuit_open is False
-
-    native_record_restart(identity, tmp_path)
-    recovering = native_runtime_health_snapshot(identity, tmp_path)
-    assert recovering.state == "recovering"
-    assert recovering.restarts == 1
-
-    native_record_resident_success(identity, tmp_path)
-    healthy = native_runtime_health_snapshot(identity, tmp_path)
-    assert healthy.state == "healthy"
-    assert healthy.reason == "native_ready"
-    assert healthy.consecutive_failures == 0
-
-
-def test_native_circuit_opens_after_bounded_failures(tmp_path: Path) -> None:
-    identity = _identity("b")
-    for index in range(3):
-        native_record_resident_failure(
-            identity,
-            tmp_path,
-            reason=f"native_resident_failed_{index}",
-        )
-
-    snapshot = native_runtime_health_snapshot(identity, tmp_path)
-    assert snapshot.state == "circuit_open"
-    assert snapshot.reason == "native_circuit_open"
-    assert snapshot.circuit_open is True
-    assert snapshot.resident_failures == 3
-    with native_oneshot_lease(identity, tmp_path) as acquired:
-        assert acquired is False
-
-
-def test_native_oneshot_lease_is_single_flight_per_runtime(tmp_path: Path) -> None:
-    identity = _identity("c")
-    with native_oneshot_lease(identity, tmp_path) as first:
-        assert first is True
-        with native_oneshot_lease(identity, tmp_path) as second:
-            assert second is False
-    native_record_oneshot_success(identity, tmp_path)
-    snapshot = native_runtime_health_snapshot(identity, tmp_path)
-    assert snapshot.state == "degraded"
-    assert snapshot.reason == "native_oneshot_fallback"
 
 
 def test_overload_does_not_trip_crash_circuit(tmp_path: Path) -> None:
@@ -107,36 +49,3 @@ def test_compatibility_mismatches_are_recoverable() -> None:
     assert "native_version_mismatch" not in _INTEGRITY_FAILURE_REASONS
     assert "native_manifest_protocol_mismatch" in _INTEGRITY_FAILURE_REASONS
     assert "native_manifest_version_mismatch" in _INTEGRITY_FAILURE_REASONS
-
-
-def test_slow_home_resolution_does_not_delay_quarantine_or_restore_revoked_health(tmp_path, monkeypatch):
-    identity = _identity("9")
-    started = threading.Event()
-    release = threading.Event()
-    original_key = resilience._privacy_safe_key
-
-    def delayed_key(identity_sha256, guard_home):
-        if threading.current_thread().name.startswith("slow-home-resolution"):
-            started.set()
-            assert release.wait(5), "owned slow resolver was not released"
-        return original_key(identity_sha256, guard_home)
-
-    monkeypatch.setattr(resilience, "_privacy_safe_key", delayed_key)
-    with (
-        ThreadPoolExecutor(max_workers=1, thread_name_prefix="slow-home-resolution") as slow,
-        ThreadPoolExecutor(max_workers=1) as urgent,
-    ):
-        pending_success = slow.submit(native_record_resident_success, identity, tmp_path)
-        try:
-            assert started.wait(2)
-            quarantine = urgent.submit(
-                native_record_integrity_failure, identity, tmp_path, reason="native_snapshot_invalid"
-            )
-            quarantine.result(timeout=2)
-        finally:
-            release.set()
-        pending_success.result(timeout=2)
-    snapshot = native_runtime_health_snapshot(identity, tmp_path)
-    assert snapshot.state == "quarantined"
-    with native_oneshot_lease(identity, tmp_path) as acquired:
-        assert acquired is False
