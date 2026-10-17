@@ -190,3 +190,22 @@ fn a_batch_answers_in_request_order_and_refuses_an_oversized_one() {
         "native_mcp_classification_too_large"
     );
 }
+
+#[test]
+fn a_request_naming_another_contract_is_refused() {
+    const {
+        assert!(
+            guard_contracts::MCP_CLASSIFICATION_MAX_BYTES
+                < guard_contracts::MAX_NATIVE_REQUEST_BYTES
+        )
+    };
+    let request = McpClassificationRequestV1 {
+        schema: "guard-mcp-classification-request.v2".to_owned(),
+        request_id: "mcp-classification-test".to_owned(),
+        items: vec![item("first", json!({"type": "object"}))],
+    };
+    assert_eq!(
+        evaluate(&request).unwrap_err(),
+        "native_mcp_classification_schema_unsupported"
+    );
+}

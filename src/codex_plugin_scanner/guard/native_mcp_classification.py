@@ -10,6 +10,7 @@ all rather than a locally invented one.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import uuid4
@@ -23,9 +24,20 @@ _OPERATION = "mcp_classify"
 _REQUEST_SCHEMA = "guard-mcp-classification-request.v1"
 _RESULT_SCHEMA = "guard-mcp-classification-result.v1"
 _TIMEOUT_SECONDS = 10.0
-_MAX_REQUEST_BYTES = 8 * 1024 * 1024
+# Stays under the resident transport's frame limit, so a page the packer
+# accepts is never refused as an oversized frame.
+_MAX_REQUEST_BYTES = 6 * 1024 * 1024 - 64 * 1024
 _MAX_ITEMS = 1024
 UNAVAILABLE = "native_mcp_classification_unavailable"
+
+# What the resident's strict parser accepts, mirrored here only to decide
+# whether a declaration can travel. Nothing about the answer is decided here.
+_MAX_JSON_STRING_BYTES = 1024 * 1024
+_MAX_JSON_COLLECTION_ITEMS = 4096
+# The envelope already spends four levels before an item's own fields.
+_MAX_ITEM_DEPTH = 32 - 4
+_MIN_JSON_INT = -(2**63)
+_MAX_JSON_INT = 2**64 - 1
 
 
 class McpClassificationUnavailableError(ValueError):
@@ -46,6 +58,42 @@ def _item(definition: Mapping[str, object]) -> dict[str, object]:
     }
 
 
+def _transportable(value: object, depth: int = 0) -> bool:
+    """Whether the resident's parser would accept this declaration.
+
+    A provider-controlled schema can carry a megabyte-long description, an
+    integer outside the JSON number range or a non-finite float. The resident
+    refuses the whole frame over any of them, so a single such declaration
+    would cost every other tool in the batch its classification. Those are
+    left undescribed instead.
+    """
+
+    if depth > _MAX_ITEM_DEPTH:
+        return False
+    if value is None or isinstance(value, bool):
+        return True
+    if isinstance(value, str):
+        return len(value.encode("utf-8")) <= _MAX_JSON_STRING_BYTES
+    if isinstance(value, int):
+        return _MIN_JSON_INT <= value <= _MAX_JSON_INT
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, Mapping):
+        if len(value) > _MAX_JSON_COLLECTION_ITEMS:
+            return False
+        return all(
+            isinstance(key, str)
+            and len(key.encode("utf-8")) <= _MAX_JSON_STRING_BYTES
+            and _transportable(item, depth + 1)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        if len(value) > _MAX_JSON_COLLECTION_ITEMS:
+            return False
+        return all(_transportable(item, depth + 1) for item in value)
+    return False
+
+
 def _envelope(items: Sequence[Mapping[str, object]], *, request_id: str) -> dict[str, object]:
     return {
         "operation": _OPERATION,
@@ -62,31 +110,28 @@ def _wire_bytes(items: Sequence[Mapping[str, object]]) -> int:
     """Byte length of the envelope ``_resident_request`` actually sends."""
 
     probe = "mcp-classification-" + ("0" * 32)
-    try:
-        return len(json.dumps(_envelope(items, request_id=probe)).encode("utf-8"))
-    except (TypeError, ValueError):
-        raise McpClassificationUnavailableError from None
+    return len(json.dumps(_envelope(items, request_id=probe), allow_nan=False).encode("utf-8"))
 
 
 # json.dumps joins array elements with ", " (comma, space).
 _ARRAY_SEPARATOR_BYTES = 2
 
 
-def _chunks(items: Sequence[Mapping[str, object]]) -> list[list[int]]:
-    """Pack the declarations under the count and byte caps.
+def _chunks(items: Sequence[Mapping[str, object]], sendable: Sequence[int]) -> list[list[int]]:
+    """Pack the sendable declarations under the count and byte caps.
 
-    A declaration too large to travel on its own cannot be described; the
-    caller hears that rather than receiving a guess for it.
+    A declaration too large to travel on its own is left out; the caller hears
+    nothing about it rather than receiving a guess for it.
     """
 
     base = _wire_bytes([])
-    sizes = [_wire_bytes([item]) - base for item in items]
     chunks: list[list[int]] = []
     current: list[int] = []
     current_bytes = base
-    for index, size in enumerate(sizes):
+    for index in sendable:
+        size = _wire_bytes([items[index]]) - base
         if base + size > _MAX_REQUEST_BYTES:
-            raise McpClassificationUnavailableError
+            continue
         added = size if not current else size + _ARRAY_SEPARATOR_BYTES
         if current and (len(current) + 1 > _MAX_ITEMS or current_bytes + added > _MAX_REQUEST_BYTES):
             chunks.append(current)
@@ -104,8 +149,13 @@ def native_mcp_classifications(
     definitions: Sequence[Mapping[str, object]],
     *,
     guard_home: Path,
-) -> list[dict[str, object]]:
-    """Describe tool declarations in the resident; raise when it cannot."""
+) -> list[dict[str, object] | None]:
+    """Describe tool declarations in the resident.
+
+    Raises when the resident cannot answer at all. An individual declaration
+    the resident's parser would refuse comes back as ``None``: undescribed,
+    never described from here.
+    """
 
     if not definitions:
         return []
@@ -113,8 +163,9 @@ def native_mcp_classifications(
     if not ensure_resident_prerequisite(home):
         raise McpClassificationUnavailableError
     prepared = [_item(definition) for definition in definitions]
+    sendable = [index for index, item in enumerate(prepared) if _transportable(item)]
     described: list[dict[str, object] | None] = [None] * len(prepared)
-    for chunk in _chunks(prepared):
+    for chunk in _chunks(prepared, sendable):
         wire: dict[str, object] = {
             "schema": _REQUEST_SCHEMA,
             "request_id": f"mcp-classification-{uuid4().hex}",
@@ -141,6 +192,4 @@ def native_mcp_classifications(
             if not isinstance(entry, dict):
                 raise McpClassificationUnavailableError
             described[index] = entry
-    if any(entry is None for entry in described):
-        raise McpClassificationUnavailableError
-    return [entry for entry in described if entry is not None]
+    return described

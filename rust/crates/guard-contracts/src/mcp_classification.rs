@@ -17,8 +17,10 @@ pub const MCP_CLASSIFICATION_RESULT_SCHEMA: &str = "guard-mcp-classification-res
 pub const MCP_CLASSIFICATION_FEATURE: &str = "mcp-classification-v1";
 /// Schema stamped on every classification the op returns.
 pub const MCP_CLASSIFICATION_SCHEMA: &str = "guard.mcp-classification.v1";
-/// Largest canonical request serialization the op will accept.
-pub const MCP_CLASSIFICATION_MAX_BYTES: usize = 8 * 1024 * 1024;
+/// Largest canonical request serialization the op will accept. It stays below
+/// `MAX_NATIVE_REQUEST_BYTES` so the resident envelope around an accepted
+/// request still fits one transport frame.
+pub const MCP_CLASSIFICATION_MAX_BYTES: usize = 6 * 1024 * 1024 - 64 * 1024;
 /// Most tools one call may describe.
 pub const MCP_CLASSIFICATION_MAX_ITEMS: usize = 1024;
 

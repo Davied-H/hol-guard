@@ -27,12 +27,13 @@ def classify_mcp_actions(
     definitions: Sequence[Mapping[str, object]],
     *,
     guard_home: Path,
-) -> list[dict[str, object]]:
+) -> list[dict[str, object] | None]:
     """Describe a batch of declarations in request order.
 
     Each definition carries ``name`` and ``schema``, optionally ``provider``,
     ``annotations`` and ``full_schema``. Raises when the resident cannot
-    describe them; no caller receives a locally invented description.
+    describe any of them, and gives ``None`` for a single declaration it
+    cannot carry; no caller receives a locally invented description.
     """
     return native_mcp_classifications(definitions, guard_home=guard_home)
 
@@ -45,7 +46,7 @@ def classify_mcp_action(
     provider: str | None = None,
     annotations: object = None,
     full_schema: bool = True,
-) -> dict[str, object]:
+) -> dict[str, object] | None:
     """Describe static evidence without reading field values or executing tools.
 
     Descriptions, defaults, URLs, and enum values are deliberately excluded.

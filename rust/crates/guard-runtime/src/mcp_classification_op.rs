@@ -12,8 +12,8 @@
 
 use guard_contracts::{
     McpClassificationItemV1, McpClassificationRequestV1, McpClassificationResultV1,
-    MCP_CLASSIFICATION_MAX_BYTES, MCP_CLASSIFICATION_MAX_ITEMS, MCP_CLASSIFICATION_RESULT_SCHEMA,
-    MCP_CLASSIFICATION_SCHEMA,
+    MCP_CLASSIFICATION_MAX_BYTES, MCP_CLASSIFICATION_MAX_ITEMS, MCP_CLASSIFICATION_REQUEST_SCHEMA,
+    MCP_CLASSIFICATION_RESULT_SCHEMA, MCP_CLASSIFICATION_SCHEMA,
 };
 use serde_json::{json, Map, Value};
 use std::collections::BTreeSet;
@@ -91,6 +91,12 @@ pub(crate) fn evaluate_mcp_classification_request(
 }
 
 pub(crate) fn evaluate(request: &McpClassificationRequestV1) -> Result<Value, String> {
+    if request.schema != MCP_CLASSIFICATION_REQUEST_SCHEMA {
+        // A client naming another contract is asking for something this op
+        // does not implement; describing its items anyway would answer a
+        // question that was never asked.
+        return Err("native_mcp_classification_schema_unsupported".to_owned());
+    }
     if request.items.len() > MCP_CLASSIFICATION_MAX_ITEMS {
         return Err("native_mcp_classification_too_large".to_owned());
     }
@@ -192,7 +198,6 @@ fn schema_fields(schema: Option<&Value>) -> (BTreeSet<String>, bool) {
         return (fields, false);
     };
     let mut pending: Vec<(&Value, usize)> = vec![(root, 0)];
-    let mut seen: Vec<*const Value> = Vec::new();
     let mut nodes = 0usize;
     while let Some((node, depth)) = pending.pop() {
         nodes += 1;
@@ -204,11 +209,6 @@ fn schema_fields(schema: Option<&Value>) -> (BTreeSet<String>, bool) {
                 if items.len() > MAX_CHILDREN {
                     return (fields, false);
                 }
-                // A tree has no repeated node, so this only guards a caller
-                // that hands the same node twice.
-                if !mark_seen(&mut seen, node) {
-                    return (fields, false);
-                }
                 for child in items {
                     pending.push((child, depth + 1));
                 }
@@ -217,9 +217,6 @@ fn schema_fields(schema: Option<&Value>) -> (BTreeSet<String>, bool) {
             Value::Object(object) => object,
             _ => continue,
         };
-        if !mark_seen(&mut seen, node) {
-            return (fields, false);
-        }
         if object.len() > MAX_CHILDREN {
             return (fields, false);
         }
@@ -266,15 +263,6 @@ fn schema_fields(schema: Option<&Value>) -> (BTreeSet<String>, bool) {
         }
     }
     (fields, true)
-}
-
-fn mark_seen(seen: &mut Vec<*const Value>, node: &Value) -> bool {
-    let pointer: *const Value = node;
-    if seen.contains(&pointer) {
-        return false;
-    }
-    seen.push(pointer);
-    true
 }
 
 #[cfg(test)]

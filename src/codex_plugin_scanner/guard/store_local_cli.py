@@ -17,7 +17,7 @@ from .runtime.local_cli_commands import (
 )
 from .runtime.local_cli_identity import UnlistedCliIdentity, is_local_cli_id
 from .runtime.local_mcp_stdio import McpCatalogResult
-from .runtime.mcp_classification import classify_mcp_actions
+from .runtime.mcp_classification import McpClassificationUnavailableError, classify_mcp_actions
 from .store_custom_extension_continuity import _write_local_cli_grant
 from .store_local_cli_retention import mark_shared_enrolled_servers, utc_now_iso
 from .store_local_cli_rows import (
@@ -160,19 +160,26 @@ class StoreLocalCliMixin:
                         undescribed.append((command, definition))
             if str(item["cli_id"]) in provider_map:
                 item["provider_catalog"] = provider_map[str(item["cli_id"])]
-        described = classify_mcp_actions(
-            [
-                {
-                    "name": str(definition["name"]),
-                    "schema": definition.get("inputSchema"),
-                    "annotations": definition.get("annotations"),
-                }
-                for _, definition in undescribed
-            ],
-            guard_home=cast("GuardStore", self).guard_home,
-        )
+        try:
+            described = classify_mcp_actions(
+                [
+                    {
+                        "name": str(definition["name"]),
+                        "schema": definition.get("inputSchema"),
+                        "annotations": definition.get("annotations"),
+                    }
+                    for _, definition in undescribed
+                ],
+                guard_home=cast("GuardStore", self).guard_home,
+            )
+        except McpClassificationUnavailableError:
+            # The classification is advisory display evidence. Without the
+            # resident it is simply absent: listing a CLI, its identity and its
+            # grant state never depended on it.
+            return items
         for (command, _), classification in zip(undescribed, described, strict=True):
-            command["classification"] = classification
+            if classification is not None:
+                command["classification"] = classification
         return items
 
     def read_local_cli_grant(self, cli_id: str) -> dict[str, object] | None:
