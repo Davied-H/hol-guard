@@ -529,11 +529,16 @@ def apply_approval_resolution(
                 )
         else:
             persist_policy = None
-    if action == "allow" and not contract.can_run_once and not (
-        scope == "artifact" and persist_policy is True and contract.can_persist_exact_version
+    if (
+        action == "allow"
+        and not contract.can_run_once
+        and not (scope == "artifact" and persist_policy is True and contract.can_persist_exact_version)
     ):
         raise IneligibleApprovalScopeError(
-            "execution_binding_unavailable", contract, action="allow", requested_scope=scope,
+            "execution_binding_unavailable",
+            contract,
+            action="allow",
+            requested_scope=scope,
         )
     request_artifact_id = _string_or_none(request.get("artifact_id"))
     request_artifact_hash = _string_or_none(request.get("artifact_hash"))

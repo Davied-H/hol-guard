@@ -107,7 +107,8 @@ class ApprovalScopeContract:
                 "can_run_once": self.can_run_once,
                 "can_persist_exact_version": self.can_persist_exact_version,
                 "delivery_reason": "execution_binding_unavailable"
-                if RETRY_CANNOT_REUSE_APPROVAL in self.restrictions else None,
+                if RETRY_CANNOT_REUSE_APPROVAL in self.restrictions
+                else None,
             },
         }
 
@@ -190,8 +191,21 @@ def _contract_from_native(payload: Mapping[str, object]) -> ApprovalScopeContrac
     )
     # Older residents expose the retry restriction without capability fields.
     # When present, the versioned projection must agree with that authority.
-    if "execution_approval" in payload and payload["execution_approval"] != contract.to_dict()["execution_approval"]:
-        return None
+    if "execution_approval" in payload:
+        execution = payload["execution_approval"]
+        if (
+            not isinstance(execution, dict)
+            or any(
+                not isinstance(execution.get(key), bool)
+                for key in (
+                    "can_record_decision",
+                    "can_run_once",
+                    "can_persist_exact_version",
+                )
+            )
+            or execution != contract.to_dict()["execution_approval"]
+        ):
+            return None
     return contract
 
 

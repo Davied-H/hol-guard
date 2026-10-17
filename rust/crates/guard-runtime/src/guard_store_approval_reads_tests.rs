@@ -155,7 +155,10 @@ fn without_hints(value: &Value) -> Value {
 /// The recorded outcome as the store reply spells it.
 pub(crate) fn expected(call: &Value, long_string: usize) -> Result<Value, (String, String)> {
     match call.get("error") {
-        None => Ok(normalized(without_hints(&call["result"]), long_string)),
+        None => Ok(normalized(
+            with_execution_capabilities(without_hints(&call["result"])),
+            long_string,
+        )),
         Some(error) => {
             let message = error["message"].as_str().unwrap().to_owned();
             match error["type"].as_str().unwrap() {
@@ -167,6 +170,45 @@ pub(crate) fn expected(call: &Value, long_string: usize) -> Result<Value, (Strin
                 other => panic!("unexpected recorded error {other}"),
             }
         }
+    }
+}
+
+/// Extend historical Python replies with the additive capability projection.
+/// Expected permissions still come exclusively from each recorded contract.
+fn with_execution_capabilities(value: Value) -> Value {
+    match value {
+        Value::Object(mut fields) => {
+            for item in fields.values_mut() {
+                *item = with_execution_capabilities(std::mem::take(item));
+            }
+            if fields.contains_key("scope_contract_version")
+                && fields.contains_key("allowed_scopes_by_action")
+            {
+                let scopes = &fields["allowed_scopes_by_action"];
+                let allow = scopes["allow"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty());
+                let block = scopes["block"]
+                    .as_array()
+                    .is_some_and(|items| !items.is_empty());
+                let retry_blocked = fields
+                    .get("scope_restrictions")
+                    .and_then(Value::as_array)
+                    .is_some_and(|items| items.contains(&json!("retry_cannot_reuse_approval")));
+                let persist = fields.get("exact_action_persistence_eligible") == Some(&json!(true));
+                fields.insert("execution_approval".to_owned(), json!({
+                    "schema": "guard.execution-approval.v1", "can_record_decision": block,
+                    "can_run_once": allow && !retry_blocked,
+                    "can_persist_exact_version": allow && persist,
+                    "delivery_reason": if retry_blocked { Some("execution_binding_unavailable") } else { None },
+                }));
+            }
+            Value::Object(fields)
+        }
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(with_execution_capabilities).collect())
+        }
+        other => other,
     }
 }
 

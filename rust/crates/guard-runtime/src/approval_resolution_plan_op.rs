@@ -7,6 +7,9 @@
 //! executes the returned plan against its store, so Python never recomputes a
 //! key, scope or expiry.
 
+mod execution;
+use execution::once_expires_at;
+
 use guard_contracts::{
     ApprovalResolutionPlanApprovalV1, ApprovalResolutionPlanBrowserIntentV1,
     ApprovalResolutionPlanEnvelopeV1, ApprovalResolutionPlanRequestV1,
@@ -17,14 +20,12 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::context_digest::parse_context_token;
-use crate::guard_store_json::{add_seconds_isoformat, dumps_sorted, py_strip};
+use crate::guard_store_json::{dumps_sorted, py_strip};
 use crate::package_authority_op::request_digest_with_limit;
 
 const INVALID: &str = "native_approval_resolution_plan_invalid";
 const RUNTIME_EXACT_PREFIX: &str = "runtime-exact:";
 const LOCAL_SUPPLY_CHAIN_HARNESS: &str = "guard-cli";
-/// `_APPROVAL_ONCE_POLICY_TTL`: 15 minutes.
-const ONCE_TTL_MICROS: i64 = 15 * 60 * 1_000_000;
 
 const APPROVAL_FAMILIES: [&str; 8] = [
     "file-read",
@@ -340,15 +341,11 @@ fn policy_harness(approval: &ApprovalResolutionPlanApprovalV1) -> Result<String,
     approval.harness.clone().ok_or_else(|| INVALID.to_owned())
 }
 
-/// `_approval_once_policy_expires_at`.
-fn once_expires_at(resolved_at: &str) -> Result<String, String> {
-    add_seconds_isoformat(resolved_at, ONCE_TTL_MICROS).ok_or_else(|| INVALID.to_owned())
-}
-
 fn evaluate(request: &ApprovalResolutionPlanRequestV1) -> Result<Value, String> {
     if request.schema != APPROVAL_RESOLUTION_PLAN_REQUEST_SCHEMA {
         return Err("native_approval_resolution_plan_schema_mismatch".to_owned());
     }
+    execution::require_binding(request)?;
     let approval = &request.approval;
     let scope = request.scope.as_str();
     let allow = request.action == "allow";
@@ -360,26 +357,6 @@ fn evaluate(request: &ApprovalResolutionPlanRequestV1) -> Result<Value, String> 
         .filter(|hash| parse_context_token(&Value::String(hash.clone())).is_some());
     let exact_context_allow = allow && context_token.is_some();
     let persist = request.persist_policy;
-    // Older daemon clients must not turn an unbound native review into a
-    // saved once decision. A persistent exact token is a separate delivery
-    // path and requires an explicit artifact-duration choice.
-    if allow
-        && request_artifact_id
-            .as_deref()
-            .is_some_and(|id| id.contains(":native-pretool:"))
-        && !request_artifact_hash
-            .as_deref()
-            .is_some_and(|hash| hash.starts_with("native-review-v4:"))
-        && !(scope == "artifact"
-            && persist == Some(true)
-            && (context_token.is_some()
-                || text(&request.native_exact_token).is_some_and(|token| {
-                    parse_context_token(&Value::String(token.to_owned())).is_some()
-                })))
-    {
-        return Err("execution_binding_unavailable".to_owned());
-    }
-
     let mut scoped_id = if matches!(scope, "artifact" | "harness" | "global") {
         request_artifact_id.clone()
     } else {

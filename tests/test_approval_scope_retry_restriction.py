@@ -70,6 +70,10 @@ def test_contradictory_or_unknown_capability_projection_is_rejected() -> None:
     )
     payload = contract.to_dict()
     assert _contract_from_native(payload) == contract
+    execution = payload["execution_approval"]
+    assert isinstance(execution, dict)
+    payload["execution_approval"] = {**execution, "can_run_once": 0}
+    assert _contract_from_native(payload) is None
     payload["execution_approval"] = {
         "schema": "guard.execution-approval.v1", "can_record_decision": True,
         "can_run_once": True, "can_persist_exact_version": False, "delivery_reason": None,

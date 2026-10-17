@@ -32,7 +32,9 @@ fn plans_match_the_retired_python() {
                 .approval
                 .artifact_hash
                 .as_deref()
-                .is_some_and(|hash| hash.starts_with("native-review-v4:"))
+                .is_some_and(|hash| {
+                    crate::guard_store_native_review_consume::binding_pattern().is_match(hash)
+                })
             && !(request.scope == "artifact"
                 && request.persist_policy == Some(true)
                 && [&request.approval.artifact_hash, &request.native_exact_token]

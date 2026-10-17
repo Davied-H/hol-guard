@@ -72,18 +72,38 @@ fn contracts_match_the_retired_python() {
         // Historical vectors deliberately offered unusable artifact approvals.
         // Keep their original oracle for every other scope; migrate only this
         // explicit unavailable-delivery case, using fixture inputs for hashing.
-        if want["scope_restrictions"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("retry_cannot_reuse_approval"))
-            && want["exact_action_persistence_eligible"] == json!(false)
-        {
-            want["allowed_scopes_by_action"]["allow"] = json!([]);
-            want["recommended_scope_by_action"]["allow"] = Value::Null;
-            want["scope_restrictions"]
-                .as_array_mut()
+        let unbound_native = item
+            .artifact_id
+            .as_ref()
+            .and_then(Value::as_str)
+            .is_some_and(|id| id.contains(":native-pretool:"))
+            && !item
+                .artifact_hash
+                .as_ref()
+                .and_then(Value::as_str)
+                .is_some_and(|hash| {
+                    crate::guard_store_native_review_consume::binding_pattern().is_match(hash)
+                });
+        if unbound_native {
+            if !want["scope_restrictions"]
+                .as_array()
                 .unwrap()
-                .insert(2, json!("execution_binding_unavailable"));
+                .contains(&json!("retry_cannot_reuse_approval"))
+            {
+                want["scope_restrictions"]
+                    .as_array_mut()
+                    .unwrap()
+                    .insert(1, json!("retry_cannot_reuse_approval"));
+            }
+            let persistence = want["exact_action_persistence_eligible"].as_bool().unwrap();
+            if !persistence {
+                want["allowed_scopes_by_action"]["allow"] = json!([]);
+                want["recommended_scope_by_action"]["allow"] = Value::Null;
+                want["scope_restrictions"]
+                    .as_array_mut()
+                    .unwrap()
+                    .insert(2, json!("execution_binding_unavailable"));
+            }
             let strings = |value: &Value| -> Vec<String> {
                 value
                     .as_array()
@@ -93,18 +113,19 @@ fn contracts_match_the_retired_python() {
                     .collect()
             };
             let blocks = strings(&want["allowed_scopes_by_action"]["block"]);
+            let allows = strings(&want["allowed_scopes_by_action"]["allow"]);
             let restrictions = strings(&want["scope_restrictions"]);
             let reasons = strings(&want["task_capability_eligibility"]["reason_codes"]);
             want["scope_contract_digest"] = json!(scope_contract_digest(
                 &View::new(&item),
-                &[],
+                &allows.iter().map(String::as_str).collect::<Vec<_>>(),
                 &blocks.iter().map(String::as_str).collect::<Vec<_>>(),
                 &restrictions.iter().map(String::as_str).collect::<Vec<_>>(),
                 want["task_capability_eligibility"]["eligible"]
                     .as_bool()
                     .unwrap(),
                 &reasons.iter().map(String::as_str).collect::<Vec<_>>(),
-                false,
+                persistence,
             ));
         }
         assert_eq!(contract, want, "contract mismatch, case {index}");
@@ -131,11 +152,13 @@ fn contracts_match_the_retired_python() {
 
 #[test]
 fn unbound_native_reviews_cannot_offer_execution_approval() {
-    let mut item = ApprovalScopeItemV1::default();
-    item.artifact_id = Some(json!("omp:native-pretool:bash"));
-    item.artifact_type = Some(json!("tool_call"));
-    item.artifact_hash = Some(json!("unbound-request"));
-    item.policy_action = Some(json!("review"));
+    let mut item = ApprovalScopeItemV1 {
+        artifact_id: Some(json!("omp:native-pretool:bash")),
+        artifact_type: Some(json!("tool_call")),
+        artifact_hash: Some(json!("unbound-request")),
+        policy_action: Some(json!("review")),
+        ..Default::default()
+    };
     let unbound = evaluate_one(item.clone());
     assert_eq!(unbound["allowed_scopes_by_action"]["allow"], json!([]));
     assert_eq!(
@@ -160,6 +183,22 @@ fn unbound_native_reviews_cannot_offer_execution_approval() {
         bound["scope_contract_digest"],
         unbound["scope_contract_digest"]
     );
+}
+
+#[test]
+fn malformed_native_binding_never_advertises_once_delivery() {
+    for hash in ["native-review-v4:", "native-review-v4:not-a-binding"] {
+        let item = ApprovalScopeItemV1 {
+            artifact_id: Some(json!("omp:native-pretool:bash")),
+            artifact_type: Some(json!("tool_call")),
+            artifact_hash: Some(json!(hash)),
+            policy_action: Some(json!("review")),
+            ..Default::default()
+        };
+        let actual = evaluate_one(item);
+        assert_eq!(actual["execution_approval"]["can_run_once"], json!(false));
+        assert_eq!(actual["allowed_scopes_by_action"]["allow"], json!([]));
+    }
 }
 
 #[test]
