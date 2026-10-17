@@ -1,21 +1,17 @@
 """Portable command-pattern policy expressions for HOL Guard 3.0.
 
-Expressions deliberately operate on normalized command text. This module parses them and
-compiles their patterns once while a document is validated, so an author learns about a
-pattern outside the dialect when they write it.
+Expressions deliberately operate on normalized command text. This module parses their
+shape and bounds; it compiles nothing.
 
-Matching belongs to the runtime. ``guard-command`` holds the one dialect that decides a
-command, so ``policy check`` and enforcement cannot answer differently; a pattern this
-validator accepts and the runtime's engine rejects is refused at decide time rather than
-matched a second way here.
+The dialect belongs to the runtime. ``guard-command`` holds the one glob translation and
+the one regex engine, for authoring and for enforcement alike, so a pattern cannot be
+accepted while a document is written and refused when a command runs against it.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Final, Literal, TypeAlias
-
-import regex
 
 CommandPatternOperator: TypeAlias = Literal["exact", "startsWith", "contains", "endsWith", "glob", "regex"]
 CommandExpressionCombinator: TypeAlias = Literal["all", "any"]
@@ -151,62 +147,6 @@ def command_expression_from_mapping(value: object) -> CommandExpression:
     )
 
 
-def _glob_pattern(value: str) -> str:
-    """Translate a portable glob: ``*``, ``?``, classes, and backslash escapes."""
-
-    pieces: list[str] = ["\\A"]
-    index = 0
-    while index < len(value):
-        character = value[index]
-        if character == "\\":
-            index += 1
-            if index >= len(value):
-                raise CommandExpressionError("glob_escape_incomplete")
-            pieces.append(regex.escape(value[index]))
-        elif character == "*":
-            pieces.append(".*")
-        elif character == "?":
-            pieces.append(".")
-        elif character == "[":
-            closing = value.find("]", index + 1)
-            if closing == -1:
-                raise CommandExpressionError("glob_class_unclosed")
-            content = value[index + 1 : closing]
-            if not content:
-                raise CommandExpressionError("glob_class_empty")
-            if content[0] == "!":
-                content = "^" + content[1:]
-            pieces.append("[" + content + "]")
-            index = closing
-        else:
-            pieces.append(regex.escape(character))
-        index += 1
-    pieces.append("\\Z")
-    return "".join(pieces)
-
-
-def _compile_pattern(condition: CommandCondition) -> regex.Pattern[str]:
-    flags = 0 if condition.case_sensitive else regex.IGNORECASE
-    if condition.operator == "glob":
-        source = _glob_pattern(condition.value)
-    elif condition.operator == "regex":
-        source = condition.value
-    else:
-        source = regex.escape(condition.value)
-    try:
-        return regex.compile(source, flags=flags)
-    except regex.error as error:
-        raise CommandExpressionError(f"invalid_command_{condition.operator}:{error}") from error
-
-
-def validate_command_expression(expression: CommandExpression) -> None:
-    """Compile every pattern once during policy validation."""
-
-    for condition in expression.conditions:
-        if condition.operator in {"glob", "regex"}:
-            _compile_pattern(condition)
-
-
 __all__ = [
     "MAX_COMMAND_CONDITIONS",
     "MAX_COMMAND_PATTERN_LENGTH",
@@ -218,5 +158,4 @@ __all__ = [
     "CommandPatternOperator",
     "command_expression_from_mapping",
     "normalize_command_text",
-    "validate_command_expression",
 ]

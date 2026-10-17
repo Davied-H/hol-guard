@@ -132,3 +132,56 @@ fn a_rejected_condition_is_refused_even_once_the_combinator_is_settled() {
         "invalid_command_regex"
     );
 }
+
+#[test]
+fn validation_compiles_a_pattern_without_a_command_to_match() {
+    use super::validate_expression;
+
+    let expression = CommandExpressionV1 {
+        combinator: "all".to_owned(),
+        conditions: vec![
+            condition("glob", "git *", false),
+            condition("regex", "git push( --force)?", false),
+        ],
+    };
+    validate_expression(&expression).expect("valid");
+
+    let unclosed = CommandExpressionV1 {
+        combinator: "all".to_owned(),
+        conditions: vec![condition("glob", "rm -[rf", false)],
+    };
+    assert_eq!(
+        validate_expression(&unclosed).expect_err("unclosed"),
+        "glob_class_unclosed"
+    );
+    let uncompilable = CommandExpressionV1 {
+        combinator: "any".to_owned(),
+        conditions: vec![condition("regex", "git (", false)],
+    };
+    assert_eq!(
+        validate_expression(&uncompilable).expect_err("invalid"),
+        "invalid_command_regex"
+    );
+    let empty = CommandExpressionV1 {
+        combinator: "all".to_owned(),
+        conditions: Vec::new(),
+    };
+    assert_eq!(
+        validate_expression(&empty).expect_err("empty"),
+        "command_expression_conditions_required"
+    );
+}
+
+#[test]
+fn validation_accepts_the_literal_operators_it_never_compiles() {
+    use super::validate_expression;
+
+    let expression = CommandExpressionV1 {
+        combinator: "any".to_owned(),
+        conditions: vec![
+            condition("exact", "git push", false),
+            condition("contains", "(", false),
+        ],
+    };
+    validate_expression(&expression).expect("valid");
+}

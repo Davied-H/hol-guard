@@ -161,8 +161,9 @@ pub fn matches_condition(condition: &CommandConditionV1, command: &str) -> Resul
     }
 }
 
-/// `matches_expression` - whether `command` satisfies the whole expression.
-pub fn matches_expression(expression: &CommandExpressionV1, command: &str) -> Result<bool, String> {
+/// `check_expression` - the shape an expression must have before any of its
+/// conditions is compiled or matched.
+fn check_expression(expression: &CommandExpressionV1) -> Result<(), String> {
     match expression.combinator.as_str() {
         "all" | "any" => {}
         _ => return Err("unsupported_command_expression_combinator".to_owned()),
@@ -173,6 +174,31 @@ pub fn matches_expression(expression: &CommandExpressionV1, command: &str) -> Re
     if expression.conditions.len() > MAX_COMMAND_CONDITIONS {
         return Err("command_expression_conditions_limit".to_owned());
     }
+    Ok(())
+}
+
+/// `validate_expression` - compile every pattern the expression carries once,
+/// without a command to match. Policy validation used to do this with a second
+/// regex engine in Python, so a document could be accepted at authoring time
+/// and refused at decide time by the engine that actually matches it.
+pub fn validate_expression(expression: &CommandExpressionV1) -> Result<(), String> {
+    check_expression(expression)?;
+    for condition in &expression.conditions {
+        let pattern = check_condition(condition)?;
+        if matches!(condition.operator.as_str(), "glob" | "regex") {
+            compile(&CommandConditionV1 {
+                operator: condition.operator.clone(),
+                value: pattern,
+                case_sensitive: condition.case_sensitive,
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// `matches_expression` - whether `command` satisfies the whole expression.
+pub fn matches_expression(expression: &CommandExpressionV1, command: &str) -> Result<bool, String> {
+    check_expression(expression)?;
     let all = expression.combinator == "all";
     // Every condition is evaluated, even once the outcome is settled: a rule
     // the dialect rejects is refused rather than skipped because an earlier

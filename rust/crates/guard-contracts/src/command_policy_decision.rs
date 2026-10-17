@@ -93,3 +93,46 @@ pub struct CommandPolicyDecisionResultV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<Value>,
 }
+
+/// Schema discriminator for the validation request.
+pub const COMMAND_EXPRESSION_VALIDATION_REQUEST_SCHEMA: &str =
+    "guard-command-expression-validation-request.v1";
+/// Schema discriminator for the validation result.
+pub const COMMAND_EXPRESSION_VALIDATION_RESULT_SCHEMA: &str =
+    "guard-command-expression-validation-result.v1";
+/// Capability advertised by the runtime when validation is available.
+pub const COMMAND_EXPRESSION_VALIDATION_FEATURE: &str = "command-expression-validation-v1";
+/// Most expressions one document may send for validation. A document carrying
+/// more command rules than this is past what `CommandPolicyDecide` will decide.
+pub const COMMAND_EXPRESSION_VALIDATION_MAX_EXPRESSIONS: usize = COMMAND_POLICY_DECISION_MAX_RULES;
+
+/// Every command expression a document carries, in document order, compiled
+/// once while the document is validated so an author hears about a pattern
+/// outside the dialect when they write it rather than when a command runs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CommandExpressionValidationRequestV1 {
+    pub schema: String,
+    #[serde(default)]
+    pub request_id: String,
+    pub expressions: Vec<CommandExpressionV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CommandExpressionValidationResultV1 {
+    pub schema: String,
+    pub request_id: String,
+    /// SHA-256 of the canonical request, binding the result to its request.
+    pub request_sha256: String,
+    /// `ok` or `error`.
+    pub status: String,
+    /// `ok`, or one of the `native_command_expression_validation_*` codes.
+    pub code: String,
+    /// `{"invalid": null}` when every expression compiles, or
+    /// `{"invalid": {"index": i, "code": "..."}}` for the first that does not.
+    /// A pattern an author can fix is an answer, not a runtime failure, so it
+    /// rides an `ok` reply with the index of the expression that carried it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payload: Option<Value>,
+}

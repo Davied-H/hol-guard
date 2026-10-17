@@ -147,6 +147,7 @@ mod codex_value;
 #[cfg(all(test, unix))]
 mod codex_vectors_tests;
 mod command_effect;
+mod command_expression_validate_op;
 mod command_policy_decide_op;
 mod composio_role_op;
 mod compound_git_args;
