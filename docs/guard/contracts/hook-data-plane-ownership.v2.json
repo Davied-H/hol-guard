@@ -531,6 +531,7 @@
     "src/codex_plugin_scanner/guard/daemon/hook_native_saved_approval.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_exact_action.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_local_cli.py",
+    "src/codex_plugin_scanner/guard/daemon/hook_contained_grant.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_review_fence.py",
     "src/codex_plugin_scanner/guard/**/continuation*.py"
    ],

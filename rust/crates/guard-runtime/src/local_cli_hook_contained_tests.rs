@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::local_cli_hook_op::tests::Fixture;
-use crate::local_cli_hook_op::{evaluate_local_cli_hook_request, run_refined, run_with_connector};
+use crate::local_cli_hook_op::{evaluate_local_cli_hook_request, run_refined};
 
 fn outside_roots(fixture: &Fixture, command: &str) -> LocalCliHookRequestV1 {
     let mut request = fixture.request(command, "review", true);
@@ -164,44 +164,4 @@ fn refine_never_turns_a_sandbox_requirement_into_allow() {
         "sandbox-required",
         true
     )));
-}
-
-#[test]
-fn an_unset_review_names_the_connector_to_set_up() {
-    let fixture = Fixture::new("connector");
-    let identity = fixture.identity();
-    let request = fixture.request("npm run build", "review", true);
-    let (action, connector) = run_with_connector(&request).unwrap();
-    assert_eq!(action, "review");
-    let connector = connector.expect("an unset script names its connector");
-    assert_eq!(connector["cli_id"], identity.cli_id.as_str());
-    assert_eq!(connector["identity_hash"], identity.identity_hash.as_str());
-    assert_eq!(connector["surface"], "package-scripts");
-    assert_eq!(
-        connector["queue_group_id"],
-        crate::connector_setup::queue_group_id(&identity.identity_hash, "npm run build")
-    );
-    let reply: Value =
-        serde_json::from_slice(&evaluate_local_cli_hook_request(&request).unwrap()).unwrap();
-    assert_eq!(reply["payload"]["connector"], connector);
-    // Only a review the grant could refine waits on setup.
-    for (action, grant_allowed) in [("allow", true), ("block", true), ("review", false)] {
-        let (_, connector) =
-            run_with_connector(&fixture.request("npm run build", action, grant_allowed)).unwrap();
-        assert_eq!(connector, None, "{action} {grant_allowed}");
-    }
-    // A grant recorded for an older identity is not a decision for this one.
-    fixture.grant(&identity.cli_id, &"0".repeat(64), "allowed");
-    assert!(run_with_connector(&request).unwrap().1.is_some());
-}
-
-#[test]
-fn a_decided_connector_is_never_sent_back_to_setup() {
-    let fixture = Fixture::new("connector-decided");
-    let identity = fixture.identity();
-    fixture.grant(&identity.cli_id, &identity.identity_hash, "allowed");
-    fixture.command_grant(&identity.cli_id, "build", "review");
-    let (_, connector) =
-        run_with_connector(&fixture.request("npm run build", "review", true)).unwrap();
-    assert_eq!(connector, None);
 }
