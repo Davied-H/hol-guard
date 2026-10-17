@@ -29,6 +29,11 @@ const MAX_SETTINGS: usize = 8;
 const PROOF_BUDGET: Duration = Duration::from_secs(5);
 const BINDING_KIND: &str = "env-launch";
 
+/// One `NAME=value` setting as spelled.
+type Setting<'a> = (&'a str, &'a str);
+/// The settings and the command they prefix.
+type Prefixed<'a> = (Vec<Setting<'a>>, &'a [String]);
+
 /// The digest a one-time approval of `command` is bound to, or why it cannot be.
 pub(super) fn env_state(
     command: &str,
@@ -84,12 +89,12 @@ pub(super) fn env_state(
 /// The leading `NAME=value` settings, with an optional bare `env` before
 /// them, and the command they prefix. `env` options (`-i`, `-u`, `-S`, `-C`)
 /// change what runs, so only the assignment form is bindable.
-fn settings_and_program(words: &[String]) -> Proof<(Vec<(&str, &str)>, &[String])> {
+fn settings_and_program(words: &[String]) -> Proof<Prefixed<'_>> {
     let rest = match words.split_first() {
         Some((first, tail)) if first == "env" => tail,
         _ => words,
     };
-    let mut settings: Vec<(&str, &str)> = Vec::new();
+    let mut settings: Vec<Setting<'_>> = Vec::new();
     let mut index = 0;
     while let Some((name, value)) = rest.get(index).and_then(|word| word.split_once('=')) {
         if !name
