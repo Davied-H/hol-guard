@@ -104,6 +104,8 @@ fn npmrc_lines_that_move_the_fetch_or_send_credentials_are_unsafe() {
         "engine-strict = true",
         "legacy-peer-deps=true",
         "//registry.npmjs.org/:_authToken=${NPM_TOKEN}",
+        "\u{feff}save-exact=true",
+        "' \"save-exact\" '=true",
     ] {
         assert!(inert_line(line), "{line}");
     }
@@ -127,6 +129,10 @@ fn npmrc_lines_that_move_the_fetch_or_send_credentials_are_unsafe() {
         "[section]",
         "${X?}registry=https://registry.example.test/",
         "user${X?}config=/tmp/other",
+        "\u{feff}registry=https://registry.example.test/",
+        "\u{feff}\"registry\"=https://registry.example.test/",
+        "' \"registry\" '=https://registry.example.test/",
+        "' [\"registry\"] '=https://registry.example.test/",
     ] {
         assert!(!inert_line(line), "{line}");
     }

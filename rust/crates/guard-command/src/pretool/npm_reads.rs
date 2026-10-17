@@ -211,7 +211,7 @@ const UNSAFE_KEYS: [&str; 28] = [
 ];
 
 fn inert_line(line: &str) -> bool {
-    let line = line.trim();
+    let line = npmrc_keys::js_trim(line);
     if line.is_empty() || line.starts_with(['#', ';']) {
         return true;
     }

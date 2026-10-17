@@ -12,7 +12,7 @@ use std::str::Chars;
 /// The key `ini` records for this line, or `None` when the decoding cannot be
 /// reproduced here.
 pub(super) fn parsed_key(line: &str) -> Option<String> {
-    let written = line.split('=').next().unwrap_or_default().trim();
+    let written = js_trim(line.split('=').next().unwrap_or_default());
     if quoted(written, '"') {
         // A key JSON cannot read keeps its quotes, which names nothing npm
         // acts on, but the proof does not need to tell those cases apart.
@@ -20,11 +20,14 @@ pub(super) fn parsed_key(line: &str) -> Option<String> {
     }
     if quoted(written, '\'') {
         let inner = &written[1..written.len() - 1];
-        return match json_string(inner) {
+        // `JSON.parse` skips its own whitespace, so the padding around a
+        // quoted key inside the single quotes is not part of what it reads.
+        let read = inner.trim_matches([' ', '\t', '\n', '\r']);
+        return match json_string(read) {
             Some(decoded) => Some(decoded),
             // `ini` drops the quotes first, so anything JSON cannot read is
             // left as it stands.
-            None if json_literal(inner) => None,
+            None if json_literal(read) => None,
             None => Some(inner.to_owned()),
         };
     }
@@ -64,7 +67,14 @@ fn unquoted(written: &str) -> String {
     if escaped {
         decoded.push('\\');
     }
-    decoded.trim().to_owned()
+    js_trim(&decoded).to_owned()
+}
+
+/// `String.prototype.trim`, which counts U+FEFF as whitespace where Rust's
+/// `str::trim` does not. `ini` trims the written key this way, and nothing
+/// strips a byte-order mark from the file before it.
+pub(super) fn js_trim(text: &str) -> &str {
+    text.trim_matches(|character: char| character.is_whitespace() || character == '\u{feff}')
 }
 
 fn json_string(written: &str) -> Option<String> {
@@ -161,6 +171,37 @@ mod tests {
     #[test]
     fn an_unclosed_quote_is_the_key_it_is_written_as() {
         assert_eq!(parsed_key("\"registry=x").as_deref(), Some("\"registry"));
+    }
+
+    #[test]
+    fn padding_inside_single_quotes_is_json_whitespace() {
+        assert_eq!(
+            parsed_key("' \"registry\" '=x").as_deref(),
+            Some("registry")
+        );
+        assert_eq!(
+            parsed_key("'\t\"registry\"\n'=x").as_deref(),
+            Some("registry")
+        );
+        assert_eq!(parsed_key("' [\"registry\"] '=x"), None);
+        assert_eq!(parsed_key("' 12 '=x"), None);
+        assert_eq!(parsed_key("'  '=x").as_deref(), Some("  "));
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_whitespace_the_way_javascript_reads_it() {
+        assert_eq!(
+            parsed_key("\u{feff}registry=x").as_deref(),
+            Some("registry")
+        );
+        assert_eq!(
+            parsed_key("\u{feff}\"registry\"=x").as_deref(),
+            Some("registry")
+        );
+        assert_eq!(
+            parsed_key("registry\u{feff}=x").as_deref(),
+            Some("registry")
+        );
     }
 
     #[test]
