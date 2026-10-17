@@ -98,6 +98,76 @@ def _tool_entry(name: str, cwd: Path, workspace: Path) -> tuple[Path, str]:
     return nearest_project_root(cwd, workspace, "node_modules/" + first) / "node_modules", first
 
 
+# Subcommands pnpm and Yarn classic run themselves. Both only fall back to a
+# manifest script when the bare word is not one of their own, so a project that
+# defines a `check` or `exec` script does not change what `yarn check` or
+# `pnpm exec` runs. `test` and `start` are left out: those two are the script.
+_MANAGER_SUBCOMMANDS = frozenset(
+    {
+        "add",
+        "audit",
+        "autoclean",
+        "bin",
+        "cache",
+        "check",
+        "config",
+        "create",
+        "dedupe",
+        "deploy",
+        "dlx",
+        "doctor",
+        "env",
+        "exec",
+        "fetch",
+        "generate-lock-entry",
+        "global",
+        "help",
+        "i",
+        "import",
+        "info",
+        "init",
+        "install",
+        "licenses",
+        "link",
+        "list",
+        "login",
+        "logout",
+        "ls",
+        "node",
+        "outdated",
+        "owner",
+        "pack",
+        "patch",
+        "pkg",
+        "policies",
+        "prune",
+        "publish",
+        "rebuild",
+        "remove",
+        "rm",
+        "root",
+        "run",
+        "server",
+        "setup",
+        "store",
+        "tag",
+        "team",
+        "unlink",
+        "unplug",
+        "up",
+        "update",
+        "upgrade",
+        "upgrade-interactive",
+        "version",
+        "versions",
+        "why",
+        "whoami",
+        "workspace",
+        "workspaces",
+    }
+)
+
+
 def _script_task(manager: str, args: Sequence[str]) -> str | None:
     """The script a package-manager command names.
 
@@ -109,7 +179,7 @@ def _script_task(manager: str, args: Sequence[str]) -> str | None:
     """
     if len(args) == 2 and args[0] == "run":
         return args[1]
-    if len(args) == 1 and manager in {"pnpm", "yarn"}:
+    if len(args) == 1 and manager in {"pnpm", "yarn"} and args[0] not in _MANAGER_SUBCOMMANDS:
         return args[0]
     return None
 

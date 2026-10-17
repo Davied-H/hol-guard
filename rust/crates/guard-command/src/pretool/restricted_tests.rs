@@ -336,10 +336,84 @@ pub(super) fn windows_script_reason(
 /// `run`; pnpm and Yarn also run a script named directly, and a project that
 /// documents `pnpm lint` or `yarn build` is spelling the same work. The sink
 /// resolves the script body either way, so both spellings reach it together.
+/// Subcommands pnpm and Yarn classic run themselves.
+///
+/// Both managers only fall back to a manifest script when the bare word is not
+/// one of their own, so a project that happens to define a `check` or `exec`
+/// script does not change what `yarn check` or `pnpm exec` runs. `test` and
+/// `start` stay out of this list: those two are the script of that name.
+const MANAGER_SUBCOMMANDS: &[&str] = &[
+    "add",
+    "audit",
+    "autoclean",
+    "bin",
+    "cache",
+    "check",
+    "config",
+    "create",
+    "dedupe",
+    "deploy",
+    "dlx",
+    "doctor",
+    "env",
+    "exec",
+    "fetch",
+    "generate-lock-entry",
+    "global",
+    "help",
+    "i",
+    "import",
+    "info",
+    "init",
+    "install",
+    "licenses",
+    "link",
+    "list",
+    "login",
+    "logout",
+    "ls",
+    "node",
+    "outdated",
+    "owner",
+    "pack",
+    "patch",
+    "pkg",
+    "policies",
+    "prune",
+    "publish",
+    "rebuild",
+    "remove",
+    "rm",
+    "root",
+    "run",
+    "server",
+    "setup",
+    "store",
+    "tag",
+    "team",
+    "unlink",
+    "unplug",
+    "up",
+    "update",
+    "upgrade",
+    "upgrade-interactive",
+    "version",
+    "versions",
+    "why",
+    "whoami",
+    "workspace",
+    "workspaces",
+];
+
 pub(super) fn manager_script_task<'a>(manager: &str, arguments: &'a [String]) -> Option<&'a str> {
     match arguments {
         [run, task] if run == "run" => Some(task.as_str()),
-        [task] if matches!(manager, "pnpm" | "yarn") => Some(task.as_str()),
+        [task]
+            if matches!(manager, "pnpm" | "yarn")
+                && !MANAGER_SUBCOMMANDS.contains(&task.as_str()) =>
+        {
+            Some(task.as_str())
+        }
         _ => None,
     }
 }

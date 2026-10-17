@@ -774,6 +774,50 @@
         "eslint/bin/eslint.js"
       ],
       "reason": null
+    },
+    {
+      "name": "manager-builtin-yarn-check",
+      "scripts": {
+        "check": "tsc --noEmit -p ."
+      },
+      "command": "yarn check",
+      "entries": [
+        "typescript/bin/tsc"
+      ],
+      "reason": null
+    },
+    {
+      "name": "manager-builtin-pnpm-exec",
+      "scripts": {
+        "exec": "eslint src"
+      },
+      "command": "pnpm exec",
+      "entries": [
+        "eslint/bin/eslint.js"
+      ],
+      "reason": null
+    },
+    {
+      "name": "manager-builtin-pnpm-install",
+      "scripts": {
+        "install": "eslint src"
+      },
+      "command": "pnpm install",
+      "entries": [
+        "eslint/bin/eslint.js"
+      ],
+      "reason": null
+    },
+    {
+      "name": "manager-builtin-explicit-run",
+      "scripts": {
+        "check": "tsc --noEmit -p ."
+      },
+      "command": "yarn run check",
+      "entries": [
+        "typescript/bin/tsc"
+      ],
+      "reason": "native_node_tool_readonly_containment_required"
     }
   ]
 }
