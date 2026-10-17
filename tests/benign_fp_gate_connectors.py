@@ -22,12 +22,12 @@ Nothing here runs: the gate only decides on the commands it replays.
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
 
+from ci.gauntlet.approval_rows import CONNECTOR_GROUP_ID
 from codex_plugin_scanner.guard.blocked_request_mode import SAFE_ALTERNATIVE_GUIDANCE, connector_setup_reason
 from codex_plugin_scanner.guard.local_cli_trust import utc_now
 from codex_plugin_scanner.guard.native_context import bound_context_digest_home
@@ -41,7 +41,6 @@ REMOTE_MCP_URL = "https://mcp.example.test/mcp"
 
 # A review held only because Guard does not recognise the command carries this reason on its row.
 SETUP_ROW_REASON = "native_command_review_required"
-_GROUP_ID = re.compile(r"connector:(?P<identity>[0-9a-f]{64}):(?P<action>[0-9a-f]{16})")
 # Default mode neither links to the review nor tells the agent to ask the user for anything.
 _FORBIDDEN_WORDING = ("http", "inbox", "approv", "ask the user", "ask your", "ask them")
 
@@ -107,24 +106,39 @@ def _identity_hash(home: Path, guard_home: Path) -> str:
     return identity.identity_hash
 
 
+def connector_setup_failure(rows: list[dict[str, object]], result: dict[str, object]) -> str | None:
+    """Why a result and its new approval rows are not the connector-setup outcome, or None when they are."""
+    if result.get("policy_action") != "block":
+        return "connector setup must block the call"
+    if result.get("prompted") is True:
+        return "connector setup must not prompt the agent"
+    text = " ".join(_strings(result))
+    # A generic per-action review reads "requires review"; setup names the connector and
+    # carries the default-mode guidance verbatim.
+    if connector_setup_reason(UNSET_CLI, "cli", ask=False) not in text:
+        return "not worded as setup"
+    if SAFE_ALTERNATIVE_GUIDANCE not in text:
+        return "setup lost the safe-alternative guidance"
+    leaked = [word for word in _FORBIDDEN_WORDING if word in text.lower()]
+    if leaked:
+        return f"default-mode setup text carries {leaked}"
+    if len(rows) != 1:
+        return f"setup must queue exactly one approval row, got {len(rows)}"
+    if rows[0]["reason_code"] != SETUP_ROW_REASON:
+        return "setup row lost its non-recognition reason"
+    if CONNECTOR_GROUP_ID.fullmatch(str(rows[0]["queue_group_id"])) is None:
+        return "setup row is not under a connector group"
+    return None
+
+
 def assert_connector_setup(
     rows: list[dict[str, object]], result: dict[str, object], description: str, *, home: Path, guard_home: Path
 ) -> None:
     """A never-decided CLI is held as setup: grouped row, setup wording, no link, no ask."""
-    assert result.get("policy_action") == "block", f"connector setup must block the call: {description}"
-    assert result.get("prompted") is not True, f"connector setup must not prompt the agent: {description}"
-    text = " ".join(_strings(result))
-    # A generic per-action review reads "requires review"; setup names the connector and
-    # carries the default-mode guidance verbatim.
-    assert connector_setup_reason(UNSET_CLI, "cli", ask=False) in text, f"not worded as setup: {description}"
-    assert SAFE_ALTERNATIVE_GUIDANCE in text, f"setup lost the safe-alternative guidance: {description}"
-    leaked = [word for word in _FORBIDDEN_WORDING if word in text.lower()]
-    assert not leaked, f"default-mode setup text carries {leaked}: {description}"
-    assert len(rows) == 1, f"setup must queue exactly one approval row, got {len(rows)}: {description}"
-    row = rows[0]
-    assert row["reason_code"] == SETUP_ROW_REASON, f"setup row lost its non-recognition reason: {description}"
-    group = _GROUP_ID.fullmatch(str(row["queue_group_id"]))
-    assert group is not None, f"setup row is not under a connector group ({row['queue_group_id']!r}): {description}"
+    failure = connector_setup_failure(rows, result)
+    assert failure is None, f"{failure}: {description}"
+    group = CONNECTOR_GROUP_ID.fullmatch(str(rows[0]["queue_group_id"]))
+    assert group is not None
     assert group["identity"] == _identity_hash(home, guard_home), f"group names another connector: {description}"
 
 
@@ -132,7 +146,7 @@ def connector_groups(queue_rows: Iterable[dict[str, object]]) -> dict[str, set[s
     """Connector identity hash to the action digests queued under it."""
     groups: dict[str, set[str]] = {}
     for row in queue_rows:
-        match = _GROUP_ID.fullmatch(str(row.get("queue_group_id") or ""))
+        match = CONNECTOR_GROUP_ID.fullmatch(str(row.get("queue_group_id") or ""))
         if match is not None:
             groups.setdefault(match["identity"], set()).add(match["action"])
     return groups

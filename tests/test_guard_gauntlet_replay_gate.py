@@ -94,8 +94,9 @@ def replay_environment(
     bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     bun.chmod(0o755)
     # The synthetic connector CLIs install into ~/.local/bin, which a real login shell has on PATH.
+    # It goes first so the fixture CLI, not a host program, is the one the grant was recorded for.
     local_bin = fixture.home / ".local" / "bin"
-    patch.setenv("PATH", os.pathsep.join([os.environ.get("PATH", ""), str(bun.parent), str(local_bin)]))
+    patch.setenv("PATH", os.pathsep.join([str(local_bin), os.environ.get("PATH", ""), str(bun.parent)]))
     store = GuardStore(fixture.guard_home)
     allow_ready_cli(store, fixture.home)
     worker = HookWorker(store=store, workspace=fixture.worktree)

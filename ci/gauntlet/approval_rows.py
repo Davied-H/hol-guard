@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 PERSISTENT_SCOPES = frozenset({"workspace", "harness", "global", "publisher", "artifact"})
@@ -15,10 +16,19 @@ CONNECTOR_CLASSES = (
     "surface:package-scripts",
 )
 _SURFACES = frozenset({"cli", "mcp", "package-scripts"})
+# A connector-setup group is a digest pair, never a name or a path.
+CONNECTOR_GROUP_ID = re.compile(r"connector:(?P<identity>[0-9a-f]{64}):(?P<action>[0-9a-f]{16})")
+REDACTED_GROUP = "redacted-group"
 
 
 def _mapping(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _opaque_group(value: Any) -> str:
+    """Keep a queue group only when it is a connector digest id; any other text is not evidence."""
+    group = str(value or "")
+    return group if not group or CONNECTOR_GROUP_ID.fullmatch(group) else REDACTED_GROUP
 
 
 def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
@@ -26,7 +36,7 @@ def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
 
     Only the tool, reason, queue group and whether an Always option is offered are kept; commands and
     paths are already in the redacted tool evidence, so they are not copied again. The queue group
-    is an opaque ``connector:<hash>:<digest>`` id, never a path.
+    is kept only as an opaque ``connector:<hash>:<digest>`` id; any other stored value is replaced.
     """
     from codex_plugin_scanner.guard.approval_scope_support import request_scope_observation
 
@@ -53,10 +63,9 @@ def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
                 "allow_scopes": scopes,
                 "exact_context_token_present": bool(token),
                 "once_only_reason": contract.once_only_reason,
-                "queue_group_id": str(row.get("queue_group_id") or ""),
+                "queue_group_id": _opaque_group(row.get("queue_group_id")),
                 "always_available": contract.exact_action_persistence_eligible is True
                 or any(scope in PERSISTENT_SCOPES for scope in scopes),
-                "queue_group_id": str(row.get("queue_group_id") or ""),
                 "dedupe_count": int(row.get("dedupe_count") or 1),
             }
         )
