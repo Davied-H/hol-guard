@@ -269,7 +269,6 @@ fn unmodeled_commands_that_move_data_or_hide_programs_keep_the_evaluation_failur
         "gh pr comment 12 --body-file - <<'EOF'\nFixed.\nEOF\ngh pr view 12",
         "sh <<'EOF'\ngh pr view 12\nEOF",
         "command sh -c 'gh pr view 12'",
-        "env CI=1 sh -c 'gh pr view 12'",
         "env GH_HOST=example.com gh pr view 12",
         "fd -x gh pr view {}",
         "for x in a; do PATH=/tmp:$PATH gh pr view 12; done",
@@ -283,6 +282,13 @@ fn unmodeled_commands_that_move_data_or_hide_programs_keep_the_evaluation_failur
             "{command}"
         );
     }
+    // An inert assignment in front of a shell that carries its whole script
+    // adds nothing to the script: both spellings name the same program, so
+    // the command reaches the floor that program reaches on its own.
+    assert_eq!(
+        decision(&controls, "env CI=1 sh -c 'gh pr view 12'"),
+        decision(&controls, "gh pr view 12"),
+    );
 }
 
 #[test]
