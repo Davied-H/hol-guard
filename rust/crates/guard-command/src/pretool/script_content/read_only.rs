@@ -145,15 +145,17 @@ pub(in crate::pretool) fn read_only(language: Language, path: &Path) -> bool {
 }
 
 /// `Path.replace(target)` moves a file; `str.replace(old, new)` does not. A
-/// `.replace(` call without a top-level comma, or one left unclosed, is the
-/// former. Commas inside string literals and nested calls do not count.
+/// `.replace(` call without a second argument, or one left unclosed, is the
+/// former. Commas inside string literals and nested calls do not count, a
+/// trailing comma adds no argument, and a starred one may add none.
 fn path_replace(source: &str) -> bool {
     static CALL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.\s*replace\s*\(").unwrap());
     CALL.find_iter(source).any(|call| {
         let mut depth = 0_usize;
         let mut quote = None;
         let mut escaped = false;
-        for character in source[call.end()..].chars() {
+        let rest = &source[call.end()..];
+        for (index, character) in rest.char_indices() {
             if let Some(open) = quote {
                 if escaped {
                     escaped = false;
@@ -169,12 +171,24 @@ fn path_replace(source: &str) -> bool {
                 '(' | '[' | '{' => depth += 1,
                 ')' | ']' | '}' if depth == 0 => return true,
                 ')' | ']' | '}' => depth -= 1,
-                ',' if depth == 0 => return false,
+                ',' if depth == 0 => return no_second_argument(&rest[index + 1..]),
                 _ => {}
             }
         }
         true
     })
+}
+
+/// Whether the text after a call's first top-level comma closes the call or
+/// starts a `*` unpacking, which may be empty.
+fn no_second_argument(mut rest: &str) -> bool {
+    loop {
+        rest = rest.trim_start();
+        match rest.strip_prefix('#') {
+            Some(comment) => rest = comment.split_once('\n').map_or("", |(_, next)| next),
+            None => return rest.is_empty() || rest.starts_with([')', '*']),
+        }
+    }
 }
 
 fn python_imports_read_only(source: &str) -> bool {
