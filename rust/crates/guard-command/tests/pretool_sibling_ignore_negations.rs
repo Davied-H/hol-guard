@@ -15,12 +15,11 @@ fn sibling_search_with_literal_negations_is_allowed() {
     let sibling = layout.org.join("service-api");
     write(
         sibling.join(".gitignore"),
-        "dist/\n*.log\n!keep.log\n.vscode/*\n!.vscode/settings.json\n!/.gitkeep\n!**/notes.md\n",
+        "dist/\n*.log\n!keep.log\n.vscode/*\n!.vscode/settings.json\n!/.gitkeep\n",
     );
     write(sibling.join("keep.log"), "fixture\n");
     write(sibling.join(".gitkeep"), "");
     write(sibling.join(".vscode/settings.json"), "{}\n");
-    write(sibling.join("docs/team/notes.md"), "fixture\n");
     write(sibling.join("src/.gitignore"), "generated/\n!README.md\n");
     write(sibling.join("src/README.md"), "fixture\n");
     write(sibling.join("web/.gitignore"), "!.gitkeep\n");
@@ -35,6 +34,19 @@ fn sibling_search_with_literal_negations_is_allowed() {
     ] {
         assert_decision(&cwd, &layout.home, command, true);
     }
+}
+
+#[test]
+fn a_double_star_negation_naming_an_ordinary_file_is_allowed() {
+    // `!**/notes.md` re-includes that one name however deep it sits, and the
+    // name is an ordinary document, so the search is still proven.
+    let layout = layout("rg-sibling-negation-double-star-allowed");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join(".gitignore"), "!**/notes.md\n");
+    write(sibling.join("docs/team/notes.md"), "fixture\n");
+    write(sibling.join("src/main.rs"), "fn main() {} // fixture\n");
+    let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
 }
 
 #[test]
