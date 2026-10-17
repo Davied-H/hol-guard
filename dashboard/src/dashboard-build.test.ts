@@ -4,6 +4,7 @@ import {
   DASHBOARD_BUILD_RELOAD_STORAGE_KEY,
   claimStaleBuildReload,
   installStaleBuildGuard,
+  isFragmentOnlyChange,
   isDashboardBuildStale,
   loadCurrentDashboardBuild,
   observeDashboardBuild,
@@ -85,6 +86,8 @@ const tabStorage = memoryStorage();
 const documentListeners = new Map<string, Set<() => void>>();
 const windowListeners = new Map<string, Set<() => void>>();
 let reloads = 0;
+const assigned: string[] = [];
+const replaced: string[] = [];
 const fakeDocument = {
   visibilityState: "visible",
   querySelector: () => ({ getAttribute: () => "build-old" }),
@@ -100,11 +103,21 @@ const fakeDocument = {
 (globalThis as { window: unknown }).window = {
   location: {
     origin,
+    pathname: "/inbox",
+    search: "?desktop_embed=1",
+    href: `${origin}/inbox?desktop_embed=1#guard-token=a`,
     reload: () => {
       reloads += 1;
     },
-    assign: () => {
+    assign: (href: string) => {
+      assigned.push(href);
       reloads += 1;
+    },
+  },
+  history: {
+    state: null,
+    replaceState: (_state: unknown, _title: string, href: string) => {
+      replaced.push(href);
     },
   },
   addEventListener: (type: string, listener: () => void) => {
@@ -153,8 +166,38 @@ assert(reloads === 2, "a hidden stale tab reloads without waiting");
 // Navigating away from a stale tab is a full load of the target.
 tabStorage.values.clear();
 fakeDocument.visibilityState = "visible";
-assert(loadCurrentDashboardBuild("/inbox"), "navigation from a stale tab becomes a full load");
+assert(loadCurrentDashboardBuild("/protect?desktop_embed=1#guard-token=a"), "navigation from a stale tab becomes a full load");
 assert(reloads === 3, "the full load is issued");
+assert(assigned.length === 1 && assigned[0]?.endsWith("/protect?desktop_embed=1#guard-token=a"), "another screen is loaded with assign");
+assert(replaced.length === 0, "another screen needs no history rewrite");
+
+// The screen already open differs only in its fragment, which assign would
+// never load: the claim must end in a real reload, not be spent on a no-op.
+tabStorage.values.clear();
+assert(
+  loadCurrentDashboardBuild(`${origin}/inbox?desktop_embed=1#guard-token=b`),
+  "a link to the open screen from a stale tab still loads the current bundle",
+);
+assert(reloads === 4, "the same-screen link reloads the document");
+assert(assigned.length === 1, "the same-screen link does not use assign");
+assert(replaced.length === 1 && replaced[0]?.endsWith("#guard-token=b"), "the new fragment is kept for the reload");
+
+assert(
+  isFragmentOnlyChange({ origin, pathname: "/inbox", search: "?x=1" }, new URL(`${origin}/inbox?x=1#f`)),
+  "same path and query is a fragment-only change",
+);
+assert(
+  !isFragmentOnlyChange({ origin, pathname: "/inbox", search: "?x=1" }, new URL(`${origin}/inbox?x=2#f`)),
+  "a different query is a real navigation",
+);
+assert(
+  !isFragmentOnlyChange({ origin, pathname: "/inbox", search: "" }, new URL(`${origin}/protect`)),
+  "a different path is a real navigation",
+);
+assert(
+  !isFragmentOnlyChange({ origin, pathname: "/inbox", search: "" }, new URL("http://127.0.0.1:6000/inbox")),
+  "a different origin is a real navigation",
+);
 
 (globalThis as { window?: unknown }).window = originalWindow;
 (globalThis as { document?: unknown }).document = originalDocument;

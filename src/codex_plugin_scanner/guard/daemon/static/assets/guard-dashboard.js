@@ -16334,14 +16334,21 @@ function installStaleBuildGuard() {
     window.removeEventListener("focus", check);
   };
 }
+function isFragmentOnlyChange(current, target2) {
+  return current.origin === target2.origin && current.pathname === target2.pathname && current.search === target2.search;
+}
 function loadCurrentDashboardBuild(href) {
   if (typeof window === "undefined" || !claimStaleBuildReload(currentBuildState(), pageSessionStorage())) {
     return false;
   }
-  if (href) {
-    window.location.assign(href);
-  } else {
+  const target2 = href ? new URL(href, window.location.href) : null;
+  if (target2 === null) {
     window.location.reload();
+  } else if (isFragmentOnlyChange(window.location, target2)) {
+    window.history.replaceState(window.history.state, "", target2.href);
+    window.location.reload();
+  } else {
+    window.location.assign(target2.href);
   }
   return true;
 }

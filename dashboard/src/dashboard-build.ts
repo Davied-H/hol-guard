@@ -129,6 +129,21 @@ export function installStaleBuildGuard(): () => void {
   };
 }
 
+/**
+ * Whether sending the page to `target` would only change its fragment. The
+ * dashboard carries its session in the fragment, so a link to the screen
+ * already open differs from it in nothing else, and browsers never load a new
+ * document for that.
+ */
+export function isFragmentOnlyChange(
+  current: Pick<Location, "origin" | "pathname" | "search">,
+  target: Pick<URL, "origin" | "pathname" | "search">,
+): boolean {
+  return (
+    current.origin === target.origin && current.pathname === target.pathname && current.search === target.search
+  );
+}
+
 export function dashboardBuildIsStale(): boolean {
   return isDashboardBuildStale(currentBuildState());
 }
@@ -141,10 +156,15 @@ export function loadCurrentDashboardBuild(href?: string): boolean {
   if (typeof window === "undefined" || !claimStaleBuildReload(currentBuildState(), pageSessionStorage())) {
     return false;
   }
-  if (href) {
-    window.location.assign(href);
-  } else {
+  const target = href ? new URL(href, window.location.href) : null;
+  if (target === null) {
     window.location.reload();
+  } else if (isFragmentOnlyChange(window.location, target)) {
+    // `assign` would only change the fragment, which never loads a document.
+    window.history.replaceState(window.history.state, "", target.href);
+    window.location.reload();
+  } else {
+    window.location.assign(target.href);
   }
   return true;
 }
