@@ -268,8 +268,8 @@ fn created_file_probe(model: &CanonicalCommandV1, context: PathContext<'_>) -> b
     // that may name something that already exists.
     if removed != created
         || sensitive_command(&last.text)
-        || !super::directory_targets::home_targets_unquoted(first)
-        || !super::directory_targets::home_targets_unquoted(last)
+        || !crate::pretool::directory_targets::home_targets_unquoted(first)
+        || !crate::pretool::directory_targets::home_targets_unquoted(last)
         || !absent_target(created, context)
     {
         return false;
