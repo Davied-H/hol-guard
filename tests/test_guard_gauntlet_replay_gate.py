@@ -25,6 +25,7 @@ from ci.gauntlet.input_evidence import redact_value
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
+from tests.benign_fp_gate_connectors import allow_ready_cli
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
 from tests.benign_fp_gate_projects import host_tool_path
 from tests.gauntlet_replay import (
@@ -90,7 +91,9 @@ def replay_environment(
     # Match the Gauntlet replay environment in both replay gates: the host tools a hosted runner
     # cannot offer, such as Bun for the native `bun -e` proof and a Node the sandbox may run.
     patch.setenv("PATH", host_tool_path(fixture.home, os.environ.get("PATH", "")))
-    worker = HookWorker(store=GuardStore(fixture.guard_home), workspace=fixture.worktree)
+    store = GuardStore(fixture.guard_home)
+    allow_ready_cli(store, fixture.home)
+    worker = HookWorker(store=store, workspace=fixture.worktree)
     try:
         yield request.param, fixture, worker
     finally:

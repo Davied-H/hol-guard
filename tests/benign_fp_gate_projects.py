@@ -152,7 +152,9 @@ def host_tool_path(home: Path, search_path: str) -> str:
     runners keep Node in a world-writable ``/usr/local/bin``, which the workspace sandbox refuses
     to execute from, so a package script would stay at review for the host instead of running
     contained. Stand-ins in a version-manager directory the sandbox accepts go first, as a
-    developer's own Node does, and the sandbox finds the same file by the same name.
+    developer's own Node does, and the sandbox finds the same file by the same name. The synthetic
+    connector CLIs install into ``~/.local/bin``, which a real login shell has on PATH; it goes first
+    so the fixture CLI, not a host program, is the one a grant was recorded for.
     """
     stand_in = "#!/bin/sh\nexit 0\n"
     bun = home / ".bun" / "bin"
@@ -161,4 +163,5 @@ def host_tool_path(home: Path, search_path: str) -> str:
         for name in names:
             _write(directory / name, stand_in)
             (directory / name).chmod(0o755)
-    return os.pathsep.join([str(node), search_path, str(bun)])
+    local_bin = home / ".local" / "bin"
+    return os.pathsep.join([str(local_bin), str(node), search_path, str(bun)])

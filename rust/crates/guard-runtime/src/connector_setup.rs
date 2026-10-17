@@ -15,6 +15,9 @@ use sha2::{Digest, Sha256};
 use crate::approval_queue_identity_op::normalize_command_identity;
 use crate::local_cli_hook_op::Launch;
 
+/// The reason code an agent and the Inbox see for a connector setup review.
+pub(crate) const CONNECTOR_SETUP_REQUIRED: &str = "connector_setup_required";
+
 /// Review reason codes that mean only "Guard does not recognise this command":
 /// the generic review, and that same review when the workspace sandbox could
 /// not run the program. Any other code carries a risk signal and keeps its
@@ -64,6 +67,23 @@ pub(crate) fn for_launch(request: &LocalCliHookRequestV1, launch: &Launch) -> Op
             &request.command,
         )
     })
+}
+
+/// Whether `group` is a bare `connector:<identity_hash>` marker, which the
+/// queue completes with the row's own action digest.
+pub(crate) fn is_connector_marker(group: &str) -> bool {
+    group.strip_prefix("connector:").is_some_and(|hash| {
+        hash.len() == 64
+            && hash
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+/// `<marker>:<action digest>` for a row whose default group id is `default_group`.
+pub(crate) fn action_group_id(marker: &str, default_group: &str) -> String {
+    let action = hex::encode(Sha256::digest(default_group.as_bytes()));
+    format!("{marker}:{}", &action[..ACTION_DIGEST_HEX])
 }
 
 /// The connector a hook review is waiting on, as `LocalCliHook` returns it.
@@ -123,6 +143,24 @@ mod tests {
     }
 
     #[test]
+    fn only_a_bare_lowercase_marker_is_completed_per_action() {
+        let marker = format!("connector:{}", "a".repeat(64));
+        assert!(is_connector_marker(&marker));
+        for rejected in [
+            format!("connector:{}", "A".repeat(64)),
+            format!("connector:{}", "a".repeat(63)),
+            format!("{marker}:0123456789abcdef"),
+            "approval-group:v1:abc".to_owned(),
+        ] {
+            assert!(!is_connector_marker(&rejected), "{rejected}");
+        }
+        let first = action_group_id(&marker, "approval-group:v1:one");
+        assert_eq!(first, action_group_id(&marker, "approval-group:v1:one"));
+        assert_ne!(first, action_group_id(&marker, "approval-group:v1:two"));
+        assert_eq!(first.len(), marker.len() + 1 + ACTION_DIGEST_HEX);
+    }
+
+    #[test]
     fn package_scripts_keep_their_surface() {
         let value = payload(
             "local-cli.x",
@@ -139,3 +177,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "connector_setup_render_tests.rs"]
+mod render_tests;
