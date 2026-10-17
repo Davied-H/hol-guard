@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
+#[path = "contained_workspace_sink_denial.rs"]
+mod denial;
 #[path = "contained_workspace_sink_plan.rs"]
 mod plan_check;
 #[path = "contained_workspace_sink_process.rs"]
@@ -43,11 +45,14 @@ pub(crate) const WORKSPACE_PROFILE: &str = "workspace-contained-v1";
 /// shape stays with `guard execute-contained-test`.
 pub(crate) const PUBLISH_REASON: &str = concat!(
     "HOL Guard runs the checks in this command in a protected workspace sandbox ",
-    "(no network, no home access), then runs the Git steps that follow once it ",
-    "proves them again."
+    "(no network, no home access, no PTY or Docker socket), then runs the Git ",
+    "steps that follow directly, outside the sandbox, once it proves them again. ",
+    "Every program the checks start, including children of an interpreter, runs ",
+    "contained and can write only the workspace, $TMPDIR and a private ",
+    "scratch $HOME.",
 );
-const AUTHORIZATION_FAILED: &str = "contained_test_authorization_failed";
-const AUTHORIZATION_MESSAGE: &str = "Guard could not authorize this protected test execution.";
+const AUTHORIZATION_FAILED: &str = "contained_run_authorization_failed";
+const AUTHORIZATION_MESSAGE: &str = "Guard could not authorize this contained run.";
 const INVALID_COMMAND: &str = "pytest_restricted_invalid_command";
 const SANDBOX_UNAVAILABLE: &str = "pytest_restricted_sandbox_unavailable";
 const RECEIPT_ONLY_FIELD: &str = "guard_containment_receipt_only";

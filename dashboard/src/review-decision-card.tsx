@@ -17,6 +17,7 @@ import {
   requestResolutionBlockReason,
 } from "./approval-center-utils";
 import {
+  approvalCannotUnlock,
   oneTimeRetryWindowMinutes,
   receiptDescribesRequest,
   retryCannotReuseApproval,
@@ -52,6 +53,7 @@ import { buildWhatWouldHappen, pastDecisionVerb, PrimaryActionCard } from "./rev
 import type { ReviewViewModel, ReviewWorkspaceProps } from "./review-workspace";
 import { BusinessReviewSummaryPanel } from "./business-review-summary-panel";
 import { ApprovalExtensionRecommendationCard } from "./approval-extension-recommendation-card";
+import { ReviewRunYourself } from "./review-run-yourself";
 import { useReviewDecisionResolve } from "./use-review-decision-resolve";
 import { approvalLeftActionStopped } from "./evidence/approval-outcome";
 
@@ -109,6 +111,8 @@ export function ReviewDecisionCard(props: {
   const taskCapabilityCopy = item ? taskCapabilityExplanation(item) : null;
   const watchOnlyObservation = item !== null && isWatchOnlyObservation(item);
   const hasAllowScope = availableScopeChoices.length + advancedScopeOptions.length > 0;
+  const canSubmitAllow = hasAllowScope && (item === null || !retryCannotReuseApproval(item) ||
+    (allowScope === "artifact" && rememberExactAction && item.exact_action_persistence_eligible === true));
   const decisionContractKey = item ? approvalDecisionContractKey(item) : null;
   const decisionSubjectKey = item ? approvalDecisionSubjectKey(item) : null;
 
@@ -162,6 +166,7 @@ export function ReviewDecisionCard(props: {
     availableScopeChoices,
     blockScopeOptions,
     hasAllowScope,
+    canSubmitAllow,
     watchOnlyObservation,
     rememberExactAction,
     extensionDialogActive,
@@ -215,6 +220,8 @@ export function ReviewDecisionCard(props: {
   const topAlertItems = nativeDisplayOnly ? [] : buildTopAlertItems(item);
   const evidenceItems = nativeDisplayOnly ? [] : buildEvidenceItems(item);
   const actionPresentation = guardActionPresentation(item.policy_action);
+  // No decision can let the agent run this command, so offer "run it yourself", not Approve.
+  const runYourself = !watchOnlyObservation && !nativeDisplayOnly && approvalCannotUnlock(item);
   let sectionLabel = "Paused action";
   let badgeLabel = actionPresentation.label;
   if (nativeDisplayOnly) {
@@ -231,6 +238,8 @@ export function ReviewDecisionCard(props: {
     resolvedAllowButtonLabel = "Keep allowing";
   } else if (persistExactAllow) {
     resolvedAllowButtonLabel = "Approve and remember";
+  } else if (retryCannotReuseApproval(item)) {
+    resolvedAllowButtonLabel = "Choose an available approval duration";
   }
   let resolvedBlockButtonLabel = blockButtonLabel(blockScope);
   if (watchOnlyObservation || persistExactBlock) {
@@ -274,7 +283,7 @@ export function ReviewDecisionCard(props: {
 
         {!nativeDisplayOnly && <PrimaryActionCard item={item} />}
         {nativeDisplayOnly && <BusinessReviewSummaryPanel key={item.request_id} requestId={item.request_id} />}
-        {resolved === null && retryCannotReuseApproval(item) && !rememberExactAction ? (
+        {resolved === null && !runYourself && retryCannotReuseApproval(item) && !rememberExactAction ? (
           <p className="mt-4 text-sm leading-6 text-brand-dark">
             {retryCannotReuseApprovalHint(item, harnessName)}
           </p>
@@ -338,20 +347,25 @@ export function ReviewDecisionCard(props: {
           </div>
         )}
 
-        {resolutionBlockReason === null && resolved === null && !watchOnlyObservation && (
+        {resolutionBlockReason === null && resolved === null && runYourself && (
+          <ReviewRunYourself item={item} harnessName={harnessName} />
+        )}
+
+        {resolutionBlockReason === null && resolved === null && !watchOnlyObservation && !runYourself && (
           <ApprovalExtensionRecommendationCard
             key={item.request_id}
             item={item}
             approvalGate={approvalGate}
             allowScope={allowScope}
-            disabled={!hasAllowScope || submitting !== null || pendingAction !== null}
+            persistExactAction={persistExactAllow}
+            disabled={!canSubmitAllow || submitting !== null || pendingAction !== null}
             onResolve={props.onResolve}
             onApproved={handleExtensionApproved}
             onDialogActiveChange={setExtensionDialogActive}
           />
         )}
 
-        {resolutionBlockReason === null && resolved === null && (
+        {resolutionBlockReason === null && resolved === null && !runYourself && (
           <ReviewScopeControls
             commonScopeOptions={commonScopeOptions}
             broaderScopeOptions={broaderScopeOptions}
@@ -388,12 +402,12 @@ export function ReviewDecisionCard(props: {
           </div>
         )}
 
-        {resolutionBlockReason === null && resolved === null && <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ActionButton
+        {resolutionBlockReason === null && resolved === null && <div className={`mt-6 grid grid-cols-1 gap-3 ${runYourself ? "" : "sm:grid-cols-2"}`}>
+          {hasAllowScope && !runYourself && <ActionButton
             ref={allowButtonRef}
             variant="success"
             onClick={handleAllow}
-            disabled={!hasAllowScope || submitting !== null || pendingAction !== null}
+            disabled={!canSubmitAllow || submitting !== null || pendingAction !== null}
           >
             {submitting === "allow" ? (
               <span className="flex items-center gap-2">
@@ -406,7 +420,7 @@ export function ReviewDecisionCard(props: {
                 {resolvedAllowButtonLabel}
               </span>
             )}
-          </ActionButton>
+          </ActionButton>}
           <ActionButton
             variant="outline"
             onClick={handleBlock}

@@ -93,8 +93,6 @@ const EVENT_NAME_FIELDS: [&str; 6] = [
 ];
 const PRE_TOOL_USE: &str = "PreToolUse";
 const POST_TOOL_USE: &str = "PostToolUse";
-/// The denial the daemon adds a command-control repair link to.
-const REPAIRABLE_BLOCK_REASON: &str = "native_command_control_authority_block";
 const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
 const USER_PROMPT_EVENT_NAMES: [&str; 3] = ["prompt", "userpromptsubmit", "userpromptsubmitted"];
 const CLAUDE_CODE: &str = "claude-code";
@@ -386,8 +384,7 @@ fn answer(
         },
         recording_only,
     };
-    let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
-        .map_err(|_| HookDirectDefer::EdgeFailed)?;
+    let (edge, fence_wait) = fence::evaluate(envelope, policy_store)?;
     // Removed again unless the answer that runs it is returned.
     let mut snapshot = None;
     let mut answered = match event {
@@ -445,7 +442,6 @@ fn answer(
         home_dir: &request_home,
         guard_home: &guard_home,
         recording_only,
-        own_shape: cursor_harness,
     };
     // The daemon's custom block replaces the edge response before it routes
     // a sandbox requirement, so a block also drops any routed snapshot.
@@ -458,12 +454,12 @@ fn answer(
     let evidence = json!({
         "event": event,
         "harness": request.harness,
-        "workspace": workspace,
-        "home_dir": request_home,
+        "workspace": workspace, "home_dir": request_home,
         "payload": Value::Object(evidence_payload),
         "receipt": answered.get("receipt").cloned().unwrap_or(Value::Null),
         "harness_response": answered["harness_response"].clone(),
     });
+    let evidence = fence::with_wait(evidence, fence_wait);
     if !policy_store.direct_evidence().offer(evidence) {
         return Err(HookDirectDefer::EvidenceFull);
     }
@@ -474,7 +470,7 @@ fn answer(
 }
 
 #[path = "hook_direct_claude_permission_text.rs"]
-mod claude_permission_text;
+pub(crate) mod claude_permission_text;
 #[path = "hook_direct_claude_prompt_text.rs"]
 mod claude_prompt_text;
 #[path = "hook_direct_contained.rs"]
@@ -483,6 +479,8 @@ pub(crate) mod contained;
 mod cursor;
 #[path = "hook_direct_edge.rs"]
 mod edge;
+#[path = "hook_direct_fence.rs"]
+mod fence;
 #[path = "hook_direct_lifecycle.rs"]
 mod lifecycle;
 #[path = "hook_direct_local_cli.rs"]

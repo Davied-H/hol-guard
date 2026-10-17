@@ -227,8 +227,11 @@ pub(crate) enum ResidentOperationV1 {
     PackagePosture(PackagePostureRequestV1),
     PackageAuditProjection(PackageAuditProjectionRequestV1),
     WorkspaceInventory(WorkspaceInventoryRequestV1),
-    PolicyDecisionLookup(PolicyDecisionLookupRequestV1),
+    PolicyDecisionLookup(Box<PolicyDecisionLookupRequestV1>),
     PolicyDocumentDecide(guard_contracts::PolicyDocumentDecisionRequestV1),
+    CommandPolicyDecide(guard_contracts::CommandPolicyDecisionRequestV1),
+    CommandExpressionValidate(guard_contracts::CommandExpressionValidationRequestV1),
+    ReviewedInvocationBindingsValidate(guard_contracts::ReviewedInvocationBindingsRequestV1),
     GitExecutionSafety(GitExecutionSafetyRequestV1),
     CompoundGitInspection(CompoundGitInspectionRequestV1),
     CodexToolOutput(CodexToolOutputRequestV1),
@@ -264,6 +267,7 @@ pub(crate) enum ResidentOperationV1 {
     McpClassify(McpClassificationRequestV1),
     NativeExactAction(NativeExactActionRequestV1),
     SkillDirectoryIdentity(SkillDirectoryIdentityRequestV1),
+    SkillWorkflowPreflight(guard_contracts::SkillWorkflowPreflightRequestV1),
     #[cfg(unix)]
     CodexBindingCapture(crate::binding_capture_op::CodexBindingCaptureRequestV1),
     #[allow(dead_code)]

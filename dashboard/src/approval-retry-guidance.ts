@@ -8,6 +8,20 @@ export function retryCannotReuseApproval(item: GuardApprovalRequest): boolean {
   return item.scope_restrictions?.includes("retry_cannot_reuse_approval") === true;
 }
 
+/**
+ * True when no decision can let the agent run this command: the retry never matches a one-time
+ * approval, "Always allow exact action" is not offered and no verified Extensions permission would
+ * let it run. Approving would only record a decision the agent never sees, so the review asks the
+ * user to run the command themselves.
+ */
+export function approvalCannotUnlock(item: GuardApprovalRequest): boolean {
+  return (
+    retryCannotReuseApproval(item) &&
+    item.exact_action_persistence_eligible !== true &&
+    allowPermissionLabels(item) === null
+  );
+}
+
 /** Native one-time approvals are honoured for 5 minutes (store_native_review_approvals.py); others for 15. */
 export function oneTimeRetryWindowMinutes(item: GuardApprovalRequest): number {
   return item.artifact_id.includes(":native-pretool:") ? 5 : 15;
@@ -24,7 +38,7 @@ function allowPermissionLabels(item: GuardApprovalRequest): string | null {
 
 /** Explain, before approval, what actually lets the agent run a command whose one-time approval cannot. */
 export function retryCannotReuseApprovalHint(item: GuardApprovalRequest, harness: string): string {
-  const base = `Approving just this once records your decision but does not let ${harness} run this command; it will be blocked again.`;
+  const base = `Guard cannot bind ${harness}'s one-time retry to the reviewed action. Run once is unavailable.`;
   if (item.exact_action_persistence_eligible === true) {
     return `${base} To let ${harness} run this exact command, choose "Always allow exact action".`;
   }
@@ -99,6 +113,5 @@ export function bulkApproveConsequenceCopyForSelection(
   defaultCopy: (count: number) => string,
 ): string {
   if (retryBlockedActionCount <= 0) return defaultCopy(actionCount);
-  const blocked = `${retryBlockedActionCount} of them ${retryBlockedActionCount === 1 ? "is a command" : "are commands"} the agent will still be blocked on.`;
-  return `Guard will record your decision for ${actionCount} ${actionCount === 1 ? "action" : "actions"} once and won't remember it. ${blocked} Mass approval skips opening each request, so an unexpected action is harder to catch.`;
+  return `Run once is unavailable for ${retryBlockedActionCount} of these ${actionCount} actions. Open those requests to inspect their execution limitations before approving the remaining actions.`;
 }

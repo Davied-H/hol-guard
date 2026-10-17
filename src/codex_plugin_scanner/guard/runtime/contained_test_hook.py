@@ -43,13 +43,13 @@ from .restricted_pytest_validation import _path_is_within
 from .restricted_workspace import receipt_matches, run_workspace_contained
 
 _MAX_REQUEST_BYTES = 1_048_576
-_FAILURE = "contained_test_authorization_failed"
+_FAILURE = "contained_run_authorization_failed"
 _PYTEST_EXECUTABLE_NAMES = frozenset({"pytest", "py.test", "pytest.exe", "py.test.exe"})
 _PYTHON_EXECUTABLE = re.compile(r"(?i)^(?:python|pythonw)(?:\d+(?:\.\d+)*)?(?:\.exe)?$")
 
 
 def _reject() -> RestrictedPytestError:
-    return RestrictedPytestError(_FAILURE, "Guard could not authorize this protected test execution.")
+    return RestrictedPytestError(_FAILURE, "Guard could not authorize this contained run.")
 
 
 def _command_names_pytest(command: list[str]) -> bool:

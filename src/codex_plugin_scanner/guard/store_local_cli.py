@@ -90,7 +90,8 @@ class StoreLocalCliMixin:
                 """
                 select cli_id, identity_hash, kind, name, interpreter_name, example_label,
                        observed_count, last_seen_at, source_path, help_status, surface,
-                       server_identity_hash, source_label, server_command
+                       server_identity_hash, source_label, server_command,
+                       remote_origin, declared_sources_json
                 from local_cli_observation
                 order by last_seen_at desc, cli_id asc
                 """
