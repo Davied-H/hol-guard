@@ -52,25 +52,6 @@ def _hook_event_name(payload: dict[str, object]) -> str | None:
     return resolve_hook_event_name(payload)
 
 
-_ENCODED_CONTENT_MARKER_PATTERN = re.compile(
-    r"\b(?:base64|b64decode|frombase64string|encodedcommand|openssl|gpg|xxd)\b"
-    r"|\bencoded\b"
-    r"|\b(?:ba|da|z|a)?sh\s+-\w*s\b",
-    re.IGNORECASE,
-)
-
-
-def _hook_command_has_encoded_markers(command_text: str | None) -> bool:
-    """Whether a command text carries encoded-execution-looking markers.
-
-    Presentation-only signal: encoded-adjacent content is worth surfacing in the
-    structured decision document even when the action is verified inert and
-    allowed. It is deliberately lighter than the policy detector, which is
-    tuned to avoid false positives on quoted literals and stdin-mode scripts.
-    """
-    return isinstance(command_text, str) and bool(_ENCODED_CONTENT_MARKER_PATTERN.search(command_text))
-
-
 def _write_json_line(payload: dict[str, object], *, output_stream: TextIO | None = None) -> None:
     """Resolve hook output lazily without reintroducing the prompt import cycle."""
 
@@ -342,7 +323,7 @@ def _native_hook_json_document(
     system_message: str | None = None,
     generic_path: bool = False,
     native_protocol_payload: bool = False,
-    content_flagged: bool = False,
+    command_text: str | None = None,
     command_surface: bool = False,
     verified_benign: bool = False,
 ) -> tuple[dict[str, object] | None, int] | None:
@@ -366,7 +347,7 @@ def _native_hook_json_document(
         "envelope": dict(envelope) if isinstance(envelope, Mapping) else None,
         "generic_path": generic_path,
         "native_protocol_payload": native_protocol_payload,
-        "content_flagged": content_flagged,
+        "command_text": command_text,
         "command_surface": command_surface,
         "verified_benign": verified_benign,
     }
@@ -743,7 +724,7 @@ __all__ = [
     "_copilot_hook_permission_decision", "_emit_native_hook_block_stderr",
     "_emit_native_hook_json_document", "_emit_native_hook_notification_stderr",
     "_emit_native_hook_response", "_emit_native_post_tool_envelope", "_first_hook_tool_call",
-    "_headless_approval_resolver", "_hook_action_envelope", "_hook_command_has_encoded_markers",
+    "_headless_approval_resolver", "_hook_action_envelope",
     "_load_hook_payload",
     "_native_hook_json_document", "_normalize_hook_argument_value",
     "_normalize_hook_arguments",

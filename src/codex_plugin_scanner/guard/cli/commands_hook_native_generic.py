@@ -89,7 +89,6 @@ def _observed_action_detail(
 
 if TYPE_CHECKING:
     from ._commands_shared import _hook_command_text, _now
-    from .commands_support_hook_payload import _hook_command_has_encoded_markers
     from .commands_support_interaction import _record_harness_usage_for_hook
     from .commands_support_prompts import (
         _copilot_hook_reason,
@@ -1006,7 +1005,7 @@ def run_native_generic_payload(
         approval_context=live_hook_approval_context(payload_map, harness=args.harness, guard_home=store.guard_home),
         canonical_harness=canonical_harness,
         coalesce=_coalesce_string,
-        content_flagged=_hook_command_has_encoded_markers(command_text),
+        command_text=command_text,
         directive=directive,
         envelope=hook_envelope,
         event_name=hook_event_name,

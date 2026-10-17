@@ -4,6 +4,9 @@
 //! module turns that composed outcome into the exact protocol document each
 //! harness reads. It is pure: no IO, no state, no policy decision.
 
+use std::sync::LazyLock;
+
+use regex::Regex;
 use serde_json::{json, Value};
 
 use super::{canonical_hook_harness, Object};
@@ -34,6 +37,27 @@ fn trimmed<'a>(params: &'a Object, key: &str) -> Option<&'a str> {
 
 fn flag(params: &Object, key: &str) -> bool {
     params.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// Encoded-execution-looking markers in a command the document describes.
+///
+/// A presentation signal, not a verdict: encoded-adjacent content is worth
+/// surfacing in the structured document even when the action is verified inert
+/// and allowed. It is deliberately lighter than the policy detector, which is
+/// tuned to avoid false positives on quoted literals and stdin-mode scripts.
+static ENCODED_CONTENT_MARKER_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"(?i)\b(?:base64|b64decode|frombase64string|encodedcommand|openssl|gpg|xxd)\b",
+        r"|\bencoded\b",
+        // CPython `\s` is `\p{White_Space}` plus the C0 separators Rust excludes.
+        r"|\b(?:ba|da|z|a)?sh[\s\x{1c}-\x{1f}]+-\w*s\b",
+    ))
+    .expect("encoded content marker pattern compiles")
+});
+
+fn content_flagged(params: &Object) -> bool {
+    text(params, "command_text")
+        .is_some_and(|command| ENCODED_CONTENT_MARKER_PATTERN.is_match(command))
 }
 
 fn blocking(action: &str) -> bool {
@@ -226,7 +250,7 @@ fn copilot_document(
     }
     if !blocking(action) {
         if flag(params, "generic_path")
-            && !flag(params, "content_flagged")
+            && !content_flagged(params)
             && (action == "allow" || !has_extra_evidence)
         {
             let mut document = Object::new();
