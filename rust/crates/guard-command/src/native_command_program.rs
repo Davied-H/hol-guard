@@ -12,7 +12,6 @@ use guard_contracts::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::command_ascii_comparison::lowercase_for_ascii_comparison;
 use crate::command_common_cli_matchers::CommonCliMatcher;
@@ -270,11 +269,13 @@ fn digest_json_value(domain: &[u8], value: &Value) -> Result<String, &'static st
     Ok(digest_canonical_bytes(domain, &encoded))
 }
 
+// ring uses the CPU's SHA instructions; the packaged program digest covers
+// megabytes of canonical JSON on every resident start.
 fn digest_canonical_bytes(domain: &[u8], encoded: &[u8]) -> String {
-    let mut digest = Sha256::new();
+    let mut digest = ring::digest::Context::new(&ring::digest::SHA256);
     digest.update(domain);
     digest.update(encoded);
-    hex::encode(digest.finalize())
+    hex::encode(digest.finish())
 }
 
 fn valid_digest(value: &str) -> bool {
