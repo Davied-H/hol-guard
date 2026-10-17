@@ -34,6 +34,8 @@ from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_e
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_connectors import allow_ready_cli, assert_connector_setup, connector_groups
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
+from tests.benign_fp_gate_mcp import McpCase, mcp_cases, mcp_failure, replay
+from tests.benign_fp_gate_projects import host_tool_path
 from tests.gauntlet_replay import OMP_CONTAINED, cursor_hook_fields
 from tests.native_gate_retry import UNAVAILABLE_REASON, review_with_unavailable_retry
 
@@ -179,17 +181,9 @@ def gate_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple
     if not binary:
         pytest.fail("HOL_GUARD_NATIVE_BINARY must name the compiled native runtime")
     patch.setenv("HOL_GUARD_NATIVE_BINARY", binary)
-    # Match the Gauntlet replay environment: hosted Linux runners have no Bun.
-    # The native bun -e proof must find a benign local executable on PATH in
-    # both replay gates; otherwise a fixed case remains pending in this gate.
-    bun = fixture.home / ".bun" / "bin" / "bun"
-    bun.parent.mkdir(parents=True, exist_ok=True)
-    bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    bun.chmod(0o755)
-    # The synthetic connector CLIs install into ~/.local/bin, which a real login shell has on PATH.
-    # It goes first so the fixture CLI, not a host program, is the one the grant was recorded for.
-    local_bin = fixture.home / ".local" / "bin"
-    patch.setenv("PATH", os.pathsep.join([str(local_bin), os.environ.get("PATH", ""), str(bun.parent)]))
+    # Match the Gauntlet replay environment in both replay gates: the host tools a hosted runner
+    # cannot offer, such as Bun for the native `bun -e` proof and a Node the sandbox may run.
+    patch.setenv("PATH", host_tool_path(fixture.home, os.environ.get("PATH", "")))
     store = GuardStore(fixture.guard_home)
     allow_ready_cli(store, fixture.home)
     # Deliberately no prepare_workspace_policy/register_workspace: first contact.
@@ -423,6 +417,16 @@ def test_one_connector_groups_its_setup_reviews_by_action(gate_environment: tupl
     assert len(groups) == 1, f"one connector must queue under one identity, got {len(groups)}"
     assert len(next(iter(groups.values()))) == len(commands), "distinct actions must keep distinct action digests"
     assert len(rows) == len(commands) * 2, "every harness call keeps its own evidence row"
+
+
+@pytest.mark.parametrize("case", mcp_cases(_DOCUMENT), ids=lambda case: case.case_id)
+def test_mcp_connectors_are_set_up_before_they_are_reviewed(
+    case: McpCase, gate_environment: tuple[BenignFixture, HookWorker]
+) -> None:
+    """A stdio MCP server the admin never decided on is held as setup; one they decided on is not."""
+    fixture, worker = gate_environment
+    failure = mcp_failure(case, *replay(case, fixture, worker.store))
+    assert failure is None, f"{failure}: {case.case_id}"
 
 
 def test_pending_fix_entries_name_real_benign_cases() -> None:

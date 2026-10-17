@@ -1,7 +1,46 @@
 use super::*;
+#[cfg(unix)]
 use std::process::Command;
 
 struct Sources(BTreeMap<String, String>);
+
+#[test]
+fn repeated_sources_share_one_captured_byte_allocation() {
+    struct Shared(std::sync::Arc<str>);
+    impl Resolver for Shared {
+        fn resolve(&self, _: &[String]) -> std::result::Result<Executable, &'static str> {
+            Err("unresolved")
+        }
+        fn resolve_source(&self, path: &str) -> std::result::Result<Code, &'static str> {
+            Ok(Code {
+                original_path: path.into(),
+                resolved_path: "/config".into(),
+                source: self.0.clone(),
+            })
+        }
+    }
+    let bytes: std::sync::Arc<str> = format!("#{}\nsetting=ready\n", "x".repeat(128 * 1024)).into();
+    let resolver = Shared(bytes.clone());
+    let entry = Code {
+        original_path: "/entry".into(),
+        resolved_path: "/entry".into(),
+        source: format!("for item in {}; do . /config; done", "value ".repeat(64)).into(),
+    };
+    // This checks allocation sharing, not the separate installed-latency target.
+    let analysis = crate::bash_approval::source::analyze(
+        &entry,
+        &["/entry".into()],
+        &BTreeMap::new(),
+        &resolver,
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap();
+    assert_eq!(analysis.sources.len(), 64);
+    assert!(analysis
+        .sources
+        .iter()
+        .all(|source| std::sync::Arc::ptr_eq(&bytes, &source.code.source)));
+}
 
 impl Resolver for Sources {
     fn resolve(&self, argv: &[String]) -> std::result::Result<Executable, &'static str> {
@@ -11,7 +50,12 @@ impl Resolver for Sources {
         Ok(Code {
             original_path: path.into(),
             resolved_path: format!("/fixtures/{}", path.trim_start_matches("./")),
-            source: self.0.get(path).ok_or("bash_source_unresolved")?.clone(),
+            source: self
+                .0
+                .get(path)
+                .ok_or("bash_source_unresolved")?
+                .clone()
+                .into(),
         })
     }
 }
@@ -30,6 +74,7 @@ fn captured(script: &str, sources: &Sources) -> Result<Graph> {
     )
 }
 
+#[cfg(unix)]
 fn compare(script: &str, sources: Sources) -> Graph {
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join("original-script.sh"), script).unwrap();
@@ -81,6 +126,7 @@ fn compare(script: &str, sources: Sources) -> Graph {
 }
 
 #[test]
+#[cfg(unix)]
 fn literal_sources_share_variables_argv_and_cwd_without_reopening_files() {
     let graph = compare(
         "value=before; source ./config; printf '%s\\n' \"$value\"",
@@ -101,6 +147,7 @@ fn literal_sources_share_variables_argv_and_cwd_without_reopening_files() {
 }
 
 #[test]
+#[cfg(unix)]
 fn nested_sources_keep_pipeline_scope_and_empty_source_status() {
     let graph = compare(
         "value=outer; . ./first | head -n 2; printf '%s' \"$value\"",

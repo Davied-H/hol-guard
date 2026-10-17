@@ -21,13 +21,19 @@
 //! Remote decisions need no more evidence than the daemon ships: the lookup
 //! never serves a cloud-sync or team-policy row and verifies no remote row's
 //! integrity, so the integrity key and state go only with a local decision.
-//! Any other shape defers, so the daemon takes the request: custom grant
-//! rows, portable decisions bound anywhere but the workspace's own identity,
+//! A custom extension rule (`native_local_cli_grant_response`) answers before
+//! the saved decision, as it does in the daemon: its block wins outright, and
+//! its allow lifts only a review the saved decision left standing and the
+//! daemon may override.
+//!
+//! Any other shape defers, so the daemon takes the request:
+//! portable decisions bound anywhere but the workspace's own identity,
 //! a portable identity the resident does not resolve exactly, a policy
 //! bundle with a policy-bundle row to match, an integrity state other than
 //! the published protected one, a missing or unreadable decision, and every
 //! step the daemon could answer differently.
 
+use super::local_cli::block::ReviewVerdict;
 use super::{reviewed_edge, HookDirectDefer, PRE_TOOL_USE};
 use crate::local_store_read::{
     open_read_only, schema_version, table_exists, STORE_FILE_NAME, SUPPORTED_SCHEMA_VERSION,
@@ -116,6 +122,7 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
     }
     let token = crate::native_exact_action_op::exact_action_token(&exact);
 
+    let custom;
     let store_path = Path::new(context.guard_home).join(STORE_FILE_NAME);
     {
         let connection = open_read_only(&store_path)
@@ -137,16 +144,17 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
             return Err(HookDirectDefer::SavedDecision);
         }
         // A custom grant answers before any saved decision or approval, but
-        // the daemon reads one only for a command that launches a local CLI.
-        if store.grants()?
-            && super::local_cli::launches_local_cli(
-                context.payload,
-                context.workspace,
-                context.home_dir,
-            )
-            .unwrap_or(true)
-        {
-            return Err(HookDirectDefer::LocalCliRules);
+        // the daemon reads one only while the store holds a grant row.
+        custom = store
+            .grants()?
+            .then(|| custom_grant(context, &result))
+            .flatten();
+        if let Some(ReviewVerdict::Blocked(name)) = &custom {
+            // A custom block wins over any saved decision or approval.
+            parsed["harness_response"] =
+                super::local_cli::block::block_response(context.harness, &result, name, false)
+                    .ok_or(HookDirectDefer::SavedDecision)?;
+            return Ok(parsed);
         }
         match &token {
             Ok(token) if store.decided(Some(token))? => {
@@ -163,6 +171,17 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
             Err(_) => {}
         }
     }
+    // The custom allow lifts only a review the saved decision left standing
+    // and the daemon may override, so it never weakens a block or a floor.
+    if custom == Some(ReviewVerdict::Allowed) && overridable(&result) {
+        let mut allowed = result.clone();
+        for key in ["decision", "minimum_action", "policy_action"] {
+            allowed.insert(key.to_owned(), json!("allow"));
+        }
+        parsed["harness_response"] =
+            render(context.harness, &allowed, "accepted").ok_or(HookDirectDefer::SavedDecision)?;
+        return Ok(parsed);
+    }
     parsed["harness_response"] =
         match consume::answer(context, &result, &exact, receipt, &artifact_id)? {
             Some(response) => response,
@@ -172,6 +191,28 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
             None => review_queue::answer(context, &result, receipt, &exact, &token)?,
         };
     Ok(parsed)
+}
+
+/// `native_local_cli_grant_response` for this review: the custom rule the
+/// daemon reads before any saved decision, or `None` when none applies. The
+/// daemon reads it only for a review it holds at a review action.
+fn custom_grant(context: &Context<'_>, result: &Object) -> Option<ReviewVerdict> {
+    if !result
+        .get("policy_action")
+        .and_then(Value::as_str)
+        .is_some_and(|action| REVIEW_ACTIONS.contains(&action))
+    {
+        return None;
+    }
+    super::local_cli::review_grant(&super::local_cli::RuleCheck {
+        payload: Some(context.payload),
+        harness: context.harness,
+        workspace: context.workspace,
+        home_dir: context.home_dir,
+        guard_home: context.guard_home,
+        // The daemon pauses no review in Watch, so this lane never records.
+        recording_only: false,
+    })
 }
 
 /// `native_saved_decision_response` for a token with an exact decision: the
@@ -231,6 +272,8 @@ fn saved_response(
         local_once_integrity_key_id: Some(key.key_id.clone()),
         policy_bundle_decision_identities: None,
         probe_groups: None,
+        portable_workspace: None,
+        evidence_binding: None,
     };
     let lookup = |workspace: &str| {
         let request = PolicyDecisionLookupRequestV1 {
@@ -477,4 +520,4 @@ mod review_queue;
 
 #[cfg(test)]
 #[path = "hook_direct_saved_decision_tests.rs"]
-mod tests;
+pub(crate) mod tests;

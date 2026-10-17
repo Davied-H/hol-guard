@@ -35,7 +35,6 @@ from .hook_native_review_approval import (
 )
 from .hook_native_review_fence import native_review_fence
 from .hook_policy_fence_window import POLICY_SOURCE_FENCE_ERRORS, PolicySourceFenceBusyError
-from .hook_policy_repair import apply_command_policy_repair
 from .hook_worker_native_review import (
     CONTROL_BINDING_REFRESH_ERRORS,
     SNAPSHOT_NOT_CURRENT_ERROR,
@@ -645,17 +644,11 @@ class HookWorkerNativeMixin:
                     _record_native_pre_activity(self, native_harness, payload, custom_block, accepted_receipt),
                     True,
                 )
-            repaired_result = apply_command_policy_repair(
-                self.store,
-                native_result,
-                guard_home=guard_home,
-            )
             from ..adapters.zcode_contained_tests import route_zcode_containment
 
             rendered = route_zcode_containment(
-                render_pre_tool(native_harness, repaired_result, guard_home=guard_home, deadline=deadline)
-                if repaired_result
-                and (repaired_result != dict(native_result) or not isinstance(edge.get("harness_response"), dict))
+                render_pre_tool(native_harness, native_result, guard_home=guard_home, deadline=deadline)
+                if native_result and not isinstance(edge.get("harness_response"), dict)
                 else _edge_harness_response(edge),
                 harness=native_harness,
                 payload=payload,

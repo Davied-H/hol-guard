@@ -29,7 +29,9 @@ _LOGGER = logging.getLogger(__name__)
 CONNECTOR_SETUP_REQUIRED = "connector_setup_required"
 # Mirrors `connector_setup::NON_RECOGNITION_REASON_CODES`: any other review
 # code carries a risk signal and keeps its per-action review.
-NON_RECOGNITION_REASON_CODES = frozenset({"native_command_review_required"})
+NON_RECOGNITION_REASON_CODES = frozenset(
+    {"native_command_review_required", "native_workspace_containment_executable_outside_roots"}
+)
 _SAFE_NAME = re.compile(r"[A-Za-z0-9@][A-Za-z0-9._@+/-]{0,63}")
 
 

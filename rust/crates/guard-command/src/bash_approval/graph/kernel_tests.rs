@@ -73,7 +73,7 @@ fn capture(path: &Path) -> Code {
     Code {
         original_path: path.to_str().unwrap().into(),
         resolved_path: path.to_str().unwrap().into(),
-        source: String::from_utf8(read.bytes).unwrap(),
+        source: String::from_utf8(read.bytes).unwrap().into(),
     }
 }
 

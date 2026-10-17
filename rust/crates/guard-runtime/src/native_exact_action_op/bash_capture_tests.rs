@@ -47,7 +47,7 @@ fn bash_resident_inspection_preserves_helper_execution_spelling() {
     let cwd = Path::new(&request.cwd);
     let home = Path::new(&request.home_dir);
     let mut environment = environment(&request).unwrap();
-    environment.insert("PATH".into(), ".:/usr/bin:/bin".into());
+    environment.insert("PATH".into(), ":/usr/bin:/bin".into());
     let resolver = Resolver {
         cwd,
         home,
@@ -56,6 +56,7 @@ fn bash_resident_inspection_preserves_helper_execution_spelling() {
         deadline: Instant::now() + Duration::from_secs(1),
         captured: RefCell::new(BTreeMap::new()),
         source_snapshots: RefCell::new(BTreeMap::new()),
+        source_contents: RefCell::new(BTreeMap::new()),
     };
     let graph::Executable::Bash(helper) = graph::Resolver::resolve(
         &resolver,
@@ -219,6 +220,130 @@ fn bash_resident_inspection_refuses_host_process_descriptor_sources() {
     std::fs::write(&path, format!("source /dev/fd/{}", source.as_raw_fd())).unwrap();
     request.command = format!("/bin/bash '{}' dry", path.display());
     assert_eq!(inspect(&request), Err("bash_process_descriptor_unproven"));
+}
+
+#[test]
+fn bash_resident_inspection_rejects_unbindable_report_targets_without_mutation() {
+    let (_root, request) = fixture();
+    let report = Path::new(&request.home_dir).join("maintenance-report.tsv");
+    let protected = Path::new(&request.home_dir).join("protected-output");
+    std::fs::write(&protected, "protected sentinel").unwrap();
+    std::os::unix::fs::symlink(&protected, &report).unwrap();
+    assert_eq!(inspect(&request), Err("bash_output_target_unavailable"));
+    assert_eq!(
+        std::fs::read_to_string(&protected).unwrap(),
+        "protected sentinel"
+    );
+    std::fs::remove_file(&report).unwrap();
+    std::fs::hard_link(&protected, &report).unwrap();
+    assert_eq!(inspect(&request), Err("bash_output_target_unavailable"));
+    assert_eq!(
+        std::fs::read_to_string(&protected).unwrap(),
+        "protected sentinel"
+    );
+    std::fs::remove_file(&report).unwrap();
+    std::fs::create_dir(&report).unwrap();
+    assert_eq!(inspect(&request), Err("bash_output_target_unavailable"));
+    std::fs::remove_dir(&report).unwrap();
+    let entry = Path::new(&request.cwd).join("maintenance.sh");
+    for target in ["/dev/stdout", "/dev/stderr", "/dev/fd/6", "/proc/self/fd/6"] {
+        std::fs::write(&entry, format!(": > '{target}'")).unwrap();
+        assert_eq!(inspect(&request), Err("bash_process_descriptor_unproven"));
+    }
+    std::fs::write(&entry, ": > \"$HOME/report/\"").unwrap();
+    assert_eq!(inspect(&request), Err("bash_output_path_invalid"));
+    assert!(!Path::new(&request.home_dir).join("report").exists());
+}
+
+#[test]
+fn bash_resident_inspection_refuses_all_exported_function_encodings() {
+    let (_root, mut request) = fixture();
+    for name in ["BASH_FUNC_printf%%", "__BASH_FUNC<printf>()"] {
+        request
+            .execution_environment
+            .environment_names
+            .push(name.into());
+        assert_eq!(inspect(&request), Err("bash_startup_environment_unproven"));
+        request.execution_environment.environment_names.pop();
+    }
+    request
+        .execution_environment
+        .environment_names
+        .push("LANG".into());
+    request
+        .environment
+        .insert("LANG".into(), "() { printf hidden; }".into());
+    assert_eq!(inspect(&request), Err("bash_startup_environment_unproven"));
+}
+
+#[test]
+fn bash_resident_inspection_preserves_interpreter_mode_and_script_option_boundary() {
+    let (_root, mut request) = fixture();
+    let project = Path::new(&request.cwd);
+    let alias = project.join("sh");
+    std::os::unix::fs::symlink("/bin/bash", &alias).unwrap();
+    request.command = format!(
+        "'{}' '{}' dry",
+        alias.display(),
+        project.join("maintenance.sh").display()
+    );
+    assert_eq!(inspect(&request), Err("bash_interpreter_spelling_unproven"));
+    std::fs::write(project.join("+e"), "printf unintended").unwrap();
+    request.command = "/bin/bash +e dry".into();
+    assert_eq!(inspect(&request), Err("bash_invocation_options_unproven"));
+}
+
+#[test]
+fn bash_resident_inspection_shares_alias_bytes_and_obeys_effective_execute_access() {
+    let (_root, request) = fixture();
+    let cwd = Path::new(&request.cwd);
+    let home = Path::new(&request.home_dir);
+    let settings = cwd.join("settings.sh");
+    std::fs::write(&settings, "setting=ready").unwrap();
+    std::os::unix::fs::symlink(&settings, cwd.join("settings-alias.sh")).unwrap();
+    let first = cwd.join("first");
+    let second = cwd.join("second");
+    std::fs::create_dir(&first).unwrap();
+    std::fs::create_dir(&second).unwrap();
+    for (directory, mode, marker) in [(&first, 0o655, "first"), (&second, 0o755, "second")] {
+        let path = directory.join("helper");
+        std::fs::write(&path, format!("#!/bin/bash\nprintf {marker}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+    let mut environment = environment(&request).unwrap();
+    environment.insert(
+        "PATH".into(),
+        format!("{}:{}", first.display(), second.display()),
+    );
+    let resolver = Resolver {
+        cwd,
+        home,
+        environment: &environment,
+        names: &[],
+        deadline: Instant::now() + Duration::from_secs(1),
+        captured: RefCell::new(BTreeMap::new()),
+        source_snapshots: RefCell::new(BTreeMap::new()),
+        source_contents: RefCell::new(BTreeMap::new()),
+    };
+    let original = graph::Resolver::resolve_source(&resolver, "./settings.sh").unwrap();
+    let alias = graph::Resolver::resolve_source(&resolver, "./settings-alias.sh").unwrap();
+    assert!(Arc::ptr_eq(&original.source, &alias.source));
+    let observed = std::process::Command::new("/bin/bash")
+        .args(["--noprofile", "--norc", "-c", "helper"])
+        .env_clear()
+        .env("PATH", &environment["PATH"])
+        .current_dir(cwd)
+        .output()
+        .unwrap();
+    assert!(observed.status.success());
+    let graph::Executable::Bash(helper) =
+        graph::Resolver::resolve(&resolver, &["helper".into()]).unwrap()
+    else {
+        panic!("expected captured helper")
+    };
+    assert!(helper
+        .source
+        .contains(std::str::from_utf8(&observed.stdout).unwrap()));
 }
 
 #[test]

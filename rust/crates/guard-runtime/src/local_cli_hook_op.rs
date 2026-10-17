@@ -316,9 +316,8 @@ fn grant(
     let Some(launch) = launch(request, package.as_ref())? else {
         return Ok((None, None));
     };
-    let (catalog, _) =
-        crate::local_cli_grant_op::command_catalog(&request.guard_home, &launch.cli_id)
-            .map_err(|_| ())?;
+    let catalog = crate::local_cli_grant_op::command_catalog(&request.guard_home, &launch.cli_id)
+        .map_err(|_| ())?;
     let command_id = if catalog.is_empty() {
         None
     } else {
@@ -400,18 +399,64 @@ fn invocation_tokens(request: &LocalCliHookRequestV1, launch: &Launch) -> Result
         .unwrap_or_default())
 }
 
+/// `command_tokens_for_invocation` past the package script branch, for a
+/// caller that derived the launch identity itself.
+pub(crate) fn invocation_command_tokens(
+    command: &str,
+    cwd: &str,
+    home_dir: Option<&str>,
+    name: &str,
+    kind: &str,
+    runner: Option<&str>,
+) -> Vec<String> {
+    // The daemon reads an invocation only for a command its own rule found,
+    // which is never blank; the model refuses blank text outright.
+    if command.trim().is_empty() {
+        return Vec::new();
+    }
+    let model = parse_shell_command(
+        command,
+        Some(std::path::Path::new(cwd)),
+        home_dir.map(std::path::Path::new),
+        "posix",
+        "shell_string",
+        "guard-shell",
+        true,
+    );
+    model
+        .segments
+        .first()
+        .map(|segment| tokens_for_identity(&segment.arguments, name, kind, runner))
+        .unwrap_or_default()
+}
+
 /// Leading command-name tokens, after a runner's own arguments or a script's
 /// own path, up to `MAX_DEPTH`.
 pub(crate) fn command_tokens(arguments: &[String], launch: &Launch) -> Vec<String> {
-    let arguments = match &launch.runner {
+    tokens_for_identity(
+        arguments,
+        &launch.name,
+        &launch.kind,
+        launch.runner.as_deref(),
+    )
+}
+
+/// `command_tokens` for an identity the caller holds as plain fields.
+fn tokens_for_identity(
+    arguments: &[String],
+    name: &str,
+    kind: &str,
+    runner: Option<&str>,
+) -> Vec<String> {
+    let arguments = match runner {
         Some(runner) => match runner_split(runner, arguments) {
             Some((_, rest)) => rest,
             None => return Vec::new(),
         },
-        None if launch.kind == "script"
+        None if kind == "script"
             && arguments
                 .first()
-                .is_some_and(|first| python_path_name(first) == launch.name) =>
+                .is_some_and(|first| python_path_name(first) == name) =>
         {
             &arguments[1..]
         }

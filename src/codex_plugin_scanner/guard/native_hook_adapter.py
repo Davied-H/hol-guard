@@ -105,6 +105,16 @@ class ClinePayloadError(ValueError):
     """The Cline hook payload is not a supported hook event."""
 
 
+class UnsupportedHarnessError(ValueError):
+    """The resident has no action adapter for this harness.
+
+    Which harnesses can be normalized is the adapter's own registry, so a
+    caller that wants to skip the envelope asks by catching this rather than
+    keeping a second list beside it. It stays a ``ValueError`` because it is
+    still a bad argument to anyone who was not asking the question.
+    """
+
+
 _Built = tuple[dict[str, object], _Tagger]
 _Builder = Callable[[bool], _Built | None]
 _MEMO: ContextVar[dict[str, object] | None] = ContextVar("native_hook_adapter_memo", default=None)
@@ -266,7 +276,7 @@ def _raise_rejection(code: object, payload: object, query: object) -> None:
     if code == "native_hook_adapter_unsupported_harness" and isinstance(payload, dict) and set(payload) == {"harness"}:
         harness = payload["harness"]
         if isinstance(harness, str) and isinstance(query, Mapping) and harness == query.get("harness"):
-            raise ValueError(f"Unsupported Guard harness for action normalization: {harness}")
+            raise UnsupportedHarnessError(f"Unsupported Guard harness for action normalization: {harness}")
     reason = code if isinstance(code, str) and _RESIDENT_CODE.fullmatch(code) else _UNAVAILABLE
     raise NativeHookAdapterError(reason)
 
@@ -458,6 +468,7 @@ __all__ = [
     "HOOK_ADAPTER_FEATURE",
     "ClinePayloadError",
     "NativeHookAdapterError",
+    "UnsupportedHarnessError",
     "hook_adapter_memo",
     "native_action_envelope",
     "native_apply_patch_paths",

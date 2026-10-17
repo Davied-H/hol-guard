@@ -257,6 +257,11 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::ComposioRole(request) => {
                 crate::composio_role_op::evaluate_composio_role_request(&request)
             }
+            ResidentOperationV1::SkillWorkflowPreflight(request) => {
+                crate::skill_workflow_preflight_op::evaluate_skill_workflow_preflight_request(
+                    &request,
+                )
+            }
             ResidentOperationV1::GithubCliClassify(request) => {
                 crate::github_cli_classify_op::evaluate_github_cli_classify_request(&request)
             }
@@ -323,6 +328,19 @@ pub(crate) fn evaluate_resident_bytes(
             }
             ResidentOperationV1::PolicyDocumentDecide(request) => {
                 crate::policy_document_decide_op::evaluate_policy_document_decision_request(
+                    &request,
+                )
+            }
+            ResidentOperationV1::CommandPolicyDecide(request) => {
+                crate::command_policy_decide_op::evaluate_command_policy_decision_request(&request)
+            }
+            ResidentOperationV1::CommandExpressionValidate(request) => {
+                crate::command_expression_validate_op::evaluate_command_expression_validation_request(
+                    &request,
+                )
+            }
+            ResidentOperationV1::ReviewedInvocationBindingsValidate(request) => {
+                crate::reviewed_invocation_bindings_op::evaluate_reviewed_invocation_bindings_request(
                     &request,
                 )
             }

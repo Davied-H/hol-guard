@@ -22,10 +22,24 @@ pub struct Output {
     file: File,
 }
 
+/// Inspect a target without opening, creating, truncating or following it.
+pub fn validate_target(directory: &Directory, leaf: &OsStr) -> io::Result<()> {
+    if relative_components(Path::new(leaf))?.len() != 1 {
+        return Err(changed());
+    }
+    directory.verify()?;
+    let name = CString::new(leaf.as_bytes()).map_err(|_| changed())?;
+    if lookup(directory, &name)?.is_some_and(|stat| !regular_single_link(&stat)) {
+        return Err(unsafe_output());
+    }
+    directory.verify()
+}
+
 impl Output {
     /// Opening may create/truncate the reviewed output. Call only within the
     /// authenticated launch reservation, after current policy permits effects.
     pub fn open(directory: Arc<Directory>, leaf: &OsStr, truncate: bool) -> io::Result<Self> {
+        validate_target(&directory, leaf)?;
         if relative_components(Path::new(leaf))?.len() != 1 {
             return Err(changed());
         }

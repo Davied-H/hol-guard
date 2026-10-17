@@ -91,13 +91,21 @@ impl State<'_, '_> {
             }
             "string" => {
                 let mut result = String::new();
+                let mut expected = node.start_byte() + 1;
                 let mut cursor = node.walk();
                 for child in node.named_children(&mut cursor) {
+                    if child.start_byte() != expected {
+                        return Err(self.error(node, "bash_dynamic_word"));
+                    }
+                    expected = child.end_byte();
                     let value = self.word(child, true)?;
                     if result.len() + value.len() > MAX_WORD_BYTES {
                         return Err(self.error(node, "bash_word_bounds"));
                     }
                     result.push_str(&value);
+                }
+                if expected + 1 != node.end_byte() {
+                    return Err(self.error(node, "bash_dynamic_word"));
                 }
                 Ok(result)
             }
@@ -121,13 +129,21 @@ impl State<'_, '_> {
             }
             "concatenation" => {
                 let mut result = String::new();
+                let mut expected = node.start_byte();
                 let mut cursor = node.walk();
                 for child in node.named_children(&mut cursor) {
+                    if child.start_byte() != expected {
+                        return Err(self.error(node, "bash_dynamic_word"));
+                    }
+                    expected = child.end_byte();
                     let value = self.word(child, quoted)?;
                     if result.len() + value.len() > MAX_WORD_BYTES {
                         return Err(self.error(node, "bash_word_bounds"));
                     }
                     result.push_str(&value);
+                }
+                if expected != node.end_byte() {
+                    return Err(self.error(node, "bash_dynamic_word"));
                 }
                 Ok(result)
             }

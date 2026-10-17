@@ -235,6 +235,7 @@ fn startup_and_builtin_state_cannot_hide_reachable_operations() {
         "BASH_ENV",
         "ENV",
         "BASH_FUNC_tool%%",
+        "__BASH_FUNC<tool>()",
         "SHELLOPTS",
         "BASHOPTS",
         "POSIXLY_CORRECT",
@@ -261,6 +262,69 @@ fn startup_and_builtin_state_cannot_hide_reachable_operations() {
             "accepted {code}"
         );
     }
+}
+
+#[test]
+fn case_background_jobs_never_hide_later_operations() {
+    for source in [
+        "case x in x) exit & printf hidden ;; esac",
+        "case x in x) printf first & printf hidden ;; esac",
+        "case x in y) exit & printf hidden ;; x) printf selected ;; esac",
+    ] {
+        assert_eq!(
+            analyze(source, &["script.sh".into()], &environment())
+                .unwrap_err()
+                .reason,
+            "bash_control_operator"
+        );
+    }
+    #[cfg(unix)]
+    {
+        let result = std::process::Command::new("/bin/bash")
+            .args([
+                "--noprofile",
+                "--norc",
+                "-c",
+                "case x in x) exit & printf hidden ;; esac",
+            ])
+            .env_clear()
+            .output()
+            .unwrap();
+        assert!(result.status.success());
+        assert_eq!(result.stdout, b"hidden");
+    }
+}
+
+#[test]
+fn anonymous_word_tokens_cannot_disappear_from_the_analysis() {
+    for source in [
+        "printf '%s' \"mode$\"",
+        "printf '%s' \"$\"",
+        "printf '%s' \"safe\"$",
+    ] {
+        assert!(
+            analyze(source, &["script.sh".into()], &environment()).is_err(),
+            "accepted {source}"
+        );
+    }
+    let result = analyze(
+        "printf '%s' \"dollar\\$\" \"\" \"a\"\"b\"",
+        &["script.sh".into()],
+        &environment(),
+    )
+    .unwrap();
+    assert_eq!(
+        result.operations[0].argv,
+        ["printf", "%s", "dollar$", "", "ab"]
+    );
+    let mut context = environment();
+    context.insert("LANG".into(), "() { printf hidden; }".into());
+    assert_eq!(
+        analyze("printf x", &["script.sh".into()], &context)
+            .unwrap_err()
+            .reason,
+        "bash_startup_inputs_unbound"
+    );
 }
 
 #[test]

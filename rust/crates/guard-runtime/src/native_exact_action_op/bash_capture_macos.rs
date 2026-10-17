@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use guard_command::bash_approval::{graph, subject, MAX_SOURCE_BYTES};
@@ -58,6 +59,8 @@ fn environment(request: &NativeBashCaptureV1) -> Result<BTreeMap<String, String>
             "BASH_ENV" | "ENV" | "SHELLOPTS" | "BASHOPTS" | "POSIXLY_CORRECT" | "GLOBIGNORE"
         ) || name.starts_with("LD_")
             || name.starts_with("DYLD_")
+            || name.starts_with("BASH_FUNC_")
+            || name.starts_with("__BASH_FUNC")
         {
             return Err("bash_startup_environment_unproven");
         }
@@ -76,6 +79,12 @@ fn environment(request: &NativeBashCaptureV1) -> Result<BTreeMap<String, String>
     let mut environment = request.environment.clone();
     environment.insert("HOME".into(), request.home_dir.clone());
     environment.insert("PATH".into(), stamp.path.clone());
+    if environment
+        .values()
+        .any(|value| value.trim_start().starts_with("()"))
+    {
+        return Err("bash_startup_environment_unproven");
+    }
     Ok(environment)
 }
 
@@ -87,6 +96,7 @@ struct Resolver<'a> {
     deadline: Instant,
     captured: RefCell<BTreeMap<(String, PathBuf), graph::Executable>>,
     source_snapshots: RefCell<BTreeMap<(String, PathBuf), graph::Code>>,
+    source_contents: RefCell<BTreeMap<PathBuf, Arc<str>>>,
 }
 
 impl Resolver<'_> {
@@ -115,7 +125,15 @@ impl Resolver<'_> {
         } else {
             self.environment["PATH"]
                 .split(':')
-                .map(|directory| Path::new(directory).join(executable))
+                .map(|directory| {
+                    let directory = if directory.is_empty() && !self.environment["PATH"].is_empty()
+                    {
+                        "."
+                    } else {
+                        directory
+                    };
+                    Path::new(directory).join(executable)
+                })
                 .collect()
         };
         for candidate in candidates {
@@ -124,7 +142,11 @@ impl Resolver<'_> {
             let Ok(metadata) = std::fs::metadata(&observed_path) else {
                 continue;
             };
-            if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
+            if metadata.is_file()
+                && metadata.permissions().mode() & 0o111 != 0
+                && guard_contained_process::bound_fs::can_execute(&observed_path)
+                    .map_err(|_| "bash_helper_unresolved")?
+            {
                 let resolved =
                     std::fs::canonicalize(observed_path).map_err(|_| "bash_helper_unresolved")?;
                 return Ok((text(&candidate)?, resolved));
@@ -135,10 +157,11 @@ impl Resolver<'_> {
 
     fn reject_function(&self, command: &str) -> Result<()> {
         let encoded = format!("BASH_FUNC_{command}%%");
+        let apple = format!("__BASH_FUNC<{command}>()");
         if self
             .names
             .iter()
-            .any(|name| name == command || name == &encoded)
+            .any(|name| name == command || name == &encoded || name == &apple)
         {
             return Err("bash_command_environment_value_withheld");
         }
@@ -155,6 +178,16 @@ impl Resolver<'_> {
                 return Err("bash_sensitive_code_path");
             }
         }
+        if let Some(source) = self.source_contents.borrow().get(resolved).cloned() {
+            return Ok(graph::Code {
+                original_path: requested.into(),
+                resolved_path: text(resolved)?,
+                source,
+            });
+        }
+        if self.source_contents.borrow().len() >= 64 {
+            return Err("bash_source_graph_bounds");
+        }
         let directory = Directory::open(resolved.parent().ok_or("bash_code_path_invalid")?)
             .map_err(|_| "bash_code_unreadable")?;
         let read = directory
@@ -164,10 +197,16 @@ impl Resolver<'_> {
             )
             .map_err(|_| "bash_code_unreadable_or_oversized")?;
         self.check()?;
+        let source: Arc<str> = String::from_utf8(read.bytes)
+            .map_err(|_| "bash_code_encoding")?
+            .into();
+        self.source_contents
+            .borrow_mut()
+            .insert(resolved.to_owned(), source.clone());
         Ok(graph::Code {
             original_path: requested.into(),
             resolved_path: text(resolved)?,
-            source: String::from_utf8(read.bytes).map_err(|_| "bash_code_encoding")?,
+            source,
         })
     }
 
@@ -258,6 +297,9 @@ impl graph::Resolver for Resolver<'_> {
                 content_sha256: pinned.executable_digest,
             }
         } else {
+            if spelling.starts_with('-') || spelling.starts_with('+') {
+                return Err("bash_helper_interpreter_unproven");
+            }
             let code = self.code(&spelling, &path)?;
             if code.source.split('\n').next() != Some("#!/bin/bash") {
                 return Err("bash_helper_interpreter_unproven");
@@ -296,6 +338,7 @@ pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubject
         deadline,
         captured: RefCell::new(BTreeMap::new()),
         source_snapshots: RefCell::new(BTreeMap::new()),
+        source_contents: RefCell::new(BTreeMap::new()),
     };
     let model = parse_shell_command(
         &request.command,
@@ -310,6 +353,15 @@ pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubject
         return Err("bash_invocation_unproven");
     }
     let segment = &model.segments[0];
+    if segment
+        .executable
+        .as_deref()
+        .and_then(|value| Path::new(value).file_name())
+        .and_then(|value| value.to_str())
+        != Some("bash")
+    {
+        return Err("bash_interpreter_spelling_unproven");
+    }
     let interpreter = resolver.resolve_path(
         segment
             .executable
@@ -321,7 +373,7 @@ pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubject
     }
     let image = resolver.image(&interpreter)?;
     let argv = &segment.arguments;
-    if argv.is_empty() || argv[0].starts_with('-') {
+    if argv.is_empty() || argv[0].starts_with('-') || argv[0].starts_with('+') {
         return Err("bash_invocation_options_unproven");
     }
     let entry = canonical(&text(&cwd.join(&argv[0]))?)?;
@@ -341,10 +393,32 @@ pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubject
     }
     let mut outputs = BTreeMap::new();
     for effect in &graph.writes {
+        resolver.check()?;
+        if effect.redirect.path.is_empty() || effect.redirect.path.ends_with('/') {
+            return Err("bash_output_path_invalid");
+        }
+        if guard_command::bash_approval::is_descriptor_reference(&effect.redirect.path) {
+            return Err("bash_process_descriptor_unproven");
+        }
+        if outputs.contains_key(&effect.redirect.path) {
+            continue;
+        }
         let path = cwd.join(&effect.redirect.path);
         let parent = std::fs::canonicalize(path.parent().ok_or("bash_output_path_invalid")?)
             .map_err(|_| "bash_output_parent_unavailable")?;
+        if guard_command::bash_approval::is_descriptor_reference(&text(&parent)?) {
+            return Err("bash_process_descriptor_unproven");
+        }
         let resolved = parent.join(path.file_name().ok_or("bash_output_path_invalid")?);
+        if guard_command::bash_approval::is_descriptor_reference(&text(&resolved)?) {
+            return Err("bash_process_descriptor_unproven");
+        }
+        let directory = Directory::open(&parent).map_err(|_| "bash_output_parent_unavailable")?;
+        guard_contained_process::bound_output::validate_target(
+            &directory,
+            resolved.file_name().ok_or("bash_output_path_invalid")?,
+        )
+        .map_err(|_| "bash_output_target_unavailable")?;
         outputs.insert(effect.redirect.path.clone(), text(&resolved)?);
     }
     resolver.check()?;

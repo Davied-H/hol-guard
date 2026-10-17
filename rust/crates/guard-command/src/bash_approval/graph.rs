@@ -5,6 +5,7 @@
 //! policy and verify the platform's interpreter/system-image assurance.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use std::time::Instant;
 
 use super::{Analysis, Operation, Result, Uncertainty, MAX_SOURCE_BYTES};
@@ -25,7 +26,7 @@ const MAX_HELPER_ARGUMENT_BYTES: usize = 64 * 1024;
 pub struct Code {
     pub original_path: String,
     pub resolved_path: String,
-    pub source: String,
+    pub source: Arc<str>,
 }
 
 impl std::fmt::Debug for Code {
@@ -459,7 +460,7 @@ impl Builder<'_> {
                 redirect,
             });
         }
-        let mut source = code.source.clone();
+        let mut source = code.source.to_string();
         for ((start, end), replacement) in replacements.into_iter().rev() {
             source.replace_range(start..end, &replacement);
         }

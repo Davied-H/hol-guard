@@ -17,7 +17,7 @@ use guard_contracts::{
 use serde_json::{json, Value};
 
 const ROOT_COMMAND_ID: &str = "root";
-pub(super) const OTHER_COMMAND_ID: &str = "other";
+const OTHER_COMMAND_ID: &str = "other";
 const MAX_DEPTH: usize = 4;
 const MANAGERS: [&str; 4] = ["npm", "pnpm", "yarn", "bun"];
 const KINDS: [&str; 2] = ["script", "executable"];
@@ -33,29 +33,15 @@ const WATCH_REASON: &str = "Watch recorded this action without stopping it.";
 const RENDER_ESCAPE_FACTOR: usize = 6;
 const RENDER_ENVELOPE_BYTES: usize = 1_024;
 
-/// The command id the daemon sends with the grant read.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum CommandSelector {
-    /// Resolved as the daemon resolves it; `None` when the CLI has no catalog.
-    Known(Option<String>),
-    /// The daemon resolves it from its own shell model, which is not ported.
-    Unresolved,
-}
-
 /// `_resolved_command_id`: no catalog sends no id; otherwise the invocation's
-/// tokens select a catalog command. `tokens` are the package script tokens,
-/// and `None` when the command runs no package script.
-pub(super) fn command_selector(
-    catalog: &BTreeSet<String>,
-    tokens: Option<&[String]>,
-) -> CommandSelector {
+/// tokens select a catalog command. `tokens` are the package script tokens
+/// when the command runs a package script, else the ones the invocation's
+/// shell model yields.
+pub(super) fn command_selector(catalog: &BTreeSet<String>, tokens: &[String]) -> Option<String> {
     if catalog.is_empty() {
-        return CommandSelector::Known(None);
+        return None;
     }
-    match tokens {
-        Some(tokens) => CommandSelector::Known(Some(match_command_id(tokens, catalog))),
-        None => CommandSelector::Unresolved,
-    }
+    Some(match_command_id(tokens, catalog))
 }
 
 /// `match_command_id`: the longest token prefix that names a catalog command.
@@ -86,21 +72,48 @@ pub(super) enum Verdict {
 /// `decide_local_cli_grant` after the resident's grant answer: an answer for
 /// another identity, or none at all, is unverified.
 pub(super) fn grant_verdict(launch: &Launch, answer: Option<&Value>) -> Verdict {
-    let Some(answer) = answer.and_then(Value::as_object) else {
-        return Verdict::Unverified;
-    };
+    match grant_state(launch, answer) {
+        Some("blocked") => Verdict::Blocked(launch.name.clone()),
+        Some("allowed" | "none") => Verdict::Unchanged,
+        _ => Verdict::Unverified,
+    }
+}
+
+/// What the daemon does with a reviewed `PreToolUse` once it read the grant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ReviewVerdict {
+    /// No grant, or no answer the daemon trusts: the review stands, as
+    /// `native_local_cli_grant_response` returns `None` for both.
+    Unchanged,
+    /// A block naming the CLI, which applies to any review.
+    Blocked(String),
+    /// An allow, which lifts only a review the daemon may override.
+    Allowed,
+}
+
+/// `native_local_cli_grant_response`'s reading of the same grant answer: a
+/// review never blocks what it could not check, so every answer the allowed
+/// lane calls unverified leaves the review standing here.
+pub(super) fn review_verdict(launch: &Launch, answer: Option<&Value>) -> ReviewVerdict {
+    match grant_state(launch, answer) {
+        Some("blocked") => ReviewVerdict::Blocked(launch.name.clone()),
+        Some("allowed") => ReviewVerdict::Allowed,
+        _ => ReviewVerdict::Unchanged,
+    }
+}
+
+/// The grant state of an answer the daemon trusts for this launch: the keys
+/// `_decode_payload` requires, for the identity the daemon derived.
+fn grant_state<'a>(launch: &Launch, answer: Option<&'a Value>) -> Option<&'a str> {
+    let answer = answer.and_then(Value::as_object)?;
     if answer.len() != ANSWER_KEYS.len()
         || !ANSWER_KEYS.iter().all(|key| answer.contains_key(*key))
         || answer["cli_id"].as_str() != Some(launch.cli_id.as_str())
         || answer["identity_hash"].as_str() != Some(launch.identity_hash.as_str())
     {
-        return Verdict::Unverified;
+        return None;
     }
-    match answer["state"].as_str() {
-        Some("blocked") => Verdict::Blocked(launch.name.clone()),
-        Some("allowed" | "none") => Verdict::Unchanged,
-        _ => Verdict::Unverified,
-    }
+    answer["state"].as_str()
 }
 
 /// The launch identity the daemon reads a grant for.
@@ -109,8 +122,14 @@ pub(super) struct Launch {
     pub(super) cli_id: String,
     pub(super) name: String,
     pub(super) identity_hash: String,
+    /// The identity kind, which decides whether the invocation's first
+    /// argument is the script's own path.
+    pub(super) kind: String,
+    /// The runner whose own arguments precede the CLI's, when one runs it.
+    pub(super) runner: Option<String>,
     pub(super) source: LocalCliIdentitySourceV1,
-    /// The package script tokens, when the command runs a package script.
+    /// The package script tokens, when the command runs a package script;
+    /// `None` until the caller derives them from the invocation.
     pub(super) tokens: Option<Vec<String>>,
 }
 
@@ -131,6 +150,8 @@ pub(super) fn launch(
                 cli_id: identity.cli_id,
                 name: identity.name,
                 identity_hash: identity.identity_hash,
+                kind: "script".to_owned(),
+                runner: None,
                 source: found.source,
                 tokens,
             }));
@@ -144,6 +165,8 @@ pub(super) fn launch(
         cli_id: record.cli_id,
         name: record.name,
         identity_hash: record.identity_hash,
+        kind: record.kind,
+        runner: record.runner,
         source: record.identity_source,
         tokens,
     }))
@@ -222,7 +245,7 @@ pub(super) fn blocked_reason(name: &str) -> String {
 /// block marked as a blocked reuse, or in Watch the recording-only continue.
 /// `None` when the daemon's render request could exceed its size limit, so
 /// its fixed fallback would answer instead.
-pub(super) fn block_response(
+pub(crate) fn block_response(
     harness: &str,
     result: &Object,
     name: &str,

@@ -64,8 +64,59 @@ pub fn evaluate_with_shell_home(
     cwd: Option<&str>,
     shell_home_matches: bool,
 ) -> guard_contracts::PreToolResultV1 {
-    use sha2::{Digest, Sha256};
     let path = std::env::var("PATH").unwrap();
+    evaluate_on_path(
+        (harness, event),
+        payload,
+        (controls, deadline),
+        (home, cwd, shell_home_matches),
+        path,
+    )
+}
+
+/// As [`evaluate_pre_tool_envelope_with_context`], for a shell whose `PATH`
+/// finds a Node the workspace sandbox may run, wherever the host keeps its own.
+/// Hosted CI runners keep Node in a world-writable directory the sandbox
+/// refuses to execute from, so a command that runs it would otherwise stay at
+/// review for the host instead of running contained.
+#[cfg(unix)]
+pub fn evaluate_with_node(
+    harness: &str,
+    event: &str,
+    payload: &serde_json::Value,
+    controls: Option<&guard_command::native_command_controls::CompiledNativeCommandControls>,
+    home: &std::path::Path,
+    cwd: Option<&str>,
+) -> guard_contracts::PreToolResultV1 {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = home.join(".nvm/versions/node/v25.2.1/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    for name in ["node", "npm", "npx"] {
+        let tool = bin.join(name);
+        std::fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    evaluate_on_path(
+        (harness, event),
+        payload,
+        (controls, None),
+        (home.to_str(), cwd, true),
+        path,
+    )
+}
+
+fn evaluate_on_path(
+    (harness, event): (&str, &str),
+    payload: &serde_json::Value,
+    (controls, deadline): (
+        Option<&guard_command::native_command_controls::CompiledNativeCommandControls>,
+        Option<std::time::Instant>,
+    ),
+    (home, cwd, shell_home_matches): (Option<&str>, Option<&str>, bool),
+    path: String,
+) -> guard_contracts::PreToolResultV1 {
+    use sha2::{Digest, Sha256};
     let mut environment = std::collections::BTreeMap::from([
         ("PATH", path.clone()),
         ("GIT_CONFIG_NOSYSTEM", "1".to_owned()),

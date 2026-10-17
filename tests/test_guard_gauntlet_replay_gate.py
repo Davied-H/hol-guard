@@ -27,6 +27,7 @@ from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_e
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_connectors import allow_ready_cli
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
+from tests.benign_fp_gate_projects import host_tool_path
 from tests.gauntlet_replay import (
     ENVIRONMENTS,
     GATE_DOCUMENT,
@@ -87,16 +88,9 @@ def replay_environment(
     patch.setenv("HOL_GUARD_NATIVE_BINARY", binary)
     for key, value in environment_overlay(request.param, fixture.home).items():
         patch.setenv(key, value)
-    # The `bun -e` proof resolves `bun` from PATH outside the workspace. Hosted runners ship no
-    # Bun, so put a stand-in where Bun's installer does; a real Bun earlier on PATH still wins.
-    bun = fixture.home / ".bun" / "bin" / "bun"
-    bun.parent.mkdir(parents=True, exist_ok=True)
-    bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    bun.chmod(0o755)
-    # The synthetic connector CLIs install into ~/.local/bin, which a real login shell has on PATH.
-    # It goes first so the fixture CLI, not a host program, is the one the grant was recorded for.
-    local_bin = fixture.home / ".local" / "bin"
-    patch.setenv("PATH", os.pathsep.join([str(local_bin), os.environ.get("PATH", ""), str(bun.parent)]))
+    # Match the Gauntlet replay environment in both replay gates: the host tools a hosted runner
+    # cannot offer, such as Bun for the native `bun -e` proof and a Node the sandbox may run.
+    patch.setenv("PATH", host_tool_path(fixture.home, os.environ.get("PATH", "")))
     store = GuardStore(fixture.guard_home)
     allow_ready_cli(store, fixture.home)
     worker = HookWorker(store=store, workspace=fixture.worktree)

@@ -13442,6 +13442,44 @@
       "expect": "allow"
     }
   ],
+  "mcp_cases": [
+    {
+      "id": "echo-mcp-lookup",
+      "server": "echo-mcp",
+      "tool": "lookup",
+      "arguments": {
+        "query": "status"
+      },
+      "expect": "setup"
+    },
+    {
+      "id": "echo-mcp-summarize",
+      "server": "echo-mcp",
+      "tool": "summarize",
+      "arguments": {
+        "query": "status"
+      },
+      "expect": "setup"
+    },
+    {
+      "id": "echo-ready-lookup",
+      "server": "echo-ready",
+      "tool": "lookup",
+      "arguments": {
+        "query": "status"
+      },
+      "expect": "allow"
+    },
+    {
+      "id": "echo-ready-summarize",
+      "server": "echo-ready",
+      "tool": "summarize",
+      "arguments": {
+        "query": "status"
+      },
+      "expect": "review"
+    }
+  ],
   "pending_pr": {
     "gauntlet-python-local-test-script@cursor": "unassigned",
     "pytest-quiet@cursor": "unassigned",

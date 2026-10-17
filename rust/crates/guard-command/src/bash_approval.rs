@@ -143,11 +143,15 @@ fn analyze_inner(
         .collect();
     if exported_names.iter().any(|key| {
         key.starts_with("BASH_FUNC_")
+            || key.starts_with("__BASH_FUNC")
             || matches!(
                 key.as_str(),
                 "BASH_ENV" | "ENV" | "SHELLOPTS" | "BASHOPTS" | "POSIXLY_CORRECT"
             )
-    }) {
+    }) || environment
+        .values()
+        .any(|value| value.trim_start().starts_with("()"))
+    {
         return Err(Uncertainty {
             reason: "bash_startup_inputs_unbound",
             line: 1,
@@ -346,6 +350,12 @@ impl State<'_, '_> {
             .named_children(&mut cursor)
             .filter(|child| child.kind() == "case_item")
         {
+            for index in 0..item.child_count() {
+                let child = item.child(index).unwrap();
+                if !child.is_named() && !matches!(child.kind(), ")" | "(" | "|" | ";;" | ";") {
+                    return Err(self.error(child, "bash_control_operator"));
+                }
+            }
             if item.child_by_field_name("fallthrough").is_some() {
                 return Err(self.error(item, "bash_case_fallthrough"));
             }

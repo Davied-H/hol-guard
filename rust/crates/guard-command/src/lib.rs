@@ -26,6 +26,7 @@ pub mod command_action_risk_classes;
 mod command_ascii_comparison;
 mod command_candidate_common;
 mod command_common_cli_matchers;
+pub mod command_expression_match;
 mod compound_artifact;
 mod credential_store_names {
     //! The credential screen is shared with PostToolUse source review, so it
@@ -164,6 +165,7 @@ mod powershell_parser;
 mod powershell_reads;
 pub mod protect_request;
 mod read_only_fanout;
+pub mod reviewed_invocation_bindings;
 pub mod rich_command_model_api;
 use parser_executables::*;
 use parser_segments::*;
@@ -701,6 +703,9 @@ mod local_supply_chain_stale_policy_tests;
 pub mod package_approval;
 pub mod package_policy_override;
 pub mod package_protect_projection;
+mod package_shim_invocation;
+#[cfg(test)]
+mod package_shim_invocation_tests;
 pub mod prompt_analysis;
 pub mod redacted_command_tokens;
 pub mod supply_chain_package_eval;
@@ -784,6 +789,9 @@ pub(crate) mod semantic_workspace;
 pub mod shims;
 pub mod signals;
 pub mod skill_content_risk;
+pub mod skill_dependency_manifest;
+pub mod skill_identity;
+pub mod strict_json;
 pub mod supply_chain_bundle;
 pub mod supply_chain_package_identity;
 pub mod supply_chain_risk;

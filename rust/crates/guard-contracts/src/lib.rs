@@ -128,6 +128,10 @@ mod mcp_stdio_session;
 pub use mcp_stdio_session::*;
 mod command_effect;
 pub use command_effect::*;
+mod command_policy_decision;
+pub use command_policy_decision::*;
+mod reviewed_invocation_bindings;
+pub use reviewed_invocation_bindings::*;
 mod canonical_json;
 pub use canonical_json::*;
 
@@ -190,6 +194,8 @@ mod business_action;
 pub use business_action::*;
 mod business_dispatch_receipt;
 pub use business_dispatch_receipt::*;
+mod skill_workflow_preflight;
+pub use skill_workflow_preflight::*;
 
 pub const NATIVE_PROTOCOL_VERSION: u16 = 1;
 pub const GUARD_HOOK_ENVELOPE_V2_SCHEMA: &str = "guard-hook-envelope.v2";
