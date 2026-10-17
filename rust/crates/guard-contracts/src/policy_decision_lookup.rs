@@ -31,6 +31,11 @@ pub const RUNTIME_SAVED_REUSE_FEATURE: &str = "runtime-saved-reuse-v1";
 /// unexpanded groups with it, and the probe-groups contract denies unknown
 /// fields, so a runtime without this capability must not be sent either.
 pub const POLICY_LOOKUP_MEMORY_FEATURE: &str = "policy-decision-lookup-memory-v1";
+/// Capability advertised when the resident derives the trusted-local-tool grant
+/// selectors itself and probes them (`PolicyLookupProbeGroupsV1::local_tool_grant`).
+/// The probe-groups contract denies unknown fields, so a caller must not send
+/// the field to a runtime that does not advertise this.
+pub const LOCAL_TOOL_GRANT_LOOKUP_FEATURE: &str = "policy-decision-lookup-local-tool-grant-v1";
 
 /// Largest canonical request serialization the op will accept.
 pub const POLICY_DECISION_LOOKUP_MAX_BYTES: usize = 512 * 1024;
@@ -117,6 +122,24 @@ pub struct PolicyLookupProbeGroupsV1 {
     /// candidates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory: Option<PolicyLookupMemoryV1>,
+    /// A trusted-local-tool grant probe, composed in place of `groups` (which
+    /// is then empty).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_tool_grant: Option<LocalToolGrantLookupV1>,
+}
+
+/// The eligibility a trusted-local-tool grant probe is keyed by. The resident
+/// derives the grant selector of every target from it, so the capability
+/// digest is computed once, in the place that compares it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LocalToolGrantLookupV1 {
+    /// The verified tool identity (sha256 hex) the grant is bound to.
+    pub tool_identity_hash: String,
+    /// The read-only capability the command was classified as.
+    pub capability: String,
+    /// The action the hook recomputed; a grant only answers a reviewable one.
+    pub current_action: String,
 }
 
 /// The fields a remembered decision is fingerprinted from.

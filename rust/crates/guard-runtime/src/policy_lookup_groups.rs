@@ -34,6 +34,17 @@ pub(crate) fn evaluate(
     if request.consume_one_shot || request.local_once_only {
         return Err(ERR_INVALID.to_owned());
     }
+    if let Some(grant) = &groups.local_tool_grant {
+        if !groups.groups.is_empty()
+            || groups.reuse.is_some()
+            || groups.runtime.is_some()
+            || groups.portable_workspace.is_some()
+            || groups.memory.is_some()
+        {
+            return Err(ERR_INVALID.to_owned());
+        }
+        return crate::policy_lookup_local_tool_grant::evaluate(request, grant);
+    }
     if let Some(runtime) = &groups.runtime {
         if !groups.groups.is_empty()
             || groups.reuse.is_some()
