@@ -183,6 +183,7 @@ pub(crate) enum ResidentOperationV1 {
     CommandEffectDecide(CommandEffectRequestV1),
     CommandEffectDecideBatch(CommandEffectBatchRequestV1),
     ApprovalReuseDecide(ApprovalReuseRequestV1),
+    ComposioRole(guard_contracts::ComposioRoleRequestV1),
     GithubCliClassify(GithubCliClassifyRequestV1),
     GithubWorkflowPrepare(guard_contracts::GithubWorkflowPrepareRequestV1),
     ProtectRequest(ProtectRequestRequestV1),

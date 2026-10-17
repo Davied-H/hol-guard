@@ -254,6 +254,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::ApprovalReuseDecide(request) => {
                 crate::approval_reuse::evaluate_approval_reuse_request(&request)
             }
+            ResidentOperationV1::ComposioRole(request) => {
+                crate::composio_role_op::evaluate_composio_role_request(&request)
+            }
             ResidentOperationV1::GithubCliClassify(request) => {
                 crate::github_cli_classify_op::evaluate_github_cli_classify_request(&request)
             }
