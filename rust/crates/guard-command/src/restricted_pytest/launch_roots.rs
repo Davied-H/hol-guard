@@ -6,7 +6,9 @@
 //! elsewhere, or whose script interpreter lives elsewhere, cannot run inside
 //! it, so containing that command would only trade a review for a failure.
 use super::launch_shebang::{shebang, Shebang};
+use super::workspace_linked::admissible_checkout;
 use super::*;
+use crate::pretool::workspace_git_config::linked_git_dirs;
 
 /// What looking a program up came to.
 enum Lookup {
@@ -31,7 +33,8 @@ pub(crate) fn launches_outside_exec_roots<'a>(
     workspace: &Path,
 ) -> bool {
     let (roots, sandbox_path) = workspace_exec_roots(search_path, home, workspace);
-    let executable = executable_roots(workspace, roots);
+    let mut executable = executable_roots(workspace, roots);
+    executable.extend(linked_checkout(workspace, home));
     let reaches = |path: &Path| path_is_within_any(path, &executable);
     launches.into_iter().any(|(program, places)| {
         places.iter().any(|place| {
@@ -104,6 +107,17 @@ fn executable_roots(workspace: &Path, exec_roots: Vec<PathBuf>) -> Vec<PathBuf> 
     );
     roots.extend(exec_roots);
     roots
+}
+
+/// The main checkout of a linked worktree workspace. The sandbox reads and
+/// executes it, as it does the workspace, so a dependency directory linked
+/// into it still runs; one that is not an admissible root gets no plan at all.
+fn linked_checkout(workspace: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    let (common, _) = linked_git_dirs(workspace, home)?;
+    if !admissible_checkout(&common, home) {
+        return None;
+    }
+    common.parent().map(Path::to_path_buf)
 }
 
 /// The file `program` names when started from `place`: a path relative to

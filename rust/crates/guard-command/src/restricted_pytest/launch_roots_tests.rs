@@ -180,3 +180,52 @@ fn a_lookup_that_needs_an_unknown_directory_is_unreachable() {
     ));
     let _ = fs::remove_dir_all(root);
 }
+
+/// Make `workspace` a linked worktree of the checkout at `main`.
+fn link_worktree(root: &Path) {
+    let (main, workspace) = (root.join("main"), root.join("workspace"));
+    let admin = main.join(".git/worktrees/wt");
+    fs::create_dir_all(&admin).unwrap();
+    fs::write(admin.join("commondir"), "../..\n").unwrap();
+    fs::write(
+        admin.join("gitdir"),
+        format!("{}/.git\n", workspace.display()),
+    )
+    .unwrap();
+    fs::write(
+        workspace.join(".git"),
+        format!("gitdir: {}\n", admin.display()),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_linked_worktree_runs_programs_from_its_main_checkout() {
+    let root = scratch();
+    let (main, workspace) = (root.join("main"), root.join("workspace"));
+    fs::create_dir_all(main.join("node_modules/lanectl/bin")).unwrap();
+    tool(
+        &main.join("node_modules/lanectl/bin/lanectl"),
+        "#!/bin/sh\n",
+    );
+    fs::create_dir_all(workspace.join("node_modules/.bin")).unwrap();
+    std::os::unix::fs::symlink(
+        main.join("node_modules/lanectl/bin/lanectl"),
+        workspace.join("node_modules/.bin/lanectl"),
+    )
+    .unwrap();
+    let launch = "./node_modules/.bin/lanectl";
+
+    // Without the link the main checkout is just another directory.
+    assert!(outside(&root, launch, "/usr/bin:/bin"));
+    link_worktree(&root);
+    assert!(!outside(&root, launch, "/usr/bin:/bin"));
+    // Only the checkout opens: a sibling directory stays outside.
+    tool(&root.join("tools/other"), "#!/bin/sh\n");
+    assert!(outside(
+        &root,
+        root.join("tools/other").to_str().unwrap(),
+        "/usr/bin:/bin"
+    ));
+    let _ = fs::remove_dir_all(root);
+}
