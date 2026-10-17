@@ -178,7 +178,7 @@ fn frame_identifier(harness: &str, kind: &str, value: &str, key_id: &str) -> io:
 /// `_OPAQUE_STRONG_IDENTIFIER` (:38) — `[A-Za-z0-9][A-Za-z0-9._:-]{15,511}`.
 fn opaque_strong_identifier(value: &str) -> bool {
     let length = value.chars().count();
-    if !(17..=512).contains(&length) {
+    if !(16..=512).contains(&length) {
         return false;
     }
     let mut characters = value.chars();

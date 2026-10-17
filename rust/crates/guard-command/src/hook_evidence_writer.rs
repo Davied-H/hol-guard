@@ -592,12 +592,14 @@ impl McpDiscoveryRecord {
                 "data": {"tool_schemas": value.get("tool_schemas")},
             }),
         )?;
-        let raw_proposals = value.get("workflow_proposals");
-        let raw_proposals = match raw_proposals {
-            None => return None, // reached only when has_proposals is false → skip below
-            Some(v) => v.clone(),
-        };
-        if has_proposals {
+        // Python reads this with `.get("workflow_proposals", [])`, so the
+        // six-key form the key check above accepts has to survive here too:
+        // a record written without proposals is still valid evidence.
+        let raw_proposals = value
+            .get("workflow_proposals")
+            .cloned()
+            .unwrap_or_else(|| json!([]));
+        {
             let raw = raw_proposals.as_array()?;
             if raw.len() > 50
                 || !raw.iter().all(|item| {
@@ -1051,7 +1053,7 @@ impl RuntimeHookEvidenceWriter {
         tool_name: &str,
         payload: &Map<String, Value>,
     ) -> bool {
-        let Some(_source) = self.deps.composio.observed_mcp_tool(harness, tool_name) else {
+        let Some(source) = self.deps.composio.observed_mcp_tool(harness, tool_name) else {
             return false;
         };
         let tool_response = payload.get("tool_response").cloned().unwrap_or(Value::Null);
@@ -1069,8 +1071,11 @@ impl RuntimeHookEvidenceWriter {
             .unwrap_or_default();
         let record = EvidenceRecord::McpDiscovery(McpDiscoveryRecord {
             record_id: uuid4_hex(),
-            harness: harness.to_string(),
-            tool_name: tool_name.to_string(),
+            // The record carries the canonical names the lookup resolved, not
+            // the caller's spelling: replay re-runs that same lookup and drops
+            // a record whose stored harness does not match what it returns.
+            harness: source.harness.clone(),
+            tool_name: source.qualified_name.clone(),
             occurred_at: utc_now_iso(),
             actions,
             proposals,

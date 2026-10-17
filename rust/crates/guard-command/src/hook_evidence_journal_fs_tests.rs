@@ -5,7 +5,8 @@ use super::*;
 use std::sync::Arc;
 
 use crate::hook_evidence_writer::{
-    CommandActivityRecord, ComposioActionSchema, ComposioWorkflowProposal, ObservedMcpTool,
+    CommandActivityRecord, ComposioActionSchema, ComposioWorkflowProposal,
+    ObservedMcpServerIdentity, ObservedMcpTool,
 };
 
 struct TempDir(PathBuf);
@@ -242,4 +243,138 @@ fn a_preview_the_display_bound_rejects_is_never_written() {
     assert!(records
         .iter()
         .all(|record| record.get("invocation_preview").is_none()));
+}
+
+#[test]
+fn a_record_the_validators_reject_is_counted_before_the_rewrite_drops_it() {
+    let home = TempDir::new("tampered");
+    let path = home.journal();
+    let journal = journal();
+    journal
+        .append_journal(&path, &activity("kept", None))
+        .unwrap();
+    // A well-formed object carrying the command-activity schema but none of
+    // its fields: the kind of line an edit on disk leaves behind.
+    let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+    file.write_all(
+        b"{\"schema\":\"hol-guard-native-hook-evidence.v1\",\"record_id\":\"edited\"}\n",
+    )
+    .unwrap();
+    drop(file);
+
+    // The rewrite deletes it, so it has to report it: Python counts every line
+    // the validators turn down, not only the ones that fail to decode.
+    assert_eq!(
+        journal.rewrite_journal(&path, "absent", MAX_BYTES).unwrap(),
+        1
+    );
+    let (records, invalid) = journal.recover_journal_records(&path, MAX_BYTES).unwrap();
+    assert_eq!((records.len(), invalid), (1, 0));
+}
+
+#[test]
+fn a_sidecar_preview_never_lands_on_another_record_type() {
+    let home = TempDir::new("sidecar-type");
+    let path = home.journal();
+    let journal = journal();
+    journal
+        .append_journal(&path, &activity("shared", Some("git status")))
+        .unwrap();
+    // A discovery record that happens to carry the same handle. Its parser
+    // accepts a fixed set of keys, so an attached preview would delete it.
+    let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+    file.write_all(
+        b"{\"schema\":\"hol-guard-mcp-provider-evidence.v1\",\"record_id\":\"shared\"}\n",
+    )
+    .unwrap();
+    drop(file);
+
+    let (records, _) = journal.recover_journal_records(&path, MAX_BYTES).unwrap();
+    let discovery = records
+        .iter()
+        .find(|value| {
+            value.get("schema").and_then(Value::as_str)
+                == Some("hol-guard-mcp-provider-evidence.v1")
+        })
+        .expect("the discovery line survives recovery");
+    assert!(!discovery.contains_key("invocation_preview"));
+    let activity = records
+        .iter()
+        .find(|value| {
+            value.get("schema").and_then(Value::as_str) == Some("hol-guard-native-hook-evidence.v1")
+        })
+        .expect("the activity line survives recovery");
+    assert_eq!(
+        activity.get("invocation_preview").and_then(Value::as_str),
+        Some("git status")
+    );
+}
+
+/// A discovery seam that accepts one connector and reports a single action.
+struct OneDiscovery;
+
+impl ComposioApi for OneDiscovery {
+    fn observed_mcp_tool(&self, harness: &str, tool_name: &str) -> Option<ObservedMcpTool> {
+        (harness == "claude-code" && tool_name == "mcp__composio__composio_search_tools").then(
+            || ObservedMcpTool {
+                harness: harness.to_owned(),
+                qualified_name: tool_name.to_owned(),
+                identity: "local-cli.mcp-test".to_owned(),
+                server: ObservedMcpServerIdentity {
+                    identity_hash: "0".repeat(64),
+                    command: None,
+                    args_hash: "0".repeat(64),
+                },
+            },
+        )
+    }
+
+    fn composio_discovered_actions(
+        &self,
+        _tool_name: &str,
+        _response: &Value,
+    ) -> Option<Vec<ComposioActionSchema>> {
+        Some(vec![ComposioActionSchema {
+            toolkit: "github".to_owned(),
+            tool_slug: "GITHUB_STAR".to_owned(),
+            description: "star".to_owned(),
+            input_schema: Map::new(),
+            full_schema: true,
+        }])
+    }
+
+    fn composio_workflow_proposals(
+        &self,
+        _tool_name: &str,
+        _response: &Value,
+    ) -> Option<Vec<ComposioWorkflowProposal>> {
+        Some(Vec::new())
+    }
+}
+
+#[test]
+fn a_discovery_record_without_proposals_survives_a_rewrite() {
+    let home = TempDir::new("six-key");
+    let path = home.journal();
+    let journal = NativeEvidenceJournal::new(Arc::new(NoReceipts), Arc::new(OneDiscovery));
+    journal
+        .append_journal(&path, &activity("kept", None))
+        .unwrap();
+    // The six-key form Python writes when a provider offered no guidance.
+    // Reading it back has to accept the missing key, or the rewrite below
+    // deletes evidence the Python journal would have kept.
+    let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+    file.write_all(
+        br#"{"harness":"claude-code","occurred_at":"2026-10-17T00:00:00+00:00","record_id":"discovery","schema":"hol-guard-mcp-provider-evidence.v1","tool_name":"mcp__composio__composio_search_tools","tool_schemas":{}}
+"#,
+    )
+    .unwrap();
+    drop(file);
+
+    assert_eq!(
+        journal.rewrite_journal(&path, "absent", MAX_BYTES).unwrap(),
+        0
+    );
+    let (records, _) = journal.recover_journal_records(&path, MAX_BYTES).unwrap();
+    assert_eq!(records.len(), 2);
 }

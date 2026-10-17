@@ -14,7 +14,8 @@ use std::sync::Arc;
 use serde_json::{json, Map, Value};
 
 use super::{
-    ComposioApi, EvidenceJournalApi, EvidenceRecord, ReceiptValidationApi, JOURNAL_FILE_MODE,
+    ComposioApi, EvidenceJournalApi, EvidenceRecord, ReceiptValidationApi, EVIDENCE_SCHEMA,
+    JOURNAL_FILE_MODE,
 };
 
 /// `command_activity_display.INVOCATION_PREVIEW_MAX_CHARS`.
@@ -38,6 +39,29 @@ impl NativeEvidenceJournal {
 
     fn parse(&self, value: &Map<String, Value>) -> Option<EvidenceRecord> {
         EvidenceRecord::from_json(value, &*self.receipts, &*self.composio)
+    }
+
+    /// `_read_journal_records_locked` (:223-251) — decode every line, then run
+    /// it through the record validators, counting both steps' failures.
+    ///
+    /// A line that decodes but fails validation, such as a receipt whose
+    /// `decision_id` was edited on disk, is dropped by the rewrite below. It
+    /// has to be counted here, or the writer deletes it without ever going
+    /// degraded or recording a failure.
+    fn read_journal_records(
+        &self,
+        path: &Path,
+        max_bytes: usize,
+    ) -> Result<(Vec<EvidenceRecord>, u64), io::Error> {
+        let (raw, mut invalid_records) = read_journal_lines(path, max_bytes)?;
+        let mut records = Vec::with_capacity(raw.len());
+        for value in &raw {
+            match self.parse(value) {
+                Some(record) => records.push(record),
+                None => invalid_records += 1,
+            }
+        }
+        Ok((records, invalid_records))
     }
 }
 
@@ -67,10 +91,9 @@ impl EvidenceJournalApi for NativeEvidenceJournal {
         max_bytes: usize,
     ) -> Result<u64, io::Error> {
         let _lock = JournalLock::acquire(path)?;
-        let (raw, invalid_records) = read_journal_lines(path, max_bytes)?;
-        let remaining: Vec<EvidenceRecord> = raw
-            .iter()
-            .filter_map(|value| self.parse(value))
+        let (records, invalid_records) = self.read_journal_records(path, max_bytes)?;
+        let remaining: Vec<EvidenceRecord> = records
+            .into_iter()
             .filter(|record| record.record_id() != remove_record_id)
             .collect();
         let mut body = Vec::new();
@@ -93,6 +116,13 @@ impl EvidenceJournalApi for NativeEvidenceJournal {
         let previews = read_preview_sidecar(path, max_bytes)?;
         if !previews.is_empty() {
             for value in &mut raw {
+                // Only command activity has an invocation preview. Attaching
+                // one to another record's object adds a field its strict
+                // parser rejects, so a sidecar entry naming an MCP discovery
+                // record would delete that record's evidence on replay.
+                if value.get("schema").and_then(Value::as_str) != Some(EVIDENCE_SCHEMA) {
+                    continue;
+                }
                 let Some(record_id) = value.get("record_id").and_then(Value::as_str) else {
                     continue;
                 };

@@ -286,3 +286,25 @@ fn a_file_where_the_guard_home_belongs_is_refused() {
     assert!(load_or_create_correlation_key(&home).is_err());
     let _ = fs::remove_file(&home);
 }
+
+#[test]
+fn a_sixteen_character_identifier_still_carries_a_correlation() {
+    // `[A-Za-z0-9][A-Za-z0-9._:-]{15,511}` is a leading character plus fifteen
+    // more, so sixteen is the shortest value Python derives from. A native
+    // harness that mints ids this short would otherwise lose its pairing.
+    let key = fixed_key();
+    let shortest = "toolu_01A9bN2c";
+    assert_eq!(shortest.len(), 14);
+    for (value, derived) in [
+        (format!("{shortest}xy"), true),
+        (shortest.to_owned(), false),
+    ] {
+        let outcome = derive_proven_request_correlation(
+            "claude-code",
+            "PreToolUse",
+            &payload(&[("tool_use_id", json!(value))]),
+            &key,
+        );
+        assert_eq!(outcome.is_ok(), derived, "{value}");
+    }
+}
