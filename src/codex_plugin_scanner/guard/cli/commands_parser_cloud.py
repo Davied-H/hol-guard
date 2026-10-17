@@ -242,6 +242,18 @@ def _configure_guard_cloud_parsers(
     _add_guard_common_args(cloud_sync_intel_parser)
     cloud_sync_intel_parser.add_argument("--json", action="store_true")
 
+    cloud_status_parser = cloud_subparsers.add_parser(
+        "status",
+        help="Show the last Guard Cloud sync, the posture this machine last sent, and what Guard Cloud shows",
+    )
+    _add_guard_common_args(cloud_status_parser)
+    cloud_status_parser.add_argument("--json", action="store_true")
+    cloud_status_parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Skip the Guard Cloud lookup and print local state only.",
+    )
+
     supply_chain_parser = guard_subparsers.add_parser(
         "supply-chain",
         help="Inspect and refresh local Guard supply-chain firewall coverage",
