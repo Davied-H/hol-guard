@@ -395,7 +395,9 @@ def test_one_connector_groups_its_setup_reviews_by_action(gate_environment: tupl
     fixture, worker = gate_environment
     commands = ("lanectl status --state-dir ~/.lanectl --verbose", "lanectl status --config ~/.lanectl/config.toml")
     rows: list[dict[str, object]] = []
+    by_command: list[dict[str, set[str]]] = []
     for index, command in enumerate(commands):
+        by_harness: dict[str, set[str]] = {}
         for harness in ("codex", "claude-code"):
             case = GateCase(
                 case_id=f"lanectl-group-{index}@{harness}",
@@ -410,9 +412,16 @@ def test_one_connector_groups_its_setup_reviews_by_action(gate_environment: tupl
             result, approvals = _review(case, fixture, worker)
             assert approvals == 1, _describe(case, result, approvals)
             rows.extend(_ROWS[case.case_id])
+            by_harness[harness] = {str(row["queue_group_id"]) for row in _ROWS[case.case_id]}
+        by_command.append(by_harness)
+    for command, by_harness in zip(commands, by_command, strict=True):
+        shared = set().union(*by_harness.values())
+        assert len(shared) == 1, f"every harness must queue {command!r} under one group, got {by_harness}"
+    first, second = (next(iter(set().union(*by_harness.values()))) for by_harness in by_command)
+    assert first != second, "distinct actions must keep distinct groups"
     groups = connector_groups(rows)
     assert len(groups) == 1, f"one connector must queue under one identity, got {len(groups)}"
-    assert len(next(iter(groups.values()))) == len(commands), "distinct actions must keep distinct groups"
+    assert len(next(iter(groups.values()))) == len(commands), "distinct actions must keep distinct action digests"
     assert len(rows) == len(commands) * 2, "every harness call keeps its own evidence row"
 
 
