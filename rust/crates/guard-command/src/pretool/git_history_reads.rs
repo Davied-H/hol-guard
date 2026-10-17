@@ -138,11 +138,16 @@ fn blame_read_form(rest: &[String]) -> bool {
             return false;
         }
         // `-L1,20` and `-L 1,20` are the same range; so are `-S<file>` and
-        // `-S <file>`, and the caller screens the path either way.
+        // `-S <file>`. The caller screens a separate value as its own token,
+        // but an attached one arrives inside the option, where the path check
+        // reads `-s.env` rather than the file it names, so screen it here.
         if let Some(value) = argument
             .strip_prefix("-L")
             .or_else(|| argument.strip_prefix("-S"))
         {
+            if super::sensitive_read_path_argument(value) {
+                return false;
+            }
             if value.is_empty() && arguments.next().is_none() {
                 return false;
             }
