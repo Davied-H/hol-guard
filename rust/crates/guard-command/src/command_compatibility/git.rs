@@ -193,6 +193,10 @@ pub(super) fn inspection_arguments<'a>(
                 | "describe"
                 | "reflog"
                 | "branch"
+                // A tag listing and a clean preview only print; their own
+                // grammars decide which spellings qualify.
+                | "tag"
+                | "clean"
                 | "hash-object"
                 | "rev-parse"
                 | "merge-base"
