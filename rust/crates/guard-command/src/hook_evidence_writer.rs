@@ -1995,3 +1995,11 @@ pub const fn journal_file_mode() -> u32 {
 mod journal_fs;
 
 pub use journal_fs::NativeEvidenceJournal;
+
+#[path = "hook_evidence_receipt.rs"]
+mod receipt;
+
+pub use receipt::{
+    canonical_receipt_bytes, valid_prompt_risk_classes, validate_native_decision_receipt,
+    NativeReceiptValidation,
+};
