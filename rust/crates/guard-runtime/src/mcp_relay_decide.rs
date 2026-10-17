@@ -960,6 +960,8 @@ mod package_postclaim;
 mod package_receipt;
 #[path = "mcp_relay_decide_package_route.rs"]
 mod package_route;
+#[path = "mcp_relay_decide_package_snapshot.rs"]
+mod package_snapshot;
 // What a claimed package call spends, and the answer it commits with.
 #[path = "mcp_relay_decide_package_spend.rs"]
 mod package_spend;

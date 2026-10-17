@@ -74,7 +74,7 @@ fn split(text: &str) -> Vec<&str> {
 }
 
 /// Fold `.` and `..`; `..` never climbs above a drive root.
-fn fold<'a>(root: Root, parts: Vec<&'a str>) -> Vec<&'a str> {
+fn fold(root: Root, parts: Vec<&str>) -> Vec<&str> {
     let mut folded: Vec<&str> = Vec::new();
     for part in parts {
         match part {
@@ -141,6 +141,19 @@ pub(super) fn is_abs(path: &str) -> bool {
 /// Has a drive or root of its own, so it never names a path below another.
 pub(super) fn is_anchored(path: &str) -> bool {
     parse(path).0 != Root::Relative
+}
+
+/// A drive-rooted path that compares as text against another one: no
+/// `\\?\` prefix and no component that folds (`.`, `..`), that Windows
+/// trims or that may be a short name.
+pub(super) fn is_literal(path: &str) -> bool {
+    let (Root::Drive(_), parts) = parse(path) else {
+        return false;
+    };
+    !path.starts_with(r"\\")
+        && parts
+            .iter()
+            .all(|part| is_plain(part) && !may_be_short_name(part))
 }
 
 /// `str(PureWindowsPath(path))` with `.` and `..` folded; an unpinned

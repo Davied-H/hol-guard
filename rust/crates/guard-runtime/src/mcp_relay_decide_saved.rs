@@ -23,7 +23,7 @@ use crate::context_digest::python_strip;
 use crate::mcp_tool_policy_lookup::{most_restrictive, without_permission_elevation};
 use crate::memory_pattern::{verdict, MemoryRequest};
 use crate::policy_decision_lookup_op::evaluate_non_consuming;
-use crate::project_identity::{portable_workspace, portable_workspace_in, PortableIdentity};
+use crate::project_identity::{portable_workspace, resolve_relative, PortableIdentity};
 use guard_contracts::{ApprovalReuseDiagnosticRequestV1, APPROVAL_REUSE_DIAGNOSTIC_REQUEST_SCHEMA};
 use serde_json::{json, Value};
 
@@ -136,20 +136,15 @@ impl Saved<'_> {
     /// (`_portable_project_workspace`). A workspace that already names a
     /// portable identity is its own, and one whose identity the resident
     /// does not resolve exactly defers the call.
-    fn named(&self, identity: PortableIdentity) -> Result<Option<String>, &'static str> {
-        match identity {
-            PortableIdentity::Absent => Ok(None),
-            PortableIdentity::Identity(identity) => Ok(Some(identity)),
-            PortableIdentity::Unknown => Err(SAVED_PORTABLE),
-        }
-    }
-
-    /// The identity of a workspace the proxy named as a path.
     fn portable_identity(&self, workspace: Option<&str>) -> Result<Option<String>, &'static str> {
         let Some(workspace) = workspace else {
             return Ok(None);
         };
-        self.named(portable_workspace(workspace))
+        match portable_workspace(workspace) {
+            PortableIdentity::Absent => Ok(None),
+            PortableIdentity::Identity(identity) => Ok(Some(identity)),
+            PortableIdentity::Unknown => Err(SAVED_PORTABLE),
+        }
     }
 
     /// One candidate for a lane that names its own probe rather than a need
@@ -157,17 +152,22 @@ impl Saved<'_> {
     /// `resolve_policy_decision_lookup` resolves it for every lookup it
     /// answers, so a caller cannot read the local row alone by mistake.
     ///
-    /// A package lookup's workspace is a scope selector rather than a path,
-    /// so it resolves against `cwd`, the cwd of the proxy whose lookup this
-    /// is, exactly as `Path(selector).resolve()` resolves it in that process.
+    /// The package lane probes a scope token rather than a directory, and
+    /// `_workspace_path` reads such a name against the working directory of
+    /// the process that composed it, so that directory is resolved from the
+    /// facts the caller reported rather than from the resident's own.
     pub(super) fn package_candidate(
         &self,
         probe: &Probe<'_>,
-        cwd: &str,
+        process_cwd: &str,
     ) -> Result<Value, &'static str> {
         let identity = match probe.workspace {
             None => None,
-            Some(workspace) => self.named(portable_workspace_in(cwd, workspace))?,
+            Some(workspace) => match resolve_relative(workspace, process_cwd) {
+                PortableIdentity::Absent => None,
+                PortableIdentity::Identity(identity) => Some(identity),
+                PortableIdentity::Unknown => return Err(SAVED_PORTABLE),
+            },
         };
         self.candidate(probe, identity.as_deref())
     }

@@ -121,13 +121,7 @@ fn write(path: &Path, text: &str) {
 
 #[cfg(unix)]
 fn repository(root: &Path) {
-    repository_from(root, "https://github.com/example/cached.git");
-}
-
-/// The same repository metadata for a named remote, so two scratch roots can
-/// hold two projects instead of two copies of one.
-#[cfg(unix)]
-fn repository_from(root: &Path, remote: &str) {
+    let remote = "https://github.com/example/cached.git";
     write(
         &root.join(".git/config"),
         &format!("[remote \"origin\"]\n\turl = {remote}\n"),
@@ -240,77 +234,71 @@ fn a_workspace_already_naming_an_identity_is_its_own() {
 
 #[cfg(unix)]
 #[test]
-fn a_selector_resolves_against_the_cwd_it_was_read_in() {
-    let root = scratch("selector");
+fn a_relative_workspace_resolves_under_the_reported_directory() {
+    let root = scratch("relative");
     repository(&root);
-    let cwd = root.to_str().expect("utf-8");
-    let selector = "package-request-workspace-exact:v2:abc";
-    // `Path(selector).resolve()` joins the cwd, so the walk starts in the
-    // project the proxy is running in. The identity is that project's Git
-    // metadata, not the name the walk started from, so the selector resolves
-    // to the project itself.
-    let PortableIdentity::Identity(derived) = portable_workspace_in(cwd, selector) else {
-        panic!("the selector resolves");
+    let nested = root.join("a");
+    fs::create_dir_all(&nested).expect("nested dir");
+    let cwd = nested.to_str().expect("utf-8");
+    let token = format!("package-request-workspace-exact:v1:{}", "b".repeat(64));
+
+    // `Path(token).resolve(strict=False)` names `a/<token>` under the
+    // checkout, whose identity the ancestor walk derives.
+    let PortableIdentity::Identity(joined) = resolve_relative(&token, cwd) else {
+        panic!("the reported directory resolves");
     };
-    let PortableIdentity::Identity(project) = resolve(cwd) else {
-        panic!("the repository resolves");
+    let PortableIdentity::Identity(outer) = resolve_relative(&token, root.to_str().expect("utf-8"))
+    else {
+        panic!("the checkout resolves");
     };
+    // The relative workspace is read under the directory the caller reports,
+    // so one token names a different identity in each of them.
+    assert_ne!(joined, outer);
+
+    // An absolute workspace, a blank one and one already naming an identity
+    // are read exactly as the directory-less resolver reads them.
+    assert!(matches!(
+        resolve_relative(root.to_str().expect("utf-8"), cwd),
+        PortableIdentity::Identity(_)
+    ));
+    assert_eq!(resolve_relative("   ", cwd), PortableIdentity::Absent);
+    let identity = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "c".repeat(64));
     assert_eq!(
-        derived, project,
-        "the selector names the project it is read in"
-    );
-    // The same selector under another project is another identity, and under
-    // no project at all it is absent.
-    let other = scratch("selector-other");
-    repository_from(&other, "https://github.com/example/other.git");
-    let elsewhere = other.to_str().expect("utf-8");
-    assert_ne!(
-        portable_workspace_in(elsewhere, selector),
-        PortableIdentity::Identity(derived)
-    );
-    let bare = scratch("selector-bare");
-    assert_eq!(
-        portable_workspace_in(bare.to_str().expect("utf-8"), selector),
-        PortableIdentity::Absent
+        resolve_relative(&format!(" {identity} "), cwd),
+        PortableIdentity::Identity(identity)
     );
     fs::remove_dir_all(&root).ok();
-    fs::remove_dir_all(&other).ok();
-    fs::remove_dir_all(&bare).ok();
 }
 
 #[cfg(unix)]
 #[test]
-fn a_join_resolve_would_rewrite_is_unknown() {
-    let root = scratch("join");
+fn a_relative_workspace_python_would_rewrite_is_unknown() {
+    let root = scratch("relative-rewrite");
     repository(&root);
-    let cwd = root.to_str().expect("utf-8");
-    // Only the plain join is mirrored: a nested or home-relative name, a cwd
-    // `resolve` would rewrite, and a name that is already a file or a link
-    // all leave the resolution to Python.
-    for workspace in ["nested/scope", "~/scope", ".", ".."] {
+    let cwd = root.to_str().expect("utf-8").to_owned();
+    let token = format!("package-request-workspace-exact:v1:{}", "d".repeat(64));
+
+    // A directory `resolve` would rewrite, a relative directory and a name
+    // carrying a separator, a dot segment or a home prefix are each a
+    // resolution this reader does not reproduce.
+    assert_eq!(
+        resolve_relative(&token, &format!("{cwd}/")),
+        PortableIdentity::Unknown
+    );
+    assert_eq!(
+        resolve_relative(&token, "relative"),
+        PortableIdentity::Unknown
+    );
+    for name in ["a/token", "./token", "../token", "~token"] {
         assert_eq!(
-            portable_workspace_in(cwd, workspace),
-            PortableIdentity::Unknown
+            resolve_relative(name, &cwd),
+            PortableIdentity::Unknown,
+            "{name}"
         );
     }
-    assert_eq!(
-        portable_workspace_in(&format!("{cwd}/"), "scope"),
-        PortableIdentity::Unknown
-    );
-    assert_eq!(
-        portable_workspace_in("relative", "scope"),
-        PortableIdentity::Unknown
-    );
-    write(&root.join("scope"), "");
-    assert_eq!(
-        portable_workspace_in(cwd, "scope"),
-        PortableIdentity::Unknown
-    );
-    // A workspace that already names an identity is its own, whatever the cwd.
-    let named = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "a".repeat(64));
-    assert_eq!(
-        portable_workspace_in(cwd, &named),
-        PortableIdentity::Identity(named)
-    );
+
+    // A name that already exists may be a link `resolve` follows.
+    fs::create_dir_all(root.join(&token)).expect("token dir");
+    assert_eq!(resolve_relative(&token, &cwd), PortableIdentity::Unknown);
     fs::remove_dir_all(&root).ok();
 }
