@@ -46,7 +46,7 @@ pub(super) fn ordinary_variable(name: &str) -> bool {
         )
 }
 
-impl State<'_> {
+impl State<'_, '_> {
     pub(super) fn word(&self, node: Node<'_>, quoted: bool) -> Result<String> {
         let value = self.word_inner(node, quoted)?;
         if value.len() > MAX_WORD_BYTES {

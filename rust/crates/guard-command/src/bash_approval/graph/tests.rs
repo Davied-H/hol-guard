@@ -1,6 +1,10 @@
+use sha2::{Digest, Sha256};
 use std::time::Duration;
 
 use super::*;
+
+#[path = "source_tests.rs"]
+mod source_tests;
 
 const SCRIPT: &str =
     include_str!("../../../../../../tests/fixtures/script_approvals/maintenance.sh");
@@ -91,6 +95,7 @@ fn graph_subject_binds_observed_inputs_without_granting_execution() {
             project: "/fixtures".into(),
             cwd: "/fixtures".into(),
             home: "/isolated/home".into(),
+            file_creation_mask: Some(0o022),
         },
         argv: &argv,
         interpreter: NativeScriptCodeInputV1 {

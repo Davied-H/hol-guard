@@ -35,6 +35,7 @@ fn fixture() -> (tempfile::TempDir, NativeBashCaptureV1) {
             ..GuardExecutionEnvironmentV1::unavailable()
         },
         environment: BTreeMap::new(),
+        file_creation_mask: Some(0o022),
         budget_ms: 1000,
     };
     (root, request)
@@ -54,6 +55,7 @@ fn bash_resident_inspection_preserves_helper_execution_spelling() {
         names: &[],
         deadline: Instant::now() + Duration::from_secs(1),
         captured: RefCell::new(BTreeMap::new()),
+        source_snapshots: RefCell::new(BTreeMap::new()),
     };
     let graph::Executable::Bash(helper) = graph::Resolver::resolve(
         &resolver,
@@ -78,8 +80,41 @@ fn bash_resident_inspection_preserves_helper_execution_spelling() {
 }
 
 #[test]
+fn bash_resident_inspection_captures_nonexecutable_source_and_reevaluates_changes() {
+    let (_root, request) = fixture();
+    let project = Path::new(&request.cwd);
+    std::fs::write(
+        project.join("maintenance.sh"),
+        "source ./settings.sh; printf '%s' \"$from_source\"",
+    )
+    .unwrap();
+    let settings = project.join("settings.sh");
+    std::fs::write(&settings, "from_source=reviewed").unwrap();
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let original = inspect(&request).unwrap();
+    assert!(original
+        .code_inputs
+        .iter()
+        .any(|input| input.kind == NativeScriptInputKindV1::Source));
+    assert!(original
+        .invocations
+        .iter()
+        .any(|call| call.argv == ["printf", "%s", "reviewed"]));
+    std::fs::write(&settings, "from_source=changed").unwrap();
+    let changed = inspect(&request).unwrap();
+    assert_ne!(
+        original.identity_sha256().unwrap(),
+        changed.identity_sha256().unwrap()
+    );
+    assert!(changed
+        .invocations
+        .iter()
+        .any(|call| call.argv == ["printf", "%s", "changed"]));
+}
+
+#[test]
 fn bash_resident_inspection_captures_real_fixture_without_permission_token() {
-    let (_root, capture) = fixture();
+    let (_root, mut capture) = fixture();
     let request = NativeExactActionRequestV1 {
         schema: NATIVE_EXACT_ACTION_REQUEST_SCHEMA.into(),
         request_id: "capture-fixture".into(),
@@ -105,6 +140,8 @@ fn bash_resident_inspection_captures_real_fixture_without_permission_token() {
     assert_eq!(subject.argv[1], "dry");
     assert!(!Path::new(&subject.outputs[0].resolved_path).exists());
     assert!(subject.identity_sha256().is_ok());
+    // A changed opaque commitment to unrelated host values is not code drift.
+    capture.execution_environment.environment_digest = "b".repeat(64);
     assert_eq!(
         subject.identity_sha256().unwrap(),
         inspect(&capture).unwrap().identity_sha256().unwrap()
@@ -120,6 +157,12 @@ fn bash_resident_inspection_refuses_withheld_startup_and_function_values() {
         .push("BASH_ENV".into());
     assert_eq!(inspect(&request), Err("bash_startup_environment_unproven"));
     request.execution_environment.environment_names.pop();
+    request.file_creation_mask = None;
+    assert_eq!(
+        inspect(&request),
+        Err("native_bash_subject_creation_mask_unavailable")
+    );
+    request.file_creation_mask = Some(0o022);
     request
         .execution_environment
         .environment_names

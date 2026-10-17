@@ -21,6 +21,32 @@ fn expanded_words_and_repeated_operations_are_bounded() {
     assert!(analyze(&expanded, &argv, &environment()).is_err());
     let zero_args = "true;".repeat(MAX_OPERATIONS + 1);
     assert!(analyze(&zero_args, &argv, &environment()).is_err());
+    let empty_arguments = format!("printf {}", "'' ".repeat(256));
+    assert!(analyze(&empty_arguments, &argv, &environment()).is_err());
+    let copies = format!(
+        "large='{}'; {}",
+        "x".repeat(MAX_WORD_BYTES),
+        (0..40)
+            .map(|index| format!("copy{index}=\"$large\"; "))
+            .collect::<String>()
+    );
+    assert!(analyze(&copies, &argv, &environment()).is_err());
+}
+
+#[test]
+fn exported_values_cannot_change_behind_a_helpers_environment_proof() {
+    let environment = BTreeMap::from([("mode".into(), "before".into())]);
+    for source in [
+        "mode=after; printf x",
+        "for mode in after; do printf x; done",
+    ] {
+        assert_eq!(
+            analyze(source, &["script.sh".into()], &environment)
+                .unwrap_err()
+                .reason,
+            "bash_exported_environment_assignment_unproven"
+        );
+    }
 }
 
 #[test]

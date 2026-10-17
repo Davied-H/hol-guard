@@ -4,14 +4,16 @@
 //! must resolve every command, judge current policy and bind actual execution
 //! before using the result. Unknown shell syntax is never a partial success.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tree_sitter::{Node, ParseOptions, Parser};
 
+mod commands;
 pub mod delivery;
 pub mod graph;
+mod source;
 pub mod subject;
 #[cfg(test)]
 mod tests;
@@ -48,6 +50,9 @@ pub struct Redirect {
 pub struct Analysis {
     pub operations: Vec<Operation>,
     pub writes: Vec<Redirect>,
+    // Only the in-process graph builder receives captured source bodies.
+    #[serde(skip)]
+    sources: Vec<source::Occurrence>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,6 +85,16 @@ pub fn analyze_before(
     argv: &[String],
     environment: &BTreeMap<String, String>,
     deadline: Instant,
+) -> Result<Analysis> {
+    analyze_inner(source, argv, environment, deadline, None)
+}
+
+fn analyze_inner(
+    source: &str,
+    argv: &[String],
+    environment: &BTreeMap<String, String>,
+    deadline: Instant,
+    source_context: Option<source::Context<'_>>,
 ) -> Result<Analysis> {
     let context_bytes = argv.iter().map(String::len).sum::<usize>()
         + environment
@@ -119,6 +134,26 @@ pub fn analyze_before(
             line: 1,
         });
     }
+    let tree = parse(source, deadline)?;
+    let exported_names = environment.keys().cloned().collect();
+    let mut state = State {
+        source,
+        argv,
+        variables: environment.clone(),
+        analysis: Analysis::default(),
+        stopped: false,
+        deadline,
+        steps: 0,
+        expanded_bytes: 0,
+        total_effects: 0,
+        source_context,
+        exported_names: &exported_names,
+    };
+    state.walk(tree.root_node(), 0)?;
+    Ok(state.analysis)
+}
+
+fn parse(source: &str, deadline: Instant) -> Result<tree_sitter::Tree> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_bash::LANGUAGE.into())
@@ -141,22 +176,10 @@ pub fn analyze_before(
             line: 1,
         });
     }
-    let mut state = State {
-        source,
-        argv,
-        variables: environment.clone(),
-        analysis: Analysis::default(),
-        stopped: false,
-        deadline,
-        steps: 0,
-        expanded_bytes: 0,
-    };
-    state.walk(tree.root_node(), 0)?;
-    Ok(state.analysis)
+    Ok(tree)
 }
 
-#[derive(Clone)]
-struct State<'a> {
+struct State<'a, 'context> {
     source: &'a str,
     argv: &'a [String],
     variables: BTreeMap<String, String>,
@@ -165,9 +188,12 @@ struct State<'a> {
     deadline: Instant,
     steps: usize,
     expanded_bytes: usize,
+    total_effects: usize,
+    source_context: Option<source::Context<'context>>,
+    exported_names: &'context BTreeSet<String>,
 }
 
-impl State<'_> {
+impl State<'_, '_> {
     fn text(&self, node: Node<'_>) -> &str {
         &self.source[node.byte_range()]
     }
@@ -218,15 +244,19 @@ impl State<'_> {
                 if name.kind() != "variable_name" || !words::ordinary_variable(self.text(name)) {
                     return Err(self.error(name, "bash_special_assignment"));
                 }
+                if self.exported_names.contains(self.text(name)) {
+                    return Err(self.error(name, "bash_exported_environment_assignment_unproven"));
+                }
                 let value_node = self.field(node, "value")?;
                 if &self.source[name.end_byte()..value_node.start_byte()] != "=" {
                     return Err(self.error(node, "bash_assignment_operator"));
                 }
                 let value = self.word(value_node, true)?;
+                self.charge(value.len(), value_node)?;
                 self.variables.insert(self.text(name).to_owned(), value);
                 Ok(())
             }
-            "command" => self.command(node),
+            "command" => self.command(node, depth),
             "case_statement" => self.case(node, depth),
             "for_statement" => self.for_loop(node, depth),
             "redirected_statement" => {
@@ -259,180 +289,24 @@ impl State<'_> {
         }
     }
 
-    fn command(&mut self, node: Node<'_>) -> Result<()> {
-        let name = self.field(node, "name")?;
-        let name = name
-            .named_child(0)
-            .ok_or_else(|| self.error(name, "bash_dynamic_command"))?;
-        if !matches!(name.kind(), "word" | "raw_string") {
-            return Err(self.error(name, "bash_dynamic_command"));
-        }
-        let mut argv = vec![self.word(name, false)?];
-        let mut cursor = node.walk();
-        for child in node.named_children(&mut cursor) {
-            match node
-                .field_name_for_child(child_index(node, child))
-                .unwrap_or("")
-            {
-                "name" => (),
-                "argument" => {
-                    let value = self.word(child, false)?;
-                    self.charge(value.len(), child)?;
-                    argv.push(value);
-                }
-                "redirect" => self.redirect(child, node.start_byte())?,
-                _ => return Err(self.error(child, "bash_command_environment_or_subshell")),
-            }
-        }
-        // These alter parsing, resolution or shell startup. They need their
-        // own semantics and must never become ordinary allowlisted commands.
-        if matches!(
-            argv[0].as_str(),
-            "eval"
-                | "exec"
-                | "source"
-                | "."
-                | "export"
-                | "readonly"
-                | "declare"
-                | "typeset"
-                | "alias"
-                | "unalias"
-                | "enable"
-                | "builtin"
-                | "command"
-                | "trap"
-                | "shopt"
-                | "unset"
-                | "read"
-                | "mapfile"
-                | "getopts"
-                | "cd"
-                | "pushd"
-                | "popd"
-        ) {
-            return Err(self.error(node, "bash_dynamic_shell_state"));
-        }
-        if argv[0] == "set" && argv != ["set", "-euo", "pipefail"] {
-            return Err(self.error(node, "bash_shell_options"));
-        }
-        if matches!(
-            argv[0].as_str(),
-            "bind"
-                | "break"
-                | "builtin"
-                | "caller"
-                | "compgen"
-                | "complete"
-                | "compopt"
-                | "continue"
-                | "dirs"
-                | "disown"
-                | "fc"
-                | "fg"
-                | "bg"
-                | "hash"
-                | "help"
-                | "history"
-                | "jobs"
-                | "kill"
-                | "let"
-                | "local"
-                | "logout"
-                | "popd"
-                | "pushd"
-                | "pwd"
-                | "readarray"
-                | "return"
-                | "select"
-                | "shift"
-                | "suspend"
-                | "times"
-                | "type"
-                | "ulimit"
-                | "umask"
-                | "wait"
-                | "enable"
-        ) {
-            return Err(self.error(node, "bash_unmodeled_builtin"));
-        }
-        if argv[0] == "printf" {
-            let index = if argv.get(1).is_some_and(|arg| arg == "--") {
-                2
-            } else {
-                1
-            };
-            let format = argv
-                .get(index)
-                .ok_or_else(|| self.error(node, "bash_printf_format"))?;
-            let mut chars = format.chars();
-            if format.starts_with('-') && index == 1 {
-                return Err(self.error(node, "bash_printf_state"));
-            }
-            while let Some(character) = chars.next() {
-                if character == '%' && !matches!(chars.next(), Some('%' | 's' | 'b' | 'q')) {
-                    return Err(self.error(node, "bash_printf_state"));
-                }
-            }
-        }
-        if argv[0] == "exit" {
-            if argv.len() > 2 || argv.get(1).is_some_and(|v| v.parse::<u8>().is_err()) {
-                return Err(self.error(node, "bash_dynamic_exit"));
-            }
-            self.stopped = true;
-        }
-        self.charge(argv[0].len(), node)?;
-        self.analysis.operations.push(Operation {
-            argv,
-            line: node.start_position().row + 1,
-            command_start: name.start_byte(),
-            command_end: name.end_byte(),
-        });
-        Ok(())
-    }
-
-    fn redirect(&mut self, node: Node<'_>, statement_start: usize) -> Result<()> {
-        if node.kind() != "file_redirect" || node.child_by_field_name("descriptor").is_some() {
-            return Err(self.error(node, "bash_redirect_unsupported"));
-        }
-        let destination = self.field(node, "destination")?;
-        let prefix = self.source[node.start_byte()..destination.start_byte()].trim();
-        if !matches!(prefix, ">" | ">>") {
-            return Err(self.error(node, "bash_redirect_unsupported"));
-        }
-        let path = self.word(destination, false)?;
-        self.charge(path.len(), destination)?;
-        self.analysis.writes.push(Redirect {
-            path,
-            append: prefix == ">>",
-            line: node.start_position().row + 1,
-            start: node.start_byte(),
-            end: node.end_byte(),
-            statement_start,
-        });
-        Ok(())
-    }
-
-    fn charge(&mut self, bytes: usize, node: Node<'_>) -> Result<()> {
-        self.expanded_bytes = self.expanded_bytes.saturating_add(bytes);
-        if self.expanded_bytes > MAX_SOURCE_BYTES
-            || self.analysis.operations.len() + self.analysis.writes.len() >= MAX_OPERATIONS
-        {
-            return Err(self.error(node, "bash_expanded_data_bounds"));
-        }
-        Ok(())
-    }
-
     fn for_loop(&mut self, node: Node<'_>, depth: usize) -> Result<()> {
         let variable = self.field(node, "variable")?;
         if !words::ordinary_variable(self.text(variable)) {
             return Err(self.error(variable, "bash_special_assignment"));
         }
+        if self.exported_names.contains(self.text(variable)) {
+            return Err(self.error(variable, "bash_exported_environment_assignment_unproven"));
+        }
         let mut cursor = node.walk();
-        let values = node
-            .children_by_field_name("value", &mut cursor)
-            .map(|value| self.word(value, false))
-            .collect::<Result<Vec<_>>>()?;
+        let mut values = Vec::new();
+        for value in node.children_by_field_name("value", &mut cursor) {
+            if values.len() >= MAX_LOOP_VALUES {
+                return Err(self.error(value, "bash_loop_bounds"));
+            }
+            let expanded = self.word(value, false)?;
+            self.charge(expanded.len(), value)?;
+            values.push(expanded);
+        }
         if values.is_empty() || values.len() > MAX_LOOP_VALUES {
             return Err(self.error(node, "bash_loop_bounds"));
         }

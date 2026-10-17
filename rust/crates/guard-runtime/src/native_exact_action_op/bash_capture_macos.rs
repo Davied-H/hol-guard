@@ -83,6 +83,7 @@ struct Resolver<'a> {
     names: &'a [String],
     deadline: Instant,
     captured: RefCell<BTreeMap<(String, PathBuf), graph::Executable>>,
+    source_snapshots: RefCell<BTreeMap<(String, PathBuf), graph::Code>>,
 }
 
 impl Resolver<'_> {
@@ -180,6 +181,43 @@ impl Resolver<'_> {
 }
 
 impl graph::Resolver for Resolver<'_> {
+    fn resolve_source(&self, path: &str) -> Result<graph::Code> {
+        self.check()?;
+        if path.is_empty() || path.len() > 4096 || self.environment["PATH"].split(':').count() > 256
+        {
+            return Err("bash_source_path_invalid");
+        }
+        let candidates = if path.contains('/') {
+            vec![PathBuf::from(path)]
+        } else {
+            self.environment["PATH"]
+                .split(':')
+                .map(|directory| Path::new(directory).join(path))
+                .chain(std::iter::once(PathBuf::from(path)))
+                .collect()
+        };
+        for candidate in candidates {
+            self.check()?;
+            let observed = self.cwd.join(&candidate);
+            if !std::fs::metadata(&observed).is_ok_and(|metadata| metadata.is_file()) {
+                continue;
+            }
+            let resolved = std::fs::canonicalize(observed).map_err(|_| "bash_source_unresolved")?;
+            let spelling = text(&candidate)?;
+            let key = (spelling.clone(), resolved.clone());
+            if let Some(code) = self.source_snapshots.borrow().get(&key) {
+                return Ok(code.clone());
+            }
+            if self.source_snapshots.borrow().len() + self.captured.borrow().len() >= 64 {
+                return Err("bash_source_graph_bounds");
+            }
+            let code = self.code(&spelling, &resolved)?;
+            self.source_snapshots.borrow_mut().insert(key, code.clone());
+            return Ok(code);
+        }
+        Err("bash_source_unresolved")
+    }
+
     fn resolve(&self, argv: &[String]) -> Result<graph::Executable> {
         self.check()?;
         let (spelling, path) = self.resolve_spelling(&argv[0])?;
@@ -225,6 +263,9 @@ impl graph::Resolver for Resolver<'_> {
 pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubjectV1> {
     // Resource deadline, not the separately measured installed-latency gate.
     let deadline = Instant::now() + Duration::from_millis(request.budget_ms.min(1000));
+    if request.file_creation_mask.is_some_and(|mask| mask > 0o777) {
+        return Err("bash_host_creation_mask_invalid");
+    }
     let host = match request.harness.as_str() {
         "omp" => NativeBashHostV1::OmpInputRewriteV1,
         "pi" => NativeBashHostV1::PiInputMutationV1,
@@ -245,6 +286,7 @@ pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubject
         names: &request.execution_environment.environment_names,
         deadline,
         captured: RefCell::new(BTreeMap::new()),
+        source_snapshots: RefCell::new(BTreeMap::new()),
     };
     let model = parse_shell_command(
         &request.command,
@@ -310,6 +352,7 @@ pub(super) fn inspect(request: &NativeBashCaptureV1) -> Result<NativeBashSubject
                 project: text(&project)?,
                 cwd: text(&cwd)?,
                 home: text(&home)?,
+                file_creation_mask: request.file_creation_mask,
             },
             argv,
             interpreter: NativeScriptCodeInputV1 {

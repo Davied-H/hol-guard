@@ -21,6 +21,9 @@ pub struct NativeBashCaptureV1 {
     /// Selected host-observed locale/temp values, never the daemon environment.
     #[serde(default)]
     pub environment: BTreeMap<String, String>,
+    /// Host-observed mask; unknown is not a default permission setting.
+    #[serde(default)]
+    pub file_creation_mask: Option<u32>,
     pub budget_ms: u64,
 }
 
@@ -74,6 +77,8 @@ pub struct NativeBashContextV1 {
     pub project: String,
     pub cwd: String,
     pub home: String,
+    #[serde(default)]
+    pub file_creation_mask: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -138,6 +143,14 @@ impl NativeBashSubjectV1 {
                 .any(|path| !absolute(path))
         {
             return Err("native_bash_subject_context_invalid");
+        }
+        if self
+            .context
+            .file_creation_mask
+            .is_some_and(|mask| mask > 0o777)
+            || (!self.outputs.is_empty() && self.context.file_creation_mask.is_none())
+        {
+            return Err("native_bash_subject_creation_mask_unavailable");
         }
         if self.argv[0].is_empty() || !self.argv.iter().all(|arg| text(arg)) {
             return Err("native_bash_subject_argv_invalid");
@@ -262,7 +275,7 @@ mod tests {
             "schema": "guard.bash-subject.v1",
             "context": {"host": "omp-input-rewrite-v1", "host_scope_digest": "a".repeat(64),
                 "guard_home_scope_digest": "b".repeat(64), "project": "/project",
-                "cwd": "/project", "home": "/home"},
+                "cwd": "/project", "home": "/home", "file_creation_mask": 18},
             "argv": ["maintenance.sh", "dry"],
             "code_inputs": [
                 {"kind": "interpreter", "requested_path": "/bin/bash", "resolved_path": "/bin/bash", "content_sha256": "c".repeat(64)},
@@ -317,6 +330,29 @@ mod tests {
     }
 
     #[test]
+    fn native_bash_subject_requires_observed_creation_mask_for_outputs() {
+        let mut subject = subject();
+        subject.context.file_creation_mask = None;
+        assert_eq!(subject.validate(), Ok(()));
+        subject.outputs.push(NativeScriptOutputV1 {
+            requested_path: "/report".into(),
+            resolved_path: "/report".into(),
+            append: false,
+        });
+        assert_eq!(
+            subject.validate(),
+            Err("native_bash_subject_creation_mask_unavailable")
+        );
+        subject.context.file_creation_mask = Some(0o1000);
+        assert_eq!(
+            subject.validate(),
+            Err("native_bash_subject_creation_mask_unavailable")
+        );
+        subject.context.file_creation_mask = Some(0o022);
+        assert_eq!(subject.validate(), Ok(()));
+    }
+
+    #[test]
     fn native_bash_subject_identity_is_stable_and_binds_mode_code_and_context() {
         let original = subject();
         let identity = original.identity_sha256().unwrap();
@@ -336,6 +372,9 @@ mod tests {
         assert_ne!(changed.identity_sha256().unwrap(), identity);
         let mut changed = original;
         changed.context.guard_home_scope_digest = "f".repeat(64);
+        assert_ne!(changed.identity_sha256().unwrap(), identity);
+        changed = subject();
+        changed.context.file_creation_mask = Some(0o077);
         assert_ne!(changed.identity_sha256().unwrap(), identity);
     }
 }

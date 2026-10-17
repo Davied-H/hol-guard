@@ -14,10 +14,18 @@ use super::*;
 
 struct HostResolver {
     helper: Code,
+    source: Code,
     cwd: PathBuf,
 }
 
 impl Resolver for HostResolver {
+    fn resolve_source(&self, path: &str) -> std::result::Result<Code, &'static str> {
+        if path == self.source.original_path {
+            Ok(self.source.clone())
+        } else {
+            Err("test_unknown_source")
+        }
+    }
     fn resolve(&self, argv: &[String]) -> std::result::Result<Executable, &'static str> {
         if argv[0] == "fixture-registry" {
             return Ok(Executable::Bash(self.helper.clone()));
@@ -85,14 +93,24 @@ fn run_native_fixture(output_hardlink: Option<bool>) {
     let root = temporary.0.clone();
     let script = root.join("maintenance.sh");
     let helper = root.join("fixture-registry");
+    let settings = root.join("settings.sh");
     let report = root.join("maintenance-report.tsv");
     let protected = root.join("protected");
-    std::fs::write(&script, SCRIPT).unwrap();
+    std::fs::write(
+        &script,
+        format!(
+            ". \"$HOME/settings.sh\"\n{}",
+            SCRIPT.replace("$HOME", "$fixture_home")
+        ),
+    )
+    .unwrap();
+    std::fs::write(&settings, "fixture_home=$HOME\n").unwrap();
     std::fs::write(&helper, HELPER).unwrap();
     std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::write(&protected, b"protected sentinel").unwrap();
     let resolver = HostResolver {
         helper: capture(&helper),
+        source: capture(&settings),
         cwd: root.clone(),
     };
     let argv = [script.to_str().unwrap().to_owned(), "dry".into()];
@@ -134,6 +152,7 @@ fn run_native_fixture(output_hardlink: Option<bool>) {
     // the native child starts. They must never reach the interpreter.
     std::fs::write(&script, "printf attacked > \"$HOME/protected\"\n").unwrap();
     std::fs::write(&helper, "printf attacked > \"$HOME/protected\"\n").unwrap();
+    std::fs::write(&settings, "printf attacked > \"$HOME/protected\"\n").unwrap();
     if let Some(hardlink) = output_hardlink {
         std::fs::remove_file(&report).unwrap();
         if hardlink {

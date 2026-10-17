@@ -7,9 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use sha2::{Digest, Sha256};
+use super::{Analysis, Operation, Result, Uncertainty, MAX_SOURCE_BYTES};
 
-use super::{analyze_before, Analysis, Operation, Result, Uncertainty, MAX_SOURCE_BYTES};
+mod inputs;
 
 const MAX_CODE_INPUTS: usize = 64;
 const MAX_GRAPH_CALLS: usize = 1024;
@@ -20,7 +20,7 @@ const MAX_HELPER_ARGUMENT_BYTES: usize = 64 * 1024;
 
 /// Source is deliberately not serializable. Only its observed digest belongs
 /// in a public descriptor; frozen bytes stay in the native launch boundary.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Code {
     pub original_path: String,
     pub resolved_path: String,
@@ -50,6 +50,9 @@ pub enum Executable {
 
 pub trait Resolver {
     fn resolve(&self, argv: &[String]) -> std::result::Result<Executable, &'static str>;
+    fn resolve_source(&self, _path: &str) -> std::result::Result<Code, &'static str> {
+        Err("bash_source_unresolved")
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -75,6 +78,7 @@ pub struct OutputEffect {
 pub struct Graph {
     pub entry_path: String,
     pub code: Vec<CodeIdentity>,
+    pub sources: Vec<CodeIdentity>,
     pub native_images: BTreeMap<String, String>,
     pub invocations: Vec<Invocation>,
     pub writes: Vec<OutputEffect>,
@@ -100,6 +104,7 @@ impl std::fmt::Debug for Graph {
         formatter
             .debug_struct("Graph")
             .field("code", &self.code)
+            .field("sources", &self.sources)
             .field("native_images", &self.native_images)
             .field("invocation_count", &self.invocations.len())
             .field("write_count", &self.writes.len())
@@ -113,6 +118,7 @@ struct Builder<'a> {
     environment: &'a BTreeMap<String, String>,
     deadline: Instant,
     code: BTreeMap<String, CodeIdentity>,
+    sources: BTreeMap<String, CodeIdentity>,
     snapshots: BTreeMap<String, String>,
     native_images: BTreeMap<String, String>,
     invocations: Vec<Invocation>,
@@ -180,6 +186,7 @@ fn build_inner(
         environment,
         deadline,
         code: BTreeMap::new(),
+        sources: BTreeMap::new(),
         snapshots: BTreeMap::new(),
         native_images: BTreeMap::new(),
         invocations: Vec::new(),
@@ -196,6 +203,7 @@ fn build_inner(
     Ok(Graph {
         entry_path: entry.original_path,
         code: builder.code.into_values().collect(),
+        sources: builder.sources.into_values().collect(),
         native_images: builder.native_images,
         invocations: builder.invocations,
         writes: builder.writes,
@@ -224,50 +232,10 @@ fn validate_output_order(writes: &[OutputEffect]) -> Result<()> {
 
 impl Builder<'_> {
     fn visit(&mut self, code: &Code, argv: &[String]) -> Result<String> {
-        let error = |reason| Uncertainty { reason, line: 1 };
-        if code.original_path.is_empty()
-            || code.original_path.len() > 4096
-            || code.resolved_path.len() > 4096
-            || !code.resolved_path.starts_with('/')
-        {
-            return Err(error("bash_input_path_bounds"));
-        }
-        if Instant::now() >= self.deadline {
-            return Err(error("bash_analysis_timeout"));
-        }
-        if self.active.contains(&code.resolved_path) {
-            return Err(error("bash_helper_cycle"));
-        }
-        let digest = hex::encode(Sha256::digest(code.source.as_bytes()));
-        if let Some(previous) = self.snapshots.get(&code.resolved_path) {
-            if previous != &digest {
-                return Err(error("bash_code_changed_during_analysis"));
-            }
-        } else {
-            self.bytes += code.source.len();
-            if self.bytes > MAX_SOURCE_BYTES || self.snapshots.len() >= MAX_CODE_INPUTS {
-                return Err(error("bash_graph_bounds"));
-            }
-            self.snapshots
-                .insert(code.resolved_path.clone(), digest.clone());
-        }
-        // Original spellings are also identity: two symlinks can give a helper
-        // different $0 semantics even when they name identical code bytes.
-        if self.code.get(&code.original_path).is_some_and(|previous| {
-            previous.resolved_path != code.resolved_path || previous.content_sha256 != digest
-        }) {
-            return Err(error("bash_resolution_changed_during_analysis"));
-        }
-        self.code.insert(
-            code.original_path.clone(),
-            CodeIdentity {
-                original_path: code.original_path.clone(),
-                resolved_path: code.resolved_path.clone(),
-                content_sha256: digest,
-            },
-        );
+        self.register(code, false)?;
         self.active.insert(code.resolved_path.clone());
-        let analysis = analyze_before(&code.source, argv, self.environment, self.deadline)?;
+        let analysis =
+            super::source::analyze(code, argv, self.environment, self.resolver, self.deadline)?;
         let transformed = self.operations(code, analysis)?;
         self.active.remove(&code.resolved_path);
         Ok(transformed)
@@ -276,6 +244,7 @@ impl Builder<'_> {
     fn operations(&mut self, code: &Code, analysis: Analysis) -> Result<String> {
         let mut replacements = BTreeMap::<(usize, usize), String>::new();
         let mut replacement_bytes = 0usize;
+        let mut sources = analysis.sources;
         for operation in analysis.operations {
             self.expanded_bytes = self
                 .expanded_bytes
@@ -298,7 +267,29 @@ impl Builder<'_> {
                 resolved_path: None,
             };
             let name = &operation.argv[0];
-            let replacement = if matches!(
+            let mut replacement_span = (operation.command_start, operation.command_end);
+            let replacement = if matches!(name.as_str(), "source" | ".") {
+                let index = sources
+                    .iter()
+                    .position(|source| source.command_start == operation.command_start)
+                    .ok_or(Uncertainty {
+                        reason: "bash_source_analysis_missing",
+                        line: operation.line,
+                    })?;
+                let source = sources.remove(index);
+                self.register(&source.code, true)?;
+                self.active.insert(source.code.resolved_path.clone());
+                invocation.resolved_path = Some(source.code.resolved_path.clone());
+                let empty = source.empty_program;
+                let body = self.operations(&source.code, source.analysis)?;
+                self.active.remove(&source.code.resolved_path);
+                replacement_span = (source.start, source.end);
+                Some(format!(
+                    "{{\n{}{}\n}}",
+                    if empty { ":\n" } else { "" },
+                    body
+                ))
+            } else if matches!(
                 name.as_str(),
                 ":" | "printf" | "echo" | "set" | "test" | "[" | "exit" | "true" | "false"
             ) {
@@ -326,6 +317,15 @@ impl Builder<'_> {
                             });
                         }
                         invocation.resolved_path = Some(resolved_path.clone());
+                        if !self.native_images.contains_key(&resolved_path)
+                            && self.code.len() + self.sources.len() + self.native_images.len() + 1
+                                >= MAX_CODE_INPUTS
+                        {
+                            return Err(Uncertainty {
+                                reason: "bash_graph_bounds",
+                                line: operation.line,
+                            });
+                        }
                         if self
                             .native_images
                             .get(&resolved_path)
@@ -377,7 +377,7 @@ impl Builder<'_> {
             }
             self.invocations.push(invocation);
             if let Some(replacement) = replacement {
-                let span = (operation.command_start, operation.command_end);
+                let span = replacement_span;
                 if replacements
                     .get(&span)
                     .is_some_and(|previous| previous != &replacement)

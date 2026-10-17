@@ -45,6 +45,14 @@ pub fn from_graph(
             content_sha256: code.content_sha256.clone(),
         });
     }
+    for code in &graph.sources {
+        inputs.push(NativeScriptCodeInputV1 {
+            kind: NativeScriptInputKindV1::Source,
+            requested_path: code.original_path.clone(),
+            resolved_path: code.resolved_path.clone(),
+            content_sha256: code.content_sha256.clone(),
+        });
+    }
     for (path, digest) in &graph.native_images {
         inputs.push(NativeScriptCodeInputV1 {
             kind: NativeScriptInputKindV1::Native,
