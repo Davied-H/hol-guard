@@ -369,18 +369,36 @@ def scan_workspace_skills(
                 content = skill_path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            patch = native_skill_firewall_metadata_patch(
-                name=skill_path.parent.name,
-                config_path=str(skill_path),
-                skill_content=content,
-                guard_home=store.guard_home,
-            )
-            if patch is None:
+            try:
+                patch = native_skill_firewall_metadata_patch(
+                    name=skill_path.parent.name,
+                    config_path=str(skill_path),
+                    skill_content=content,
+                    guard_home=store.guard_home,
+                )
+                if patch is None:
+                    continue
+                skill_metadata = patch.get("mcp_skill_identity")
+                firewall = patch.get("mcpSkillFirewall")
+                if not isinstance(skill_metadata, dict) or not isinstance(firewall, dict):
+                    raise NativeMcpToolEvidenceError("native_mcp_tool_evidence_result_invalid")
+            except NativeMcpToolEvidenceError as error:
+                # Same fail-closed answer the refused risk scan below gives: the
+                # install is already applied, so a skill the resident would not
+                # describe is reported unscanned rather than aborting it. No
+                # identity and no firewall metadata is persisted for it.
+                results.append(
+                    {
+                        "skill_path": str(skill_path.relative_to(workspace_dir)),
+                        "identity_hash": None,
+                        "status": "unscanned",
+                        "risk_count": None,
+                        "severities": [],
+                        "signal_ids": [],
+                        "scan_error": str(error),
+                    }
+                )
                 continue
-            skill_metadata = patch.get("mcp_skill_identity")
-            firewall = patch.get("mcpSkillFirewall")
-            if not isinstance(skill_metadata, dict) or not isinstance(firewall, dict):
-                raise NativeMcpToolEvidenceError("native_mcp_tool_evidence_result_invalid")
             identity_hash = skill_metadata["identity_hash"]
             artifact_id = f"skill-path:{skill_path}"
             stored = store.get_snapshot("skill_scan", artifact_id)

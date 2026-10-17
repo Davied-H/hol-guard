@@ -10,6 +10,7 @@ import pytest
 
 from codex_plugin_scanner.guard.cli import install_commands as install_commands_module
 from codex_plugin_scanner.guard.cli.install_commands import scan_workspace_skills
+from codex_plugin_scanner.guard.native_mcp_tool_evidence import NativeMcpToolEvidenceError
 from codex_plugin_scanner.guard.native_runner_authority import NativeRunnerAuthorityError
 from codex_plugin_scanner.guard.runtime.skill_protection import detect_skill_content_risk
 from codex_plugin_scanner.guard.store import GuardStore
@@ -412,6 +413,30 @@ def test_scan_workspace_skills_reports_unscanned_skill_when_the_resident_fails(
     assert result[0]["status"] == "unscanned"
     assert result[0]["risk_count"] is None
     assert ".codex/skills/docs/SKILL.md" in str(result[0]["skill_path"])
+    artifact_id = f"skill-path:{skills_dir / 'SKILL.md'}"
+    assert store.get_snapshot("skill_scan", artifact_id) is None
+
+
+def test_scan_workspace_skills_reports_unscanned_skill_when_the_firewall_request_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skills_dir = tmp_path / ".codex" / "skills" / "docs"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("---\nname: docs\n---\n# Docs\n", encoding="utf-8")
+    store = _make_store(tmp_path)
+
+    def _refuse(**_kwargs: object) -> dict[str, object]:
+        raise NativeMcpToolEvidenceError("native_mcp_tool_evidence_unavailable")
+
+    monkeypatch.setattr(install_commands_module, "native_skill_firewall_metadata_patch", _refuse)
+
+    result = scan_workspace_skills(tmp_path, store, "2024-01-01T00:00:00")
+
+    assert len(result) == 1
+    assert result[0]["scan_error"] == "native_mcp_tool_evidence_unavailable"
+    assert result[0]["status"] == "unscanned"
+    assert result[0]["identity_hash"] is None
     artifact_id = f"skill-path:{skills_dir / 'SKILL.md'}"
     assert store.get_snapshot("skill_scan", artifact_id) is None
 

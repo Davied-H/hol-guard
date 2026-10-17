@@ -169,3 +169,25 @@ fn an_executable_the_discovery_never_named_is_a_failure() {
         Err("native_reviewed_invocation_executable_empty")
     );
 }
+
+#[test]
+fn a_discovery_that_names_its_command_in_mixed_case_still_binds() {
+    let operations = [operation("remote-add", &["Remote", "Add"], &["-F"], &[])];
+    let rows = [row("remote-add", &["Remote", "Add", "-F"])];
+    let blocked_ids = BTreeSet::new();
+    assert_eq!(
+        validate_reviewed_invocations("MyTool", &operations, &rows, &blocked_ids, None),
+        Ok(None)
+    );
+}
+
+#[test]
+fn a_vector_that_differs_only_in_case_from_the_discovery_binds() {
+    let operations = [operation("remote-add", &["Remote", "Add"], &["-F"], &[])];
+    let rows = [row("remote-add", &["remote", "add", "-f"])];
+    let blocked_ids = BTreeSet::new();
+    assert_eq!(
+        validate_reviewed_invocations("MyTool", &operations, &rows, &blocked_ids, None),
+        Ok(None)
+    );
+}

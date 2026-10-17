@@ -19,6 +19,7 @@ use std::time::Instant;
 
 use serde_json::json;
 
+use crate::command_ascii_comparison::lowercase_for_ascii_comparison;
 use crate::native_command_program::ExecutableInvocationMatcher;
 use crate::{parse_command, CommandModelRequestV1};
 
@@ -71,16 +72,19 @@ pub fn validate_reviewed_invocations(
     if executable.trim().is_empty() {
         return Err("native_reviewed_invocation_executable_empty");
     }
+    let executable_name = normalized(executable);
+    let vocabularies: Vec<Vocabulary> = operations.iter().map(Vocabulary::of).collect();
     let mut matchers = Vec::with_capacity(operations.len());
-    for operation in operations {
-        matchers.push(matcher_for(executable, operation)?);
+    for vocabulary in &vocabularies {
+        matchers.push(matcher_for(&executable_name, vocabulary)?);
     }
     for (index, row) in rows.iter().enumerate() {
-        let owner = operations
+        let owner_index = operations
             .iter()
-            .find(|operation| operation.operation_id == row.operation_id)
+            .position(|operation| operation.operation_id == row.operation_id)
             .ok_or("native_reviewed_invocation_operation_unknown")?;
-        if let Some(code) = unknown_options(owner, &row.argv) {
+        let owner = &operations[owner_index];
+        if let Some(code) = unknown_options(&vocabularies[owner_index], &row.argv) {
             return Ok(Some(ReviewedBindingRefusal { index, code }));
         }
         let command = parse_command(&CommandModelRequestV1 {
@@ -125,12 +129,52 @@ pub fn validate_reviewed_invocations(
     Ok(None)
 }
 
+/// One operation's vocabulary in the form the grammar compares against.
+///
+/// The runtime lowercases a command before matching it and expects the matcher
+/// config it was compiled from to be lowercase already, so a discovery naming
+/// `MyTool`, `Remote` or `-F` would match nothing and every reviewed vector for
+/// it would be refused. The deleted Python matcher normalized these fields
+/// inside its own constructor; the caller owns that here.
+struct Vocabulary {
+    path: Vec<String>,
+    flags: BTreeSet<String>,
+    options_with_values: BTreeSet<String>,
+}
+
+impl Vocabulary {
+    fn of(operation: &ReviewedOperation) -> Self {
+        Self {
+            path: operation
+                .path
+                .iter()
+                .map(|token| normalized(token))
+                .collect(),
+            flags: operation
+                .flags
+                .iter()
+                .map(|flag| normalized(flag))
+                .collect(),
+            options_with_values: operation
+                .options_with_values
+                .iter()
+                .map(|option| normalized(option))
+                .collect(),
+        }
+    }
+}
+
+/// A configured comparison string, the way the compiler emits one.
+fn normalized(value: &str) -> String {
+    lowercase_for_ascii_comparison(value.trim())
+}
+
 /// The matcher a compiled program would hold for this operation: every
 /// invocation of the executable for a root operation, the operation's own path
 /// otherwise.
 fn matcher_for(
     executable: &str,
-    operation: &ReviewedOperation,
+    operation: &Vocabulary,
 ) -> Result<ExecutableInvocationMatcher, &'static str> {
     if operation.path.is_empty() {
         return ExecutableInvocationMatcher::from_config(
@@ -157,12 +201,14 @@ fn matcher_for(
 ///
 /// A root operation owns no path, so it owns no operands either: anything after
 /// the executable belongs to an operation review has not been shown.
-fn unknown_options(operation: &ReviewedOperation, argv: &[String]) -> Option<&'static str> {
+fn unknown_options(operation: &Vocabulary, argv: &[String]) -> Option<&'static str> {
     let remaining = argv.get(operation.path.len()..).unwrap_or_default();
     let mut index = 0;
     let mut operands = false;
     while index < remaining.len() {
-        let argument = remaining[index].as_str();
+        // The grammar compares a lowercased command against this vocabulary.
+        let argument = lowercase_for_ascii_comparison(&remaining[index]);
+        let argument = argument.as_str();
         if argument == "--" && !operation.path.is_empty() {
             operands = true;
         } else if operands || !argument.starts_with('-') {
