@@ -489,7 +489,7 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
             !text.contains("$(")
                 && !text.contains('`')
                 && !text.contains("<<")
-                && !crate::parser_segments::brace_runs_a_command_unquoted(&text)
+                && !crate::parser_brace_command::brace_runs_a_command_unquoted(&text)
                 && plain_after_heredocs(&text)
         }
         _ => false,
@@ -992,7 +992,7 @@ fn mask_double_quoted_separators(literal: &str) -> String {
 fn span_runs_a_command(quoted: &str) -> bool {
     quoted.contains("$(")
         || quoted.contains('`')
-        || crate::parser_segments::brace_runs_a_command(quoted)
+        || crate::parser_brace_command::brace_runs_a_command(quoted)
 }
 
 fn mask_span(quoted: &str) -> String {
