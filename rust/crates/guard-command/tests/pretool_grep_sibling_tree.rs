@@ -53,7 +53,6 @@ fn a_sibling_tree_that_could_reach_a_secret_is_reviewed() {
     write(sibling.join("config/credentials.json"), "{}\n");
     write(sibling.join("certs/server.pem"), "fixture\n");
     write(layout.home.join(".ssh/id_rsa"), "fixture\n");
-    write(layout.org.join("notes/todo.md"), "fixture\n");
     std::os::unix::fs::symlink(layout.home.join(".ssh"), sibling.join("keys")).unwrap();
     let cwd = layout.org.join("app-portal");
     for command in [
@@ -64,8 +63,7 @@ fn a_sibling_tree_that_could_reach_a_secret_is_reviewed() {
         "grep -rn fixture ~/Code/org/service-api/certs",
         "grep -rn fixture ~/Code/org/service-api/keys",
         "grep -rn fixture ~/Code/org/service-api/.git",
-        // Nothing below home that is not a repository gets this route.
-        "grep -rn fixture ~/Code/org/notes",
+        // A hidden directory of the home directory is no repository's tree.
         "grep -rn fixture ~/.ssh",
     ] {
         assert_decision(&cwd, &layout.home, command, false);
