@@ -193,6 +193,54 @@ fn plain_dot_scratch_writes_in_sibling_checkouts() {
 }
 
 #[test]
+fn framework_build_output_writes_in_sibling_checkouts() {
+    let fixture = fixture("build-output");
+    let sibling = fixture.home.join("code/sibling");
+    for name in [
+        ".next/cache/webpack/index.pack",
+        ".next/server/app/page.js",
+        ".nuxt/dist/server.mjs",
+        ".svelte-kit/output/index.js",
+        ".turbo/runs/build.log",
+        ".parcel-cache/data.mdb",
+        "node_modules/.cache/babel-loader/a.json",
+        "node_modules/.vite/deps/chunk.js",
+    ] {
+        let path = sibling.join(name);
+        assert!(write_allowed(&fixture, path.to_str().unwrap()), "{name}");
+    }
+    for name in [
+        // The names are cache directories only where a framework writes them.
+        ".cache/x.json",
+        ".vite/x.js",
+        "src/.cache/x.json",
+        "node_modules/pkg/.cache/x.json",
+        "node_modules/.bin/tool",
+        "node_modules/.husky/pre-commit",
+        // A guarded name stays guarded below a build directory.
+        ".next/.envrc",
+        ".next/.git/hooks/pre-commit",
+        ".next/.husky/pre-commit",
+        ".turbo/.claude/settings.json",
+        ".output/.npmrc",
+        ".next-extra/x.js",
+    ] {
+        let path = sibling.join(name);
+        assert!(!write_allowed(&fixture, path.to_str().unwrap()), "{name}");
+    }
+    for name in [".next/server/page.js", "node_modules/.cache/a.json"] {
+        let path = fixture.project.join(name);
+        assert!(write_allowed(&fixture, path.to_str().unwrap()), "{name}");
+    }
+    let path = fixture.project.join(".next/.envrc");
+    assert!(!write_allowed(&fixture, path.to_str().unwrap()));
+    for name in [".next/x.js", ".turbo/x.log", ".cache/x.json"] {
+        let path = fixture.home.join(name);
+        assert!(!write_allowed(&fixture, path.to_str().unwrap()), "{name}");
+    }
+}
+
+#[test]
 fn credential_files_allow_metadata_but_not_contents() {
     let fixture = fixture("metadata");
     check(
