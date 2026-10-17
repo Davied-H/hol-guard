@@ -48,6 +48,28 @@ fn naming_a_missing_file_in_a_sibling_repository_is_allowed() {
 }
 
 #[test]
+fn source_code_named_after_what_it_handles_is_still_source_code() {
+    let layout = layout("rg-sibling-named-source");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join("src/auth.ts"), "export const x = 1;\n");
+    write(sibling.join("src/token.ts"), "export const x = 1;\n");
+    write(sibling.join("lib/password.py"), "X = 1\n");
+    write(sibling.join("tests/fixtures/tokens.json"), "{}\n");
+    let cwd = layout.org.join("app-portal");
+    for command in [
+        "rg -n export ~/Code/org/service-api/src/auth.ts",
+        "rg -n export ~/Code/org/service-api/src/token.ts",
+        "rg -n X ~/Code/org/service-api/lib/password.py",
+        // A test tree names its vectors for what they exercise.
+        "rg -n fixture ~/Code/org/service-api/tests/fixtures/tokens.json",
+        // The same spelling before the file is written.
+        "rg -n export ~/Code/org/service-api/src/session-auth.ts",
+    ] {
+        assert_decision(&cwd, &layout.home, command, true);
+    }
+}
+
+#[test]
 fn a_named_path_that_could_reach_a_secret_is_reviewed() {
     let layout = layout("rg-sibling-named-secret");
     let sibling = layout.org.join("service-api");

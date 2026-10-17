@@ -385,15 +385,16 @@ pub(in crate::pretool) fn rg_sibling_repository_path(
             return false;
         }
     }
-    // A relative screen never sees the directories above the repository root,
-    // and `credential_named_path` stands aside as soon as the last component
-    // is source code, so a repository kept inside a store
+    // Everything below the repository root is screened relative to it, so no
+    // screen above sees the directories the repository itself sits in, and
+    // `credential_named_path` stands aside as soon as the last component is
+    // source code: a repository kept inside a store
     // (`~/Code/secrets/service.ts`) would clear both and open everything it
-    // holds. The directories on the way are screened on their own.
-    let full = missing
-        .iter()
-        .fold(present.clone(), |path, name| path.join(name));
-    if guard_secure_fs::credential_directory_path(&full) {
+    // holds. Only the path down to the root is read here. The components
+    // below it keep the screen they already have, which is the one that
+    // knows a test tree's fixtures from a store and a source file from a
+    // credential, so `src/auth.ts` stays the source file it is named after.
+    if guard_secure_fs::credential_directory_path(root) {
         return false;
     }
     if missing.is_empty() {
