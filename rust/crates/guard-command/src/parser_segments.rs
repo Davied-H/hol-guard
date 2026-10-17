@@ -19,6 +19,52 @@ fn opens_brace_command(character: char) -> bool {
     character.is_whitespace() || character == '|'
 }
 
+/// The same reading for text that still carries its quotes. A single quote
+/// makes everything up to the next one literal, so a `${ note; }` written
+/// there runs nothing and must not cost the command its review. Inside double
+/// quotes a single quote is an ordinary character and the brace still runs,
+/// which is why the quoted scanner above reads the raw span.
+pub(super) fn brace_runs_a_command_unquoted(text: &str) -> bool {
+    let characters: Vec<char> = text.chars().collect();
+    let mut index = 0;
+    let mut quote = Quote::None;
+    while index < characters.len() {
+        let current = characters[index];
+        match quote {
+            Quote::Single => {
+                if current == '\'' {
+                    quote = Quote::None;
+                }
+            }
+            Quote::None | Quote::Double => {
+                if current == '\\' {
+                    index += 2;
+                    continue;
+                }
+                if current == '\'' && quote == Quote::None {
+                    quote = Quote::Single;
+                } else if current == '"' {
+                    quote = if quote == Quote::Double {
+                        Quote::None
+                    } else {
+                        Quote::Double
+                    };
+                } else if current == '$'
+                    && characters.get(index + 1) == Some(&'{')
+                    && characters
+                        .get(index + 2)
+                        .copied()
+                        .is_some_and(opens_brace_command)
+                {
+                    return true;
+                }
+            }
+        }
+        index += 1;
+    }
+    false
+}
+
 pub(super) fn split_execution_segments(
     command: &str,
     preserve_unquoted_backslash: bool,

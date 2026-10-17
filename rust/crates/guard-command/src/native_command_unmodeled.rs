@@ -473,7 +473,7 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
             !text.contains("$(")
                 && !text.contains('`')
                 && !text.contains("<<")
-                && !crate::parser_segments::brace_runs_a_command(&text)
+                && !crate::parser_segments::brace_runs_a_command_unquoted(&text)
                 && plain_after_heredocs(&text)
         }
         _ => false,

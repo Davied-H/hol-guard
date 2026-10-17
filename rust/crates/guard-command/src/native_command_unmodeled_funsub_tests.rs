@@ -33,3 +33,17 @@ fn an_ordinary_quoted_expansion_still_models_exactly() {
         assert_eq!(decision(&controls, command).0, "allow", "{command}");
     }
 }
+
+/// A single quote makes the brace literal: `'${ note; }'` runs nothing, so a
+/// command carrying one keeps the review it already had. Inside double quotes
+/// that same quote is an ordinary character and the brace still runs, so
+/// reading the quotes must not become a way to write one.
+#[test]
+fn a_literal_brace_keeps_its_review() {
+    let controls = controls(github("enabled", None), false);
+    assert_eq!(
+        decision(&controls, "echo \"$(command -v gh)\" '${ note; }'").0,
+        "review"
+    );
+    assert_eq!(decision(&controls, "echo \"'${ pwd; }'\"").0, "block");
+}
