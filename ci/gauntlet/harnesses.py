@@ -71,6 +71,12 @@ class Harness:
     default_model: str | None = None
     # Reasoning effort pinned on every invocation, for CLIs that accept one.
     reasoning_effort: str | None = None
+    # The catalog's tool names this lane can actually drive. A `native-tools`
+    # case names the tools the model must use, and those names are Oh My Pi's;
+    # a lane runs such a case only when it has its own tool for every one of
+    # them. Keeping this on the adapter is what lets a structured read run
+    # where the harness really makes it, rather than only as a shell spelling.
+    native_tools: frozenset[str] = frozenset({"bash"})
 
     def model(self, requested: str | None) -> str | None:
         """The model this lane runs: the operator's choice, else the lane default."""
@@ -249,6 +255,7 @@ ADAPTERS = {
         extra_env={"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1"},
         macos_keychain=True,
         default_model="claude-sonnet-5-5",
+        native_tools=frozenset({"bash", "read", "write", "edit"}),
     ),
     "codex": Harness(
         "codex",
@@ -266,6 +273,7 @@ ADAPTERS = {
         credential_files=(".cursor/cli-config.json", "AppData/Roaming/Cursor/auth.json"),
         credential_env=("CURSOR_API_KEY",),
         macos_keychain=True,
+        native_tools=frozenset({"bash", "read", "write", "edit"}),
     ),
 }
 
