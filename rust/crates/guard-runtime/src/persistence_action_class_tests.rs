@@ -3,7 +3,7 @@ use super::action_class_writes_persistence_agent;
 #[test]
 fn a_label_naming_a_boot_or_login_mechanism_is_recognized() {
     for label in [
-        "writes a LaunchAgent plist",
+        "writes a launch agent plist",
         "adds a Login Item",
         "launchctl bootstrap",
         "installs a crontab entry",
@@ -28,6 +28,11 @@ fn a_label_naming_no_such_mechanism_is_not_one() {
         "shell command execution",
         "package install",
         "repository code execution",
+        // The table reads "launch agent" with the space the prose labels use,
+        // so a run-together spelling is not one of its mechanisms. Python read
+        // the same six tokens the same way; widening the table here would stop
+        // actions the previous posture let through.
+        "writes a LaunchAgent plist",
         "",
     ] {
         assert!(
