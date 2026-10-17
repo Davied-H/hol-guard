@@ -152,6 +152,9 @@ class BenignFixture:
             "tmp_org": self.tmp_org,
             "org_rebase": self.org.parent / "app-portal-rebase",
             "org_rebase_exec": self.org.parent / "app-portal-rebase-exec",
+            # A checkout whose `.gitignore` re-includes a hidden template,
+            # the shape nearly every application repository carries.
+            "ignore_negation": self.home / "Code" / "ignore-rules" / "billing-api",
         }[name]
 
 

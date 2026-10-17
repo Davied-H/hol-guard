@@ -29,6 +29,16 @@ pub(super) fn safe_rg_segment(
     segment: &crate::CommandSegmentV1,
     context: ReadContext<'_>,
 ) -> bool {
+    // Downstream of a pipe and with no path operand, `rg` reads the previous
+    // step's output: it opens no file and walks no directory, so the ignore
+    // files below the working directory have nothing to re-include and the
+    // root proof has no root to answer for. Without this, every
+    // `git diff | rg PATTERN` in a repository whose `.gitignore` carries a
+    // `!.env.example` rule went to review for a search that never touches
+    // the tree.
+    if segment.pipeline_index > 0 && safe_rg_stdin_arguments(&segment.arguments) {
+        return true;
+    }
     let absent = model
         .segments
         .iter()
