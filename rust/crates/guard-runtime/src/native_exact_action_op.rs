@@ -9,6 +9,7 @@
 mod bash_capture;
 mod binding;
 pub(crate) mod context;
+mod env_launch;
 mod fs_path;
 #[cfg(windows)]
 mod fs_path_windows;
@@ -119,6 +120,7 @@ pub(crate) fn review_binding_for(
             payload_cwd.as_deref(),
             workspace.as_deref(),
             execution_environment,
+            &ResidentEngines,
         )
     };
     binding::review_binding(
@@ -136,18 +138,21 @@ pub(crate) fn review_binding_for(
     )
 }
 
-/// The launcher state a one-time approval of `command` binds to: only a plain
-/// `git push origin <branch>` has one (`git_push`). It is proved in the
-/// agent's own stamped environment, so a request without one binds none.
+/// The launcher state a one-time approval of `command` binds to: a plain
+/// `git push origin <branch>` (`git_push`), or a single program behind
+/// plain environment settings (`env_launch`). Both are proved in the agent's
+/// own stamped environment, so a request without one binds none.
 fn launcher_reuse(
     command: Option<&str>,
     payload_cwd: Option<&str>,
     workspace: Option<&str>,
     execution_environment: Option<&serde_json::Value>,
+    engines: &dyn Engines,
 ) -> Option<reuse_shape::Reuse> {
     let text = command?;
     let cwd = token::launch_cwd(payload_cwd, workspace)?;
     git_push::push_state(text, &cwd, execution_environment)
+        .or_else(|_| env_launch::env_state(text, &cwd, execution_environment, engines))
         .ok()
         .map(reuse_shape::Reuse::Launcher)
 }
@@ -195,6 +200,7 @@ fn decide(
                         cwd.as_deref(),
                         workspace.as_deref(),
                         execution_environment.as_ref(),
+                        engines,
                     )
                 },
             ),

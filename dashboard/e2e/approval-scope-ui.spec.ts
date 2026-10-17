@@ -157,7 +157,7 @@ test("unbound script review offers no unusable approval or credential prompt on 
   await page.setViewportSize({ width: 390, height: 844 });
   await mountApprovalFixture(page, bodies, unbound);
   await page.goto(`/requests/scope-e2e?${DAEMON}`);
-  await expect(page.getByText(/Execution approval is unavailable/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Run this yourself" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Allow just this once|Approve and remember/ })).toHaveCount(0);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator("pre").filter({ hasText: "bash maintenance.sh dry" }).last()).toBeVisible();

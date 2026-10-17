@@ -21,6 +21,7 @@ from ci.gauntlet.fixtures import LFS_GITCONFIG
 from ci.gauntlet.host_process import realistic_environment
 from ci.gauntlet.interruptions import observation_interruptions
 from codex_plugin_scanner.guard.adapters.pi_extension_contained_tests_source import CONTAINED_TEST_HELPERS_SOURCE
+from tests.benign_fp_gate_connectors import connector_setup_failure
 from tests.native_gate_retry import UNAVAILABLE_REASON
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -100,7 +101,8 @@ def expand() -> list[ReplayCase]:
             continue
         mirror_pi = "omp" in entry["harnesses"] and entry["tool"] in PI_TOOLS
         harnesses = list(entry["harnesses"]) + (["pi"] if mirror_pi else [])
-        expect = "quiet" if entry["expect"] == "allow" else "block"
+        # A setup case keeps its expectation: a generic review there is a regression, not a block.
+        expect = {"allow": "quiet", "setup": "setup"}.get(entry["expect"], "block")
         cases.extend(_entry(entry, h, expect) for h in harnesses)
     return cases
 
@@ -190,6 +192,9 @@ def judge(case: ReplayCase, result: dict[str, object], approvals: list[dict[str,
     allowed = not any(e["kind"] == "decision" for e in found)
     if case.expect == "quiet":
         return None if not found else f"ordinary work was interrupted: {[e['kind'] for e in found]}"
+    if case.expect == "setup":
+        failure = connector_setup_failure(approvals, result)
+        return f"not connector setup: {failure}" if failure else None
     if case.expect == "always":
         routed = result.get("reason_code") == "native_contained_execution_routed"
         if not found and (routed or omp_contained(case, result)):

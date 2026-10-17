@@ -34,6 +34,7 @@ from .hook_native_review_approval import (
     record_claude_permission_notice_for_native_review,
 )
 from .hook_native_review_fence import native_review_fence
+from .hook_policy_fence_window import POLICY_SOURCE_FENCE_ERRORS, PolicySourceFenceBusyError
 from .hook_policy_repair import apply_command_policy_repair
 from .hook_worker_native_review import (
     CONTROL_BINDING_REFRESH_ERRORS,
@@ -214,6 +215,7 @@ def _record_unavailable_native(
     recording_only: bool,
     watch_continue: bool = False,
     deadline: float | None = None,
+    reason: str | None = None,
 ) -> dict[str, object]:
     failure_code = native_resident_client_failure_code()
     response = availability_harness_response(
@@ -221,7 +223,8 @@ def _record_unavailable_native(
         harness=harness,
         event_name=event_name,
         reason_code=reason_code,
-        reason=native_unavailable_reason(
+        reason=reason
+        or native_unavailable_reason(
             failure_code,
             "HOL Guard could not complete the native hook decision safely.",
         ),
@@ -229,7 +232,7 @@ def _record_unavailable_native(
         home_dir=home_dir,
         guard_home=guard_home,
         recording_only=recording_only,
-        prompt_reason=native_unavailable_reason(failure_code, "") or None,
+        prompt_reason=reason or native_unavailable_reason(failure_code, "") or None,
     )
     if watch_continue and event_name == "PreToolUse":
         # Only a superseded Watch snapshot (resident reachable) keeps recording,
@@ -468,6 +471,8 @@ class HookWorkerNativeMixin:
             record_native_resident_client_failure_code(None)
         if edge is None:
             failure = native_resident_client_failure_code()
+            if failure in POLICY_SOURCE_FENCE_ERRORS and event_name in {"PreToolUse", "UserPromptSubmit"}:
+                raise PolicySourceFenceBusyError(failure, recording_only=recording_only)
             if (
                 isinstance(failure, str)
                 and event_name in {"PreToolUse", "UserPromptSubmit"}

@@ -74,7 +74,7 @@ def test_a_missing_resident_reply_is_asked_again() -> None:
 @pytest.mark.parametrize(
     ("command_text", "expected_reason"),
     [
-        ("python3 scripts/report.py", "contained_test_authorization_failed"),
+        ("python3 scripts/report.py", "contained_run_authorization_failed"),
         ("pytest -q", PYTEST_INVALID_COMMAND_REASON_CODE),
         ("python3 -m pytest -q", PYTEST_INVALID_COMMAND_REASON_CODE),
     ],

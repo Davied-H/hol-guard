@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..native_restricted_pytest import restricted_native
 from .contained_authority import settled_authority
+from .contained_denial_note import denial_note
 from .git_execution_safety import trusted_git_binary_for_cwd
 from .restricted_pytest_model import (
     _DEFAULT_TIMEOUT_SECONDS,
@@ -33,13 +34,6 @@ WORKSPACE_PUBLISH_REASON = (
     "HOL Guard runs the checks in this command in a protected workspace sandbox "
     "(no network, no home access), then runs the Git steps that follow once it "
     "proves them again."
-)
-# Appended when a contained run fails after printing a denied operation.
-WORKSPACE_WRITE_DENIAL_NOTE = (
-    "This run hit a denied operation (EPERM or EROFS). HOL Guard runs this command in a "
-    "workspace sandbox: the workspace and $TMPDIR are writable, except a few protected paths "
-    "such as Git configuration, and there is no network or home access. Keep files the command "
-    "writes inside the workspace or $TMPDIR and run it again."
 )
 _PLAN_FIELDS = frozenset(
     {
@@ -335,7 +329,7 @@ def run_workspace_contained(
                 timeout_seconds=timeout_seconds,
                 cwd=cwd,
                 merge_stderr=merge_stderr,
-                write_denial_note=WORKSPACE_WRITE_DENIAL_NOTE,
+                write_denial_note=denial_note,
             )
 
         if isinstance(prefix, str):
@@ -486,7 +480,7 @@ def _run_overlay(
             timeout_seconds=timeout_seconds,
             cwd=workspace,
             merge_stderr=merge_stderr,
-            write_denial_note=WORKSPACE_WRITE_DENIAL_NOTE,
+            write_denial_note=denial_note,
         )
         restricted_native(
             "apply_workspace_overlay",

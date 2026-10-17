@@ -234,8 +234,14 @@ class StoreLocalMcpMixin:
         connection_identity_hash: str | None = None,
         replayed: bool = False,
         replay_now: str | None = None,
+        remote_origin: str | None = None,
+        declared_source: str | None = None,
     ) -> str:
         """Insert or refresh an MCP observation without incrementing observed_count.
+
+        ``declared_source`` (``<harness>:<stdio|remote>``) and
+        ``remote_origin`` record a harness config declaration on the same
+        record a call sighting uses.
 
         ``replayed`` marks ``seen_at`` as a history timestamp: it never moves
         ``last_seen_at`` backward and does not run retention pruning. The
@@ -260,6 +266,10 @@ class StoreLocalMcpMixin:
             "replay_now": replay_now,
             "clock": utc_now_iso(),
         }
+        if remote_origin is not None:
+            args["remote_origin"] = remote_origin
+        if declared_source is not None:
+            args["declared_source"] = declared_source
         result = self._native_store_call("ensure_local_mcp_observation", args)
         if isinstance(result, dict) and result.get("need_barrier") is True:
             # Carrying a legacy Deny changes policy authority: close the
