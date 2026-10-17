@@ -276,11 +276,8 @@ fn a_home_spelled_sibling_root_runs_contained_from_that_root() {
         "cd ~/projects/app-report/scripts && ./report.sh 2>&1 | tail -15",
         "cd ~/projects/app-report/web && ./node_modules/.bin/report build",
     ] {
-        assert_eq!(
-            contained(&home_reason("omp", &home, &main, command)),
-            host(),
-            "{command}"
-        );
+        let reason = home_reason("omp", &home, &main, command);
+        assert_eq!(contained(&reason), host(), "{command}: {reason}");
     }
     let _ = std::fs::remove_dir_all(home.parent().unwrap());
 }
