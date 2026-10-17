@@ -15,6 +15,10 @@ pub struct PathContext<'a> {
     /// No inherited npm or Node variable can move npm's registry, config
     /// files or loaded code. Literal contexts leave this false.
     pub npm_config_inert: bool,
+    /// No inherited `PIP_*` variable and no redirected user configuration
+    /// directory can add an index query, a log file or another option to a
+    /// pip command that names none. Literal contexts leave this false.
+    pub pip_config_inert: bool,
     /// The shell expands `~` to `home_dir`: its HOME names the same
     /// directory. Literal contexts leave this false.
     pub shell_home_matches: bool,

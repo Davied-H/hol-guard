@@ -18,10 +18,23 @@
 //!   any option taking a path.
 //! - `cache purge|remove`, which delete cached wheels.
 //!
-//! pip reads `pip.conf` before any of this, but without an index query a
-//! moved index cannot be reached, so the configuration cannot redirect a
-//! fetch the way an `.npmrc` can. See [`super::npm_reads`] for the case where
-//! the configuration does need its own proof.
+//! pip reads its configuration before any of this, and configuration is an
+//! option by another name: `PIP_<OPTION>` and a `pip.conf` key set the same
+//! options the command line does, so `[list] outdated = true` turns a listing
+//! into an index query and `[global] log = <path>` writes a file the command
+//! never named. So the proof also needs pip's environment and the user
+//! configuration file to leave the command alone.
+//!
+//! The site configuration beside the interpreter, and `/etc/pip.conf`, are
+//! not checked: writing either one already means controlling the `pip` the
+//! command runs, which is the larger capability. See [`super::npm_reads`] for
+//! the same proof over `.npmrc`.
+
+use std::fs;
+use std::io::ErrorKind;
+use std::path::Path;
+
+const MAX_PIP_CONF_BYTES: u64 = 64 * 1024;
 
 /// Options that only change how the listing prints, accepted by every query.
 const QUIET_FLAGS: &[&str] = &[
@@ -52,10 +65,74 @@ const CACHE_FORMATS: &[&str] = &["human", "abspath"];
 pub(super) fn safe_pip_segment(
     model: &crate::CanonicalCommandV1,
     segment: &crate::CommandSegmentV1,
+    context: super::PathContext<'_>,
 ) -> bool {
     model.dialect == "posix"
         && segment.pipeline_index == 0
         && safe_pip_arguments(&segment.arguments)
+        // pip finds the user configuration through its own HOME, so the one
+        // checked below must be that HOME.
+        && context.pip_config_inert
+        && context.shell_home_matches
+        && configuration_inert(context)
+}
+
+/// pip reads `~/.config/pip/pip.conf` and the legacy `~/.pip/pip.conf`.
+/// `XDG_CONFIG_HOME`, which moves the first, is already part of
+/// [`super::PathContext::pip_config_inert`].
+fn configuration_inert(context: super::PathContext<'_>) -> bool {
+    let Some(home) = context.home_dir.map(Path::new) else {
+        return false;
+    };
+    home.is_absolute()
+        && [
+            home.join(".config").join("pip").join("pip.conf"),
+            home.join(".pip").join("pip.conf"),
+        ]
+        .iter()
+        .all(|path| pip_conf_inert(path))
+}
+
+/// A missing file is inert. Anything unreadable, oversized or not a regular
+/// file is not.
+fn pip_conf_inert(path: &Path) -> bool {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) => return error.kind() == ErrorKind::NotFound,
+    };
+    if !metadata.is_file() || metadata.len() > MAX_PIP_CONF_BYTES {
+        return false;
+    }
+    fs::read_to_string(path).is_ok_and(|text| text.lines().all(inert_line))
+}
+
+/// Keys that only change how pip prints. Every other key is an option the
+/// command did not ask for, so the command goes back to review rather than
+/// this check guessing what the option does.
+const INERT_KEYS: &[&str] = &[
+    "disable-pip-version-check",
+    "require-virtualenv",
+    "no-color",
+    "no-input",
+    "quiet",
+    "verbose",
+    "format",
+    "progress-bar",
+];
+
+fn inert_line(line: &str) -> bool {
+    let line = line.trim();
+    if line.is_empty() || line.starts_with(['#', ';']) || line.starts_with('[') {
+        return true;
+    }
+    let key = line
+        .split(['=', ':'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .replace('_', "-");
+    INERT_KEYS.contains(&key.as_str())
 }
 
 pub(super) fn safe_pip_arguments(arguments: &[String]) -> bool {

@@ -80,6 +80,7 @@ fn home_result(
             cdpath_unset: false,
             rustup_override_absent: false,
             npm_config_inert: false,
+            pip_config_inert: false,
             ripgrep_config_absent: false,
             psql_environment: Default::default(),
         },
@@ -190,6 +191,7 @@ fn the_home_projection_answers_for_a_sibling_root() {
         cdpath_unset: false,
         rustup_override_absent: false,
         npm_config_inert: false,
+        pip_config_inert: false,
         ripgrep_config_absent: false,
         psql_environment: Default::default(),
     };

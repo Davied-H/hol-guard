@@ -98,6 +98,7 @@ pub fn evaluate_with_shell_home(
             cdpath_unset: false,
             rustup_override_absent: false,
             npm_config_inert: false,
+            pip_config_inert: false,
             shell_home_matches: false,
             ripgrep_config_absent: false,
             psql_environment: Default::default(),

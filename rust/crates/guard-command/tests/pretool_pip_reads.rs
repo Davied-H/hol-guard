@@ -30,9 +30,16 @@ fn home() -> PathBuf {
 
 /// The decision every shell harness reaches, or the disagreement.
 fn decide(home: &Path, command: &str) -> String {
+    decide_with(home, command, &[])
+}
+
+fn decide_with(home: &Path, command: &str, environment_names: &[&str]) -> String {
     let environment = guard_contracts::GuardExecutionEnvironmentV1 {
         path: std::env::var("PATH").unwrap(),
-        environment_names: Vec::new(),
+        environment_names: environment_names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect(),
         environment_digest: "0".repeat(64),
         home: Some(home.to_str().unwrap().to_owned()),
         git_pager_disabled: false,
@@ -57,6 +64,7 @@ fn decide(home: &Path, command: &str) -> String {
                     cdpath_unset: false,
                     rustup_override_absent: false,
                     npm_config_inert: false,
+                    pip_config_inert: false,
                     shell_home_matches: false,
                     ripgrep_config_absent: false,
                     psql_environment: Default::default(),
@@ -127,5 +135,66 @@ fn installs_index_queries_and_cache_writes_stay_reviewed() {
         "pip cache remove requests",
     ] {
         assert_ne!(decide(&home, command), "allow", "{command}");
+    }
+}
+
+// pip's configuration is an option by another name: an inherited variable or
+// a user configuration file sets the same options the command line does, so
+// an admitted listing must inherit neither.
+#[test]
+fn inherited_pip_configuration_returns_a_listing_to_review() {
+    let home = home();
+    assert_eq!(decide(&home, "pip list"), "allow");
+    for name in [
+        "PIP_LOG",
+        "PIP_OUTDATED",
+        "PIP_INDEX_URL",
+        "XDG_CONFIG_HOME",
+    ] {
+        assert_ne!(decide_with(&home, "pip list", &[name]), "allow", "{name}");
+    }
+    // Options that only change how pip prints leave the listing admitted.
+    assert_eq!(
+        decide_with(
+            &home,
+            "pip list",
+            &["PIP_DISABLE_PIP_VERSION_CHECK", "PIP_REQUIRE_VIRTUALENV"],
+        ),
+        "allow"
+    );
+}
+
+#[test]
+fn a_user_configuration_file_that_adds_an_option_returns_a_listing_to_review() {
+    for (directory, file, body, admitted) in [
+        (".config/pip", "pip.conf", "[global]\nquiet = 1\n", true),
+        (
+            ".config/pip",
+            "pip.conf",
+            "[list]\noutdated = true\n",
+            false,
+        ),
+        (
+            ".config/pip",
+            "pip.conf",
+            "[global]\nlog = /tmp/pip.log\n",
+            false,
+        ),
+        (
+            ".pip",
+            "pip.conf",
+            "[global]\nindex-url = https://example.invalid/simple\n",
+            false,
+        ),
+    ] {
+        let home = home();
+        std::fs::create_dir_all(home.join(directory)).unwrap();
+        std::fs::write(home.join(directory).join(file), body).unwrap();
+        let decision = decide(&home, "pip list");
+        if admitted {
+            assert_eq!(decision, "allow", "{body}");
+        } else {
+            assert_ne!(decision, "allow", "{body}");
+        }
     }
 }
