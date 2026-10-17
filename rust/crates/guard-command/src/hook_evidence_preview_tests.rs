@@ -128,3 +128,22 @@ fn an_mcp_tool_call_is_data_rather_than_shell_source() {
     }));
     assert_eq!(rendered, None);
 }
+
+#[test]
+fn a_scrub_pass_that_cannot_finish_yields_no_preview() {
+    // `rewrite` is the only place a scrub can fail: `fancy_regex` gives up on a
+    // pattern that backtracks past its bound, where Python's `re.sub` would
+    // have substituted. Returning the input there would store the raw command.
+    let pattern = FancyRegex::new(r"(a+)+$").expect("pattern");
+    let runaway = format!("{}b", "a".repeat(200));
+    assert!(
+        pattern
+            .captures_iter(&runaway)
+            .any(|captures| captures.is_err()),
+        "expected the backtrack bound to be reached"
+    );
+    assert_eq!(
+        rewrite(&pattern, &runaway, &[], |_| REDACTED.to_owned()),
+        None
+    );
+}

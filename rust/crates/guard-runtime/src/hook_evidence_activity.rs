@@ -34,6 +34,10 @@ const SCHEMA_VERSION: &str = "1.0.0";
 /// `ActivityApprovalReuseStatus` values.
 const APPROVAL_REUSE_STATUSES: [&str; 3] = ["accepted", "rejected", "not-applicable"];
 const NOT_APPLICABLE: &str = "not-applicable";
+/// `ReceiptLinkStatus.NOT_APPLICABLE` — spelled with an underscore, unlike the
+/// approval-reuse value above. The wire reader rebuilds the enum from this
+/// string, so the two cannot share one constant.
+const RECEIPT_NOT_APPLICABLE: &str = "not_applicable";
 
 /// The writer's correlation seam, bound to one installation's Guard home.
 pub(crate) struct NativeCorrelation {
@@ -159,7 +163,7 @@ pub(crate) fn policy_only_pre_hook_evidence(
         if receipt_id.is_some() {
             "linked".into()
         } else {
-            NOT_APPLICABLE.into()
+            RECEIPT_NOT_APPLICABLE.into()
         },
     );
     activity.insert(

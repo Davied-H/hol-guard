@@ -95,7 +95,9 @@ pub fn build_invocation_preview(
     if stripped.is_empty() {
         return None;
     }
-    let redacted = scrub_residual_private_text(&redact_home_prefix(stripped, home_dir));
+    // A scrub that could not run leaves no preview at all. The display text is
+    // optional; the command it came from is not safe to store unscrubbed.
+    let redacted = scrub_residual_private_text(&redact_home_prefix(stripped, home_dir))?;
     let preview = redact_sensitive_text(&redact_text(&redacted).text)
         .trim()
         .to_owned();
@@ -186,36 +188,37 @@ fn redact_home_prefix(value: &str, home_dir: Option<&str>) -> String {
     value.replace(home, "~")
 }
 
-/// `_scrub_residual_private_text` (:140-148).
-fn scrub_residual_private_text(value: &str) -> String {
-    let folded = fold_heredoc_bodies(value);
+/// `_scrub_residual_private_text` (:140-148); `None` when a pass could not run.
+fn scrub_residual_private_text(value: &str) -> Option<String> {
+    let folded = fold_heredoc_bodies(value)?;
     let mut scrubbed = strip_shell_comments(&folded);
     scrubbed = ENV_ASSIGNMENT_RE
         .replace_all(&scrubbed, REDACTED)
         .into_owned();
     scrubbed = URL_RE.replace_all(&scrubbed, REDACTED).into_owned();
-    scrubbed = replace_fancy(&POSIX_ABS_PATH_RE, &scrubbed);
+    scrubbed = replace_fancy(&POSIX_ABS_PATH_RE, &scrubbed)?;
     scrubbed = WINDOWS_ABS_PATH_RE
         .replace_all(&scrubbed, REDACTED)
         .into_owned();
     scrubbed = HOME_PATH_RE.replace_all(&scrubbed, REDACTED).into_owned();
     scrubbed = EMAIL_RE.replace_all(&scrubbed, REDACTED).into_owned();
-    redact_text(&scrubbed).text
+    Some(redact_text(&scrubbed).text)
 }
 
 /// `_HEREDOC_RE.sub(r"\g<op>…\g<end>", value)` — the body never survives.
-fn fold_heredoc_bodies(value: &str) -> String {
+fn fold_heredoc_bodies(value: &str) -> Option<String> {
     rewrite(&HEREDOC_RE, value, &["op", "end"], |groups| {
         format!("{}…{}", groups[0], groups[1])
     })
 }
 
 /// A whole-match replacement for a lookaround pattern.
-fn replace_fancy(pattern: &FancyRegex, value: &str) -> String {
+fn replace_fancy(pattern: &FancyRegex, value: &str) -> Option<String> {
     rewrite(pattern, value, &[], |_| REDACTED.to_owned())
 }
 
-/// Non-overlapping left-to-right substitution, as `re.sub` scans.
+/// Non-overlapping left-to-right substitution, as `re.sub` scans; `None` when
+/// the match loop fails.
 ///
 /// The named groups the caller asks for are resolved here rather than handing
 /// the match back, because `fancy_regex::Captures` is spelled differently
@@ -225,14 +228,15 @@ fn rewrite(
     value: &str,
     groups: &[&str],
     render: impl Fn(&[&str]) -> String,
-) -> String {
+) -> Option<String> {
     let mut out = String::with_capacity(value.len());
     let mut cursor = 0;
     for captures in pattern.captures_iter(value) {
         let Ok(captures) = captures else {
-            // A backtracking bound is a scrub failure; keep the text unchanged
-            // rather than emitting a half-scrubbed preview.
-            return value.to_owned();
+            // A backtracking bound means the scrub never ran to the end.
+            // Python's `re.sub` cannot fail this way, so there is no faithful
+            // text to return: the caller drops the preview instead.
+            return None;
         };
         let Some(whole) = captures.get(0) else {
             continue;
@@ -246,7 +250,7 @@ fn rewrite(
         cursor = whole.end();
     }
     out.push_str(&value[cursor..]);
-    out
+    Some(out)
 }
 
 /// `_strip_shell_comments` (:151-188) — hide POSIX-like comment tails.

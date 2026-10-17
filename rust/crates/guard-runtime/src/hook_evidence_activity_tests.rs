@@ -49,7 +49,7 @@ fn an_allowed_action_carries_the_whole_policy_only_wire_row() {
                 "match_count": 0,
                 "prompted": 0,
                 "approval_reuse_status": "not-applicable",
-                "receipt_link_status": "not-applicable",
+                "receipt_link_status": "not_applicable",
                 "receipt_id": null,
                 "evaluation_latency_bucket": "not_measured",
                 "persistence_latency_bucket": "not_measured",
