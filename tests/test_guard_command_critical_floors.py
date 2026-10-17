@@ -205,6 +205,7 @@ def test_native_command_model_rejects_input_above_transport_budget() -> None:
 NATIVE_STRICTER_CRITICAL_COMMANDS = frozenset(
     {
         "xargs gh pr merge 17 --repo example/repo --squash",
+        "bash -lc 'gh pr merge 17 --repo example/repo --squash'",
         "PATH=scratch/bin:$PATH hol-guard status",
         "printf '%s' \"$(cat workspace/sensitive)\"",
     }
@@ -218,10 +219,9 @@ NATIVE_STRICTER_CRITICAL_COMMANDS = frozenset(
 # against that script's own native action rather than a literal, so the two
 # can never drift apart.
 #
-# A login shell is not listed here. It runs the startup files in the home
-# directory before the script, so the shell read floors keep reviewing the
-# invocation as a local script execution and a critical command carried that
-# way stays at its frozen floor.
+# A login shell is not listed here. It sources the profile files before the
+# script, so it runs code this text does not hold and keeps the wrapper's own
+# uncertainty, which blocks above.
 CARRIED_SCRIPT_CRITICAL_COMMANDS: dict[str, str] = {
     "sh -c 'gh pr merge 17 --repo example/repo --squash'": "gh pr merge 17 --repo example/repo --squash",
 }

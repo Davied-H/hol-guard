@@ -214,26 +214,12 @@ pub(super) fn is_encoded_stdin_shell(
         && previous.arguments.iter().any(|argument| argument == "-d")
 }
 
-/// Shells that take their whole script in one `-c` word.
-const INLINE_SHELLS: &[&str] = &["sh", "bash", "dash", "ash", "zsh"];
-/// The option that reads the script from the next word.
-const INLINE_SCRIPT_OPTIONS: &[&str] = &["-c", "-lc", "-cl"];
-
-/// A shell's whole script, carried in this same text.
-pub(super) struct CarriedScript {
-    /// The shell this text names.
-    pub(super) shell: String,
-    /// The script it carries.
-    pub(super) script: String,
-    /// Whether this spelling runs a startup file the script's own words do not
-    /// name.
-    ///
-    /// `sh -c`, `bash -c`, `dash -c` and `ash -c` read no startup file. A login
-    /// shell (`-lc`, `-cl`) sources the profile files first, and `zsh` reads
-    /// `~/.zshenv` whatever option it is given, so those spellings run code
-    /// this text does not hold and keep the shell in the wrapper chain.
-    pub(super) reads_startup_files: bool,
-}
+/// Shells that take their whole script in one `-c` word and read no startup
+/// file before running it.
+///
+/// `zsh` is not one of them: it reads `~/.zshenv` whatever option it is given,
+/// so its script is never the whole command.
+const INLINE_SHELLS: &[&str] = &["sh", "bash", "dash", "ash"];
 
 /// The script a shell carries in this same text, when the text is nothing but
 /// that invocation.
@@ -241,10 +227,11 @@ pub(super) struct CarriedScript {
 /// `sh -c 'npm run build'` runs the programs those words name and nothing the
 /// text does not say, so the script is the command to model. An expansion or a
 /// substitution builds a word this text does not hold, so it is left alone, as
-/// is any other spelling: an option the shell reads differently, a `$0`, a
-/// script on stdin, a prefix or assignment in front of the shell, and a
-/// pipeline or redirect around it all keep their existing paths.
-pub(super) fn inline_shell_script(raw: &str) -> Option<CarriedScript> {
+/// is any other spelling: an option the shell reads differently (a login
+/// shell's `-lc` sources the profile files first), a `$0`, a script on stdin,
+/// a prefix or assignment in front of the shell, and a pipeline or redirect
+/// around it all keep their existing paths.
+pub(super) fn inline_shell_script(raw: &str) -> Option<String> {
     if raw.len() > crate::MAX_COMMAND_BYTES
         || raw.contains(['$', '`', '\n', '\r'])
         || carries_unquoted_operator(raw)
@@ -255,17 +242,10 @@ pub(super) fn inline_shell_script(raw: &str) -> Option<CarriedScript> {
     let [shell, option, script] = tokens.as_slice() else {
         return None;
     };
-    if !INLINE_SHELLS.contains(&shell.as_str())
-        || !INLINE_SCRIPT_OPTIONS.contains(&option.as_str())
-        || script.trim().is_empty()
-    {
+    if !INLINE_SHELLS.contains(&shell.as_str()) || option != "-c" || script.trim().is_empty() {
         return None;
     }
-    Some(CarriedScript {
-        shell: shell.clone(),
-        script: script.clone(),
-        reads_startup_files: option != "-c" || shell == "zsh",
-    })
+    Some(script.clone())
 }
 
 /// Whether an operator stands outside the quoting, where the shell reads it as
@@ -341,8 +321,7 @@ mod tests {
             assert!(super::inline_shell_script(command).is_none(), "{command}");
         }
         assert_eq!(
-            super::inline_shell_script("sh -c 'gh pr view 12 > /tmp/out'")
-                .map(|carried| carried.script),
+            super::inline_shell_script("sh -c 'gh pr view 12 > /tmp/out'"),
             Some("gh pr view 12 > /tmp/out".to_owned()),
         );
     }
@@ -458,23 +437,19 @@ mod tests {
 
     #[test]
     fn a_shell_carrying_its_script_is_modelled_from_that_script() {
-        for (command, wrappers, executable, arguments) in [
-            ("sh -c 'npm run build'", vec![], "npm", vec!["run", "build"]),
-            ("bash -c 'git status'", vec![], "git", vec!["status"]),
-            // A login shell sources the profile files and `zsh` reads
-            // `~/.zshenv` whatever option it is given, so the script is still
-            // modelled while the shell stays in the wrapper chain.
-            ("bash -lc 'git status'", vec!["bash"], "git", vec!["status"]),
-            ("zsh -c \"npm test\"", vec!["zsh"], "npm", vec!["test"]),
-            ("zsh -lc \"npm test\"", vec!["zsh"], "npm", vec!["test"]),
+        for (command, executable, arguments) in [
+            ("sh -c 'npm run build'", "npm", vec!["run", "build"]),
+            ("bash -c 'git status'", "git", vec!["status"]),
+            ("dash -c 'npm test'", "npm", vec!["test"]),
+            ("ash -c \"npm test\"", "npm", vec!["test"]),
         ] {
             let model = parse(command);
             assert_eq!(model.confidence, "exact", "{command}");
             // A shell that reads no startup file adds nothing to the script,
             // so it leaves no wrapper and the model is the one those same
             // words make on their own.
-            assert_eq!(model.wrapper_chain, wrappers, "{command}");
-            assert_eq!(model.segments[0].wrapper_chain, wrappers, "{command}");
+            assert!(model.wrapper_chain.is_empty(), "{command}");
+            assert!(model.segments[0].wrapper_chain.is_empty(), "{command}");
             assert_eq!(model.normalized_text, bare(command), "{command}");
             assert_eq!(model.segments[0].executable.as_deref(), Some(executable));
             let words: Vec<&str> = model.segments[0]
@@ -484,8 +459,7 @@ mod tests {
                 .collect();
             assert_eq!(words, arguments, "{command}");
         }
-        // Every word of a compound script is modelled, each segment carrying
-        // the shell that runs it.
+        // Every word of a compound script is modelled.
         let model = parse("bash -c 'cd dashboard && npm run build'");
         assert_eq!(model.confidence, "exact");
         assert_eq!(model.segments.len(), 2);
@@ -535,6 +509,13 @@ mod tests {
             "sh -c 'npm test' extra",
             "sh -c 'sh -c \"npm test\"'",
             "sh -ic 'npm test'",
+            // A login shell sources the profile files before the script, and
+            // `zsh` reads `~/.zshenv` whatever option it is given, so neither
+            // runs only what this text holds.
+            "bash -lc 'npm test'",
+            "sh -cl 'npm test'",
+            "zsh -c 'npm test'",
+            "zsh -lc 'npm test'",
             "env CI=1 sh -c 'npm test'",
             "sudo sh -c 'npm test'",
             "sh -c 'npm test' | tee log",

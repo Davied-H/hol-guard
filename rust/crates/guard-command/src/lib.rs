@@ -475,17 +475,14 @@ fn parse_command_unbound(request: &CommandModelRequestV1) -> Result<CanonicalCom
 /// else: a wrapped `rm -rf /` still blocks and a wrapped `gh pr merge --auto`
 /// still needs fresh approval.
 ///
-/// `sh -c`, `bash -c`, `dash -c` and `ash -c` leave no wrapper behind, because
-/// those spellings read no startup file and so add no power to the script. A
-/// login shell sources the profile files first and `zsh` reads `~/.zshenv`
-/// whatever option it is given, so those spellings run code this text does not
-/// hold: the script is still modelled, so the rules and floors its own words
-/// reach still apply, and the shell stays in the wrapper chain so the script
-/// cannot prove exact-safe or stand in for the bare command's grant. The
-/// bounded shape is what keeps the rest true: three words, a known shell, a
-/// known script option, and no expansion the parser would have to guess at.
-/// Anything else — an extra operand, `-s`, a prefix, a shell this text only
-/// names — keeps the wrapper's own uncertainty, as does a script this parser
+/// Only the spellings that read no startup file are modelled this way: `sh -c`,
+/// `bash -c`, `dash -c` and `ash -c`. A login shell (`-lc`) sources the profile
+/// files first and `zsh` reads `~/.zshenv` whatever option it is given, so
+/// those run code this text does not hold and keep the wrapper's own
+/// uncertainty. The bounded shape is what keeps the rest true: three words, a
+/// known shell, the `-c` option, and no expansion the parser would have to
+/// guess at. Anything else — an extra operand, `-s`, a prefix, a shell this
+/// text only names — keeps that uncertainty too, as does a script this parser
 /// cannot model exactly.
 ///
 /// A Windows agent runs PowerShell, which reads quotes differently from the
@@ -507,9 +504,9 @@ fn parse_inline_shell_script(
     {
         return None;
     }
-    let carried = parser_wrappers::inline_shell_script(raw)?;
+    let script = parser_wrappers::inline_shell_script(raw)?;
     let mut model = parse_posix_command(&CommandModelRequestV1 {
-        command: carried.script,
+        command: script,
         ..request.clone()
     })
     .ok()?;
@@ -517,17 +514,6 @@ fn parse_inline_shell_script(
         return None;
     }
     model.exact_raw_text = false;
-    if carried.reads_startup_files {
-        for segment in &mut model.segments {
-            segment.wrapper_chain.insert(0, carried.shell.clone());
-        }
-        model.wrapper_chain = model
-            .segments
-            .iter()
-            .flat_map(|segment| segment.wrapper_chain.iter().cloned())
-            .collect();
-        model.parser_profile = "posix-bounded-wrappers-v2".to_owned();
-    }
     Some(model)
 }
 

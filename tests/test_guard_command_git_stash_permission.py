@@ -166,27 +166,21 @@ def test_explicit_git_stash_permission_covers_a_shell_carrying_the_script(
     )
 
 
-def test_explicit_git_stash_permission_does_not_unwrap_login_shells(
-    tmp_path: Path, native_approval_reuse_runtime
-) -> None:
+def test_explicit_git_stash_permission_does_not_unwrap_login_shells(tmp_path: Path) -> None:
     command = "zsh -lc 'git stash list'"
-    fixture, canonical, evaluation = _native_fixture(
+    fixture = real_native_review_fixture(
         command,
         controls=(("permission", "command.git.permission.stash", "enabled"),),
     )
-
-    # A login shell sources the profile files first, and `zsh` reads
-    # `~/.zshenv` whatever option it is given, so this spelling runs code the
-    # text does not hold. The script is still modelled, but the shell stays in
-    # the wrapper chain and the grant for the script does not reach it.
-    assert fixture.payload["command_model"]["wrapper_chain"] == ["zsh"]
+    extensions = fixture.payload["command_extensions"]
+    assert extensions["evaluation_error"] == "native_command_evaluation_failed"
+    assert extensions["observations"] == []
+    assert fixture.payload["command_model"]["uncertainty_reason"] == "transparent_wrapper_not_yet_supported"
     request = extract_sensitive_tool_action_request(
         "Shell",
         {"command": command},
         cwd=tmp_path,
         home_dir=tmp_path,
-        canonical_command=canonical,
-        native_evaluation=evaluation,
     )
 
     assert request is not None
@@ -195,24 +189,14 @@ def test_explicit_git_stash_permission_does_not_unwrap_login_shells(
         request,
         config_path="config.toml",
         source_scope="project",
-        extension_control_snapshot=fixture.snapshot,
-        native_extension_evidence=fixture.payload,
     )
 
-    assert artifact.metadata["command_action_floor"] != "allow"
-    assert (
-        _runtime_artifact_policy_action(
-            GuardConfig(
-                guard_home=tmp_path / "guard",
-                workspace=tmp_path,
-                default_action="review",
-            ),
-            artifact,
-            "grok",
-            guard_home=native_approval_reuse_runtime,
-        )
-        != "allow"
-    )
+    assert artifact.metadata["command_action_floor"] == "review"
+    assert artifact.metadata["native_extension_evidence"] == "unavailable"
+    assert artifact.metadata["extension_control_resolution"] == {
+        "blocked": True,
+        "failures": ["native-evidence-unavailable"],
+    }
 
 
 def test_explicit_permission_allow_keeps_harness_risk_blocks(tmp_path: Path, native_approval_reuse_runtime) -> None:

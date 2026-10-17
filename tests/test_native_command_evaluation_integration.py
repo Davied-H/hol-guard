@@ -35,9 +35,7 @@ def test_real_native_payload_rejects_stale_snapshot(tmp_path: Path, monkeypatch:
 
 
 def test_real_native_transparent_wrapper_preserves_uncertain_envelope() -> None:
-    # A shell that runs more than the script it carries still hides what it
-    # runs, so the model stays an uncertain envelope with no segments.
-    fixture = real_native_review_fixture("zsh -lc 'git stash list' -- extra")
+    fixture = real_native_review_fixture("zsh -lc 'git stash list'")
     model = fixture.payload.get("command_model")
     assert isinstance(model, dict)
     canonical = _canonical_command_from_native(fixture.command, model)

@@ -69,7 +69,8 @@ def main() -> int:
         "dd if=/dev/zero of=/dev/sda",
         "mkfs.ext4 /dev/sda1",
         "shutdown -h now",
-        "bash -lc 'shred ~/.ssh/id_ed25519'",
+        # A shell carrying a destructive script is the script it carries.
+        "sh -c 'shred ~/.ssh/id_ed25519'",
         "reboot",
         "wipefs -a /dev/sda",
     )
@@ -89,7 +90,6 @@ def main() -> int:
         "kubectl apply -f deployment.yaml",
         "ssh host.example",
         "PATH=/tmp:$PATH ls",
-        "bash -lc 'npm install package'",
         "bash -lc 'pwd'",
         "cat ~/.env",
         "rg token ~/.ssh",
@@ -102,7 +102,7 @@ def main() -> int:
 
     # A shell that reads no startup file runs exactly the script it carries, so
     # the command reaches the same decision the script reaches on its own. A
-    # login shell runs the profile files first and stays under review above.
+    # login shell runs the profile files first, so it stays reviewed above.
     for index, command in enumerate(("sh -c 'pwd'", "bash -c 'pwd'")):
         result = decision(runtime, command, f"inline-shell-{index}")
         assert result["decision"] == "allow", (command, result)

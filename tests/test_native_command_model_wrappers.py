@@ -116,8 +116,8 @@ def test_a_shell_carrying_its_whole_script_is_bound_to_that_script() -> None:
     script = "gh pr view 12"
     for command in (
         f"sh -c '{script}'",
-        f"bash -lc '{script}'",
-        f'zsh -cl "{script}"',
+        f"bash -c '{script}'",
+        f'dash -c "{script}"',
     ):
         canonical = _canonical_command_from_native(command, _script_model(script))
         assert canonical is not None, command
@@ -136,6 +136,11 @@ def test_a_shell_carrying_its_whole_script_is_bound_to_that_script() -> None:
         'sh -c "$COMMAND"',
         "perl -e 'gh pr view 12'",
         "sh -x 'gh pr view 12'",
+        # A login shell and `zsh` read a startup file before the script, so
+        # the script is not the whole command either reads.
+        "bash -lc 'gh pr view 12'",
+        "sh -cl 'gh pr view 12'",
+        "zsh -c 'gh pr view 12'",
         "gh pr view 12 ; true",
         # The tokenizer keeps an operator with the word beside it, while the
         # shell reads it as its own word around the whole invocation.
