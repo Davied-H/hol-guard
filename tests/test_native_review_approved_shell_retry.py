@@ -90,13 +90,16 @@ def _approve_then_retry(
 ) -> dict[str, Any]:
     """Review one command, grant that row, and report what its retry got.
 
-    Each round uses its own command, so a grant left over from an earlier
-    round cannot be the one a later retry matches.
+    Each round uses its own command and its own file, so neither the grant
+    nor the artifact an earlier round bound can be what a later retry
+    matches: an "artifact" grant resolves every pending row that names the
+    same artifact, and with the working directory known a path operand is one
+    of the things a row is bound to.
     """
     first = worker.review_http_payload(payload=_payload(command, use_id, workspace), **kwargs)
     queued = _queued(store, seen)
     assert first["policy_action"] != "allow", first
-    assert len(queued) == 1, queued
+    assert len(queued) == 1, (first, queued)
     assert queued[0]["policy_action"] in REVIEW_ACTIONS, queued[0]
     _grant(store, queued[0]["request_id"], workspace)
 
@@ -153,9 +156,9 @@ def test_an_approval_carries_only_the_request_it_was_queued_for(
             kwargs,
             workspace,
             seen,
-            command="cat notes.txt",
+            command="cat ledger.txt",
             use_id="toolu_read",
-            retry_command="head -c 200 notes.txt",
+            retry_command="head -c 200 ledger.txt",
         )
         unbindable = _approve_then_retry(
             worker, store, kwargs, workspace, seen, command="git status --short", use_id="toolu_git"
