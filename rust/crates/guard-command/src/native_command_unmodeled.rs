@@ -1067,6 +1067,10 @@ mod sourced_tests;
 mod bounded_tests;
 
 #[cfg(test)]
+#[path = "native_command_unmodeled_ansi_c_tests.rs"]
+mod ansi_c_tests;
+
+#[cfg(test)]
 #[path = "native_command_unmodeled_funsub_tests.rs"]
 mod funsub_tests;
 
