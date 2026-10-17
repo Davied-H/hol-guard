@@ -93,3 +93,22 @@ fn a_prefix_does_not_soften_the_program_it_names() {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }
 }
+
+/// `nohup` is a shell prefix and a launcher at once. Read only as a prefix it
+/// is stepped over, which hands the script behind it to the scan as the
+/// program itself and loses the file nobody read; read as a launcher it keeps
+/// its own grammar, so the script behind it still refuses.
+#[test]
+fn a_launcher_that_is_also_a_shell_prefix_keeps_its_grammar() {
+    let controls = controls(github("enabled", None), false);
+    for command in [
+        "nohup ./deploy.sh",
+        "nohup ../tools/build.sh",
+        "nohup release.py",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+    let (action, code) = decision(&controls, "nohup cargo build");
+    assert_ne!(code, FAILED, "nohup cargo build");
+    assert_eq!(action, "review", "nohup cargo build: {code}");
+}

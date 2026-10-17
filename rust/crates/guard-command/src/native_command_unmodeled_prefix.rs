@@ -147,7 +147,10 @@ fn command_reads_a_program_file(piece: &str) -> bool {
         .split_whitespace()
         .map(|word| word.trim_matches(['\'', '"']))
         .filter(|word| !word.is_empty() && !is_assignment(word))
-        .skip_while(|word| SHELL_PREFIXES.contains(word))
+        // `nohup` is a shell prefix and a launcher at once. Skipping it here
+        // would hand the script behind it to the program scan as the program
+        // itself, so a launcher stops the skip and keeps its own grammar.
+        .skip_while(|word| SHELL_PREFIXES.contains(word) && !is_launcher(word))
         .collect();
     let Some(program) = words.first() else {
         return false;
