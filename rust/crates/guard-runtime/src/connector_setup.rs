@@ -124,6 +124,31 @@ mod tests {
         assert_eq!(first.len(), "connector:".len() + 64 + 1 + ACTION_DIGEST_HEX);
     }
 
+    /// The Python migration regroups old reviews with its own copy of
+    /// `queue_group_id`; these vectors pin both to the same ids.
+    #[test]
+    fn group_ids_match_the_shared_vectors() {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../testdata/connector_setup/connector_group_vectors.json"
+        ))
+        .unwrap();
+        assert_eq!(vectors["schema"], "hol-guard.connector-group-vectors.v1");
+        let rows = vectors["vectors"].as_array().unwrap();
+        assert!(rows.len() >= 10);
+        for row in rows {
+            let (hash, cwd, command) = (
+                row["identity_hash"].as_str().unwrap(),
+                row["cwd"].as_str().unwrap(),
+                row["command"].as_str().unwrap(),
+            );
+            assert_eq!(
+                queue_group_id(hash, cwd, command),
+                row["queue_group_id"].as_str().unwrap(),
+                "{command:?}"
+            );
+        }
+    }
+
     #[test]
     fn only_the_generic_review_is_non_recognition() {
         assert!(is_non_recognition(Some("native_command_review_required")));

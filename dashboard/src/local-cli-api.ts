@@ -410,8 +410,8 @@ export async function recognizeLocalCli(
   };
 }
 
-export async function applyLocalCliMutation(payload: LocalCliMutationPayload): Promise<void> {
-  await readJson(await fetchLocalCliApi("/v1/local-clis/apply", {
+export async function applyLocalCliMutation(payload: LocalCliMutationPayload): Promise<unknown> {
+  return readJson(await fetchLocalCliApi("/v1/local-clis/apply", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

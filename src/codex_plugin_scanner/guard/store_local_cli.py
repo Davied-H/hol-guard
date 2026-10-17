@@ -19,6 +19,7 @@ from .runtime.local_cli_identity import UnlistedCliIdentity, is_local_cli_id
 from .runtime.local_mcp_stdio import McpCatalogResult
 from .runtime.mcp_classification import McpClassificationUnavailableError, classify_mcp_actions
 from .store_custom_extension_continuity import _write_local_cli_grant
+from .store_local_cli_capabilities import LocalCliCapabilityState, capability_map, load_local_cli_capabilities
 from .store_local_cli_retention import mark_shared_enrolled_servers, utc_now_iso
 from .store_local_cli_rows import (
     _grant_from_row,
@@ -103,6 +104,7 @@ class StoreLocalCliMixin:
             command_map = _load_commands_by_cli(connection)
             catalog_map = load_mcp_catalogs(connection)
             provider_map = load_provider_catalog_summaries(connection)
+            capability_rows = load_local_cli_capabilities(connection)
         grants = {_row_text(row, 0): _grant_from_row(row) for row in grant_rows}
         items: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -142,6 +144,10 @@ class StoreLocalCliMixin:
         for item in items:
             item["authority_revision"] = authority_revision
             item["commands"] = command_map.get(str(item["cli_id"]), [])
+            # Capabilities exist only for a CLI connector; absent reads as off.
+            item["capabilities"] = (
+                capability_map(capability_rows.get(str(item["cli_id"]))) if item.get("surface") == "cli" else {}
+            )
             catalog = catalog_map.get(str(item["cli_id"]))
             if catalog is not None and item.get("surface") == "mcp" and catalog[0] == item.get("identity_hash"):
                 item["mcp_catalog"] = catalog[1]
@@ -182,6 +188,21 @@ class StoreLocalCliMixin:
             if classification is not None:
                 command["classification"] = classification
         return items
+
+    def read_local_cli_surface(self, cli_id: str) -> str | None:
+        """The observed surface of ``cli_id``, or ``None`` when never observed."""
+
+        with self._connect() as connection:
+            ensure_local_cli_schema(connection)
+            row = connection.execute("select surface from local_cli_observation where cli_id = ?", (cli_id,)).fetchone()
+        return None if row is None or not isinstance(row[0], str) else row[0]
+
+    def read_local_cli_capabilities(self, cli_id: str) -> dict[str, LocalCliCapabilityState]:
+        """The full ``{name: on|off}`` map stored for ``cli_id``."""
+
+        with self._connect() as connection:
+            ensure_local_cli_schema(connection)
+            return capability_map(load_local_cli_capabilities(connection).get(cli_id))
 
     def read_local_cli_grant(self, cli_id: str) -> dict[str, object] | None:
         grant = self._native_store_call("read_local_cli_grant", {"cli_id": cli_id})

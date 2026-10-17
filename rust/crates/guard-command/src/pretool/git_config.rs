@@ -58,6 +58,8 @@ pub(super) fn execution_free_paging(
             | "reflog"
             | "grep"
             | "branch"
+            | "tag"
+            | "clean"
             | "hash-object"
             | "config"
             | "merge-base"
@@ -276,6 +278,10 @@ fn probe(
         .filter(|value| value.starts_with('-'))
         .collect::<Vec<_>>();
     let textconv_runs = !no_textconv && textconv::may_run(operation, &option_flags);
+    // An external driver renders a diff, so only a read that renders one can
+    // start it. A tag listing, a clean preview, a ref listing or an ignore
+    // check prints names, and a configured driver leaves all of them alone.
+    let renders_diff = matches!(operation, "diff" | "log" | "show" | "reflog" | "stash");
     let mut effective = std::collections::BTreeMap::new();
     for record in output.split('\0').filter(|record| !record.is_empty()) {
         let (key, value) = record.split_once('\n')?;
@@ -286,8 +292,9 @@ fn probe(
     // Like status, hash-object pages only when its own pager.* key says so;
     // config pages by default only for its listing forms.
     let pages_by_default = match operation {
+        // `clean` prints its preview without a pager.
         "status" | "hash-object" | "merge-base" | "ls-tree" | "cat-file" | "show-ref"
-        | "for-each-ref" | "rev-list" | "describe" => false,
+        | "for-each-ref" | "rev-list" | "describe" | "clean" => false,
         "config" => super::git_config_reads::pages_by_default(&remaining[1..]),
         _ => true,
     };
@@ -348,9 +355,11 @@ fn probe(
         let unsafe_value = match key {
             "extensions.partialclone" => !value.is_empty(),
             key if key.starts_with("remote.") && key.ends_with(".promisor") => !disabled,
-            // Reading the index can start the monitor; grep reads it too.
+            // Reading the index can start the monitor; grep reads it too, and
+            // a clean preview refreshes the index before it walks the
+            // untracked tree.
             "core.fsmonitor" => {
-                (matches!(operation, "status" | "diff" | "grep")
+                (matches!(operation, "status" | "diff" | "grep" | "clean")
                     || super::git_listing_reads::reads_index(operation, &remaining[1..])
                     || super::git_history_reads::cleans_working_tree(operation, &remaining[1..]))
                     && !disabled
@@ -382,9 +391,9 @@ fn probe(
                         configured_paging
                     }
             }
-            "diff.external" => !no_external && !value.is_empty(),
+            "diff.external" => renders_diff && !no_external && !value.is_empty(),
             key if key.starts_with("diff.") && key.ends_with(".command") => {
-                !no_external && !value.is_empty()
+                renders_diff && !no_external && !value.is_empty()
             }
             key if key.starts_with("diff.") && key.ends_with(".textconv") => {
                 textconv_runs && !value.is_empty()

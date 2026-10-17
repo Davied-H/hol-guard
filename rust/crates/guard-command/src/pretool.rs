@@ -15,6 +15,10 @@ pub struct PathContext<'a> {
     /// No inherited npm or Node variable can move npm's registry, config
     /// files or loaded code. Literal contexts leave this false.
     pub npm_config_inert: bool,
+    /// No inherited `PIP_*` variable and no redirected user configuration
+    /// directory can add an index query, a log file or another option to a
+    /// pip command that names none. Literal contexts leave this false.
+    pub pip_config_inert: bool,
     /// The shell expands `~` to `home_dir`: its HOME names the same
     /// directory. Literal contexts leave this false.
     pub shell_home_matches: bool,
@@ -57,6 +61,7 @@ mod fanout_reads;
 mod find_reads;
 mod for_loop_unroll;
 pub(crate) mod git_branch_listing;
+pub(crate) mod git_clean_preview;
 pub(crate) mod git_clone_local;
 mod git_config;
 pub(crate) mod git_config_reads;
@@ -71,6 +76,7 @@ mod git_reads;
 mod git_ref_listings;
 mod git_rev_list;
 mod git_search_text;
+pub(crate) mod git_tag_listing;
 mod repo_create_reason;
 mod root_removal;
 use git_reads::safe_git_arguments;
@@ -92,6 +98,7 @@ mod lookup_reads;
 mod metadata_reads;
 mod npm_environment;
 mod npm_reads;
+mod pip_reads;
 mod postgres_reads;
 mod process_stops;
 mod pytest_contained;

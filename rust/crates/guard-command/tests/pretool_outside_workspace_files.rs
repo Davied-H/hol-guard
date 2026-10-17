@@ -354,7 +354,33 @@ fn write_probe_removes_only_the_file_it_created() {
             "touch ~/code/sibling/probe.txt && cat ~/code/sibling/.env; rm -f ~/code/sibling/probe.txt",
             "touch ~/code/sibling/probe.txt | rm -f ~/code/sibling/probe.txt",
             "touch ~/.probe && rm -f ~/.probe",
+            "touch '~/code/sibling/probe.txt' && rm -f '~/code/sibling/probe.txt'",
             "rm -f ~/code/sibling/existing.txt",
+        ],
+    );
+}
+
+#[test]
+fn write_probe_removes_only_the_directory_it_created() {
+    let fixture = fixture("probe-directory");
+    check(
+        &fixture,
+        &[
+            "mkdir ~/code/sibling/probe-dir && echo ok; rm -rf ~/code/sibling/probe-dir",
+            "mkdir -p ~/code/sibling/probe-dir && rm -r -- ~/code/sibling/probe-dir",
+            "mkdir -p ~/code/sibling/src/probe && rm -rf ~/code/sibling/src/probe",
+        ],
+        &[
+            "mkdir -p ~/code/sibling/src && rm -rf ~/code/sibling/src",
+            "mkdir -p ~/code/sibling/probe-dir && rm -rf ~/code/sibling/src",
+            "mkdir -p ~/code/sibling/new/../src && rm -rf ~/code/sibling/new/../src",
+            "mkdir -p ~/code/sibling/probe-dir && rm -f ~/code/sibling/probe-dir",
+            "touch ~/code/sibling/probe.txt && rm -rf ~/code/sibling/probe.txt",
+            "mkdir -p ~/code/sibling/probe-dir && cat ~/code/sibling/.env; rm -rf ~/code/sibling/probe-dir",
+            "mkdir -p ~/code/sibling/probe-* && rm -rf ~/code/sibling/probe-*",
+            "mkdir -p '~/code/sibling/probe-dir' && rm -rf '~/code/sibling/probe-dir'",
+            "mkdir -p \\~/code/sibling/probe-dir && rm -rf \\~/code/sibling/probe-dir",
+            "rm -rf ~/code/sibling/probe-dir",
         ],
     );
 }

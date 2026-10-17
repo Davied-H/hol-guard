@@ -421,6 +421,7 @@
     "src/codex_plugin_scanner/guard/native_local_cli_identity.py",
     "src/codex_plugin_scanner/guard/native_local_cli_grant.py",
     "src/codex_plugin_scanner/guard/local_cli_hook.py",
+    "src/codex_plugin_scanner/guard/connector_setup_context.py",
     "src/codex_plugin_scanner/guard/risk.py",
     "src/codex_plugin_scanner/guard/trusted_local_tools.py",
     "src/codex_plugin_scanner/guard/native_claude_guard_question.py",
@@ -531,6 +532,7 @@
     "src/codex_plugin_scanner/guard/daemon/hook_native_saved_approval.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_exact_action.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_local_cli.py",
+    "src/codex_plugin_scanner/guard/daemon/hook_contained_grant.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_review_fence.py",
     "src/codex_plugin_scanner/guard/**/continuation*.py"
    ],

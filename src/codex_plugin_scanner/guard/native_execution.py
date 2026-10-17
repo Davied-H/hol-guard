@@ -164,6 +164,7 @@ def _resident_request(
             "policy_decision_lookup",
             "local_cli_grant_decide",
             "local_cli_hook",
+            "connector_setup_context",
             "guard_store",
             "local_mcp_grant_decide",
             "contributed_mcp_decide",
