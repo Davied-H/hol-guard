@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import functools
+import logging
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -88,7 +90,12 @@ def test_fence_that_clears_within_budget_admits_the_same_request(
     assert response["policy_action"] == "allow"
     assert native.call_count == 3
     assert clock.slept == [fence.POLL_SECONDS, fence.POLL_SECONDS]
-    assert [call.kwargs["deadline"] for call in native.call_args_list] == [deadline] * 3
+    # A poll after a wait stops one margin short of the hook deadline.
+    assert [call.kwargs["deadline"] for call in native.call_args_list] == [
+        deadline,
+        deadline - fence.DEADLINE_MARGIN_SECONDS,
+        deadline - fence.DEADLINE_MARGIN_SECONDS,
+    ]
 
 
 def test_spent_wait_fails_closed_with_the_stable_message(
@@ -132,14 +139,88 @@ def test_zcode_wait_stays_inside_its_hook_budget(
     response = _call(worker, tmp_path, deadline, harness="zcode")
     assert response["native_failure_code"] == FENCE_CODE
     assert STABLE_MESSAGE in str(response)
-    assert clock.now <= deadline - fence.DEADLINE_MARGIN_SECONDS
-    assert clock.now > deadline - fence.DEADLINE_MARGIN_SECONDS - 2 * fence.POLL_SECONDS
+    last_poll = deadline - fence.DEADLINE_MARGIN_SECONDS - fence.ATTEMPT_MARGIN_SECONDS
+    assert clock.now <= last_poll
+    assert clock.now > last_poll - 2 * fence.POLL_SECONDS
 
 
 def test_wait_is_the_shorter_of_rebuild_bound_and_budget() -> None:
     assert fence.fence_wait_until(10.0, None) == 10.0
-    assert fence.fence_wait_until(10.0, 12.0) == 12.0 - fence.DEADLINE_MARGIN_SECONDS
+    assert fence.fence_wait_until(10.0, 12.0) == 12.0 - fence.DEADLINE_MARGIN_SECONDS - fence.ATTEMPT_MARGIN_SECONDS
     assert fence.fence_wait_until(10.0, 40.0) == 10.0 + fence.REBUILD_WAIT_SECONDS
+
+
+def test_sleep_that_runs_late_ends_the_wait_instead_of_polling_again() -> None:
+    clock = _FakeClock()
+    deadline = clock.now + 2.0
+
+    def late_sleep(seconds: float) -> None:
+        clock.sleep(seconds + 5.0)
+
+    wait = fence.PolicySourceFenceWait(
+        deadline, store=None, window=fence.PolicySourceFenceWindow(), monotonic=clock.monotonic, sleep=late_sleep
+    )
+    assert wait.pause() is False
+    assert wait.attempt_deadline == deadline - fence.DEADLINE_MARGIN_SECONDS
+
+
+def test_first_attempt_keeps_the_hook_deadline() -> None:
+    clock = _FakeClock()
+    deadline = clock.now + 4.0
+    wait = fence.PolicySourceFenceWait(
+        deadline, store=None, window=fence.PolicySourceFenceWindow(), monotonic=clock.monotonic, sleep=clock.sleep
+    )
+    assert wait.attempt_deadline == deadline
+    assert (
+        fence.PolicySourceFenceWait(None, store=None, window=fence.PolicySourceFenceWindow()).attempt_deadline is None
+    )
+
+
+def test_store_failure_is_logged_and_never_reaches_the_hook(caplog: pytest.LogCaptureFixture) -> None:
+    class _Broken:
+        def add_event(self, event_name: str, payload: dict[str, object], now: str) -> None:
+            raise OSError("database is locked")
+
+    window = fence.PolicySourceFenceWindow()
+    window.enter()
+    with caplog.at_level(logging.WARNING, logger=fence.__name__):
+        window.leave(_Broken(), admitted=True)
+    assert "fence window event was not recorded" in caplog.text
+    assert any(record.exc_info for record in caplog.records)
+
+
+def test_direct_wait_joins_an_open_window() -> None:
+    events = _Events()
+    window = fence.PolicySourceFenceWindow()
+    window.enter()
+    window.absorb_direct(events, 0.3)
+    assert events.recorded == []
+    window.leave(events, admitted=False)
+    assert len(events.recorded) == 1
+    payload = events.recorded[0][1]
+    assert payload["absorbed_calls"] == 1
+    assert payload["exhausted_calls"] == 1
+
+
+def test_direct_wait_with_no_open_window_records_its_own() -> None:
+    events = _Events()
+    window = fence.PolicySourceFenceWindow()
+    fence.record_direct_fence_wait(events, 450, window=window)
+    assert len(events.recorded) == 1
+    name, payload = events.recorded[0]
+    assert name == "policy_source_fence_window"
+    assert payload["absorbed_calls"] == 1
+    assert payload["exhausted_calls"] == 0
+    started = datetime.fromisoformat(str(payload["started_at"]))
+    ended = datetime.fromisoformat(str(payload["ended_at"]))
+    assert ended - started == timedelta(milliseconds=450)
+
+
+@pytest.mark.parametrize("waited", [None, 0, -5, True, "300", 1.5])
+def test_direct_wait_report_must_be_a_positive_integer(waited: object) -> None:
+    events = _Events()
+    fence.record_direct_fence_wait(events, waited, window=fence.PolicySourceFenceWindow())
+    assert events.recorded == []
 
 
 def test_one_window_event_counts_every_absorbed_call() -> None:

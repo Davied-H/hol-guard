@@ -10,13 +10,15 @@ with the stable policy-update message and never allow.
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 import time
 from collections.abc import Callable
-from contextlib import suppress
-from datetime import datetime, timezone
-from typing import Protocol
+from datetime import datetime, timedelta, timezone
+from typing import Protocol, cast
+
+_LOGGER = logging.getLogger(__name__)
 
 POLICY_SOURCE_FENCE_ERRORS = frozenset({"native_business_source_mutation_in_progress"})
 POLICY_UPDATE_PENDING_REASON_CODE = "native_policy_update_in_progress"
@@ -26,6 +28,9 @@ POLL_SECONDS = 0.1
 # Left for rendering and transport so a harness that fails open on hook
 # timeout always receives the fail-closed answer first.
 DEADLINE_MARGIN_SECONDS = 0.25
+# Held back from the last poll so it can finish, even if it stalls, before
+# that response margin begins.
+ATTEMPT_MARGIN_SECONDS = 0.25
 
 
 def policy_update_pending_reason(retry_seconds: float = REBUILD_WAIT_SECONDS) -> str:
@@ -52,12 +57,13 @@ def fence_wait_until(started: float, deadline: float | None) -> float:
     """The monotonic instant a fenced hook stops polling.
 
     A missing deadline grants no wait. Otherwise the wait is the shorter of
-    the rebuild bound and the hook's remaining budget less its margin.
+    the rebuild bound and the hook's remaining budget less the last poll's
+    margin and the response margin.
     """
 
     if deadline is None:
         return started
-    return min(started + REBUILD_WAIT_SECONDS, deadline - DEADLINE_MARGIN_SECONDS)
+    return min(started + REBUILD_WAIT_SECONDS, deadline - DEADLINE_MARGIN_SECONDS - ATTEMPT_MARGIN_SECONDS)
 
 
 class PolicySourceFenceWindow:
@@ -103,10 +109,41 @@ class PolicySourceFenceWindow:
                 "exhausted_calls": self._exhausted,
             }
             self._started_at = None
-        add_event = getattr(store, "add_event", None)
-        if callable(add_event):
-            with suppress(Exception):
-                add_event(POLICY_SOURCE_FENCE_WINDOW_EVENT, payload, ended_at.isoformat())
+        _record_window(store, payload, ended_at)
+
+    def absorb_direct(self, store: _EventStore | None, waited_seconds: float) -> None:
+        """Count one hook the resident's direct lane held through the fence.
+
+        The resident has no event store, so that hook reports its wait with
+        its drained evidence. A window the daemon still holds open takes the
+        hook into its count. Otherwise the wait is a window of its own.
+        """
+
+        waited = timedelta(seconds=min(max(waited_seconds, 0.0), REBUILD_WAIT_SECONDS))
+        with self._lock:
+            if self._waiting:
+                self._absorbed += 1
+                return
+            ended_at = self._wall_clock()
+        payload: dict[str, object] = {
+            "started_at": (ended_at - waited).isoformat(),
+            "ended_at": ended_at.isoformat(),
+            "absorbed_calls": 1,
+            "exhausted_calls": 0,
+        }
+        _record_window(store, payload, ended_at)
+
+
+def _record_window(store: _EventStore | None, payload: dict[str, object], ended_at: datetime) -> None:
+    """Write one window event; a store failure never changes a hook's answer."""
+
+    add_event = getattr(store, "add_event", None)
+    if not callable(add_event):
+        return
+    try:
+        add_event(POLICY_SOURCE_FENCE_WINDOW_EVENT, payload, ended_at.isoformat())
+    except Exception:
+        _LOGGER.warning("policy source fence window event was not recorded", exc_info=True)
 
 
 FENCE_WINDOW = PolicySourceFenceWindow()
@@ -143,7 +180,24 @@ class PolicySourceFenceWait:
             self._exhausted = True
             return False
         self._sleep(POLL_SECONDS)
+        if self._monotonic() > self._until:
+            # The sleep ran late; another poll could outlast the budget.
+            self._exhausted = True
+            return False
         return True
+
+    @property
+    def attempt_deadline(self) -> float | None:
+        """The deadline for this hook's next native attempt.
+
+        The first attempt keeps the hook's own deadline. A poll after a wait
+        stops one margin short of it, so a poll that stalls still leaves time
+        for the fail-closed answer.
+        """
+
+        if self._until is None or self._deadline is None:
+            return self._deadline
+        return self._deadline - DEADLINE_MARGIN_SECONDS
 
     def finish(self) -> None:
         """Leave the window once; a spent wait counts as an exhausted call."""
@@ -152,3 +206,13 @@ class PolicySourceFenceWait:
             return
         self._until = None
         self._window.leave(self._store, admitted=not self._exhausted)
+
+
+def record_direct_fence_wait(
+    store: object, waited_ms: object, *, window: PolicySourceFenceWindow = FENCE_WINDOW
+) -> None:
+    """Record the fence wait a drained direct-lane hook reports, if any."""
+
+    if isinstance(waited_ms, bool) or not isinstance(waited_ms, int) or waited_ms <= 0:
+        return
+    window.absorb_direct(cast("_EventStore | None", store), waited_ms / 1_000)

@@ -116,7 +116,8 @@ def review_native_edge(
                     home_dir=home_dir,
                     guard_home=guard_home,
                     workspace=workspace,
-                    deadline=deadline,
+                    # A poll after a fence wait stops short of the hook deadline.
+                    deadline=fence_wait.attempt_deadline,
                     claim_saved_approval=claim_saved_approval,
                     claimed_saved_allow_hash=claimed_saved_allow_hash,
                     claimed_approval_request_id=claimed_approval_request_id,

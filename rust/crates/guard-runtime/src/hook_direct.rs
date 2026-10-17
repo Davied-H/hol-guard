@@ -386,7 +386,7 @@ fn answer(
         },
         recording_only,
     };
-    let edge = fence::evaluate(envelope, policy_store)?;
+    let (edge, fence_wait) = fence::evaluate(envelope, policy_store)?;
     // Removed again unless the answer that runs it is returned.
     let mut snapshot = None;
     let mut answered = match event {
@@ -457,12 +457,12 @@ fn answer(
     let evidence = json!({
         "event": event,
         "harness": request.harness,
-        "workspace": workspace,
-        "home_dir": request_home,
+        "workspace": workspace, "home_dir": request_home,
         "payload": Value::Object(evidence_payload),
         "receipt": answered.get("receipt").cloned().unwrap_or(Value::Null),
         "harness_response": answered["harness_response"].clone(),
     });
+    let evidence = fence::with_wait(evidence, fence_wait);
     if !policy_store.direct_evidence().offer(evidence) {
         return Err(HookDirectDefer::EvidenceFull);
     }

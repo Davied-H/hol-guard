@@ -1,5 +1,6 @@
-use super::{fence_wait, poll_through_fence, POLICY_SOURCE_FENCE_ERROR, POLL_INTERVAL};
+use super::{fence_wait, poll_through_fence, with_wait, POLICY_SOURCE_FENCE_ERROR, POLL_INTERVAL};
 use crate::hook_direct::HookDirectDefer;
+use serde_json::json;
 use std::time::{Duration, Instant};
 
 fn busy() -> Result<Vec<u8>, String> {
@@ -36,9 +37,23 @@ fn fence_that_clears_within_the_budget_is_admitted() {
         },
         |interval| slept.push(interval),
     );
-    assert_eq!(edge.unwrap(), b"edge");
+    let (edge, waited) = edge.unwrap();
+    assert_eq!(edge, b"edge");
+    assert!(waited.is_some(), "a hook that polled reports its wait");
     assert_eq!(calls, 3);
     assert_eq!(slept, vec![POLL_INTERVAL, POLL_INTERVAL]);
+}
+
+#[test]
+fn hook_admitted_first_try_reports_no_wait() {
+    let (edge, waited) = poll_through_fence(
+        Duration::from_millis(750),
+        || Ok(b"edge".to_vec()),
+        |_| panic!("no wait when admitted"),
+    )
+    .unwrap();
+    assert_eq!(edge, b"edge");
+    assert_eq!(waited, None);
 }
 
 #[test]
@@ -82,4 +97,13 @@ fn no_budget_never_waits_and_other_errors_never_retry() {
     );
     assert_eq!(result, Err(HookDirectDefer::EdgeFailed));
     assert_eq!(calls, 1);
+}
+
+#[test]
+fn evidence_reports_a_wait_only_when_the_hook_waited() {
+    let record = json!({ "event": "PreToolUse" });
+    assert_eq!(with_wait(record.clone(), None), record);
+    let waited = with_wait(record, Some(Duration::from_millis(1_250)));
+    assert_eq!(waited["fence_wait_ms"], 1_250);
+    assert_eq!(waited["event"], "PreToolUse");
 }
