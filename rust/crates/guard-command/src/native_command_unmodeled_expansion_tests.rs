@@ -69,3 +69,21 @@ fn an_expansion_beside_an_unproven_redirect_keeps_the_failure() {
         assert_eq!(decision(&controls, command).1, FAILED, "{command}");
     }
 }
+
+/// An expansion glued to the characters beside it spells a word the text does
+/// not hold: `${X}er` runs docker when `X` is `dock`, and no floor can read a
+/// program nothing names. Reading the brace must not become a way to write a
+/// program name the text never spells.
+#[test]
+fn an_expansion_glued_into_a_word_keeps_the_failure() {
+    let controls = controls(github("enabled", None), false);
+    for command in [
+        "for X in dock; do find . -exec ${X}er ps {} +; done",
+        "${X}er ps",
+        "dock${X} ps",
+        "${A}${B} ps",
+        "npm run ${TASK}-build",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}

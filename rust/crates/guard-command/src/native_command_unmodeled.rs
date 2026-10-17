@@ -474,7 +474,8 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         // before any floor is read.
         Some("parameter_expansion_not_yet_supported") => {
             let literal = unquoted_literal(&command.normalized_text);
-            !moves_data(&literal) || literal_redirects_only(&command.normalized_text)
+            !expansion_builds_a_word(&command.normalized_text)
+                && (!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
         }
         // A lookup in a substitution is the only one that does not run a
         // program, so a command whose substitutions are all lookups reads
@@ -893,6 +894,39 @@ fn parameter_expansion_runs_a_command(characters: &[char]) -> bool {
         index += 1;
     }
     false
+}
+
+/// An expansion glued to the characters beside it spells a word the text does
+/// not hold. `find . -exec ${X}er ps {} +` runs docker when `X` is `dock`, and
+/// nothing a floor can read names it, so a command carrying one keeps its
+/// evaluation failure. An expansion standing as its own word, or beside a
+/// separator such as `/` or `=`, names no program the text is hiding.
+fn expansion_builds_a_word(text: &str) -> bool {
+    let characters: Vec<char> = text.chars().collect();
+    for (at, _) in text.match_indices("${") {
+        let start = text[..at].chars().count();
+        if start > 0 && glues_a_word(characters[start - 1]) {
+            return true;
+        }
+        let Some(close) = characters[start..]
+            .iter()
+            .position(|character| *character == '}')
+        else {
+            return true;
+        };
+        if characters
+            .get(start + close + 1)
+            .copied()
+            .is_some_and(glues_a_word)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn glues_a_word(character: char) -> bool {
+    character.is_alphanumeric() || matches!(character, '_' | '-' | '.' | '$' | '}')
 }
 
 fn synthesizes_program(literal: &str, sourced: bool) -> bool {
