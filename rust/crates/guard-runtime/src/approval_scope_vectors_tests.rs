@@ -6,7 +6,7 @@ use guard_contracts::{ApprovalScopeItemV1, ApprovalScopeRequestV1, APPROVAL_SCOP
 use serde_json::{json, Value};
 
 use super::evaluate;
-use crate::guard_store_approval_reads::tests::upgrade_recorded_contract;
+use super::fixture_upgrade::upgrade_recorded_contract;
 use crate::store_vectors_support_tests::gunzip_json;
 
 const VECTORS: &[u8] = include_bytes!("../tests/fixtures/approval_scope_vectors.json.gz");

@@ -86,3 +86,6 @@ pub(crate) fn contract_value(contract: &ScopeContract) -> Value {
 #[cfg(test)]
 #[path = "approval_scope_vectors_tests.rs"]
 mod vectors_tests;
+
+#[cfg(test)]
+pub(crate) mod fixture_upgrade;
