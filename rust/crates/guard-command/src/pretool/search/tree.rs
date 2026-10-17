@@ -71,10 +71,13 @@ pub(in crate::pretool) fn safe_recursive_search_target(
     safe_recursive_target_excluding(value, context, &[], &[], false, false)
 }
 
-/// Recursive comparison (`diff -r`). GNU diff reads through a link it meets
-/// while descending unless it is told not to, so the tree it walks has to be
-/// proven for what it dereferences, not only for what it lists.
-pub(in crate::pretool) fn safe_dereferencing_recursive_target(
+/// A walk whose proof has to cover what the links point at, not only what the
+/// walk lists. Two commands need it for different reasons. `diff -r` reads
+/// through a link it meets while descending unless it is told not to, so the
+/// target's contents reach the output. `cp -r` does not read the target, but
+/// it reproduces the link at a new path, and that new name is one no screen
+/// has seen; a later read of it would reach whatever the original pointed at.
+pub(in crate::pretool) fn safe_recursive_target_through_links(
     value: &str,
     context: ReadContext<'_>,
 ) -> bool {

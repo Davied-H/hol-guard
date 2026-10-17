@@ -157,7 +157,9 @@ fn recursive_search_checks_every_reachable_path() {
                 "grep --directories=recurse ordinary src/one.ts".to_owned(),
                 true,
             ),
-            ("grep -rn ordinary src".to_owned(), false),
+            // `src/alias.ts` links to the `.env`, but `-r` lists it without
+            // opening it, so the walk is proven by what grep actually reads.
+            ("grep -rn ordinary src".to_owned(), true),
             ("grep -rn ordinary __tests__/".to_owned(), true),
             (
                 "grep -rn --exclude='*.md' ordinary __tests__/".to_owned(),
@@ -181,7 +183,7 @@ fn recursive_search_checks_every_reachable_path() {
             ),
             ("rg -n ordinary unsafe-tests/".to_owned(), true),
             ("grep -Rn ordinary test-alias/".to_owned(), false),
-            ("grep -rn ordinary __tests__/ src/".to_owned(), false),
+            ("grep -rn ordinary __tests__/ src/".to_owned(), true),
             ("grep -rn -e ordinary __tests__/".to_owned(), true),
             ("grep -rn -- ordinary __tests__/".to_owned(), true),
             ("grep -rn ordinary .".to_owned(), false),
@@ -330,7 +332,10 @@ fn a_package_store_is_walked_for_what_the_search_actually_reads() {
     std::fs::create_dir_all(root.join("src")).unwrap();
     std::fs::create_dir_all(root.join("node_modules/.bin")).unwrap();
     std::fs::create_dir_all(root.join("node_modules/vitest/bin")).unwrap();
-    std::fs::create_dir_all(root.join("outside")).unwrap();
+    let outside = root.with_file_name(format!("outside-{}-{nonce}", std::process::id()));
+    std::fs::create_dir_all(&outside).unwrap();
+    let _outside_fixture = FixtureDirectory(outside.clone());
+    let outside = std::fs::canonicalize(outside).unwrap();
     let root = std::fs::canonicalize(root).unwrap();
     std::fs::write(root.join("src/index.ts"), "ordinary").unwrap();
     std::fs::write(root.join("node_modules/vitest/package.json"), "{}").unwrap();
@@ -342,8 +347,8 @@ fn a_package_store_is_walked_for_what_the_search_actually_reads() {
     .unwrap();
     // A link out of the tree to something the walk has never screened. `-r`
     // never opens it; `-R` would.
-    std::fs::write(root.join("outside/id_rsa"), "synthetic key").unwrap();
-    std::os::unix::fs::symlink(root.join("outside/id_rsa"), root.join("src/alias.ts")).unwrap();
+    std::fs::write(outside.join("id_rsa"), "synthetic key").unwrap();
+    std::os::unix::fs::symlink(outside.join("id_rsa"), root.join("src/alias.ts")).unwrap();
     for harness in ["omp", "zcode"] {
         for (command, expected) in [
             ("grep -rln ordinary .", true),
