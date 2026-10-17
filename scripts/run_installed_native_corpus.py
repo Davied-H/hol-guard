@@ -6,6 +6,8 @@ import faulthandler
 import json
 import subprocess
 import sys
+import time
+from functools import wraps
 from importlib.metadata import distribution
 from pathlib import Path
 
@@ -13,6 +15,37 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tests import guard_command_corpus_runner as runner  # noqa: E402
+
+
+def _install_worker_diagnostics() -> None:
+    from tests import guard_command_corpus_native as native
+
+    def observe(function, phase):
+        count = 0
+
+        @wraps(function)
+        def call(*args, **kwargs):
+            nonlocal count
+            count += 1
+            started = time.perf_counter()
+            print(f"corpus_phase {phase} batch={count} started", file=sys.stderr, flush=True)
+            try:
+                return function(*args, **kwargs)
+            finally:
+                elapsed = time.perf_counter() - started
+                print(f"corpus_phase {phase} batch={count} elapsed={elapsed:.3f}", file=sys.stderr, flush=True)
+
+        return call
+
+    native.real_native_review_fixtures = observe(native.real_native_review_fixtures, "native-batch")
+    native.project_native_review_fixtures_batch = observe(
+        native.project_native_review_fixtures_batch, "resident-projection"
+    )
+
+
+def _failure_detail(stderr: str) -> str:
+    progress = [line for line in stderr.splitlines() if line.startswith("corpus_phase ")]
+    return f"{progress[-1] if progress else 'no corpus phase completed'}\n{stderr[-1200:]}"
 
 
 def _require_installed_evaluator() -> None:
@@ -39,9 +72,9 @@ def _run_installed_worker(worker_index: int) -> runner.WorkerReport:
         tail = error.stderr or b""
         if isinstance(tail, bytes):
             tail = tail.decode("utf-8", errors="replace")
-        raise ValueError(f"installed native corpus worker {worker_index} timed out: {tail[-2000:]}") from error
+        raise ValueError(f"installed native corpus worker {worker_index} timed out: {_failure_detail(tail)}") from error
     if completed.returncode != 0:
-        raise ValueError(f"installed native corpus worker {worker_index} failed: {completed.stderr[-1200:]}")
+        raise ValueError(f"installed native corpus worker {worker_index} failed: {_failure_detail(completed.stderr)}")
     try:
         return runner._decode_worker(completed.stdout)
     except (json.JSONDecodeError, ValueError) as exc:
@@ -63,6 +96,7 @@ def main() -> int:
         # Stack frames contain no command payloads. Preserve where a worker is
         # waiting before the unchanged parent deadline terminates it.
         timeout = 180 if sys.platform == "win32" else runner.WORKER_TIMEOUT_SECONDS
+        _install_worker_diagnostics()
         faulthandler.dump_traceback_later(max(1, timeout - 10))
         try:
             report = runner._worker_report(int(sys.argv[2]), runner.EVALUATION_SHARD_COUNT)
