@@ -160,7 +160,7 @@ fn bounded_read_target_with_brackets(
     };
     if let Ok(canonical) = std::fs::canonicalize(&candidate) {
         return (canonical.is_file() || (allow_directory && canonical.is_dir()))
-            && (resolved_path_allowed_for_operation(&canonical, home_dir, cwd, false, true)
+            && (resolved_read_target_allowed(&candidate, &canonical, home_dir, cwd)
                 || package_source::installed_package_source(
                     &candidate, &canonical, home_dir, cwd,
                 ));
@@ -257,13 +257,33 @@ pub(super) fn resolved_path_allowed_for_operation(
                     || git_config_document(canonical, cwd)
                     || worktree_gitfile(canonical)
                     || scratch::workspace_scratch_read(canonical, home_dir, cwd)))
-            || (read_only
-                && (execution_output_log(canonical, home_dir)
-                    || resolved_home_hidden_content_read(canonical, home_dir))))
+            || (read_only && execution_output_log(canonical, home_dir)))
     {
         return false;
     }
     true
+}
+
+/// The gate above, plus the hidden-home content screen, for a read whose
+/// spelling the caller still holds.
+///
+/// The screen is asked here rather than inside the gate itself for two
+/// reasons. The gate answers listings and write screens too, and a listing
+/// asks a different question: `ls -la ~/.local/share/data` prints entry names
+/// and has its own screen, which this rule must not stand in for. And a
+/// spelling that reached the path through a link keeps its review, because a
+/// link below an install root or a skill root is exactly how a benign name
+/// reaches a tree whose own rule would refuse it.
+pub(super) fn resolved_read_target_allowed(
+    candidate: &std::path::Path,
+    canonical: &std::path::Path,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    resolved_path_allowed_for_operation(canonical, home_dir, cwd, false, true)
+        || (!guard_secure_fs::contains_symlink_component(candidate)
+            && resolved_location_allowed(canonical, home_dir, cwd, false)
+            && resolved_home_hidden_content_read(canonical, home_dir))
 }
 
 /// Every resolved-path screen except the hidden-component one: system roots,

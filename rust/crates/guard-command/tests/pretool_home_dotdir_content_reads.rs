@@ -39,8 +39,11 @@ fn home(name: &str) -> PathBuf {
         ".config/doctl",
         ".config/gcloud",
         ".config/gh",
+        ".config/configstore",
         ".config/github-copilot",
+        ".config/ngrok",
         ".gemini",
+        ".ngrok2",
         ".github/workflows",
         ".local/share/opencode",
         ".nvm/versions/node/v25.2.1/lib/node_modules/pkg",
@@ -77,7 +80,11 @@ fn home(name: &str) -> PathBuf {
         (".config/gcloud/credentials.db", "x\n"),
         (".config/gh/hosts.yml", "example.com:\n"),
         (".config/github-copilot/apps.json", "{}\n"),
+        (".claude.json", "{}\n"),
+        (".config/configstore/firebase-tools.json", "{}\n"),
+        (".config/ngrok/ngrok.yml", "authtoken: x\n"),
         (".envrc", "export TOKEN=x\n"),
+        (".ngrok2/ngrok.yml", "authtoken: x\n"),
         (".gemini/oauth_creds.json", "{}\n"),
         (".github/workflows/ci.yml", "name: ci\n"),
         (".local/share/opencode/auth.json", "{}\n"),
@@ -85,7 +92,9 @@ fn home(name: &str) -> PathBuf {
             ".nvm/versions/node/v25.2.1/lib/node_modules/pkg/package.json",
             "{\"name\": \"pkg\"}\n",
         ),
+        (".secrets/prod.yaml", "password: x\n"),
         (".secrets/service-account.json", "{}\n"),
+        (".yarnrc.yml", "npmAuthToken: x\n"),
         (".ssh/config", "Host example\n"),
         ("work/project/.git/HEAD", "ref: refs/heads/main\n"),
     ] {
@@ -187,6 +196,42 @@ fn secret_bearing_file_names_keep_review_in_benign_directories() {
         "cat ~/.envrc",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
+
+/// A tool writes its own credentials into the first file inside the directory
+/// it owns, under whatever name it chose: `ngrok` picks `ngrok.yml`,
+/// `firebase-tools` a JSON file named after itself. No stem list can keep up
+/// with that, because every tool invents its own name. What they share is the
+/// slot — directly inside the tool's directory, or directly below home — so
+/// that slot keeps its review and content further down reads. Prose is the
+/// exception: a token is not written in Markdown.
+#[test]
+fn a_tools_own_configuration_keeps_review() {
+    let home = home("slots");
+    for command in [
+        "cat ~/.ngrok2/ngrok.yml",
+        "cat ~/.config/ngrok/ngrok.yml",
+        "cat ~/.config/configstore/firebase-tools.json",
+        "cat ~/.secrets/prod.yaml",
+        "cat ~/.yarnrc.yml",
+        "cat ~/.claude.json",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+    for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+        for target in [
+            ".ngrok2/ngrok.yml",
+            ".config/configstore/firebase-tools.json",
+            ".secrets/prod.yaml",
+            ".yarnrc.yml",
+        ] {
+            assert_ne!(
+                native_action(&home, harness, tool, target),
+                "allow",
+                "{harness} {tool} {target}"
+            );
+        }
     }
 }
 

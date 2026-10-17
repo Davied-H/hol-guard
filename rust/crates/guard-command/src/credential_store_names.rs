@@ -76,7 +76,7 @@ pub(crate) const NESTED_CREDENTIAL_STORE_NAMES: [&str; 16] = [
 /// hidden directory this is where a tool's own secret lives, whatever the
 /// directory is called: `~/.config/doctl/config.yaml` holds an API token, and
 /// `doctl` is not a name any directory screen can be expected to know.
-const SECRET_BEARING_STEMS: [&str; 23] = [
+const SECRET_BEARING_STEMS: [&str; 27] = [
     "account",
     "accounts",
     "apps",
@@ -95,6 +95,10 @@ const SECRET_BEARING_STEMS: [&str; 23] = [
     "keyrings",
     "keys",
     "oauth_creds",
+    "password",
+    "passwords",
+    "secret",
+    "secrets",
     "service-account",
     "serviceaccount",
     "settings",
@@ -196,6 +200,42 @@ fn curated_tree_owns(parents: &[String]) -> bool {
     }) || parents.iter().any(|name| download_cache(name))
 }
 
+/// Names prose is written under. A token is not written in Markdown, so a
+/// guidance document keeps the one place below a hidden directory that a
+/// tool's own configuration also occupies.
+fn documentation_name(name: &str) -> bool {
+    [".md", ".markdown", ".rst"]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+}
+
+/// How deep the directory a tool owns sits below the home directory.
+///
+/// Usually it is the hidden directory itself (`~/.ngrok2`). Below `~/.config`
+/// and `~/.local/share` it is the next component down (`~/.config/ngrok`),
+/// because those two are shared roots rather than one tool's directory.
+fn tool_root_depth(parents: &[String]) -> usize {
+    match parents.first().map(String::as_str) {
+        Some(".config") => 2,
+        Some(".local") if parents.get(1).is_some_and(|name| name == "share") => 3,
+        _ => 1,
+    }
+}
+
+/// Whether the file sits where a tool keeps its own configuration: directly
+/// inside the directory that tool owns, or above it.
+///
+/// `~/.ngrok2/ngrok.yml` holds an authtoken, `~/.config/ngrok/ngrok.yml` the
+/// same one, `~/.config/configstore/firebase-tools.json` a refresh token and
+/// `~/.secrets/prod.yaml` whatever the name promises. None of those names is
+/// one a stem list can be expected to know, and the list would never finish:
+/// every tool invents its own. What they share is the slot. A file further
+/// down is content the tool manages — a workflow, a package, a vendored crate
+/// — which is the shape this rule was opened for.
+fn tool_configuration_slot(parents: &[String], name: &str) -> bool {
+    parents.len() <= tool_root_depth(parents) && !documentation_name(name)
+}
+
 /// Whether a content read may cross the hidden components of `lowered`, the
 /// lowercased names a path has below the home directory.
 ///
@@ -210,6 +250,7 @@ fn curated_tree_owns(parents: &[String]) -> bool {
 ///   that owns the directory, the same rule the listing screen applies;
 /// - a credential store at any depth, and a file named the way a token, key
 ///   or settings file conventionally is;
+/// - a tool's own configuration, per [`tool_configuration_slot`];
 /// - a tree a narrower rule already owns, per [`curated_tree_owns`].
 pub(crate) fn hidden_content_read_allowed(lowered: &[String]) -> bool {
     let Some((name, parents)) = lowered.split_last() else {
@@ -219,6 +260,7 @@ pub(crate) fn hidden_content_read_allowed(lowered: &[String]) -> bool {
         && !parents.iter().skip(1).any(|part| part.starts_with('.'))
         && !name.starts_with('.')
         && !curated_tree_owns(parents)
+        && !tool_configuration_slot(parents, name)
         && !names_hold_credential_store(lowered)
         && !secret_bearing_file_name(name)
 }
