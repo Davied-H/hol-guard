@@ -532,10 +532,10 @@ def _emit_copilot_hook_response(
     if scanner_evidence:
         params["scanner_evidence"] = list(scanner_evidence)
     rendered = hook_payload._render_cli("copilot_hook_response", "copilot", params)
-    payload = rendered[1] if rendered is not None else None
+    payload: dict[str, object] = dict(rendered[1]) if rendered is not None and rendered[1] else {}
     if not payload:
         blocked = policy_action in hook_payload._BLOCKING_ACTIONS
-        payload = {"permissionDecision": "deny" if blocked else "allow"}
+        payload["permissionDecision"] = "deny" if blocked else "allow"
         if blocked:
             payload["permissionDecisionReason"] = reason
         if approval_reuse is not None:
