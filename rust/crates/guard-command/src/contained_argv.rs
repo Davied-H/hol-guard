@@ -381,11 +381,13 @@ fn contained_kind(command: &[String]) -> Result<Value, RestrictedPytestError> {
     let node_tool = bun.is_none()
         && !pnpm_exec_vitest(command)
         && !command.is_empty()
-        && (matches!(name, "eslint" | "tsc" | "vite" | "bun" | "npm" | "pnpm")
-            || (matches!(name, "bunx" | "npx")
-                && entries
-                    .clone()
-                    .any(|v| matches!(v.as_str(), "eslint" | "tsc" | "vite")))
+        && (matches!(
+            name,
+            "eslint" | "tsc" | "vite" | "bun" | "npm" | "pnpm" | "yarn"
+        ) || (matches!(name, "bunx" | "npx")
+            && entries
+                .clone()
+                .any(|v| matches!(v.as_str(), "eslint" | "tsc" | "vite")))
             || (matches!(name, "node" | "nodejs")
                 && entries.clone().any(|v| {
                     [

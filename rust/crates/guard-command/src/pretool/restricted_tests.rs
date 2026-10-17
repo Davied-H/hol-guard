@@ -315,6 +315,18 @@ pub(super) fn windows_script_reason(
     .then_some(reason)
 }
 
+/// The script a package-manager command names. npm and Bun need the explicit
+/// `run`; pnpm and Yarn also run a script named directly, and a project that
+/// documents `pnpm lint` or `yarn build` is spelling the same work. The sink
+/// resolves the script body either way, so both spellings reach it together.
+pub(super) fn manager_script_task<'a>(manager: &str, arguments: &'a [String]) -> Option<&'a str> {
+    match arguments {
+        [run, task] if run == "run" => Some(task.as_str()),
+        [task] if matches!(manager, "pnpm" | "yarn") => Some(task.as_str()),
+        _ => None,
+    }
+}
+
 pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'static str> {
     if requires_pytest_containment(model) {
         return Some("native_pytest_readonly_containment_required");
@@ -388,7 +400,7 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
     }
     if matches!(
         super::executable_basename(executable),
-        "npm" | "pnpm" | "bun"
+        "npm" | "pnpm" | "bun" | "yarn"
     ) {
         let rest = match arguments {
             [test, rest @ ..] if test == "test" => Some(rest),
@@ -424,8 +436,8 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         _ => (crate::program_basename(executable), arguments),
     };
     let build = match executable {
-        "bun" | "npm" | "pnpm" => {
-            matches!(arguments, [run, task] if run == "run" && task == "build")
+        "bun" | "npm" | "pnpm" | "yarn" => {
+            manager_script_task(executable, arguments) == Some("build")
         }
         "bunx" | "npx" => {
             matches!(arguments, [tool, task, ..] if tool == "vite" && task == "build")
@@ -440,14 +452,17 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         return Some("native_node_build_output_containment_required");
     }
     let read_only_node_tool = match executable {
-        "bun" | "npm" => {
-            matches!(arguments, [run, task] if run == "run" && matches!(task.as_str(), "lint" | "typecheck"))
-        }
+        "bun" | "npm" | "yarn" => matches!(
+            manager_script_task(executable, arguments),
+            Some("lint" | "typecheck")
+        ),
         // `pnpm exec` is pnpm's spelling of a local-bin run; only the bare
         // form, with no pnpm option before the tool, reads as one.
         "pnpm" => {
-            matches!(arguments, [run, task] if run == "run" && matches!(task.as_str(), "lint" | "typecheck"))
-                || matches!(arguments, [exec, tool, rest @ ..] if exec == "exec" && (tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit"))))
+            matches!(
+                manager_script_task(executable, arguments),
+                Some("lint" | "typecheck")
+            ) || matches!(arguments, [exec, tool, rest @ ..] if exec == "exec" && (tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit"))))
         }
         "bunx" | "npx" => {
             matches!(arguments, [tool, rest @ ..] if tool == "eslint" || (tool == "tsc" && rest.iter().any(|arg| arg == "--noEmit")))

@@ -63,6 +63,22 @@ def is_local_package_entry(argument: str, package_entry: str) -> bool:
     return prefix != argument and (prefix == "" or prefix.endswith("/"))
 
 
+def _script_task(manager: str, args: Sequence[str]) -> str | None:
+    """The lint/typecheck/build script a package-manager command names.
+
+    npm and Bun need the explicit `run`. pnpm and Yarn also run a script named
+    directly, and a project that documents `pnpm lint` or `yarn build` means
+    the same script, so both spellings resolve the same way here.
+    """
+    if len(args) == 2 and args[0] == "run":
+        task = args[1]
+    elif len(args) == 1 and manager in {"pnpm", "yarn"}:
+        task = args[0]
+    else:
+        return None
+    return task if task in {"lint", "typecheck", "build"} else None
+
+
 def _package_directory(directory: Path, workspace: Path) -> bool:
     """The workspace root, or a package directory below it reached without links."""
     if directory == workspace:
@@ -256,8 +272,9 @@ def prepare_restricted_node_tool(
         if len(args) < 2 or args[1].startswith("-"):
             raise RestrictedPytestError("node_tool_invalid_command", "Missing local runner.")
         name, args = args[1], args[2:]
-    elif name in {"bun", "npm", "pnpm"}:
-        if len(args) != 2 or args[0] != "run" or args[1] not in {"lint", "typecheck", "build"}:
+    elif name in {"bun", "npm", "pnpm", "yarn"}:
+        task = _script_task(name, args)
+        if task is None:
             raise RestrictedPytestError(
                 "node_tool_invalid_command", "Only direct lint/typecheck scripts are supported."
             )
@@ -268,11 +285,11 @@ def prepare_restricted_node_tool(
         package = nearest_project_root(cwd or workspace, workspace, "package.json")
         manifest, _digest = read_json_with_integrity(package / "package.json")
         scripts = manifest.get("scripts") if isinstance(manifest, dict) else None
-        if isinstance(scripts, dict) and any(scripts.get(phase + args[1]) for phase in ("pre", "post")):
+        if isinstance(scripts, dict) and any(scripts.get(phase + task) for phase in ("pre", "post")):
             raise RestrictedPytestError(
                 "node_tool_invalid_command", "This script has lifecycle actions that need separate evaluation."
             )
-        script = scripts.get(args[1]) if isinstance(scripts, dict) else None
+        script = scripts.get(task) if isinstance(scripts, dict) else None
         if not isinstance(script, str):
             raise RestrictedPytestError("node_tool_invalid_command", "The requested local script is unavailable.")
         try:
