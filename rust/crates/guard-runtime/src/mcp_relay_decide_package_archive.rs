@@ -59,7 +59,7 @@ pub(super) fn unbound(policy: &PackagePolicy) -> Result<PackagePolicy, &'static 
     .map_err(|_| PACKAGE_ARCHIVE_OVERRIDE)?;
     Ok(PackagePolicy {
         evaluation,
-        ..policy.clone()
+        ..(*policy).clone()
     })
 }
 
