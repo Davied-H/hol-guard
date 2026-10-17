@@ -7,6 +7,23 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Read-only resident inspection. Supplied context is not execution authority.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct NativeBashCaptureV1 {
+    pub harness: String,
+    pub command: String,
+    pub cwd: String,
+    pub workspace: String,
+    pub home_dir: String,
+    pub guard_home: String,
+    pub execution_environment: crate::GuardExecutionEnvironmentV1,
+    /// Selected host-observed locale/temp values, never the daemon environment.
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
+    pub budget_ms: u64,
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NativeBashSubjectSchemaV1 {
     #[serde(rename = "guard.bash-subject.v1")]
