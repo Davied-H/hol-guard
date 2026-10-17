@@ -225,7 +225,7 @@ enum PackageLeg<'a> {
 /// The package leg one resolve produced, for the caller that asked for it.
 enum Legged {
     Decided(Box<package_leg::Packaged>),
-    Reresolved(package_leg::Reresolved),
+    Reresolved(Box<package_leg::Reresolved>),
 }
 
 impl Legged {
@@ -240,7 +240,7 @@ impl Legged {
     /// The re-resolution, for the claim that asked for a policy.
     fn reresolved(self) -> Option<package_leg::Reresolved> {
         match self {
-            Self::Reresolved(reresolved) => Some(reresolved),
+            Self::Reresolved(reresolved) => Some(*reresolved),
             Self::Decided(_) => None,
         }
     }
@@ -609,8 +609,8 @@ fn resolve(
                 },
             )?)))
         }
-        Some(PackageLeg::Claimed(intent, evaluation)) => {
-            Some(Legged::Reresolved(package_leg::reresolve_package_leg(
+        Some(PackageLeg::Claimed(intent, evaluation)) => Some(Legged::Reresolved(Box::new(
+            package_leg::reresolve_package_leg(
                 request,
                 &view,
                 saved.as_ref(),
@@ -618,8 +618,8 @@ fn resolve(
                 &identity,
                 intent,
                 evaluation,
-            )?))
-        }
+            )?,
+        ))),
         None => None,
     };
     Ok((
