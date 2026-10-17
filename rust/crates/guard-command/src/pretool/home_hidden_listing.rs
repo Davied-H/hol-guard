@@ -19,7 +19,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::credential_store_names::{
-    clears_store_screen, hidden_content_read_allowed, lowered_names,
+    clears_store_screen, hidden_content_read_allowed, lowered_names, narrow_guidance_rule_owns,
 };
 pub(super) use crate::credential_store_names::{CREDENTIAL_STORE_NAMES, HARNESS_HOME_NAMES};
 
@@ -113,24 +113,6 @@ pub(in crate::pretool) fn home_hidden_tool_directory(
         Some(".config") => lowered.len() > 1,
         Some(".local") => lowered.len() > 2,
         _ => true,
-    }
-}
-
-/// Paths a narrower rule already answers, with bounds this screen cannot see.
-///
-/// [`crate::sfrs_agent_guidance`] admits `sed -n '1,200p' ~/.hol-support/SAFETY.md`
-/// and refuses the same file at 501 lines or over a reversed range, and the
-/// skill-document rule answers a `SKILL.md` the same way. A target screen sees
-/// neither bound, so where one of those rules owns the path its verdict stands
-/// rather than being given a second, looser answer here.
-fn narrow_guidance_rule_owns(lowered: &[String]) -> bool {
-    match lowered.last().map(String::as_str) {
-        // The skill-document rule knows which roots each harness supports;
-        // this screen sees only that a file is called `SKILL.md`, so a copy
-        // outside those roots would otherwise read.
-        Some("skill.md") => true,
-        Some("safety.md") => lowered.iter().any(|part| part == ".hol-support"),
-        _ => false,
     }
 }
 

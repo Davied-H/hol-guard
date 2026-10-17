@@ -137,6 +137,22 @@ fn credential_stores_and_tool_configuration_below_home_stay_unreviewable() {
 }
 
 #[test]
+fn a_skill_document_outside_a_supported_root_stays_unreviewable() {
+    let root = TestRoot::new();
+    for relative in [
+        ".nvm/docs/SKILL.md",
+        ".nvm/versions/node/v25.2.1/lib/node_modules/inert-pkg/SKILL.md",
+    ] {
+        let file = root.seed(relative, MANIFEST_TEXT);
+        let result = review_post_tool(&read_result(&root, &file, MANIFEST_TEXT));
+        assert_ne!(
+            result.model_output_action, "allow_original",
+            "{relative}: {result:?}"
+        );
+    }
+}
+
+#[test]
 fn a_link_cannot_dress_a_credential_store_as_a_toolchain() {
     let root = TestRoot::new();
     let store = root.seed(".aws/inert-pkg/package.json", MANIFEST_TEXT);

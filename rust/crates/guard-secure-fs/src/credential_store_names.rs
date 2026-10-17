@@ -320,3 +320,21 @@ pub fn hidden_content_read_allowed(lowered: &[String]) -> bool {
         && !names_hold_credential_store(lowered)
         && !secret_bearing_file_name(name)
 }
+
+/// Paths a narrower rule already answers, with bounds this screen cannot see.
+///
+/// `sfrs_agent_guidance` in the command crate admits `sed -n '1,200p' ~/.hol-support/SAFETY.md`
+/// and refuses the same file at 501 lines or over a reversed range, and the
+/// skill-document rule answers a `SKILL.md` the same way. A target screen sees
+/// neither bound, so where one of those rules owns the path its verdict stands
+/// rather than being given a second, looser answer here.
+pub fn narrow_guidance_rule_owns(lowered: &[String]) -> bool {
+    match lowered.last().map(String::as_str) {
+        // The skill-document rule knows which roots each harness supports;
+        // this screen sees only that a file is called `SKILL.md`, so a copy
+        // outside those roots would otherwise read.
+        Some("skill.md") => true,
+        Some("safety.md") => lowered.iter().any(|part| part == ".hol-support"),
+        _ => false,
+    }
+}

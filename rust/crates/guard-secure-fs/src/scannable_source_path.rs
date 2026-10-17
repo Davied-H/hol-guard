@@ -3,7 +3,9 @@ use super::{
     is_source_code_extension, lowered_parts, resolve_candidate, sensitive_external_filename,
     sensitive_path_family, SourcePathDecision, EXTERNAL_SENSITIVE_PARTS,
 };
-use crate::credential_store_names::{hidden_content_read_allowed, lowered_names};
+use crate::credential_store_names::{
+    hidden_content_read_allowed, lowered_names, narrow_guidance_rule_owns,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -113,7 +115,11 @@ fn ordinary_hidden_home_file(
     let Ok(candidate_relative) = candidate.strip_prefix(home_root) else {
         return false;
     };
+    let lexical_names = lowered_names(lexical_relative);
+    let candidate_names = lowered_names(candidate_relative);
     candidate.is_file()
-        && hidden_content_read_allowed(&lowered_names(lexical_relative))
-        && hidden_content_read_allowed(&lowered_names(candidate_relative))
+        && hidden_content_read_allowed(&lexical_names)
+        && hidden_content_read_allowed(&candidate_names)
+        && !narrow_guidance_rule_owns(&lexical_names)
+        && !narrow_guidance_rule_owns(&candidate_names)
 }
