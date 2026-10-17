@@ -82,19 +82,26 @@ assert(!claimStaleBuildReload({ loadedBuild: "a", serverBuild: "b" }, throwingSt
 const originalWindow = (globalThis as { window?: unknown }).window;
 const originalDocument = (globalThis as { document?: unknown }).document;
 const originalSessionStorage = (globalThis as { sessionStorage?: unknown }).sessionStorage;
-const tabStorage = memoryStorage();
-const documentListeners = new Map<string, Set<() => void>>();
-const windowListeners = new Map<string, Set<() => void>>();
+const baseStorage = memoryStorage();
+const tabStorage = Object.assign(baseStorage, {
+  removeItem: (key: string) => {
+    baseStorage.values.delete(key);
+  },
+});
+const documentListeners = new Map<string, Set<(event?: unknown) => void>>();
+const windowListeners = new Map<string, Set<(event?: unknown) => void>>();
+let unsavedWork = false;
+let beforeUnloadProbes = 0;
 let reloads = 0;
 const assigned: string[] = [];
 const replaced: string[] = [];
 const fakeDocument = {
   visibilityState: "visible",
   querySelector: () => ({ getAttribute: () => "build-old" }),
-  addEventListener: (type: string, listener: () => void) => {
+  addEventListener: (type: string, listener: (event?: unknown) => void) => {
     documentListeners.set(type, (documentListeners.get(type) ?? new Set()).add(listener));
   },
-  removeEventListener: (type: string, listener: () => void) => {
+  removeEventListener: (type: string, listener: (event?: unknown) => void) => {
     documentListeners.get(type)?.delete(listener);
   },
 };
@@ -114,16 +121,23 @@ const fakeDocument = {
       reloads += 1;
     },
   },
+  dispatchEvent: (event: Event) => {
+    if (event.type === "beforeunload") {
+      beforeUnloadProbes += 1;
+      if (unsavedWork) event.preventDefault();
+    }
+    return !event.defaultPrevented;
+  },
   history: {
     state: null,
     replaceState: (_state: unknown, _title: string, href: string) => {
       replaced.push(href);
     },
   },
-  addEventListener: (type: string, listener: () => void) => {
+  addEventListener: (type: string, listener: (event?: unknown) => void) => {
     windowListeners.set(type, (windowListeners.get(type) ?? new Set()).add(listener));
   },
-  removeEventListener: (type: string, listener: () => void) => {
+  removeEventListener: (type: string, listener: (event?: unknown) => void) => {
     windowListeners.get(type)?.delete(listener);
   },
 };
@@ -147,27 +161,95 @@ fakeDocument.visibilityState = "visible";
 observeDashboardBuild(response(`${origin}/v1/runtime`, "build-new"));
 assert(reloads === 0, "a visible stale tab is not reloaded under its user");
 
-// Returning to it loads the current bundle once.
-const stop = installStaleBuildGuard();
+// Returning to it asks the daemon first, then loads the current bundle once.
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+let probes = 0;
+const stop = installStaleBuildGuard(async () => {
+  probes += 1;
+});
 for (const listener of windowListeners.get("focus") ?? []) listener();
+await tick();
+assert(probes === 1, "returning to a tab asks the daemon which bundle it serves");
 assert(reloads === 1, "focusing a stale tab loads the current bundle");
 for (const listener of documentListeners.get("visibilitychange") ?? []) listener();
+await tick();
 assert(reloads === 1, "the same server build is never reloaded for twice");
+
+// A tab that heard nothing while away learns the new build from the probe.
+tabStorage.values.clear();
+resetObservedDashboardBuild();
+for (const listener of windowListeners.get("focus") ?? []) listener();
+await tick();
+assert(reloads === 1, "without any build seen yet the tab cannot know it is stale");
 stop();
+const stopProbing = installStaleBuildGuard(async () => {
+  observeDashboardBuild(response(`${origin}/healthz`, "build-new"));
+});
+for (const listener of windowListeners.get("focus") ?? []) listener();
+await tick();
+assert(reloads === 2, "the probe response reveals the update and the tab reloads");
+
+// Events that arrive together share one probe.
+tabStorage.values.clear();
+let inFlight = 0;
+const stopShared = installStaleBuildGuard(async () => {
+  inFlight += 1;
+  await tick();
+});
+for (const listener of windowListeners.get("focus") ?? []) listener();
+for (const listener of documentListeners.get("visibilitychange") ?? []) listener();
+await tick();
+await tick();
+assert(inFlight === 1, "focus and visibility changes together probe once");
+assert(reloads === 3, "and reload once");
+
+// Unsaved work is never thrown away by a reload nobody asked for.
+tabStorage.values.clear();
+unsavedWork = true;
+beforeUnloadProbes = 0;
+for (const listener of windowListeners.get("focus") ?? []) listener();
+await tick();
+await tick();
+assert(beforeUnloadProbes > 0, "screens are asked through beforeunload whether they hold unsaved work");
+assert(reloads === 3, "a draft blocks the reload on return");
+assert(tabStorage.values.size === 0, "a blocked reload does not spend the claim for the build");
+fakeDocument.visibilityState = "hidden";
+observeDashboardBuild(response(`${origin}/v1/runtime`, "build-new"));
+assert(reloads === 3, "a draft also blocks the hidden-tab reload");
+fakeDocument.visibilityState = "visible";
+unsavedWork = false;
+for (const listener of windowListeners.get("focus") ?? []) listener();
+await tick();
+await tick();
+assert(reloads === 4, "the reload goes through once the draft is saved");
+
+// A tab restored from the back/forward cache is the old bundle again.
+assert(tabStorage.values.size === 1, "the earlier reload left its claim behind");
+for (const listener of windowListeners.get("pageshow") ?? []) listener({ persisted: false });
+await tick();
+assert(reloads === 4 && tabStorage.values.size === 1, "an ordinary page show changes nothing");
+for (const listener of windowListeners.get("pageshow") ?? []) listener({ persisted: true });
+await tick();
+await tick();
+assert(reloads === 5, "a stale document restored from the cache gets one more recovery");
+
+stopProbing();
+stopShared();
 assert((documentListeners.get("visibilitychange")?.size ?? 0) === 0, "the guard removes its visibility listener");
 assert((windowListeners.get("focus")?.size ?? 0) === 0, "the guard removes its focus listener");
+assert((windowListeners.get("pageshow")?.size ?? 0) === 0, "the guard removes its pageshow listener");
 
 // A hidden stale tab swaps its bundle as soon as it learns it is stale.
 tabStorage.values.clear();
 fakeDocument.visibilityState = "hidden";
 observeDashboardBuild(response(`${origin}/v1/runtime`, "build-new"));
-assert(reloads === 2, "a hidden stale tab reloads without waiting");
+assert(reloads === 6, "a hidden stale tab reloads without waiting");
 
 // Navigating away from a stale tab is a full load of the target.
 tabStorage.values.clear();
 fakeDocument.visibilityState = "visible";
 assert(loadCurrentDashboardBuild("/protect?desktop_embed=1#guard-token=a"), "navigation from a stale tab becomes a full load");
-assert(reloads === 3, "the full load is issued");
+assert(reloads === 7, "the full load is issued");
 assert(assigned.length === 1 && assigned[0]?.endsWith("/protect?desktop_embed=1#guard-token=a"), "another screen is loaded with assign");
 assert(replaced.length === 0, "another screen needs no history rewrite");
 
@@ -178,7 +260,7 @@ assert(
   loadCurrentDashboardBuild(`${origin}/inbox?desktop_embed=1#guard-token=b`),
   "a link to the open screen from a stale tab still loads the current bundle",
 );
-assert(reloads === 4, "the same-screen link reloads the document");
+assert(reloads === 8, "the same-screen link reloads the document");
 assert(assigned.length === 1, "the same-screen link does not use assign");
 assert(replaced.length === 1 && replaced[0]?.endsWith("#guard-token=b"), "the new fragment is kept for the reload");
 

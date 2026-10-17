@@ -16255,6 +16255,96 @@ function approvalExtensionRecommendationCopy(recommendation) {
     successMessage: `Approved. ${owner} now allows ${commandText} automatically.`
   };
 }
+const CHUNK_RELOAD_STORAGE_KEY = "hol-guard-dashboard-chunk-reload";
+const CHUNK_RELOAD_DELAY_MS = 400;
+const MODULE_LINK_ERROR_PATTERNS = [
+  /does not provide an export named/,
+  // Chromium
+  /importing binding name .* is not found/,
+  // WebKit
+  /import not found:/,
+  // Gecko
+  /ambiguous indirect export:/
+  // Gecko
+];
+function isChunkLoadError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return normalized.includes("failed to fetch dynamically imported module") || normalized.includes("error loading dynamically imported module") || normalized.includes("importing a module script failed") || normalized.includes("loading chunk") || MODULE_LINK_ERROR_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+function defaultWait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+function reloadDocument(reload) {
+  if (reload) {
+    reload();
+    return true;
+  }
+  if (typeof window !== "undefined") {
+    window.location.reload();
+    return true;
+  }
+  return false;
+}
+function storageGet(storage, key) {
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function storageSet(storage, key, value) {
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+function browserSessionStorage() {
+  try {
+    if (typeof sessionStorage === "undefined") {
+      return void 0;
+    }
+    return sessionStorage;
+  } catch {
+    return void 0;
+  }
+}
+async function loadWorkspaceModule(loader, options = {}) {
+  try {
+    return await loader();
+  } catch (error) {
+    if (!isChunkLoadError(error)) {
+      throw error;
+    }
+    const storage = options.storage;
+    const failureMessage = error instanceof Error ? error.message : String(error);
+    const failureFingerprint = `${options.moduleId ?? "anonymous-workspace-module"}:${failureMessage}`;
+    if (!storage || storageGet(storage, CHUNK_RELOAD_STORAGE_KEY) === failureFingerprint) {
+      throw error;
+    }
+    if (!storageSet(storage, CHUNK_RELOAD_STORAGE_KEY, failureFingerprint)) {
+      throw error;
+    }
+    const wait = options.wait ?? defaultWait;
+    await wait(options.delayMs ?? CHUNK_RELOAD_DELAY_MS);
+    if (!reloadDocument(options.reload)) {
+      throw error;
+    }
+    return new Promise(() => {
+    });
+  }
+}
+function lazyWorkspace(moduleId, loader) {
+  const load = async () => {
+    const module = await loadWorkspaceModule(loader, { moduleId, storage: browserSessionStorage() });
+    return { default: module.default };
+  };
+  return reactExports.lazy(load);
+}
 const DASHBOARD_BUILD_HEADER = "X-Guard-Dashboard-Build";
 const DASHBOARD_BUILD_META_NAME = "guard-dashboard-build";
 const DASHBOARD_BUILD_RELOAD_STORAGE_KEY = "hol-guard-dashboard-build-reload";
@@ -16290,19 +16380,18 @@ function claimStaleBuildReload(state, storage) {
     return false;
   }
 }
+function releaseStaleBuildClaim(storage) {
+  try {
+    storage?.removeItem?.(DASHBOARD_BUILD_RELOAD_STORAGE_KEY);
+  } catch {
+  }
+}
 let serverBuild = null;
 function currentBuildState() {
   return {
     loadedBuild: typeof document === "undefined" ? null : readLoadedDashboardBuild(document),
     serverBuild
   };
-}
-function pageSessionStorage() {
-  try {
-    return typeof sessionStorage === "undefined" ? void 0 : sessionStorage;
-  } catch {
-    return void 0;
-  }
 }
 function observeDashboardBuild(response) {
   const pageOrigin = typeof window === "undefined" ? void 0 : window.location?.origin;
@@ -16315,30 +16404,65 @@ function observeDashboardBuild(response) {
   }
   serverBuild = build;
   if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-    loadCurrentDashboardBuild();
+    reloadWhenIdle();
   }
 }
-function installStaleBuildGuard() {
+function hasUnsavedWork() {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") {
+    return false;
+  }
+  return !window.dispatchEvent(new Event("beforeunload", { cancelable: true }));
+}
+function reloadWhenIdle() {
+  if (!dashboardBuildIsStale() || hasUnsavedWork()) {
+    return false;
+  }
+  return loadCurrentDashboardBuild();
+}
+async function probeServerBuild() {
+  try {
+    observeDashboardBuild(await fetch("/healthz", { cache: "no-store" }));
+  } catch {
+  }
+}
+function installStaleBuildGuard(probe = probeServerBuild) {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return () => void 0;
   }
+  let checking = false;
   const check = () => {
-    if (document.visibilityState !== "hidden") {
-      loadCurrentDashboardBuild();
+    if (document.visibilityState === "hidden" || checking) {
+      return;
+    }
+    checking = true;
+    void probe().catch(() => void 0).finally(() => {
+      checking = false;
+      reloadWhenIdle();
+    });
+  };
+  const restored = (event) => {
+    if (event.persisted) {
+      releaseStaleBuildClaim(browserSessionStorage());
+      check();
     }
   };
   document.addEventListener("visibilitychange", check);
   window.addEventListener("focus", check);
+  window.addEventListener("pageshow", restored);
   return () => {
     document.removeEventListener("visibilitychange", check);
     window.removeEventListener("focus", check);
+    window.removeEventListener("pageshow", restored);
   };
 }
 function isFragmentOnlyChange(current, target2) {
   return current.origin === target2.origin && current.pathname === target2.pathname && current.search === target2.search;
 }
+function dashboardBuildIsStale() {
+  return isDashboardBuildStale(currentBuildState());
+}
 function loadCurrentDashboardBuild(href) {
-  if (typeof window === "undefined" || !claimStaleBuildReload(currentBuildState(), pageSessionStorage())) {
+  if (typeof window === "undefined" || !claimStaleBuildReload(currentBuildState(), browserSessionStorage())) {
     return false;
   }
   const target2 = href ? new URL(href, window.location.href) : null;
@@ -33227,96 +33351,6 @@ function QueueConnectionError(props) {
       sessionMissing ? null : props.approvalUrl !== null && /* @__PURE__ */ jsxRuntimeExports.jsx(ActionButton, { href: props.approvalUrl, variant: "outline", children: "Open dashboard" })
     ] })
   ] }) });
-}
-const CHUNK_RELOAD_STORAGE_KEY = "hol-guard-dashboard-chunk-reload";
-const CHUNK_RELOAD_DELAY_MS = 400;
-const MODULE_LINK_ERROR_PATTERNS = [
-  /does not provide an export named/,
-  // Chromium
-  /importing binding name .* is not found/,
-  // WebKit
-  /import not found:/,
-  // Gecko
-  /ambiguous indirect export:/
-  // Gecko
-];
-function isChunkLoadError(error) {
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
-  return normalized.includes("failed to fetch dynamically imported module") || normalized.includes("error loading dynamically imported module") || normalized.includes("importing a module script failed") || normalized.includes("loading chunk") || MODULE_LINK_ERROR_PATTERNS.some((pattern) => pattern.test(normalized));
-}
-function defaultWait(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-function reloadDocument(reload) {
-  if (reload) {
-    reload();
-    return true;
-  }
-  if (typeof window !== "undefined") {
-    window.location.reload();
-    return true;
-  }
-  return false;
-}
-function storageGet(storage, key) {
-  try {
-    return storage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-function storageSet(storage, key, value) {
-  try {
-    storage.setItem(key, value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-function browserSessionStorage() {
-  try {
-    if (typeof sessionStorage === "undefined") {
-      return void 0;
-    }
-    return sessionStorage;
-  } catch {
-    return void 0;
-  }
-}
-async function loadWorkspaceModule(loader, options = {}) {
-  try {
-    return await loader();
-  } catch (error) {
-    if (!isChunkLoadError(error)) {
-      throw error;
-    }
-    const storage = options.storage;
-    const failureMessage = error instanceof Error ? error.message : String(error);
-    const failureFingerprint = `${options.moduleId ?? "anonymous-workspace-module"}:${failureMessage}`;
-    if (!storage || storageGet(storage, CHUNK_RELOAD_STORAGE_KEY) === failureFingerprint) {
-      throw error;
-    }
-    if (!storageSet(storage, CHUNK_RELOAD_STORAGE_KEY, failureFingerprint)) {
-      throw error;
-    }
-    const wait = options.wait ?? defaultWait;
-    await wait(options.delayMs ?? CHUNK_RELOAD_DELAY_MS);
-    if (!reloadDocument(options.reload)) {
-      throw error;
-    }
-    return new Promise(() => {
-    });
-  }
-}
-function lazyWorkspace(moduleId, loader) {
-  const load = async () => {
-    const module = await loadWorkspaceModule(loader, { moduleId, storage: browserSessionStorage() });
-    return { default: module.default };
-  };
-  return reactExports.lazy(load);
 }
 const CHUNK_LOAD_ERROR_HEADLINE = "This screen couldn't load";
 const CHUNK_LOAD_ERROR_BODY = "Guard lost its connection while opening this page. Reload once Guard is running on this device.";

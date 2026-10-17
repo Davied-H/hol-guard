@@ -5,11 +5,13 @@
 // every response (a header), so the page can tell when it is stale and load
 // the matching bundle instead of rendering a broken screen.
 
+import { browserSessionStorage } from "./lazy-workspace";
+
 export const DASHBOARD_BUILD_HEADER = "X-Guard-Dashboard-Build";
 export const DASHBOARD_BUILD_META_NAME = "guard-dashboard-build";
 export const DASHBOARD_BUILD_RELOAD_STORAGE_KEY = "hol-guard-dashboard-build-reload";
 
-type BuildStorage = Pick<Storage, "getItem" | "setItem">;
+type BuildStorage = Pick<Storage, "getItem" | "setItem"> & Partial<Pick<Storage, "removeItem">>;
 
 export type DashboardBuildState = {
   loadedBuild: string | null;
@@ -69,6 +71,20 @@ export function claimStaleBuildReload(state: DashboardBuildState, storage: Build
   }
 }
 
+/**
+ * Forget the reload recorded for this tab. A document restored from the
+ * back/forward cache is the old bundle again and shares that record, so it is
+ * allowed one more recovery. Only a user's Back or Forward restores a page, so
+ * this cannot loop.
+ */
+export function releaseStaleBuildClaim(storage: BuildStorage | undefined): void {
+  try {
+    storage?.removeItem?.(DASHBOARD_BUILD_RELOAD_STORAGE_KEY);
+  } catch {
+    // Storage is unavailable; the tab falls back to normal error handling.
+  }
+}
+
 let serverBuild: string | null = null;
 
 function currentBuildState(): DashboardBuildState {
@@ -76,14 +92,6 @@ function currentBuildState(): DashboardBuildState {
     loadedBuild: typeof document === "undefined" ? null : readLoadedDashboardBuild(document),
     serverBuild,
   };
-}
-
-function pageSessionStorage(): BuildStorage | undefined {
-  try {
-    return typeof sessionStorage === "undefined" ? undefined : sessionStorage;
-  } catch {
-    return undefined;
-  }
 }
 
 /** Forget the server build seen so far (tests). */
@@ -103,29 +111,74 @@ export function observeDashboardBuild(response: Pick<Response, "headers" | "url"
   serverBuild = build;
   // Nobody is looking at a hidden tab, so swap its bundle without interrupting anyone.
   if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-    loadCurrentDashboardBuild();
+    reloadWhenIdle();
+  }
+}
+
+/**
+ * Whether any screen has work a reload would lose. Screens with drafts already
+ * cancel `beforeunload`, so asking them the same question needs no registry.
+ */
+function hasUnsavedWork(): boolean {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") {
+    return false;
+  }
+  return !window.dispatchEvent(new Event("beforeunload", { cancelable: true }));
+}
+
+/** A reload nobody asked for: it never discards unsaved work and never spends the claim then. */
+function reloadWhenIdle(): boolean {
+  if (!dashboardBuildIsStale() || hasUnsavedWork()) {
+    return false;
+  }
+  return loadCurrentDashboardBuild();
+}
+
+/** Ask the daemon that served this page which bundle it serves now. */
+export async function probeServerBuild(): Promise<void> {
+  try {
+    observeDashboardBuild(await fetch("/healthz", { cache: "no-store" }));
+  } catch {
+    // The daemon may be restarting; the last build seen still decides.
   }
 }
 
 /**
  * Reload a stale tab when its user comes back to it. Leaving a screen open
  * across a Guard update is the common way to end up on the old bundle, and
- * returning to it is the one moment a reload costs nothing.
+ * returning to it is the moment a reload costs least. A tab that heard nothing
+ * from the daemon while it was away asks first, and unsaved work is kept.
  */
-export function installStaleBuildGuard(): () => void {
+export function installStaleBuildGuard(probe: () => Promise<void> = probeServerBuild): () => void {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return () => undefined;
   }
+  let checking = false;
   const check = () => {
-    if (document.visibilityState !== "hidden") {
-      loadCurrentDashboardBuild();
+    if (document.visibilityState === "hidden" || checking) {
+      return;
+    }
+    checking = true;
+    void probe()
+      .catch(() => undefined)
+      .finally(() => {
+        checking = false;
+        reloadWhenIdle();
+      });
+  };
+  const restored = (event: Event) => {
+    if ((event as PageTransitionEvent).persisted) {
+      releaseStaleBuildClaim(browserSessionStorage());
+      check();
     }
   };
   document.addEventListener("visibilitychange", check);
   window.addEventListener("focus", check);
+  window.addEventListener("pageshow", restored);
   return () => {
     document.removeEventListener("visibilitychange", check);
     window.removeEventListener("focus", check);
+    window.removeEventListener("pageshow", restored);
   };
 }
 
@@ -153,7 +206,7 @@ export function dashboardBuildIsStale(): boolean {
  * this tab runs an older one. Returns `true` when the document is leaving.
  */
 export function loadCurrentDashboardBuild(href?: string): boolean {
-  if (typeof window === "undefined" || !claimStaleBuildReload(currentBuildState(), pageSessionStorage())) {
+  if (typeof window === "undefined" || !claimStaleBuildReload(currentBuildState(), browserSessionStorage())) {
     return false;
   }
   const target = href ? new URL(href, window.location.href) : null;
