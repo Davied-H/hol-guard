@@ -12,6 +12,7 @@ use tree_sitter::{Node, ParseOptions, Parser};
 
 pub mod delivery;
 pub mod graph;
+pub mod subject;
 #[cfg(test)]
 mod tests;
 mod words;

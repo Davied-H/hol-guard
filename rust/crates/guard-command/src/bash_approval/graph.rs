@@ -190,6 +190,9 @@ fn build_inner(
         expanded_bytes: 0,
     };
     let frozen_source = builder.visit(&entry, argv)?;
+    if output_fds.is_some() {
+        validate_output_order(&builder.writes)?;
+    }
     Ok(Graph {
         entry_path: entry.original_path,
         code: builder.code.into_values().collect(),
@@ -199,6 +202,24 @@ fn build_inner(
         frozen_source,
         outputs_bound: output_fds.is_some(),
     })
+}
+
+// A held append descriptor preserves a first truncate followed by appends,
+// or appends alone. It cannot model a later truncate. Cross-source ordering
+// needs a separate proof; collection order is not execution order there.
+fn validate_output_order(writes: &[OutputEffect]) -> Result<()> {
+    let mut owners = BTreeMap::new();
+    for effect in writes {
+        if let Some(owner) = owners.insert(&effect.redirect.path, &effect.source_path) {
+            if owner != &effect.source_path || !effect.redirect.append {
+                return Err(Uncertainty {
+                    reason: "bash_output_order_unproven",
+                    line: effect.redirect.line,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 impl Builder<'_> {

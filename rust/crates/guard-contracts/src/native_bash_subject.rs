@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NativeBashSubjectSchemaV1 {
@@ -91,6 +92,18 @@ pub struct NativeBashSubjectV1 {
 }
 
 impl NativeBashSubjectV1 {
+    /// Stable identity only. Possessing this digest never authorizes a launch.
+    pub fn identity_sha256(&self) -> Result<String, &'static str> {
+        self.validate()?;
+        let mut value = serde_json::to_value(self).map_err(|_| "native_bash_subject_encoding")?;
+        value.sort_all_objects();
+        let encoded = serde_json::to_vec(&value).map_err(|_| "native_bash_subject_encoding")?;
+        let mut digest = Sha256::new();
+        digest.update(b"hol-guard.native-bash-subject.v1\0");
+        digest.update(encoded);
+        Ok(format!("{:x}", digest.finalize()))
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.argv.is_empty()
             || self.argv.len() > 256
@@ -284,5 +297,28 @@ mod tests {
             subject.validate(),
             Err("native_bash_subject_environment_invalid")
         );
+    }
+
+    #[test]
+    fn native_bash_subject_identity_is_stable_and_binds_mode_code_and_context() {
+        let original = subject();
+        let identity = original.identity_sha256().unwrap();
+        for _ in 0..10 {
+            let restored: NativeBashSubjectV1 =
+                serde_json::from_slice(&serde_json::to_vec(&original).unwrap()).unwrap();
+            assert_eq!(restored.identity_sha256().unwrap(), identity);
+        }
+        let mut changed = original.clone();
+        changed.argv[1] = "delete".into();
+        assert_ne!(changed.identity_sha256().unwrap(), identity);
+        let mut changed = original.clone();
+        changed.code_inputs[1].content_sha256 = "e".repeat(64);
+        assert_ne!(changed.identity_sha256().unwrap(), identity);
+        let mut changed = original.clone();
+        changed.context.cwd = "/other".into();
+        assert_ne!(changed.identity_sha256().unwrap(), identity);
+        let mut changed = original;
+        changed.context.guard_home_scope_digest = "f".repeat(64);
+        assert_ne!(changed.identity_sha256().unwrap(), identity);
     }
 }

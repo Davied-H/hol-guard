@@ -9,6 +9,29 @@ const HELPER: &str =
 
 struct FixtureResolver;
 
+#[test]
+fn held_outputs_reject_later_truncation() {
+    for source in [
+        "printf a >/report; printf b >/report",
+        "printf a >>/report; printf b >/report",
+        "for item in a b; do printf a >/report; done",
+    ] {
+        let result = build_with_outputs(
+            Code {
+                original_path: "/script.sh".into(),
+                resolved_path: "/script.sh".into(),
+                source: source.into(),
+            },
+            &["/script.sh".into()],
+            &BTreeMap::new(),
+            &FixtureResolver,
+            Instant::now() + Duration::from_secs(1),
+            &BTreeMap::from([("/report".into(), 6)]),
+        );
+        assert_eq!(result.unwrap_err().reason, "bash_output_order_unproven");
+    }
+}
+
 impl Resolver for FixtureResolver {
     fn resolve(&self, argv: &[String]) -> std::result::Result<Executable, &'static str> {
         let command = argv[0].as_str();
@@ -44,6 +67,62 @@ fn graph(mode: &str) -> Graph {
         Instant::now() + Duration::from_secs(1),
     )
     .unwrap()
+}
+
+#[test]
+fn graph_subject_binds_observed_inputs_without_granting_execution() {
+    use crate::bash_approval::subject::{from_graph, Observations};
+    use guard_contracts::{
+        NativeBashContextV1, NativeBashHostV1, NativeScriptCodeInputV1, NativeScriptInputKindV1,
+    };
+
+    let dry = graph("dry");
+    let argv = ["/fixtures/maintenance.sh".into(), "dry".into()];
+    let environment = BTreeMap::from([("HOME".into(), "/isolated/home".into())]);
+    let resolved = BTreeMap::from([(
+        "/isolated/home/maintenance-report.tsv".into(),
+        "/isolated/home/maintenance-report.tsv".into(),
+    )]);
+    let observed = |outputs| Observations {
+        context: NativeBashContextV1 {
+            host: NativeBashHostV1::OmpInputRewriteV1,
+            host_scope_digest: "a".repeat(64),
+            guard_home_scope_digest: "b".repeat(64),
+            project: "/fixtures".into(),
+            cwd: "/fixtures".into(),
+            home: "/isolated/home".into(),
+        },
+        argv: &argv,
+        interpreter: NativeScriptCodeInputV1 {
+            kind: NativeScriptInputKindV1::Interpreter,
+            requested_path: "/bin/bash".into(),
+            resolved_path: "/bin/bash".into(),
+            content_sha256: "c".repeat(64),
+        },
+        environment: &environment,
+        resolved_outputs: outputs,
+    };
+    let unresolved = BTreeMap::new();
+    assert_eq!(
+        from_graph(&dry, observed(&unresolved)).unwrap_err(),
+        "native_bash_subject_output_unresolved"
+    );
+    let subject = from_graph(&dry, observed(&resolved)).unwrap();
+    assert_eq!(subject.code_inputs.len(), 5);
+    assert_eq!(subject.invocations.len(), dry.invocations.len());
+    assert_eq!(subject.outputs.len(), 5);
+    assert_ne!(subject.environment_bindings["HOME"], environment["HOME"]);
+    assert_eq!(
+        subject.identity_sha256().unwrap(),
+        from_graph(&graph("dry"), observed(&resolved))
+            .unwrap()
+            .identity_sha256()
+            .unwrap()
+    );
+    assert!(
+        dry.source_for_launch().is_err(),
+        "a descriptor must not bind output handles or grant a launch"
+    );
 }
 
 #[test]
