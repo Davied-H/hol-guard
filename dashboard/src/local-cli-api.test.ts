@@ -307,6 +307,7 @@ assert.deepEqual(
 );
 assert.equal(packageScriptQueryFrom("guard:reddit", packageScripts.commands), "guard:reddit");
 assert.equal(packageScriptQueryFrom("no-such-script", packageScripts.commands), "");
+assert.equal(packageScriptQueryFrom("guard:audit", packageScripts.commands), "");
 assert.equal(packageScriptQueryFrom("npm run", packageScripts.commands), "");
 assert.equal(packageScriptQueryFrom("  ", packageScripts.commands), "");
 assert.deepEqual(

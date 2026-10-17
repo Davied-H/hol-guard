@@ -4653,7 +4653,7 @@ function packageScriptQueryFrom(query, commands) {
   const trimmed = query.trim();
   if (!trimmed || looksLikeProjectRelocatePaste(trimmed)) return "";
   const needle = packageScriptFilterNeedle(trimmed);
-  return needle && commands.some((command) => commandMatchesQuery$1(command, needle)) ? needle : "";
+  return needle && commands.some((command) => commandMatchesQuery(command, needle)) ? needle : "";
 }
 function projectFolderLabel(item) {
   const folder = item.source_label?.trim();

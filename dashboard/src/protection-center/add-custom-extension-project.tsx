@@ -2,19 +2,19 @@ import { useCallback, useId, useState } from "react";
 import { HiMiniCheck, HiMiniChevronDown, HiMiniPlus } from "react-icons/hi2";
 
 import {
-  commandMatchesQuery,
   enrollablePackageScriptCommands,
   looksLikeProjectRelocatePaste,
   packageScriptFilterNeedle,
   type LocalCliCommand,
   type LocalCliItem,
 } from "../local-cli-api";
+import { commandMatchesQuery } from "./custom-extension-command-view";
 
 function scriptCount(item: LocalCliItem): number {
   return enrollablePackageScriptCommands(item.commands).length;
 }
 
-/** The script to open the browser on when the pasted command names one in this project. */
+/** The script to open the browser on when the pasted command names one in this project. Uses the browser's own matcher, so an accepted query always shows a row. */
 export function packageScriptQueryFrom(query: string, commands: readonly LocalCliCommand[]): string {
   const trimmed = query.trim();
   if (!trimmed || looksLikeProjectRelocatePaste(trimmed)) return "";
