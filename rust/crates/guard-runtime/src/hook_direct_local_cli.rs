@@ -6,10 +6,11 @@
 //! identity's grant, and blocks the command when the grant blocks it. This
 //! module runs the same identity steps and grant read in the resident and
 //! renders the same block, including the unverified block when the grant
-//! answer cannot be trusted. A launch the daemon rejects as malformed, a
-//! catalog read failure, a command id the daemon resolves from its own shell
-//! model while some command of that CLI is blocked, and a block for a harness
-//! whose answer the resident shapes itself, still defer.
+//! answer cannot be trusted. The command id comes from the package script
+//! tokens, else from the same shell model the daemon reads the invocation
+//! with. A launch the daemon rejects as malformed, a catalog read failure,
+//! and a block for a harness whose answer the resident shapes itself, still
+//! defer.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -20,7 +21,7 @@ use serde_json::{Map, Value};
 use super::workspace::python_strip;
 use crate::context_digest_package_scripts::package_json_scripts;
 use crate::local_cli_identify::{identify, Request};
-use block::{CommandSelector, Launch, Verdict};
+use block::{Launch, Verdict};
 
 const TOOL_INPUT_FIELDS: [&str; 2] = ["tool_input", "toolInput"];
 const COMMAND_FIELDS: [&str; 4] = ["command", "cmd", "shell_command", "shellCommand"];
@@ -58,10 +59,10 @@ pub(super) fn custom_rule_response(
     {
         return Ok(None);
     }
-    let Some(launch) = launch_for(payload, check.workspace, check.home_dir)? else {
+    let Some(launched) = launch_for(payload, check.workspace, check.home_dir)? else {
         return Ok(None);
     };
-    match grant(&launch, check.guard_home)? {
+    match grant(&launched, check.home_dir, check.guard_home)? {
         Verdict::Unchanged => Ok(None),
         Verdict::Unverified | Verdict::Blocked(_) if check.own_shape => Err(()),
         Verdict::Unverified => {
@@ -90,20 +91,49 @@ pub(super) fn launches_local_cli(
     launch_for(payload, workspace, home_dir).map(|launch| launch.is_some())
 }
 
+/// A local CLI launch with the invocation the daemon derives its command
+/// tokens from.
+struct Launched<'a> {
+    launch: Launch,
+    command: &'a str,
+    cwd: String,
+}
+
+impl Launched<'_> {
+    /// `command_tokens_for_invocation` past the package script branch: the
+    /// first segment's arguments after the runner or the script's own path.
+    fn invocation_tokens(&self, home_dir: &str) -> Vec<String> {
+        crate::local_cli_hook_op::invocation_command_tokens(
+            self.command,
+            &self.cwd,
+            Some(home_dir),
+            &self.launch.name,
+            &self.launch.kind,
+            self.launch.runner.as_deref(),
+        )
+    }
+}
+
 /// The local CLI the daemon reads a grant for, or `None` when the payload
 /// names no command or launch directory or the command launches none.
-fn launch_for(
-    payload: &Map<String, Value>,
+fn launch_for<'a>(
+    payload: &'a Map<String, Value>,
     workspace: &str,
     home_dir: &str,
-) -> Result<Option<Launch>, ()> {
+) -> Result<Option<Launched<'a>>, ()> {
     let Some(command) = pre_tool_command(payload)? else {
         return Ok(None);
     };
     let Some(cwd) = launch_cwd(payload, workspace)? else {
         return Ok(None);
     };
-    local_launch(command, &cwd, home_dir)
+    Ok(
+        local_launch(command, &cwd, home_dir)?.map(|launch| Launched {
+            launch,
+            command,
+            cwd,
+        }),
+    )
 }
 
 /// The launch identity the daemon derives: the package script's, else the
@@ -132,18 +162,20 @@ fn local_launch(command: &str, cwd: &str, home_dir: &str) -> Result<Option<Launc
 }
 
 /// The grant read the daemon asks the resident for, with the command id it
-/// resolves from the CLI's catalog. Only a blocked command can change an
-/// allowed `PreToolUse`, so a command id the daemon resolves from its own
-/// shell model matters only while some command of the CLI is blocked.
-fn grant(launch: &Launch, guard_home: &str) -> Result<Verdict, ()> {
-    let (catalog, command_blocked) =
+/// resolves from the CLI's catalog: the package script tokens select it, and
+/// any other invocation's tokens come from the shell model.
+fn grant(launched: &Launched<'_>, home_dir: &str, guard_home: &str) -> Result<Verdict, ()> {
+    let launch = &launched.launch;
+    let catalog =
         crate::local_cli_grant_op::command_catalog(guard_home, &launch.cli_id).map_err(|_| ())?;
-    let command_id = match block::command_selector(&catalog, launch.tokens.as_deref()) {
-        CommandSelector::Known(command_id) => command_id,
-        CommandSelector::Unresolved if command_blocked => return Err(()),
-        // No blocked command: every command id the daemon could resolve
-        // reads the same grant outcome as the CLI-level one.
-        CommandSelector::Unresolved => Some(block::OTHER_COMMAND_ID.to_owned()),
+    let command_id = if catalog.is_empty() {
+        None
+    } else {
+        let tokens = match launch.tokens.clone() {
+            Some(tokens) => tokens,
+            None => launched.invocation_tokens(home_dir),
+        };
+        block::command_selector(&catalog, &tokens)
     };
     let answer = crate::local_cli_grant_op::decide_allowed_launch(
         guard_home,

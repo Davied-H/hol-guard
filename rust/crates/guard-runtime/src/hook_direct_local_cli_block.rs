@@ -17,7 +17,7 @@ use guard_contracts::{
 use serde_json::{json, Value};
 
 const ROOT_COMMAND_ID: &str = "root";
-pub(super) const OTHER_COMMAND_ID: &str = "other";
+const OTHER_COMMAND_ID: &str = "other";
 const MAX_DEPTH: usize = 4;
 const MANAGERS: [&str; 4] = ["npm", "pnpm", "yarn", "bun"];
 const KINDS: [&str; 2] = ["script", "executable"];
@@ -33,29 +33,15 @@ const WATCH_REASON: &str = "Watch recorded this action without stopping it.";
 const RENDER_ESCAPE_FACTOR: usize = 6;
 const RENDER_ENVELOPE_BYTES: usize = 1_024;
 
-/// The command id the daemon sends with the grant read.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum CommandSelector {
-    /// Resolved as the daemon resolves it; `None` when the CLI has no catalog.
-    Known(Option<String>),
-    /// The daemon resolves it from its own shell model, which is not ported.
-    Unresolved,
-}
-
 /// `_resolved_command_id`: no catalog sends no id; otherwise the invocation's
-/// tokens select a catalog command. `tokens` are the package script tokens,
-/// and `None` when the command runs no package script.
-pub(super) fn command_selector(
-    catalog: &BTreeSet<String>,
-    tokens: Option<&[String]>,
-) -> CommandSelector {
+/// tokens select a catalog command. `tokens` are the package script tokens
+/// when the command runs a package script, else the ones the invocation's
+/// shell model yields.
+pub(super) fn command_selector(catalog: &BTreeSet<String>, tokens: &[String]) -> Option<String> {
     if catalog.is_empty() {
-        return CommandSelector::Known(None);
+        return None;
     }
-    match tokens {
-        Some(tokens) => CommandSelector::Known(Some(match_command_id(tokens, catalog))),
-        None => CommandSelector::Unresolved,
-    }
+    Some(match_command_id(tokens, catalog))
 }
 
 /// `match_command_id`: the longest token prefix that names a catalog command.
@@ -109,8 +95,14 @@ pub(super) struct Launch {
     pub(super) cli_id: String,
     pub(super) name: String,
     pub(super) identity_hash: String,
+    /// The identity kind, which decides whether the invocation's first
+    /// argument is the script's own path.
+    pub(super) kind: String,
+    /// The runner whose own arguments precede the CLI's, when one runs it.
+    pub(super) runner: Option<String>,
     pub(super) source: LocalCliIdentitySourceV1,
-    /// The package script tokens, when the command runs a package script.
+    /// The package script tokens, when the command runs a package script;
+    /// `None` until the caller derives them from the invocation.
     pub(super) tokens: Option<Vec<String>>,
 }
 
@@ -131,6 +123,8 @@ pub(super) fn launch(
                 cli_id: identity.cli_id,
                 name: identity.name,
                 identity_hash: identity.identity_hash,
+                kind: "script".to_owned(),
+                runner: None,
                 source: found.source,
                 tokens,
             }));
@@ -144,6 +138,8 @@ pub(super) fn launch(
         cli_id: record.cli_id,
         name: record.name,
         identity_hash: record.identity_hash,
+        kind: record.kind,
+        runner: record.runner,
         source: record.identity_source,
         tokens,
     }))

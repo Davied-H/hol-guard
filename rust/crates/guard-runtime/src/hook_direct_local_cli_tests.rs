@@ -1,5 +1,9 @@
-use super::{custom_rule_response, launch_cwd, launches_local_cli, pre_tool_command, RuleCheck};
+use super::block::Launch;
+use super::{
+    custom_rule_response, launch_cwd, launches_local_cli, pre_tool_command, Launched, RuleCheck,
+};
 use crate::context_digest_package_scripts::package_json_scripts;
+use guard_contracts::LocalCliIdentitySourceV1;
 use serde_json::{json, Map, Value};
 use std::fs;
 use std::path::Path;
@@ -152,6 +156,42 @@ fn a_launch_without_a_blocking_grant_keeps_the_edge_response() {
         ),
     );
     assert_eq!(stale.check("npm run build", false, false), Ok(None));
+}
+
+#[test]
+fn an_invocation_without_package_tokens_reads_the_daemon_shell_model() {
+    let workspace = scratch("tokens");
+    let launched = |command: &'static str, name: &str, kind: &str, runner: Option<&str>| {
+        Launched {
+            launch: Launch {
+                cli_id: "local-cli.demo".to_owned(),
+                name: name.to_owned(),
+                identity_hash: "a".repeat(64),
+                kind: kind.to_owned(),
+                runner: runner.map(str::to_owned),
+                source: LocalCliIdentitySourceV1::Script {
+                    entrypoint: json!({ "path": "/work/bin/demo" }),
+                },
+                tokens: None,
+            },
+            command,
+            cwd: workspace.clone(),
+        }
+        .invocation_tokens(&workspace)
+    };
+    assert_eq!(
+        launched("./bin/demo db migrate", "demo", "executable", None),
+        vec!["db".to_owned(), "migrate".to_owned()]
+    );
+    assert_eq!(
+        launched("node ./bin/demo.js db", "demo.js", "script", None),
+        vec!["db".to_owned()]
+    );
+    assert_eq!(
+        launched("npx -y demo deploy", "demo", "executable", Some("npx")),
+        vec!["deploy".to_owned()]
+    );
+    assert!(launched("./bin/demo --help", "demo", "executable", None).is_empty());
 }
 
 #[test]

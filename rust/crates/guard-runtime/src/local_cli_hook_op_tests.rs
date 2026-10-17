@@ -270,6 +270,50 @@ fn token_split_follows_runner_script_and_plain_launches() {
 }
 
 #[test]
+fn an_invocation_splits_the_same_tokens_as_its_arguments() {
+    let cwd = std::env::temp_dir();
+    let cwd = cwd.to_str().unwrap();
+    assert_eq!(
+        invocation_command_tokens(
+            "./bin/tool deploy prod",
+            cwd,
+            None,
+            "tool",
+            "executable",
+            None
+        ),
+        strings(&["deploy", "prod"])
+    );
+    assert_eq!(
+        invocation_command_tokens(
+            "python3 ./bin/tool.py db migrate",
+            cwd,
+            None,
+            "tool.py",
+            "script",
+            None
+        ),
+        strings(&["db", "migrate"])
+    );
+    assert_eq!(
+        invocation_command_tokens(
+            "npx -y wrangler deploy",
+            cwd,
+            None,
+            "wrangler",
+            "executable",
+            Some("npx")
+        ),
+        strings(&["deploy"])
+    );
+    assert!(
+        invocation_command_tokens("./bin/tool --force", cwd, None, "tool", "executable", None)
+            .is_empty()
+    );
+    assert!(invocation_command_tokens("", cwd, None, "tool", "executable", None).is_empty());
+}
+
+#[test]
 fn match_command_id_takes_the_longest_catalog_prefix() {
     let ids = catalog(&["root", "db", "db.migrate", "other"]);
     assert_eq!(match_command_id(&[], &ids), "root");
