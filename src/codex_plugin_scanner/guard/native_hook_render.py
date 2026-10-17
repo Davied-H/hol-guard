@@ -114,6 +114,45 @@ def native_claude_approval_copy(
     return rendered[1].get("value")
 
 
+# The payload fields the artifact-id rule reads to name an event.
+_ARTIFACT_ID_PAYLOAD_FIELDS = (
+    "source_scope",
+    "tool_name",
+    "event",
+    "hook_event_name",
+    "hookEventName",
+    "hook_name",
+)
+
+
+def native_artifact_id_from_event(
+    harness: str,
+    canonical_harness: str,
+    payload: Mapping[str, object],
+    *,
+    guard_home: Path | None = None,
+) -> str | None:
+    """Name the runtime artifact an event belongs to; ``None`` when unavailable.
+
+    The name is what a configured action override is keyed on, so the resident
+    derives it. ``canonical_harness`` is the resolved adapter name, which
+    decides whether the Claude builtin/MCP split applies; ``harness`` is the
+    raw tag the event arrived on and prefixes the id for every other harness.
+    Only the fields the rule reads travel: the rest of a hook payload carries
+    the tool's own input, which naming never reads.
+    """
+
+    params: dict[str, object] = {
+        "canonical_harness": canonical_harness,
+        "payload": {key: payload[key] for key in _ARTIFACT_ID_PAYLOAD_FIELDS if key in payload},
+    }
+    rendered = native_render_cli("artifact_id", harness, params, guard_home=guard_home)
+    if rendered is None or rendered[1] is None:
+        return None
+    value = rendered[1].get("value")
+    return value if isinstance(value, str) and value else None
+
+
 def native_render_pre_tool(
     harness: str, verdict: Mapping[str, object], *, guard_home: Path | None = None, deadline: float | None = None
 ) -> dict[str, object] | None:
@@ -158,6 +197,7 @@ def native_render_recording_only_pre_tool(
 
 __all__ = [
     "HOOK_RENDER_FEATURE",
+    "native_artifact_id_from_event",
     "native_claude_approval_copy",
     "native_render_cli",
     "native_render_pre_tool",

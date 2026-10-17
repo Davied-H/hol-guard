@@ -4,6 +4,11 @@
 //! Pure: the caller ships the adjusted verdict (and the queued approval for a
 //! review), the resident returns the exact harness JSON. Rendering itself
 //! lives in `guard_command::hook_responses`, shared with the edge decision.
+//!
+//! The op also answers the named-string questions the CLI hook path asks
+//! before it has a verdict - the approval copy a Claude prompt shows, and the
+//! artifact id an event is filed under - so no rule that decides what a user
+//! sees or which override applies is evaluated outside the runtime.
 
 use crate::hook_cli_claude_text::claude_approval_copy;
 use guard_command::hook_responses::cli_documents::{
@@ -11,7 +16,8 @@ use guard_command::hook_responses::cli_documents::{
 };
 use guard_command::hook_responses::{pre_tool, pre_tool_review, recording_only_pre_tool, Object};
 use guard_contracts::{
-    HookRenderRequestV1, HookRenderResultV1, HOOK_RENDER_MAX_BYTES, HOOK_RENDER_RESULT_SCHEMA,
+    artifact_id_from_event, HookRenderRequestV1, HookRenderResultV1, HOOK_RENDER_MAX_BYTES,
+    HOOK_RENDER_RESULT_SCHEMA,
 };
 use serde_json::{json, Value};
 
@@ -67,6 +73,25 @@ fn render(request: &HookRenderRequestV1) -> Result<Value, &'static str> {
             .ok_or("native_hook_render_invalid")?;
         let mut document = Object::new();
         document.insert("value".into(), value);
+        return Ok(cli_payload(CliOutcome::Document(document)));
+    }
+    if request.kind == "artifact_id" {
+        // The artifact an event belongs to is what a configured action
+        // override is keyed on, so the resident names it rather than reading a
+        // name Python derived. Only the payload fields the rule reads travel.
+        let params = object_of(request.cli.as_ref()).ok_or("native_hook_render_invalid")?;
+        let canonical_harness = params
+            .get("canonical_harness")
+            .and_then(Value::as_str)
+            .ok_or("native_hook_render_invalid")?;
+        let payload = object_of(params.get("payload"))
+            .cloned()
+            .unwrap_or_default();
+        let mut document = Object::new();
+        document.insert(
+            "value".into(),
+            Value::String(artifact_id_from_event(harness, canonical_harness, &payload)),
+        );
         return Ok(cli_payload(CliOutcome::Document(document)));
     }
     if matches!(

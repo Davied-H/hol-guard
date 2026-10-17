@@ -155,3 +155,69 @@ fn claude_approval_copy_kind_returns_one_named_piece_of_text() {
     assert_eq!(result.status, "error");
     assert_eq!(result.code, "native_hook_render_invalid");
 }
+
+#[test]
+fn artifact_id_kind_names_the_artifact_an_event_belongs_to() {
+    let mut req = request("artifact_id");
+    req.cli = Some(json!({
+        "canonical_harness": "codex",
+        "payload": {"source_scope": "project", "tool_name": "shell"},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["outcome"], "document");
+    assert_eq!(payload["response"]["value"], "codex:project:shell");
+
+    // No tool name: the event name scopes the id, lowercased.
+    req.cli = Some(json!({
+        "canonical_harness": "codex",
+        "payload": {"hook_event_name": "preToolUse"},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], "codex:project:pretooluse");
+
+    // Neither: the bare hook fallback.
+    req.cli = Some(json!({"canonical_harness": "codex", "payload": {}}));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], "codex:project:hook");
+}
+
+#[test]
+fn artifact_id_kind_folds_claude_tools_through_the_builtin_split() {
+    let mut req = request("artifact_id");
+    req.harness = "claude".to_owned();
+    req.cli = Some(json!({
+        "canonical_harness": "claude-code",
+        "payload": {"source_scope": "user", "tool_name": "Bash"},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["response"]["value"], "claude-code:user:Bash");
+
+    req.cli = Some(json!({
+        "canonical_harness": "claude-code",
+        "payload": {"source_scope": "user", "tool_name": "mcp__linear__issue"},
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(
+        payload["response"]["value"],
+        "claude-code:user:mcp:mcp__linear__issue"
+    );
+}
+
+#[test]
+fn artifact_id_kind_requires_the_canonical_harness() {
+    let mut req = request("artifact_id");
+    req.cli = Some(json!({"payload": {"tool_name": "shell"}}));
+    let result = decode(evaluate_hook_render_request(&req).expect("encoded"));
+    assert_eq!(result.status, "error");
+    assert_eq!(result.code, "native_hook_render_invalid");
+}

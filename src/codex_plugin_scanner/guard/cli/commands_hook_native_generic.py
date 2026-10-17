@@ -19,20 +19,24 @@ def _coalesce_string(*values: object | None) -> str:
     return "unknown-artifact"
 
 
-def _artifact_id_from_event(harness: str, payload: dict[str, object]) -> str:
-    """Resolve runtime-artifact identity after the CLI support graph is loaded."""
+def _artifact_id_from_event(harness: str, payload: dict[str, object], guard_home: Path | None) -> str:
+    """Name the runtime artifact the event belongs to; the resident owns the rule.
 
-    from .commands_support_runtime_artifacts import _artifact_id_from_event as resolve
+    The name selects the configured action override for the event, so Python
+    never derives it. A resident that cannot answer leaves the caller with no
+    artifact identity, which the pipeline turns into the harness outage
+    response rather than a guessed name that no override would match.
+    """
 
-    return resolve(harness, payload)
+    from ..native_hook_decision import NativeHookDecisionError
+    from ..native_hook_render import native_artifact_id_from_event
 
-
-def _hook_event_name(payload: dict[str, object]) -> str | None:
-    """Resolve event names lazily to keep hook startup independent of import order."""
-
-    from .commands_support_runtime_artifacts import _hook_event_name as resolve
-
-    return resolve(payload)
+    artifact_id = native_artifact_id_from_event(
+        harness, _canonical_harness_name(harness), payload, guard_home=guard_home
+    )
+    if artifact_id is None:
+        raise NativeHookDecisionError("native_artifact_id_unavailable")
+    return artifact_id
 
 
 def _embedded_script_evidence(command_text: str | None) -> list[dict[str, object]]:
@@ -540,11 +544,13 @@ def run_native_generic_payload(
     payload_map = dict(payload)
     payload_map.pop("blocked_request_guidance", None)
     blocked_request_guidance: str | None = None
-    artifact_id = _coalesce_string(
-        getattr(args, "artifact_id", None),
-        payload_map.get("artifact_id"),
-        _artifact_id_from_event(args.harness, payload_map),
+    # Only ask the resident to name the artifact when the event carried no
+    # name of its own; the round trip is on the hook hot path.
+    artifact_id = _optional_string(getattr(args, "artifact_id", None)) or _optional_string(
+        payload_map.get("artifact_id")
     )
+    if artifact_id is None:
+        artifact_id = _artifact_id_from_event(args.harness, payload_map, store.guard_home)
     artifact_name = _coalesce_string(
         getattr(args, "artifact_name", None),
         payload_map.get("artifact_name"),
