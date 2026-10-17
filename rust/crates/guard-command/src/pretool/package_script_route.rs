@@ -89,10 +89,10 @@ fn resolved(
     let arguments = segment.arguments.as_slice();
     // The same name the build classification reads, so `npm.exe run build`
     // is the package script `npm run build` is and keeps the review prompt.
-    if matches!(
-        crate::program_basename(segment.executable.as_deref()?),
-        "npm" | "pnpm" | "bun"
-    ) && arguments.first().is_some_and(|word| word == "run")
+    let manager = crate::program_basename(segment.executable.as_deref()?);
+    if matches!(manager, "npm" | "pnpm" | "bun" | "yarn")
+        && (arguments.first().is_some_and(|word| word == "run")
+            || super::manager_script_task(manager, arguments).is_some())
     {
         return None;
     }
@@ -124,16 +124,12 @@ fn resolved(
     }
     let segment = model.segments.first()?;
     let manager = executable_basename(segment.executable.as_deref()?);
-    if !matches!(manager, "npm" | "pnpm" | "bun") {
+    if !matches!(manager, "npm" | "pnpm" | "bun" | "yarn") {
         return direct_tool(reason, &segment.arguments, cwd, context);
     }
     let arguments = segment.arguments.as_slice();
-    let task = match arguments {
-        [run, task] if run == "run" && matches!(task.as_str(), "lint" | "typecheck" | "build") => {
-            Some(task.as_str())
-        }
-        _ => None,
-    };
+    let task = super::manager_script_task(manager, arguments)
+        .filter(|task| matches!(*task, "lint" | "typecheck" | "build"));
     let test = reason == PACKAGE_TEST;
     if test && manager == "bun" && arguments.first().is_some_and(|word| word == "test") {
         // `bun test` is Bun's own runner, never the package `test` script.

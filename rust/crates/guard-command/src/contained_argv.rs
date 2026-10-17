@@ -383,7 +383,7 @@ fn contained_kind(command: &[String]) -> Result<Value, RestrictedPytestError> {
         && !command.is_empty()
         && (matches!(
             name,
-            "eslint" | "tsc" | "vite" | "prettier" | "bun" | "npm" | "pnpm"
+            "eslint" | "tsc" | "vite" | "prettier" | "bun" | "npm" | "pnpm" | "yarn"
         ) || (matches!(name, "bunx" | "npx")
             && entries
                 .clone()
