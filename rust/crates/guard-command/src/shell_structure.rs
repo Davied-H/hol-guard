@@ -38,9 +38,13 @@ pub fn extract_heredocs(command: &str) -> Vec<ShellHeredoc> {
     let n = chars.len();
     let mut results = Vec::new();
     let mut scan_cursor = 0usize;
+    // A quote opened on one line stays open on the next, so the scan state
+    // spans declaration lines. Heredoc bodies are not shell syntax, and the
+    // cursor jumps past them, so they never advance it.
+    let mut state = ShellScanState::new();
     while scan_cursor < n {
         let mut line_end = find_newline(&chars, scan_cursor).unwrap_or(n);
-        let pending = heredoc_declarations(&chars[scan_cursor..line_end]);
+        let pending = heredoc_declarations(&chars[scan_cursor..line_end], &mut state);
         if pending.is_empty() {
             if line_end == n {
                 break;
@@ -118,15 +122,27 @@ struct HeredocDecl {
 }
 
 /// `_heredoc_declarations` (:91-107).
-fn heredoc_declarations(line: &[char]) -> Vec<HeredocDecl> {
+fn heredoc_declarations(line: &[char], state: &mut ShellScanState) -> Vec<HeredocDecl> {
     let mut matches = Vec::new();
-    let mut state = ShellScanState::new();
     let mut index = 0usize;
     while index < line.len() {
         let next_index = state.advance(line, index);
         if next_index != index + 1 {
             index = next_index;
             continue;
+        }
+        // `#` opens a comment only at the start of a word, so the rest of the
+        // line is not shell syntax and cannot declare a heredoc. Quoting state
+        // is unchanged by a comment, so the next line resumes from here.
+        if state.is_top_level()
+            && line[index] == '#'
+            && (index == 0
+                || matches!(
+                    line[index - 1],
+                    ' ' | '\t' | ';' | '&' | '|' | '(' | ')' | '<' | '>'
+                ))
+        {
+            break;
         }
         if state.is_top_level()
             && line[index] == '<'

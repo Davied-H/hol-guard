@@ -146,3 +146,44 @@ fn quoted_command_substitution_keeps_unicode_character_offsets() {
         "🙂 \"$(cat <<BAD)\" <<E\n \n \ny"
     );
 }
+
+#[test]
+fn shell_comments_do_not_declare_heredocs() {
+    let command = "echo hi # <<EOF\nnpm install malicious\nEOF";
+    let heredocs = extract_heredocs(command);
+    assert!(heredocs.is_empty());
+    assert_eq!(mask_heredoc_bodies(command, &heredocs), command);
+}
+
+#[test]
+fn a_hash_inside_a_word_still_declares_a_heredoc() {
+    for header in ["echo a#b <<EOF", "echo \"# <<X\" <<EOF", "echo $# <<EOF"] {
+        let command = format!("{header}\nnpm install hidden\nEOF\nnpm install after");
+        let heredocs = extract_heredocs(&command);
+        assert_eq!(heredocs.len(), 1, "{header}");
+        assert_eq!(heredocs[0].delimiter, "EOF", "{header}");
+        assert!(
+            !mask_heredoc_bodies(&command, &heredocs).contains("npm install hidden"),
+            "{header}"
+        );
+    }
+}
+
+#[test]
+fn an_open_quote_from_an_earlier_line_suppresses_heredoc_declarations() {
+    let command = "echo \"\n<<EOF\n\"\nnpm install visible\nEOF";
+    let heredocs = extract_heredocs(command);
+    assert!(heredocs.is_empty());
+    assert_eq!(mask_heredoc_bodies(command, &heredocs), command);
+}
+
+#[test]
+fn a_quote_closed_on_a_later_line_restores_heredoc_detection() {
+    let command = "echo \"\n\" <<EOF\nnpm install hidden\nEOF\nnpm install after";
+    let heredocs = extract_heredocs(command);
+    assert_eq!(heredocs.len(), 1);
+    assert_eq!(heredocs[0].delimiter, "EOF");
+    let masked = mask_complete_heredocs(command, &heredocs);
+    assert!(!masked.contains("npm install hidden"));
+    assert!(masked.contains("npm install after"));
+}
