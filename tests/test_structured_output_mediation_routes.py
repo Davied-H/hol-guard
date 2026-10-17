@@ -172,16 +172,18 @@ def test_native_denial_does_not_bypass_revoked_structured_authority_on_next_allo
         def _review_raw_hook_native(self, **_kwargs: object) -> dict[str, object]:
             if not self.denied:
                 return super()._review_raw_hook_native(**_kwargs)
+            result = _native_result(
+                decision="deny",
+                model_output_action="block",
+                policy_action="block",
+                reason_code="native_secret_detected",
+            )
             return {
                 "event_name": "PostToolUse",
                 "harness": "pi",
-                "result": _native_result(
-                    decision="deny",
-                    model_output_action="block",
-                    policy_action="block",
-                    reason_code="native_secret_detected",
-                ),
+                "result": result,
                 "receipt": _receipt(decision="deny"),
+                "harness_response": dict(result),
             }
 
     fixture = _ChangingNativeRouteFixture(_config())
