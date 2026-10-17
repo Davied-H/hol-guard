@@ -90,6 +90,7 @@ def main() -> int:
         "ssh host.example",
         "PATH=/tmp:$PATH ls",
         "bash -lc 'npm install package'",
+        "bash -lc 'pwd'",
         "cat ~/.env",
         "rg token ~/.ssh",
         "git push origin main",
@@ -99,9 +100,10 @@ def main() -> int:
         assert result["decision"] == "deny", (command, result)
         assert result["policy_action"] in {"review", "block"}, (command, result)
 
-    # A shell that carries its whole script runs exactly that script, so the
-    # command reaches the same decision the script reaches on its own.
-    for index, command in enumerate(("bash -lc 'pwd'", "sh -c 'pwd'")):
+    # A shell that reads no startup file runs exactly the script it carries, so
+    # the command reaches the same decision the script reaches on its own. A
+    # login shell runs the profile files first and stays under review above.
+    for index, command in enumerate(("sh -c 'pwd'", "bash -c 'pwd'")):
         result = decision(runtime, command, f"inline-shell-{index}")
         assert result["decision"] == "allow", (command, result)
 

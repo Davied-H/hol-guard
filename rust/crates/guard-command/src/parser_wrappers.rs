@@ -219,6 +219,22 @@ const INLINE_SHELLS: &[&str] = &["sh", "bash", "dash", "ash", "zsh"];
 /// The option that reads the script from the next word.
 const INLINE_SCRIPT_OPTIONS: &[&str] = &["-c", "-lc", "-cl"];
 
+/// A shell's whole script, carried in this same text.
+pub(super) struct CarriedScript {
+    /// The shell this text names.
+    pub(super) shell: String,
+    /// The script it carries.
+    pub(super) script: String,
+    /// Whether this spelling runs a startup file the script's own words do not
+    /// name.
+    ///
+    /// `sh -c`, `bash -c`, `dash -c` and `ash -c` read no startup file. A login
+    /// shell (`-lc`, `-cl`) sources the profile files first, and `zsh` reads
+    /// `~/.zshenv` whatever option it is given, so those spellings run code
+    /// this text does not hold and keep the shell in the wrapper chain.
+    pub(super) reads_startup_files: bool,
+}
+
 /// The script a shell carries in this same text, when the text is nothing but
 /// that invocation.
 ///
@@ -228,7 +244,7 @@ const INLINE_SCRIPT_OPTIONS: &[&str] = &["-c", "-lc", "-cl"];
 /// is any other spelling: an option the shell reads differently, a `$0`, a
 /// script on stdin, a prefix or assignment in front of the shell, and a
 /// pipeline or redirect around it all keep their existing paths.
-pub(super) fn inline_shell_script(raw: &str) -> Option<String> {
+pub(super) fn inline_shell_script(raw: &str) -> Option<CarriedScript> {
     if raw.len() > crate::MAX_COMMAND_BYTES
         || raw.contains(['$', '`', '\n', '\r'])
         || carries_unquoted_operator(raw)
@@ -245,7 +261,11 @@ pub(super) fn inline_shell_script(raw: &str) -> Option<String> {
     {
         return None;
     }
-    Some(script.clone())
+    Some(CarriedScript {
+        shell: shell.clone(),
+        script: script.clone(),
+        reads_startup_files: option != "-c" || shell == "zsh",
+    })
 }
 
 /// Whether an operator stands outside the quoting, where the shell reads it as
@@ -321,8 +341,9 @@ mod tests {
             assert!(super::inline_shell_script(command).is_none(), "{command}");
         }
         assert_eq!(
-            super::inline_shell_script("sh -c 'gh pr view 12 > /tmp/out'").as_deref(),
-            Some("gh pr view 12 > /tmp/out"),
+            super::inline_shell_script("sh -c 'gh pr view 12 > /tmp/out'")
+                .map(|carried| carried.script),
+            Some("gh pr view 12 > /tmp/out".to_owned()),
         );
     }
 
@@ -437,18 +458,23 @@ mod tests {
 
     #[test]
     fn a_shell_carrying_its_script_is_modelled_from_that_script() {
-        for (command, executable, arguments) in [
-            ("sh -c 'npm run build'", "npm", vec!["run", "build"]),
-            ("bash -c 'git status'", "git", vec!["status"]),
-            ("bash -lc 'git status'", "git", vec!["status"]),
-            ("zsh -c \"npm test\"", "npm", vec!["test"]),
-            ("zsh -lc \"npm test\"", "npm", vec!["test"]),
+        for (command, wrappers, executable, arguments) in [
+            ("sh -c 'npm run build'", vec![], "npm", vec!["run", "build"]),
+            ("bash -c 'git status'", vec![], "git", vec!["status"]),
+            // A login shell sources the profile files and `zsh` reads
+            // `~/.zshenv` whatever option it is given, so the script is still
+            // modelled while the shell stays in the wrapper chain.
+            ("bash -lc 'git status'", vec!["bash"], "git", vec!["status"]),
+            ("zsh -c \"npm test\"", vec!["zsh"], "npm", vec!["test"]),
+            ("zsh -lc \"npm test\"", vec!["zsh"], "npm", vec!["test"]),
         ] {
             let model = parse(command);
             assert_eq!(model.confidence, "exact", "{command}");
-            // The shell adds nothing to the script, so it leaves no wrapper
-            // and the model is the one those same words make on their own.
-            assert!(model.wrapper_chain.is_empty(), "{command}");
+            // A shell that reads no startup file adds nothing to the script,
+            // so it leaves no wrapper and the model is the one those same
+            // words make on their own.
+            assert_eq!(model.wrapper_chain, wrappers, "{command}");
+            assert_eq!(model.segments[0].wrapper_chain, wrappers, "{command}");
             assert_eq!(model.normalized_text, bare(command), "{command}");
             assert_eq!(model.segments[0].executable.as_deref(), Some(executable));
             let words: Vec<&str> = model.segments[0]
