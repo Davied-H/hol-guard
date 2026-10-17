@@ -47,7 +47,10 @@ pub(crate) enum PortableIdentity {
 }
 
 /// The identity `resolve_portable_project_identity(workspace)` returns for a
-/// workspace that names an absolute path.
+/// workspace that names an absolute path. Every caller reaches it through
+/// `portable_workspace`, which reads a workspace that already names an
+/// identity first; the vectors exercise the resolution on its own.
+#[cfg(test)]
 pub(crate) fn resolve(workspace: &str) -> PortableIdentity {
     identity_of(None, workspace)
 }

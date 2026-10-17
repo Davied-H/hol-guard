@@ -66,7 +66,12 @@ fn evaluation() -> Map<String, Value> {
         "packages": [{"name": "left-pad", "ecosystem": "npm"}],
         "policy_action": "review",
         "policy_version": "1",
-        "reasons": ["package request"],
+        "reasons": [{
+            "code": "package_request",
+            "message": "package request",
+            "severity": "low",
+            "source": "guard-local",
+        }],
     })
     .as_object()
     .expect("object")

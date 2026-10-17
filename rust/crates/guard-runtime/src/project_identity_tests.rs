@@ -121,7 +121,13 @@ fn write(path: &Path, text: &str) {
 
 #[cfg(unix)]
 fn repository(root: &Path) {
-    let remote = "https://github.com/example/cached.git";
+    repository_from(root, "https://github.com/example/cached.git");
+}
+
+/// The same repository metadata for a named remote, so two scratch roots can
+/// hold two projects instead of two copies of one.
+#[cfg(unix)]
+fn repository_from(root: &Path, remote: &str) {
     write(
         &root.join(".git/config"),
         &format!("[remote \"origin\"]\n\turl = {remote}\n"),
@@ -240,18 +246,23 @@ fn a_selector_resolves_against_the_cwd_it_was_read_in() {
     let cwd = root.to_str().expect("utf-8");
     let selector = "package-request-workspace-exact:v2:abc";
     // `Path(selector).resolve()` joins the cwd, so the walk starts in the
-    // project the proxy is running in and the selector is its relative name.
+    // project the proxy is running in. The identity is that project's Git
+    // metadata, not the name the walk started from, so the selector resolves
+    // to the project itself.
     let PortableIdentity::Identity(derived) = portable_workspace_in(cwd, selector) else {
         panic!("the selector resolves");
     };
     let PortableIdentity::Identity(project) = resolve(cwd) else {
         panic!("the repository resolves");
     };
-    assert_ne!(derived, project, "the relative name is part of the digest");
+    assert_eq!(
+        derived, project,
+        "the selector names the project it is read in"
+    );
     // The same selector under another project is another identity, and under
     // no project at all it is absent.
     let other = scratch("selector-other");
-    repository(&other);
+    repository_from(&other, "https://github.com/example/other.git");
     let elsewhere = other.to_str().expect("utf-8");
     assert_ne!(
         portable_workspace_in(elsewhere, selector),
