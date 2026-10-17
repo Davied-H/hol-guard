@@ -348,6 +348,7 @@ fn run_workspace_contained(
         )
     })?;
     signals.clean_up(private.path.clone());
+    grant::link_state(&private.path, expected.as_ref(), &plan.capabilities)?;
     let launch = Launch {
         plan: &plan,
         workspace,

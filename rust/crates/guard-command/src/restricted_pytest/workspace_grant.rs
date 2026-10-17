@@ -2,12 +2,13 @@
 //! CLI grant this device allowed.
 //!
 //! The grant adds what the CLI needs to run and nothing more: execution of
-//! its canonical directory and its script interpreter's, and per enabled
-//! capability its state directory (`~/.<name>`) for reading or writing and
-//! loopback-only network. Every denial of the base profile stays, and the
+//! its program file and its script interpreter's (never the directories they
+//! sit in), and per enabled capability its state directory (`~/.<name>`) for
+//! reading or writing and loopback-only network. Every denial of the base profile stays, and the
 //! credential denials still close the Seatbelt profile, so a capability can
 //! never reopen a secret. A capability this host's sandbox cannot bound is
 //! left out of the plan, which keeps its denial.
+use super::workspace_grant_launch::Reach;
 use super::*;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -130,54 +131,8 @@ pub(super) fn state_dir(name: &str, home: &Path) -> Option<PathBuf> {
     }
 }
 
-/// The canonical directory of `program` and of its script interpreter, as
-/// the agent's shell would resolve them from `search_path`.
-fn launch_dirs(program: &str, search_path: &str, cwd: &Path) -> Option<Vec<(PathBuf, PathBuf)>> {
-    use super::launch_shebang::{shebang, Shebang};
-    let found = located(program, search_path, cwd)?;
-    let canonical = found.canonicalize().ok()?;
-    let mut dirs = vec![(
-        found.parent()?.to_path_buf(),
-        canonical.parent()?.to_path_buf(),
-    )];
-    let interpreters = match shebang(&canonical) {
-        Shebang::Absent => Vec::new(),
-        Shebang::Runs(programs) => programs,
-        // A `#!` line that cannot be read for certain gets no grant plan.
-        Shebang::Unclear => return None,
-    };
-    for interpreter in interpreters {
-        let located = located(&interpreter, search_path, cwd)?;
-        let resolved = located.canonicalize().ok()?;
-        dirs.push((
-            located.parent()?.to_path_buf(),
-            resolved.parent()?.to_path_buf(),
-        ));
-    }
-    Some(dirs)
-}
-
-/// The file the agent's shell would run for `program` from `cwd`.
-fn located(program: &str, search_path: &str, cwd: &Path) -> Option<PathBuf> {
-    match super::launch_roots::locate(program, search_path, Some(cwd)) {
-        super::launch_roots::Lookup::Found(path) => Some(path),
-        _ => None,
-    }
-}
-
-/// A directory the grant may let the sandbox execute from: never the
-/// filesystem root, the home itself, or a credential directory.
-fn executable_dir(dir: &Path, home: Option<&Path>) -> bool {
-    dir.is_absolute()
-        && dir != Path::new("/")
-        && home.is_none_or(|home| home.canonicalize().ok().as_deref() != Some(dir))
-        && dir
-            .to_str()
-            .is_some_and(|text| !crate::secret_path_probe::is_request_secret_path(text, None, home))
-}
-
-/// Widen the base workspace `plan` by `grant` for the program the command's
-/// first segment runs. `platform` names the host; Linux's namespace cannot
+/// Widen the base workspace `plan` by `grant` for the program the command is
+/// one plain invocation of. `platform` names the host; Linux's namespace cannot
 /// yet bound loopback-only network or a home state directory, so there the
 /// plan carries none of those capabilities and keeps their denial.
 pub(super) fn widen(
@@ -197,42 +152,16 @@ pub(super) fn widen(
     let capabilities = grant_capabilities(&grant.capabilities)
         .filter(|_| hash_valid)
         .ok_or_else(|| invalid("Invalid local CLI grant."))?;
-    let dirs = launch_dirs(program, search_path, workspace)
-        .filter(|dirs| dirs.iter().all(|(_, dir)| executable_dir(dir, home)))
-        .ok_or_else(|| invalid("The granted program cannot be located for the sandbox."))?;
     let effective: Vec<String> = if platform == "darwin" {
         capabilities.to_vec()
     } else {
         Vec::new()
     };
-    let mut exec_roots: Vec<PathBuf> = serde_json::from_value(plan["exec_roots"].take())
-        .map_err(|_| invalid("Invalid workspace sandbox plan."))?;
-    let sandbox_path = plan["sandbox_path"].as_str().unwrap_or_default().to_owned();
-    let mut entries: Vec<String> = sandbox_path.split(':').map(str::to_owned).collect();
-    for (entry, dir) in &dirs {
-        if !exec_roots.contains(dir) {
-            exec_roots.push(dir.clone());
-        }
-        let text = dir.to_string_lossy().into_owned();
-        if !entries.contains(&text) && !text.contains(':') {
-            // The session found the program through `entry`; keep its place
-            // ahead of the accepted entries that follow it there.
-            let position = search_path
-                .split(':')
-                .position(|item| Path::new(item) == entry)
-                .unwrap_or(usize::MAX);
-            let session_index = |accepted: &String| {
-                search_path.split(':').position(|item| {
-                    Path::new(item).canonicalize().ok().as_deref() == Some(Path::new(accepted))
-                })
-            };
-            let before = entries
-                .iter()
-                .filter(|accepted| session_index(accepted).is_some_and(|index| index < position))
-                .count();
-            entries.insert(before, text);
-        }
-    }
+    let mut reach = Reach::of(plan, search_path, home, workspace)
+        .ok_or_else(|| invalid("Invalid workspace sandbox plan."))?;
+    reach
+        .admit_launch(program)
+        .ok_or_else(|| invalid("The granted program cannot be located for the sandbox."))?;
     let mut read_only_roots = plan["read_only_roots"]
         .as_array()
         .cloned()
@@ -244,8 +173,7 @@ pub(super) fn widen(
         read_only_roots.push(json!(state));
     }
     plan["profile_version"] = json!(GRANT_PROFILE);
-    plan["exec_roots"] = json!(exec_roots);
-    plan["sandbox_path"] = json!(entries.join(":"));
+    reach.write(plan);
     plan["read_only_roots"] = Value::Array(read_only_roots);
     plan["grant_identity_hash"] = json!(grant.identity_hash);
     plan["capabilities"] = json!(effective);

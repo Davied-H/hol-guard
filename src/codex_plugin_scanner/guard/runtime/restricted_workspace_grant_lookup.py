@@ -3,13 +3,17 @@
 The sink never trusts a grant it was handed. It asks this device's store when
 it prepares the plan, admits only a plan widened by exactly that grant, and
 asks again after the second receipt: a blocked CLI stops the run, and a grant
-that changed in between, in any field, stops it too. Without a store, or
-without a bound resident answer, the run keeps the base sandbox.
+that changed in between, in any field, stops it too. Without a store, without
+a bound resident answer, or when the store cannot be read, no grant is decided
+and the run keeps the base sandbox, which is the narrowest one: a grant only
+ever widens it. A grant that was decided and then cannot be confirmed again
+stops the run.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import sqlite3
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -26,6 +30,9 @@ GRANT_CHANGED = "The local CLI grant changed before launch."
 GRANT_BLOCKED = "This device blocked the local CLI this command launches."
 _WORKSPACE_REASON = "native_workspace_containment_required"
 _STATE_CAPABILITIES = frozenset({"state-dir-read", "state-dir-write"})
+# What a store that cannot answer raises: a store failure, a resident that is
+# out of reach, or an expired operation deadline.
+_STORE_UNANSWERED = (sqlite3.Error, ValueError, RuntimeError, OSError, TimeoutError)
 _STORE: ContextVar[GuardStore | None] = ContextVar("restricted_workspace_grant_store", default=None)
 
 
@@ -46,14 +53,17 @@ def decided_grant(command: str, *, workspace: Path, home: Path) -> ContainedGran
         return None
     from ..local_cli_hook import ALLOW_CONTAINED_WITH_GRANT, local_cli_contained_grant
 
-    decision = local_cli_contained_grant(
-        store,
-        command=command,
-        cwd=workspace,
-        home_dir=home,
-        current_action="sandbox-required",
-        reason_code=_WORKSPACE_REASON,
-    )
+    try:
+        decision = local_cli_contained_grant(
+            store,
+            command=command,
+            cwd=workspace,
+            home_dir=home,
+            current_action="sandbox-required",
+            reason_code=_WORKSPACE_REASON,
+        )
+    except _STORE_UNANSWERED:
+        return None
     if decision is None:
         return None
     action, grant = decision
@@ -71,7 +81,11 @@ def expected_grant(grant: ContainedGrant, home: Path) -> ExpectedGrant:
 
 
 def require_unchanged(first: ContainedGrant | None, command: str, *, workspace: Path, home: Path) -> None:
-    """Fail unless the store still decides `first` for the command."""
+    """Fail unless the store still decides `first` for the command.
+
+    A run that decided no grant has nothing to lose when the store cannot
+    answer again. One that decided a grant needs the store to confirm it.
+    """
     try:
         now = decided_grant(command, workspace=workspace, home=home)
     except RestrictedPytestError:
@@ -79,3 +93,25 @@ def require_unchanged(first: ContainedGrant | None, command: str, *, workspace: 
         raise RestrictedPytestError(PYTEST_INVALID_COMMAND_REASON_CODE, GRANT_CHANGED) from None
     if now != first:
         raise RestrictedPytestError(PYTEST_INVALID_COMMAND_REASON_CODE, GRANT_CHANGED)
+
+
+def link_state_dir(private_home: Path, plan: Mapping[str, object], expected: ExpectedGrant | None) -> None:
+    """Make the CLI state directory reachable where the CLI looks for it.
+
+    The run's `HOME` is the private home, so a link there to the one directory
+    the grant opened lets the CLI find its saved state while the rest of the
+    real home stays out of reach. Nothing is linked without a state capability
+    in the plan, or for a directory that does not exist yet or is itself a link.
+    """
+    capabilities = plan.get("capabilities")
+    if (
+        expected is None
+        or expected.state_dir is None
+        or not isinstance(capabilities, list)
+        or not _STATE_CAPABILITIES.intersection(capabilities)
+    ):
+        return
+    state = Path(expected.state_dir)
+    if state.is_symlink() or not state.is_dir():
+        return
+    (private_home / state.name).symlink_to(state, target_is_directory=True)

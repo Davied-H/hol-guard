@@ -21,7 +21,6 @@ from codex_plugin_scanner.guard.daemon import hook_contained_grant as routing
 from codex_plugin_scanner.guard.runtime import restricted_workspace as workspace_sink
 from codex_plugin_scanner.guard.runtime import restricted_workspace_grant_lookup as lookup
 from codex_plugin_scanner.guard.runtime.restricted_pytest import RestrictedPytestError
-
 from tests.test_guard_restricted_workspace import COMMAND, payload, plan, receipt
 
 HASH = "ab" * 32
@@ -163,6 +162,9 @@ def test_daemon_turns_a_granted_outside_roots_review_into_the_sandbox(
     [
         (_review(reason_code="native_policy_review"), (client.ALLOW_CONTAINED_WITH_GRANT, CONTAINED)),
         (_review(minimum_action="allow"), (client.ALLOW_CONTAINED_WITH_GRANT, CONTAINED)),
+        (_review(policy_action="require-reapproval"), (client.ALLOW_CONTAINED_WITH_GRANT, CONTAINED)),
+        (_review(action={"action_type": "package"}), (client.ALLOW_CONTAINED_WITH_GRANT, CONTAINED)),
+        (_review(action={"action_type": "guard_control"}), (client.ALLOW_CONTAINED_WITH_GRANT, CONTAINED)),
         (_review(), ("block", None)),
         (_review(), ("review", None)),
         (_review(), None),
@@ -198,7 +200,9 @@ def test_daemon_routes_the_grant_and_answers_the_sink_with_the_receipt(
     assert routing.granted_containment_response(object(), _review(), payload=receipt_only, **common) == receipt()
     # A call the sink cannot take keeps its review.
     monkeypatch.setattr(zcode_contained_tests, "route_zcode_containment", lambda response, **kwargs: response)
-    assert routing.granted_containment_response(object(), _review(), payload=payload("lanectl status"), **common) is None
+    assert (
+        routing.granted_containment_response(object(), _review(), payload=payload("lanectl status"), **common) is None
+    )
 
 
 def test_direct_cli_hook_routes_a_granted_review(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -333,3 +337,73 @@ def test_expected_grant_names_the_state_directory_under_the_canonical_home(tmp_p
     expected = lookup.expected_grant(stateful, tmp_path)
     assert expected.state_dir == str(tmp_path.resolve() / ".lanectl")
     assert lookup.expected_grant(CONTAINED, tmp_path).state_dir is None
+
+
+@pytest.mark.parametrize(
+    "failure", [RuntimeError("store down"), OSError("disk"), TimeoutError(), ValueError("bad row")]
+)
+def test_a_store_that_cannot_answer_decides_no_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: Exception
+) -> None:
+    _decides(monkeypatch, failure)
+    with lookup.grant_store(object()):  # type: ignore[arg-type]
+        assert lookup.decided_grant(COMMAND, workspace=tmp_path, home=tmp_path) is None
+        # Nothing was decided, so nothing is lost when it cannot answer again.
+        lookup.require_unchanged(None, COMMAND, workspace=tmp_path, home=tmp_path)
+        with pytest.raises(RestrictedPytestError, match=lookup.GRANT_CHANGED):
+            lookup.require_unchanged(CONTAINED, COMMAND, workspace=tmp_path, home=tmp_path)
+
+
+def test_sink_keeps_the_base_sandbox_when_the_store_cannot_answer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _decides(monkeypatch, RuntimeError("store down"))
+    seen = _sink(monkeypatch, tmp_path, plan(tmp_path))
+    assert _run(tmp_path) == 0
+    prepare = seen["prepare_workspace_contained"]
+    assert isinstance(prepare, dict)
+    assert "grant" not in prepare
+    assert seen["launched"] == 1
+
+
+def _state_plan(*capabilities: str) -> dict[str, object]:
+    return {"capabilities": list(capabilities)}
+
+
+def test_state_directory_is_linked_where_the_private_home_looks_for_it(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    state = home / ".lanectl"
+    state.mkdir(parents=True)
+    private = tmp_path / "private"
+    private.mkdir()
+    stateful = client.ContainedGrant("local-cli.lanectl", HASH, "lanectl", ("state-dir-read",))
+    lookup.link_state_dir(private, _state_plan("state-dir-read"), lookup.expected_grant(stateful, home))
+    link = private / ".lanectl"
+    assert link.is_symlink()
+    assert link.resolve() == state.resolve()
+
+
+@pytest.mark.parametrize("kind", ["no-capability-in-plan", "no-grant", "no-state-capability", "missing", "link"])
+def test_state_directory_is_not_linked_without_the_grant_a_directory_and_a_capability(
+    tmp_path: Path, kind: str
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    private = tmp_path / "private"
+    private.mkdir()
+    stateful = client.ContainedGrant("local-cli.lanectl", HASH, "lanectl", ("state-dir-read",))
+    expected = lookup.expected_grant(stateful, home)
+    plan_value = _state_plan("state-dir-read")
+    if kind != "missing":
+        (home / ".lanectl").mkdir()
+    if kind == "link":
+        (home / ".lanectl").rmdir()
+        (home / ".lanectl").symlink_to(tmp_path)
+    if kind == "no-capability-in-plan":
+        plan_value = _state_plan("loopback-network")
+    if kind == "no-grant":
+        expected = None  # type: ignore[assignment]
+    if kind == "no-state-capability":
+        expected = lookup.expected_grant(CONTAINED, home)
+    lookup.link_state_dir(private, plan_value, expected)
+    assert list(private.iterdir()) == []

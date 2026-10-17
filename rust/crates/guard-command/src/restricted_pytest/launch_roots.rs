@@ -92,7 +92,7 @@ fn unreachable_from(
 }
 
 /// Directories the sandbox may execute from on this platform.
-fn executable_roots(workspace: &Path, exec_roots: Vec<PathBuf>) -> Vec<PathBuf> {
+pub(super) fn executable_roots(workspace: &Path, exec_roots: Vec<PathBuf>) -> Vec<PathBuf> {
     let system: &[&str] = if cfg!(target_os = "macos") {
         &["/bin", "/usr/bin"]
     } else {

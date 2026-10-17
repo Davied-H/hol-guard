@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from .hook_fail_closed import render_pre_tool
 from .hook_native_exact_action import launch_cwd
+from .hook_native_saved_approval import _native_review_is_overridable
 from .hook_request_parsing import pre_tool_command
 
 if TYPE_CHECKING:
@@ -41,8 +42,17 @@ def granted_containment_result(
     workspace: Path | None,
     home_dir: Path | None,
 ) -> dict[str, object] | None:
-    """The sandbox requirement an allowed grant turns an outside-roots review into."""
-    if result.get("minimum_action") != "review" or result.get("reason_code") != OUTSIDE_ROOTS_REASON:
+    """The sandbox requirement an allowed grant turns an outside-roots review into.
+
+    Only a review the saved-approval path could also override qualifies: a Guard
+    control or package action never routes into the sandbox, whatever the grant.
+    """
+    if (
+        result.get("minimum_action") != "review"
+        or result.get("policy_action") != "review"
+        or result.get("reason_code") != OUTSIDE_ROOTS_REASON
+        or not _native_review_is_overridable(result)
+    ):
         return None
     command = pre_tool_command(payload)
     cwd = launch_cwd(payload, workspace)

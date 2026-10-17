@@ -39,6 +39,12 @@ impl Layout {
     fn search_path(&self) -> String {
         format!("{}:/usr/bin:/bin", self.bin.display())
     }
+
+    /// An executable file with `text` as its content.
+    fn program(&self, path: &Path, text: &str) {
+        std::fs::write(path, text).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 impl Drop for Layout {
@@ -101,7 +107,7 @@ fn capability_names_must_be_known_sorted_and_distinct() {
 }
 
 #[test]
-fn the_plan_runs_the_granted_program_and_its_interpreter() {
+fn the_plan_runs_the_granted_program_as_a_file() {
     let layout = Layout::new("exec");
     let plan = widened(
         &layout,
@@ -115,11 +121,12 @@ fn the_plan_runs_the_granted_program_and_its_interpreter() {
         plan["capabilities"],
         json!(["loopback-network", "state-dir-read"])
     );
-    let exec_roots = plan["exec_roots"].as_array().unwrap();
-    assert!(exec_roots.contains(&json!(layout.bin)), "{plan}");
-    assert!(
-        exec_roots.contains(&json!("/bin")),
-        "the interpreter's directory: {plan}"
+    // The program's own file, not the directory it sits in; its interpreter,
+    // `/bin/sh`, is reachable already.
+    assert_eq!(
+        plan["exec_roots"],
+        json!([layout.bin.join("lanectl")]),
+        "{plan}"
     );
     let sandbox_path = plan["sandbox_path"].as_str().unwrap();
     assert!(
@@ -133,15 +140,180 @@ fn the_plan_runs_the_granted_program_and_its_interpreter() {
 }
 
 #[test]
+fn a_tool_in_a_shared_directory_opens_none_of_its_neighbours() {
+    let layout = Layout::new("shared");
+    let downloads = layout.home.join("Downloads");
+    std::fs::create_dir_all(&downloads).unwrap();
+    layout.program(&downloads.join("lanectl"), "#!/bin/sh\necho ok\n");
+    std::fs::write(downloads.join("statement.txt"), "private").unwrap();
+    let search_path = format!("{}:/usr/bin:/bin", downloads.display());
+    let mut plan = base_plan();
+    widen(
+        &mut plan,
+        &grant(&[]),
+        "lanectl",
+        &search_path,
+        Some(&layout.home),
+        &layout.workspace,
+        "darwin",
+    )
+    .unwrap();
+    let roots: Vec<PathBuf> = serde_json::from_value(plan["exec_roots"].clone()).unwrap();
+    assert_eq!(roots, vec![downloads.join("lanectl")]);
+    assert!(!path_is_within_any(
+        &downloads.join("statement.txt"),
+        &roots
+    ));
+}
+
+#[test]
+fn a_link_named_unlike_its_target_is_found_by_its_name() {
+    let layout = Layout::new("named");
+    let real = layout.home.join("tools/real");
+    let links = layout.home.join("links");
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::create_dir_all(&links).unwrap();
+    layout.program(&real.join("lanectl-real"), "#!/bin/sh\necho ok\n");
+    std::os::unix::fs::symlink("../tools/real/lanectl-real", links.join("lanectl")).unwrap();
+    let search_path = format!("{}:/usr/bin:/bin", links.display());
+    let mut plan = base_plan();
+    widen(
+        &mut plan,
+        &grant(&[]),
+        "lanectl",
+        &search_path,
+        Some(&layout.home),
+        &layout.workspace,
+        "darwin",
+    )
+    .unwrap();
+    let roots: Vec<PathBuf> = serde_json::from_value(plan["exec_roots"].clone()).unwrap();
+    assert_eq!(
+        roots,
+        vec![links.join("lanectl"), real.join("lanectl-real")]
+    );
+    // The shell finds the link by the name it typed, in the entry it was in.
+    let sandbox_path = plan["sandbox_path"].as_str().unwrap();
+    assert!(
+        sandbox_path.starts_with(&format!("{}:", links.display())),
+        "{sandbox_path}"
+    );
+    let found =
+        super::super::workspace_grant_launch::found("lanectl", sandbox_path, &layout.workspace);
+    assert_eq!(
+        found.and_then(|path| path.canonicalize().ok()),
+        Some(real.join("lanectl-real"))
+    );
+}
+
+#[test]
+fn every_link_on_the_way_to_the_program_is_opened() {
+    let layout = Layout::new("chain");
+    let real = layout.home.join("tools/real");
+    let hop = layout.home.join("hop");
+    let links = layout.home.join("links");
+    for directory in [&real, &hop, &links] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    layout.program(&real.join("lanectl-real"), "#!/bin/sh\necho ok\n");
+    std::os::unix::fs::symlink("../tools/real/lanectl-real", hop.join("step")).unwrap();
+    std::os::unix::fs::symlink(hop.join("step"), links.join("lanectl")).unwrap();
+    let search_path = format!("{}:/usr/bin:/bin", links.display());
+    let mut plan = base_plan();
+    widen(
+        &mut plan,
+        &grant(&[]),
+        "lanectl",
+        &search_path,
+        Some(&layout.home),
+        &layout.workspace,
+        "darwin",
+    )
+    .unwrap();
+    assert_eq!(
+        plan["exec_roots"],
+        json!([
+            links.join("lanectl"),
+            hop.join("step"),
+            real.join("lanectl-real")
+        ])
+    );
+}
+
+#[test]
+fn a_directory_link_on_the_way_is_never_opened() {
+    let layout = Layout::new("dirlink");
+    let linked = layout.home.join("linkbin");
+    std::os::unix::fs::symlink(&layout.bin, &linked).unwrap();
+    let search_path = format!("{}:/usr/bin:/bin", linked.display());
+    let mut plan = base_plan();
+    assert!(widen(
+        &mut plan,
+        &grant(&[]),
+        "lanectl",
+        &search_path,
+        Some(&layout.home),
+        &layout.workspace,
+        "darwin",
+    )
+    .is_err());
+    assert_eq!(plan["exec_roots"], json!([]), "nothing was opened");
+}
+
+#[test]
+fn a_script_interpreter_is_opened_as_a_file_too() {
+    let layout = Layout::new("interpreter");
+    let runtime = layout.home.join("tools/runtime");
+    std::fs::create_dir_all(&runtime).unwrap();
+    let interpreter = runtime.join("lane-interp");
+    layout.program(&interpreter, "#!/bin/sh\nexit 0\n");
+    std::fs::write(runtime.join("neighbour"), "data").unwrap();
+    layout.program(
+        &layout.bin.join("lanectl"),
+        &format!("#!{}\necho ok\n", interpreter.display()),
+    );
+    let plan = widened(&layout, &grant(&[]), "darwin").unwrap();
+    let roots: Vec<PathBuf> = serde_json::from_value(plan["exec_roots"].clone()).unwrap();
+    assert_eq!(roots, vec![layout.bin.join("lanectl"), interpreter]);
+    assert!(!path_is_within_any(&runtime.join("neighbour"), &roots));
+}
+
+#[test]
+fn the_session_entry_goes_ahead_of_the_accepted_entries_it_came_before() {
+    let layout = Layout::new("order");
+    let other = layout.home.join("other/bin");
+    std::fs::create_dir_all(&other).unwrap();
+    layout.program(&other.join("lanectl"), "#!/bin/sh\necho other\n");
+    let search_path = format!("{}:{}:/usr/bin:/bin", layout.bin.display(), other.display());
+    let mut plan = base_plan();
+    plan["sandbox_path"] = json!(format!("{}:/usr/bin:/bin", other.display()));
+    widen(
+        &mut plan,
+        &grant(&[]),
+        "lanectl",
+        &search_path,
+        Some(&layout.home),
+        &layout.workspace,
+        "darwin",
+    )
+    .unwrap();
+    assert_eq!(
+        plan["sandbox_path"],
+        json!(format!(
+            "{}:{}:/usr/bin:/bin",
+            layout.bin.display(),
+            other.display()
+        ))
+    );
+}
+
+#[test]
 fn linux_keeps_every_capability_denied() {
     let layout = Layout::new("linux");
     let plan = widened(&layout, &grant(&GRANT_CAPABILITIES), "linux").unwrap();
     assert_eq!(plan["capabilities"], json!([]));
     assert_eq!(plan["read_only_roots"], json!([]));
-    assert!(plan["exec_roots"]
-        .as_array()
-        .unwrap()
-        .contains(&json!(layout.bin)));
+    assert_eq!(plan["exec_roots"], json!([layout.bin.join("lanectl")]));
 }
 
 #[test]

@@ -3,11 +3,15 @@
 //! The sink never trusts a grant it was handed: it asks this device's store
 //! itself when it prepares the plan, admits only a plan widened by exactly
 //! that grant, and asks again after the second receipt. A blocked CLI stops
-//! the run; a grant that changed in between, in any field, stops it too.
+//! the run; a grant that changed in between, in any field, stops it too. A
+//! store that cannot be asked decides no grant, and the run keeps the base
+//! sandbox, which a grant only ever widens: the Python sink does the same.
 //!
-//! The direct lane needs no grant routing: it sends a sandbox requirement here
-//! as before, and an outside-roots review with grant rows defers to the
-//! daemon, which routes a granted one here. Linux plans carry no capability.
+//! The direct lane needs no grant routing: it sends a workspace sandbox
+//! requirement here as before. An outside-roots review is never answered
+//! there, because it is not a workspace requirement: it defers, and the daemon
+//! routes a granted one to the Python sink after it turns the review into the
+//! workspace requirement. Linux plans carry no capability.
 
 use std::collections::BTreeMap;
 
@@ -50,10 +54,12 @@ pub(super) fn request(
 }
 
 /// The grant the store decides for `request` now: `None` runs the base
-/// sandbox; a blocked CLI or a store that cannot answer stops the run.
+/// sandbox, as it does when the store cannot be asked; a blocked CLI stops
+/// the run.
 pub(super) fn decided(request: &LocalCliHookRequestV1) -> Outcome<Option<Value>> {
-    let refined =
-        crate::local_cli_hook_op::decide_refined(request).map_err(|_| Failure::unauthorized())?;
+    let Ok(refined) = crate::local_cli_hook_op::decide_refined(request) else {
+        return Ok(None);
+    };
     match (refined.action.as_str(), refined.contained_grant) {
         (ALLOW_CONTAINED_WITH_GRANT, Some(grant)) => Ok(Some(grant)),
         ("block", _) => Err(Failure::new(AUTHORIZATION_FAILED, GRANT_BLOCKED)),
@@ -94,6 +100,43 @@ pub(super) fn expected(grant: &Value, home: &str) -> Outcome<ExpectedGrant> {
         identity_hash,
         capabilities,
         state_dir,
+    })
+}
+
+/// Make the CLI's state directory reachable where it looks for it, under the
+/// private home the run's `HOME` names: a link to the one directory the grant
+/// opened, so the CLI finds its saved state and the rest of the real home
+/// stays out of reach. Nothing is linked without a state capability in the
+/// plan, or for a directory that does not exist yet or is itself a link.
+pub(super) fn link_state(
+    private: &Path,
+    expected: Option<&ExpectedGrant>,
+    capabilities: &Value,
+) -> Outcome<()> {
+    let stateful = capabilities.as_array().is_some_and(|names| {
+        names.iter().any(|name| {
+            name.as_str()
+                .is_some_and(|name| name.starts_with("state-dir-"))
+        })
+    });
+    let Some(state) = expected
+        .filter(|_| stateful)
+        .and_then(|expected| expected.state_dir.as_deref())
+        .map(Path::new)
+    else {
+        return Ok(());
+    };
+    let name = state
+        .file_name()
+        .ok_or_else(|| Failure::invalid(INVALID_PLAN))?;
+    if !std::fs::symlink_metadata(state).is_ok_and(|meta| meta.file_type().is_dir()) {
+        return Ok(());
+    }
+    std::os::unix::fs::symlink(state, private.join("home").join(name)).map_err(|_| {
+        Failure::new(
+            SANDBOX_UNAVAILABLE,
+            "The workspace sandbox directory is unavailable.",
+        )
     })
 }
 

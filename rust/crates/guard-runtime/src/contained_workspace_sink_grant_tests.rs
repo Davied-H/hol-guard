@@ -46,6 +46,26 @@ fn a_blocked_cli_stops_the_run() {
 }
 
 #[test]
+fn a_store_that_cannot_be_asked_decides_no_grant() {
+    let fixture = Fixture::new("sink-grant-unusable-store");
+    let identity = fixture.identity();
+    fixture.grant(&identity.cli_id, &identity.identity_hash, "allowed");
+    let usable = sandboxed(&fixture);
+    let first = decided(&usable).unwrap();
+    assert!(first.is_some(), "the store decides the grant");
+    let mut unusable = usable.clone();
+    unusable.store_path = "relative/guard.db".to_owned();
+    // The base sandbox runs, as it does in the Python sink.
+    assert_eq!(decided(&unusable).unwrap(), None);
+    // A grant already decided cannot be confirmed by a store that went away.
+    assert_eq!(
+        message(unchanged(&first, decided(&unusable))),
+        GRANT_CHANGED
+    );
+    assert_eq!(unchanged(&None, decided(&unusable)), Ok(()));
+}
+
+#[test]
 fn a_tampered_or_revoked_grant_is_refused_before_launch() {
     let fixture = Fixture::new("sink-grant-tampered");
     let request = sandboxed(&fixture);
@@ -102,4 +122,70 @@ fn the_expected_state_directory_follows_the_canonical_home() {
         message(super::expected(&unsorted, "/")),
         INVALID_PLAN.to_owned()
     );
+}
+
+fn private_home() -> (tempfile::TempDir, std::path::PathBuf) {
+    let private = tempfile::tempdir().unwrap();
+    let path = std::fs::canonicalize(private.path()).unwrap();
+    std::fs::create_dir(path.join("home")).unwrap();
+    (private, path)
+}
+
+fn state_grant(home: &std::path::Path, names: &[&str]) -> (ExpectedGrant, Value) {
+    let expected = ExpectedGrant {
+        identity_hash: "a".repeat(64),
+        capabilities: names.iter().map(|name| (*name).to_owned()).collect(),
+        state_dir: home.join(".lanectl").to_str().map(str::to_owned),
+    };
+    (expected, json!(names))
+}
+
+#[test]
+fn the_state_directory_is_linked_where_home_looks_for_it() {
+    let host = tempfile::tempdir().unwrap();
+    let host = std::fs::canonicalize(host.path()).unwrap();
+    let state = host.join(".lanectl");
+    std::fs::create_dir(&state).unwrap();
+    std::fs::write(state.join("session"), "saved").unwrap();
+    std::fs::write(host.join("unrelated"), "private").unwrap();
+    let (_keep, private) = private_home();
+    let (expected, capabilities) = state_grant(&host, &["state-dir-read"]);
+    link_state(&private, Some(&expected), &capabilities).unwrap();
+    let linked = private.join("home/.lanectl");
+    assert_eq!(std::fs::read_link(&linked).unwrap(), state);
+    // The CLI reads and writes its state through the private `HOME`.
+    assert_eq!(
+        std::fs::read_to_string(linked.join("session")).unwrap(),
+        "saved"
+    );
+    std::fs::write(linked.join("written"), "new").unwrap();
+    assert!(state.join("written").is_file());
+    // Nothing else of the real home is there.
+    assert_eq!(std::fs::read_dir(private.join("home")).unwrap().count(), 1);
+}
+
+#[test]
+fn no_state_link_without_a_state_capability_or_directory() {
+    let host = tempfile::tempdir().unwrap();
+    let host = std::fs::canonicalize(host.path()).unwrap();
+    let (_keep, private) = private_home();
+    let linked = private.join("home/.lanectl");
+    // No state capability, though the directory exists.
+    std::fs::create_dir(host.join(".lanectl")).unwrap();
+    let (expected, capabilities) = state_grant(&host, &["loopback-network"]);
+    link_state(&private, Some(&expected), &capabilities).unwrap();
+    assert!(!linked.exists() && std::fs::symlink_metadata(&linked).is_err());
+    // No grant at all.
+    let (_, state_names) = state_grant(&host, &["state-dir-write"]);
+    link_state(&private, None, &state_names).unwrap();
+    assert!(std::fs::symlink_metadata(&linked).is_err());
+    // A state directory that does not exist yet is left for the CLI to make.
+    std::fs::remove_dir(host.join(".lanectl")).unwrap();
+    let (expected, capabilities) = state_grant(&host, &["state-dir-write"]);
+    link_state(&private, Some(&expected), &capabilities).unwrap();
+    assert!(std::fs::symlink_metadata(&linked).is_err());
+    // Nor is a link in the directory's place followed.
+    std::os::unix::fs::symlink(&host, host.join(".lanectl")).unwrap();
+    link_state(&private, Some(&expected), &capabilities).unwrap();
+    assert!(std::fs::symlink_metadata(&linked).is_err());
 }

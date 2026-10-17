@@ -174,9 +174,11 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         "capabilities": [],
     });
     if let Some(grant) = &input.grant {
-        // A grant widens only a command that runs whole, from its first program.
+        // A grant widens only a command that runs whole and is one plain
+        // invocation of the granted program: another program in the same
+        // shell would run with the capabilities granted for the first.
         let program = whole
-            .then(|| first_program(&text))
+            .then(|| sole_program(&text))
             .flatten()
             .ok_or_else(|| invalid("The granted command is not eligible for the sandbox."))?;
         super::workspace_grant::widen(
@@ -192,19 +194,32 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
     Ok(plan)
 }
 
-/// The program the command's first segment runs.
-fn first_program(text: &str) -> Option<String> {
-    parse_command(&CommandModelRequestV1 {
+/// The program `text` runs when it is exactly one plain invocation: a single
+/// top-level segment with no wrapper, environment assignment or `PATH`
+/// override, from a command the parser reads exactly. Anything else, such as
+/// a chain, a pipeline, a substitution or a wrapped program, names no sole
+/// program.
+fn sole_program(text: &str) -> Option<String> {
+    let model = parse_command(&CommandModelRequestV1 {
         command: text.to_owned(),
         dialect: "posix".into(),
         transport: "shell_string".into(),
         extraction_provenance: "pre-tool-generic".into(),
     })
-    .ok()?
-    .segments
-    .into_iter()
-    .next()?
-    .executable
+    .ok()?;
+    let [segment] = model.segments.as_slice() else {
+        return None;
+    };
+    (model.confidence == "exact"
+        && !model.path_overridden
+        && model.wrapper_chain.is_empty()
+        && segment.execution_context == "top:0"
+        && segment.pipeline_index == 0
+        && segment.environment_names.is_empty()
+        && segment.wrapper_chain.is_empty()
+        && !segment.path_overridden)
+        .then(|| segment.executable.clone())
+        .flatten()
 }
 
 /// The scripts outside `workspace` that `text` runs and the sandbox may read,
@@ -226,3 +241,7 @@ pub(super) fn evaluate(operation: &str, input: &Value) -> Option<Value> {
         Err(error) => crate::restricted_command::error_reply(error),
     })
 }
+
+#[cfg(test)]
+#[path = "workspace_sole_tests.rs"]
+mod sole_tests;

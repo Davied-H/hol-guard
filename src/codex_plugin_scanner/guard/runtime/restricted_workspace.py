@@ -24,7 +24,7 @@ from .restricted_pytest_model import (
     RestrictedPytestError,
 )
 from .restricted_pytest_sandbox import _restricted_environment, _run_backend_process
-from .restricted_workspace_grant_lookup import decided_grant, expected_grant, require_unchanged
+from .restricted_workspace_grant_lookup import decided_grant, expected_grant, link_state_dir, require_unchanged
 from .restricted_workspace_grants import PLAN_FIELDS, ExpectedGrant, grant_script_roots, read_grants_valid
 
 WORKSPACE_REASON = "native_workspace_containment_required"
@@ -233,12 +233,13 @@ def run_workspace_contained(
     }
     if grant is not None:
         prepare["grant"] = grant.prepare_input()
+    expected = None if grant is None else expected_grant(grant, home)
     plan = _validated_plan(
         restricted_native("prepare_workspace_contained", prepare, dict),
         command,
         workspace,
         publish=publish,
-        grant=None if grant is None else expected_grant(grant, home),
+        grant=expected,
     )
     # A second receipt taken after planning must still bind the same evidence.
     second = settled_authority(authorize, payload)
@@ -264,6 +265,7 @@ def run_workspace_contained(
         private_tmp = private_root / "tmp"
         private_home.mkdir(mode=0o700)
         private_tmp.mkdir(mode=0o700)
+        link_state_dir(private_home, plan, expected)
 
         def contained(argv_to_run: list[str]) -> int:
             launch_env = _restricted_environment(
