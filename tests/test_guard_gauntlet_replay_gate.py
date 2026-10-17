@@ -25,6 +25,7 @@ from ci.gauntlet.input_evidence import redact_value
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
+from tests.benign_fp_gate_connectors import allow_ready_cli
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
 from tests.gauntlet_replay import (
     ENVIRONMENTS,
@@ -92,8 +93,12 @@ def replay_environment(
     bun.parent.mkdir(parents=True, exist_ok=True)
     bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     bun.chmod(0o755)
-    patch.setenv("PATH", os.pathsep.join([os.environ.get("PATH", ""), str(bun.parent)]))
-    worker = HookWorker(store=GuardStore(fixture.guard_home), workspace=fixture.worktree)
+    # The synthetic connector CLIs install into ~/.local/bin, which a real login shell has on PATH.
+    local_bin = fixture.home / ".local" / "bin"
+    patch.setenv("PATH", os.pathsep.join([os.environ.get("PATH", ""), str(bun.parent), str(local_bin)]))
+    store = GuardStore(fixture.guard_home)
+    allow_ready_cli(store, fixture.home)
+    worker = HookWorker(store=store, workspace=fixture.worktree)
     try:
         yield request.param, fixture, worker
     finally:

@@ -32,6 +32,7 @@ from ci.gauntlet.input_evidence import redact_value
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
+from tests.benign_fp_gate_connectors import allow_ready_cli, assert_connector_setup, connector_groups
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
 from tests.gauntlet_replay import OMP_CONTAINED, cursor_hook_fields
 from tests.native_gate_retry import UNAVAILABLE_REASON, review_with_unavailable_retry
@@ -185,8 +186,11 @@ def gate_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple
     bun.parent.mkdir(parents=True, exist_ok=True)
     bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     bun.chmod(0o755)
-    patch.setenv("PATH", os.pathsep.join([os.environ.get("PATH", ""), str(bun.parent)]))
+    # The synthetic connector CLIs install into ~/.local/bin, which a real login shell has on PATH.
+    local_bin = fixture.home / ".local" / "bin"
+    patch.setenv("PATH", os.pathsep.join([os.environ.get("PATH", ""), str(bun.parent), str(local_bin)]))
     store = GuardStore(fixture.guard_home)
+    allow_ready_cli(store, fixture.home)
     # Deliberately no prepare_workspace_policy/register_workspace: first contact.
     worker = HookWorker(store=store, workspace=fixture.worktree)
     try:
@@ -364,6 +368,13 @@ def test_benign_agent_work_is_allowed_and_negative_controls_are_not(
         )
         assert _reason(result) != UNAVAILABLE_REASON, f"native review unavailable: {description}"
         return
+    if case.expect == "setup":
+        assert case.case_id not in _PENDING_FIX, "setup cases cannot be pending_fix"
+        assert _decision(result) != "allow", f"connector was allowed without setup: {description}"
+        assert_connector_setup(
+            _ROWS.get(case.case_id, []), result, description, home=fixture.home, guard_home=fixture.guard_home
+        )
+        return
     gap = always_gap(_ROWS.get(case.case_id, [])) if _always_expected(case) else []
     if case.case_id in _PENDING_FIX:
         _assert_pending(case.case_id, _PENDING_FIX[case.case_id], result, approvals, description)
@@ -376,6 +387,32 @@ def test_benign_agent_work_is_allowed_and_negative_controls_are_not(
             pytest.skip(f"pending_always {case.case_id} offers Always on this host; CI decides staleness")
         pytest.fail(f"stale pending_always: {case.case_id} now offers Always; remove it ({description})")
     assert not gap, f"review row for read-only work offers no Always allow: {description}"
+
+
+def test_one_connector_groups_its_setup_reviews_by_action(gate_environment: tuple[BenignFixture, HookWorker]) -> None:
+    """Calls to one connector share one group per distinct action across harnesses; evidence is not merged away."""
+    fixture, worker = gate_environment
+    commands = ("lanectl status --state-dir ~/.lanectl --verbose", "lanectl status --config ~/.lanectl/config.toml")
+    rows: list[dict[str, object]] = []
+    for index, command in enumerate(commands):
+        for harness in ("codex", "claude-code"):
+            case = GateCase(
+                case_id=f"lanectl-group-{index}@{harness}",
+                base_id=f"lanectl-group-{index}",
+                fix_area="connector-setup",
+                harness=harness,
+                tool="shell",
+                tool_input={"command": command},
+                cwd="worktree",
+                expect="setup",
+            )
+            result, approvals = _review(case, fixture, worker)
+            assert approvals == 1, _describe(case, result, approvals)
+            rows.extend(_ROWS[case.case_id])
+    groups = connector_groups(rows)
+    assert len(groups) == 1, f"one connector must queue under one identity, got {len(groups)}"
+    assert len(next(iter(groups.values()))) == len(commands), "distinct actions must keep distinct groups"
+    assert len(rows) == len(commands) * 2, "every harness call keeps its own evidence row"
 
 
 def test_pending_fix_entries_name_real_benign_cases() -> None:

@@ -24,8 +24,9 @@ def _mapping(value: Any) -> dict[str, Any]:
 def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
     """Return redacted-by-construction facts for rows added during the run.
 
-    Only the tool, reason and whether an Always option is offered are kept; commands and paths are
-    already in the redacted tool evidence, so they are not copied again.
+    Only the tool, reason, queue group and whether an Always option is offered are kept; commands and
+    paths are already in the redacted tool evidence, so they are not copied again. The queue group
+    is an opaque ``connector:<hash>:<digest>`` id, never a path.
     """
     from codex_plugin_scanner.guard.approval_scope_support import request_scope_observation
 
@@ -52,6 +53,7 @@ def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
                 "allow_scopes": scopes,
                 "exact_context_token_present": bool(token),
                 "once_only_reason": contract.once_only_reason,
+                "queue_group_id": str(row.get("queue_group_id") or ""),
                 "always_available": contract.exact_action_persistence_eligible is True
                 or any(scope in PERSISTENT_SCOPES for scope in scopes),
                 "queue_group_id": str(row.get("queue_group_id") or ""),
