@@ -26,6 +26,37 @@ from .full_task_local_checks import _passes
 NODE_VERSIONS = ("v24.9.0", "v25.2.1")
 SKILL_NAME = "release-check"
 PATH_ENTRY = "$HOME/.local/bin"
+# The package, its version and the runner label exist nowhere outside the
+# seeded files, so a document that records them was written from a read of
+# `~/.nvm/.../package.json` and `~/.github/workflows/nightly.yml` rather
+# than from what a model already knows about a developer machine.
+GLOBAL_PACKAGE = "widget-lint"
+GLOBAL_PACKAGE_VERSION = "3.1.0"
+WORKFLOW_NAME = "nightly"
+WORKFLOW_RUNNER = "self-hosted-linux-xl-04"
+
+GLOBAL_PACKAGE_MANIFEST = (
+    '{\n'
+    '  "name": "' + GLOBAL_PACKAGE + '",\n'
+    '  "version": "' + GLOBAL_PACKAGE_VERSION + '",\n'
+    '  "description": "Lints widget manifests.",\n'
+    '  "bin": { "' + GLOBAL_PACKAGE + '": "cli.js" }\n'
+    '}\n'
+)
+
+NIGHTLY_WORKFLOW = f"""name: nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  check:
+    runs-on: {WORKFLOW_RUNNER}
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check.sh
+"""
 
 ZSHRC = f"""# Interactive shell setup.
 export PATH="{PATH_ENTRY}:$PATH"
@@ -138,7 +169,12 @@ def seed_toolchain_inventory(root: Path, home: Path, workspace: Path, environmen
         _write(stub, "#!/bin/sh\necho " + version + "\n")
         stub.chmod(0o700)
     _write(home / ".nvm/alias/default", NODE_VERSIONS[-1] + "\n")
+    _write(
+        home / ".nvm/versions/node" / NODE_VERSIONS[-1] / "lib/node_modules" / GLOBAL_PACKAGE / "package.json",
+        GLOBAL_PACKAGE_MANIFEST,
+    )
     _write(home / ".agents/skills" / SKILL_NAME / "SKILL.md", SKILL_DOC)
+    _write(home / ".github/workflows" / (WORKFLOW_NAME + ".yml"), NIGHTLY_WORKFLOW)
     _write(home / ".zshrc", ZSHRC)
     _write(workspace / "README.md", "# toolkit\n\nTeam toolkit.\n")
     _init(workspace, environment)
@@ -218,6 +254,8 @@ def check_toolchain_inventory(workspace: Path, home: Path, root: Path) -> dict[s
         "task:node-versions-recorded": all(version in document for version in NODE_VERSIONS),
         "task:shell-path-recorded": PATH_ENTRY in document or ".local/bin" in document,
         "task:skill-recorded": SKILL_NAME in document,
+        "task:global-package-recorded": GLOBAL_PACKAGE in document and GLOBAL_PACKAGE_VERSION in document,
+        "task:workflow-runner-recorded": WORKFLOW_RUNNER in document,
         "task:document-committed": "docs/environment.md" in tree(workspace, "HEAD"),
     }
 

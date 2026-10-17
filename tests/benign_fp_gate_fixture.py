@@ -263,6 +263,12 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(home / "other-project" / "src" / "report.ts", "export const reportWindow = 'report-window-marker';\n")
     _write(home / "other-project" / "package.json", '{\n  "name": "@acme/app",\n  "version": "1.0.0"\n}\n')
     _write(home / "other-project" / ".keep", "")
+    # Sibling checkout's committed lockfile: the probe that globs for one has to
+    # find it, or the read is allowed for naming nothing rather than for being safe.
+    _write(
+        home / "other-project" / "package-lock.json",
+        json.dumps({"lockfileVersion": 3, "packages": {"node_modules/left-pad": {"version": "1.3.0"}}}) + "\n",
+    )
     _write(home / "acme-plain" / "README.txt", "Plain notes directory.\n")
     _write(home / "acme-plain" / "probe_py.py", "print('probe')\n")
     _write(home / "kubeconfig.yaml", _KUBECONFIG)
@@ -430,8 +436,13 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(tmp_org / "app" / "src" / "index.ts", "export const railStage = 1;\n")
     _write(tmp_org / "app" / "tests" / "index.test.ts", "import { railStage } from '../src';\n")
     _write(tmp_org / "app" / "scripts" / "report.py", "print('report')\n")
+    _write(tmp_org / "app" / ".gitignore", "node_modules/\n")
     _git(tmp_org / "app", "add", "-A", home=home)
     _git(tmp_org / "app", "commit", "--quiet", "-m", "app base", home=home)
+    # Installed, gitignored runner under the scratch checkout: agents list its
+    # `.bin` shim from a sibling, and a recursive grep over this checkout has
+    # to walk the package store the way a real one does.
+    _node_package(tmp_org / "app", "vitest", _NODE_PACKAGES["vitest"])
     followup = str(tmp_org.parent / "app-followup")
     _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", followup, home=home)
     remote = tmp_org.parent / "remote" / "app.git"

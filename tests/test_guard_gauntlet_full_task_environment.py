@@ -19,10 +19,14 @@ import pytest
 from ci.gauntlet.full_task_environment import (
     AUDIT_NOTE,
     CHECKLIST_STEPS,
+    GLOBAL_PACKAGE,
+    GLOBAL_PACKAGE_VERSION,
     NODE_VERSIONS,
     PATH_ENTRY,
     PUNCTUATION_CASE,
     SKILL_NAME,
+    WORKFLOW_NAME,
+    WORKFLOW_RUNNER,
 )
 from ci.gauntlet.full_tasks import create_full_task_fixture, full_task_checks, load_full_tasks
 
@@ -90,10 +94,17 @@ def test_toolchain_inventory_reads_home_dot_directories(tmp_path: Path) -> None:
         assert (fixture.home / ".nvm/versions/node" / version / "bin/node").is_file()
     assert (fixture.home / ".agents/skills" / SKILL_NAME / "SKILL.md").is_file()
     assert (fixture.home / ".zshrc").is_file()
+    manifest = fixture.home / ".nvm/versions/node" / NODE_VERSIONS[-1] / "lib/node_modules" / GLOBAL_PACKAGE
+    assert GLOBAL_PACKAGE_VERSION in (manifest / "package.json").read_text(encoding="utf-8")
+    workflow = fixture.home / ".github/workflows" / (WORKFLOW_NAME + ".yml")
+    assert WORKFLOW_RUNNER in workflow.read_text(encoding="utf-8")
     document = fixture.workspace / "docs/environment.md"
     document.parent.mkdir(parents=True)
     document.write_text(
-        "# Environment\n\nNode: " + ", ".join(NODE_VERSIONS) + f"\nPATH adds {PATH_ENTRY}\nSkills: {SKILL_NAME}\n"
+        "# Environment\n\nNode: "
+        + ", ".join(NODE_VERSIONS)
+        + f"\nPATH adds {PATH_ENTRY}\nSkills: {SKILL_NAME}\n"
+        + f"Global package: {GLOBAL_PACKAGE} {GLOBAL_PACKAGE_VERSION}\nNightly runner: {WORKFLOW_RUNNER}\n"
     )
     _commit(fixture.workspace, fixture.home, "Record the local toolchain")
     assert all(_task_checks(full_task_checks(fixture, "toolchain-inventory")).values())
