@@ -17,6 +17,7 @@ from ..value_coercion import coerce_int as _coerce_int
 from .doctor_readiness import doctor_runtime_readiness
 from .protect_output import _protect_harness_message_for_render, _restore_ephemeral_signed_approval_output
 from .render_approval_gate_nudge import print_approval_gate_nudge
+from .render_connectors import print_connector_setup_line, render_mcp_list
 from .render_doctor_readiness import build_doctor_harness_table, readiness_text
 from .render_skill_scan import skill_scan_rows, skill_scan_title
 from .render_uninstall import render_self_uninstall
@@ -888,6 +889,7 @@ def _render_status(console: Console, payload: dict[str, object]) -> None:
     if payload.get("approval_center_url"):
         console.print(f"Approval center: [bold]{payload.get('approval_center_url')}[/bold]")
     print_approval_gate_nudge(console, payload)
+    print_connector_setup_line(console, payload)
     review_items = [item for item in harnesses if _coerce_int(item.get("review_count")) > 0]
     if review_items:
         console.print(
@@ -971,6 +973,7 @@ def _render_doctor(console: Console, payload: dict[str, object]) -> None:
         )
         console.print(build_doctor_harness_table(adapters))
         print_approval_gate_nudge(console, payload)
+        print_connector_setup_line(console, payload)
     elif "harnesses" in payload and all("install_aliases" in h for h in _coerce_dict_list(payload.get("harnesses"))):
         contracts = _coerce_dict_list(payload.get("harnesses"))
         table = Table(title="HOL Guard supported harnesses", box=box.SIMPLE_HEAD, show_lines=False)
@@ -1292,7 +1295,7 @@ def _render_inventory(console: Console, payload: dict[str, object]) -> None:
     console.print(table)
 
 
-_INVENTORY_LIST_TITLES = {"extensions": "Plugins and extensions", "mcp": "MCP servers"}
+_INVENTORY_LIST_TITLES = {"extensions": "Plugins and extensions"}
 
 
 def _render_inventory_list(console: Console, payload: dict[str, object]) -> None:
@@ -3133,7 +3136,7 @@ _RENDERERS: dict[str, Renderer] = {
     "receipts": _render_receipts,
     "inventory": _render_inventory,
     "extensions.list": _render_inventory_list,
-    "mcp.list": _render_inventory_list,
+    "mcp.list": render_mcp_list,
     "policies": _render_policies,
     "exceptions": _render_policies,
     "advisories": _render_advisories,

@@ -4446,8 +4446,9 @@ function ForgetLocalCliButton(props) {
 function enrollableCount(item) {
   return Math.max(enrollablePackageScriptCommands(item.commands).length, 0);
 }
+const OBSERVED_MCP_LABEL_SUFFIXES = [" · observed tools", " · configured server"];
 function isObservedMcpItem(item) {
-  return item?.surface === "mcp" && item.example_label.startsWith("mcp__") && item.source_label?.endsWith(" · observed tools") === true;
+  return item?.surface === "mcp" && item.example_label.startsWith("mcp__") && OBSERVED_MCP_LABEL_SUFFIXES.some((suffix) => item.source_label?.endsWith(suffix) === true);
 }
 function addDialogSubmitLabel(input) {
   if (input.recognized === null) {

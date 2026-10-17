@@ -66,6 +66,8 @@ pub(super) fn execution_free_paging(
             | "show-ref"
             | "for-each-ref"
             | "rev-list"
+            | "shortlog"
+            | "check-ignore"
     ) {
         return None;
     }
@@ -85,6 +87,11 @@ pub(super) fn execution_free_paging(
     }
     if matches!(operation, "blame" | "describe" | "reflog")
         && !super::git_history_reads::read_form(operation, &remaining[1..])
+    {
+        return None;
+    }
+    if matches!(operation, "shortlog" | "check-ignore")
+        && !super::git_listing_reads::read_form(operation, &remaining[1..])
     {
         return None;
     }
@@ -220,7 +227,7 @@ fn probe(
             "config",
             "--null",
             "--get-regexp",
-            "^(core\\.fsmonitor|core\\.pager|pager\\..*|diff\\.external|diff\\..*\\.(command|textconv)|filter\\..*\\.(process|clean|smudge)|log\\.showsignature|gpg\\.program|gpg\\..*\\.program|format\\.pretty|pretty\\..*|grep\\.fallbacktonoindex|extensions\\.partialclone|remote\\..*\\.promisor)$",
+            "^(core\\.fsmonitor|core\\.excludesfile|core\\.pager|pager\\..*|diff\\.external|diff\\..*\\.(command|textconv)|filter\\..*\\.(process|clean|smudge)|log\\.showsignature|gpg\\.program|gpg\\..*\\.program|format\\.pretty|pretty\\..*|grep\\.fallbacktonoindex|extensions\\.partialclone|remote\\..*\\.promisor)$",
         ])
 ,
         deadline, CONFIG_LIMIT,
@@ -344,8 +351,17 @@ fn probe(
             // Reading the index can start the monitor; grep reads it too.
             "core.fsmonitor" => {
                 (matches!(operation, "status" | "diff" | "grep")
+                    || super::git_listing_reads::reads_index(operation, &remaining[1..])
                     || super::git_history_reads::cleans_working_tree(operation, &remaining[1..]))
                     && !disabled
+            }
+            // A verbose ignore check prints the rule that matched and the file
+            // it came from. The repository's own ignore files are part of the
+            // checkout, but a configured excludes file names anything, so the
+            // check keeps its review until someone reads that setting.
+            "core.excludesfile" => {
+                !value.is_empty()
+                    && super::git_listing_reads::prints_rule_source(operation, &remaining[1..])
             }
             "core.pager" => {
                 configured_paging

@@ -76,6 +76,7 @@ mod root_removal;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
 mod git_history_reads;
+pub(crate) mod git_listing_reads;
 mod git_local_writes;
 mod git_probe;
 mod git_push;
