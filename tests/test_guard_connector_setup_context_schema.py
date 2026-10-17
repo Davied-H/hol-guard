@@ -62,10 +62,14 @@ def _observe(
     return cli_id
 
 
+_WORKSPACE = "/work/project"
+
+
 def _approvals(connection: sqlite3.Connection) -> None:
     connection.execute(
         "create table approval_requests (request_id text primary key, status text not null, risk_summary text, "
-        "raw_command_text text, queue_group_id text, created_at text not null default '2026-01-01T00:00:00Z')"
+        "raw_command_text text, queue_group_id text, workspace text, "
+        "created_at text not null default '2026-01-01T00:00:00Z')"
     )
 
 
@@ -77,11 +81,12 @@ def _queue(
     status: str = "pending",
     reason: str = _UNRECOGNISED,
     group: str = "action:old",
+    workspace: str | None = _WORKSPACE,
 ) -> None:
     connection.execute(
-        "insert into approval_requests (request_id, status, risk_summary, raw_command_text, queue_group_id) "
-        "values (?, ?, ?, ?, ?)",
-        (request_id, status, reason, command, group),
+        "insert into approval_requests (request_id, status, risk_summary, raw_command_text, queue_group_id, workspace) "
+        "values (?, ?, ?, ?, ?, ?)",
+        (request_id, status, reason, command, group, workspace),
     )
 
 
@@ -216,8 +221,8 @@ def test_pending_unrecognised_reviews_regroup_under_the_connector(tmp_path: Path
     ensure_local_cli_schema(connection)
 
     groups = _groups(connection)
-    assert groups["r1"] == connector_queue_group_id(_HASH, "lanectl status")
-    assert groups["r2"] == connector_queue_group_id(_HASH, "/usr/local/bin/lanectl ping --verbose")
+    assert groups["r1"] == connector_queue_group_id(_HASH, _WORKSPACE, "lanectl status")
+    assert groups["r2"] == connector_queue_group_id(_HASH, _WORKSPACE, "/usr/local/bin/lanectl ping --verbose")
     assert groups["r1"].startswith(f"connector:{_HASH}:")
     assert len(groups["r1"].rsplit(":", 1)[1]) == 16
     connection.close()
@@ -306,7 +311,7 @@ def test_a_program_written_with_a_path_must_be_the_observed_executable(
 
     ensure_local_cli_schema(connection)
 
-    expected = connector_queue_group_id(_HASH, command) if moves else "action:old"
+    expected = connector_queue_group_id(_HASH, _WORKSPACE, command) if moves else "action:old"
     assert _groups(connection) == {"r1": expected}
     connection.close()
 
@@ -391,7 +396,8 @@ def test_group_ids_match_the_resident_vectors() -> None:
     assert payload["schema"] == "hol-guard.connector-group-vectors.v1"
     assert len(payload["vectors"]) >= 10
     for vector in payload["vectors"]:
-        assert connector_queue_group_id(vector["identity_hash"], vector["command"]) == vector["queue_group_id"], vector
+        group = connector_queue_group_id(vector["identity_hash"], vector["cwd"], vector["command"])
+        assert group == vector["queue_group_id"], vector
 
 
 def test_the_regroup_reasons_are_the_texts_the_resident_stores() -> None:
@@ -401,3 +407,20 @@ def test_the_regroup_reasons_are_the_texts_the_resident_stores() -> None:
 
     assert _UNRECOGNISED in pretool
     assert "".join(fragments[:2]).replace("\\'", "'") == _OUTSIDE_ROOTS
+
+
+def test_a_review_without_a_workspace_keeps_its_group(tmp_path: Path) -> None:
+    connection = _v13_store(tmp_path)
+    _approvals(connection)
+    _observe(connection, "lanectl", source_path="/usr/local/bin/lanectl")
+    _queue(connection, "r1", "lanectl status", workspace=None)
+    _queue(connection, "r2", "lanectl status", workspace="/work/other")
+    connection.commit()
+
+    ensure_local_cli_schema(connection)
+
+    groups = _groups(connection)
+    assert groups["r1"] == "action:old"
+    assert groups["r2"] == connector_queue_group_id(_HASH, "/work/other", "lanectl status")
+    assert groups["r2"] != connector_queue_group_id(_HASH, _WORKSPACE, "lanectl status")
+    connection.close()

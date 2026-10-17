@@ -16,7 +16,10 @@ blocked. A program written with a path must be that observation's own recorded
 executable path, so two binaries that share a name are never merged; a bare
 name carries no path to contradict. Anything else keeps the group it has.
 ``connector_queue_group_id`` mirrors ``connector_setup::queue_group_id`` in the
-resident; the shared vectors in ``connector_group_vectors.json`` pin both.
+resident; the shared vectors in ``connector_group_vectors.json`` pin both. A
+stored review keeps its workspace, not the directory the hook ran in, so a row
+without a workspace keeps its group and one launched from a subdirectory lands
+in a sibling group under the same connector prefix.
 """
 
 from __future__ import annotations
@@ -62,12 +65,16 @@ def normalize_command_identity(command: str) -> str:
     return _SPACE.sub(" ", text).strip()
 
 
-def connector_queue_group_id(identity_hash: str, command: str) -> str | None:
-    """``connector:<identity_hash>:<action digest>``, or ``None`` outside the ASCII subset."""
+def connector_queue_group_id(identity_hash: str, cwd: str, command: str) -> str | None:
+    """``connector:<identity_hash>:<action digest>``, or ``None`` outside the ASCII subset.
+
+    The digest binds the launch directory and the command, as the resident's does.
+    """
 
     if not command.isascii():
         return None
-    digest = hashlib.sha256(normalize_command_identity(command).encode("utf-8")).hexdigest()
+    material = cwd.encode("utf-8") + b"\0" + normalize_command_identity(command).encode("utf-8")
+    digest = hashlib.sha256(material).hexdigest()
     return f"connector:{identity_hash}:{digest[:ACTION_DIGEST_HEX]}"
 
 
@@ -122,7 +129,7 @@ def _regroup(connection: sqlite3.Connection) -> int:
     marks = ", ".join("?" for _ in NON_RECOGNITION_RISK_SUMMARIES)
     rows = connection.execute(
         f"""
-        select request_id, raw_command_text, queue_group_id from approval_requests
+        select request_id, raw_command_text, queue_group_id, workspace from approval_requests
         where status = 'pending' and raw_command_text is not null
           and risk_summary in ({marks})
         order by created_at, request_id
@@ -131,8 +138,8 @@ def _regroup(connection: sqlite3.Connection) -> int:
     ).fetchall()
     moved = 0
     identities: dict[tuple[str, str | None], str | None] = {}
-    for request_id, command, group in ((row[0], row[1], row[2]) for row in rows):
-        if not isinstance(command, str):
+    for request_id, command, group, workspace in ((row[0], row[1], row[2], row[3]) for row in rows):
+        if not isinstance(command, str) or not isinstance(workspace, str) or not workspace:
             continue
         name = connector_program_name(command)
         if name is None:
@@ -141,7 +148,7 @@ def _regroup(connection: sqlite3.Connection) -> int:
         if (name, program_path) not in identities:
             identities[(name, program_path)] = _undecided_identity(connection, name, program_path)
         identity_hash = identities[(name, program_path)]
-        target = None if identity_hash is None else connector_queue_group_id(identity_hash, command)
+        target = None if identity_hash is None else connector_queue_group_id(identity_hash, workspace, command)
         if target is None or target == group:
             continue
         connection.execute("update approval_requests set queue_group_id = ? where request_id = ?", (target, request_id))

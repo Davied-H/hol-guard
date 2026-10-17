@@ -136,12 +136,13 @@ mod tests {
         let rows = vectors["vectors"].as_array().unwrap();
         assert!(rows.len() >= 10);
         for row in rows {
-            let (hash, command) = (
+            let (hash, cwd, command) = (
                 row["identity_hash"].as_str().unwrap(),
+                row["cwd"].as_str().unwrap(),
                 row["command"].as_str().unwrap(),
             );
             assert_eq!(
-                queue_group_id(hash, command),
+                queue_group_id(hash, cwd, command),
                 row["queue_group_id"].as_str().unwrap(),
                 "{command:?}"
             );
