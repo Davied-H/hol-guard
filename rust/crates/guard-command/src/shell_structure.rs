@@ -144,21 +144,29 @@ fn heredoc_declarations(
     // quoted span in one step: bash reads `echo a\ #` as the single word
     // `a #`, where the `#` is not a comment at all.
     let mut word_start = *carried_word_start;
-    // A trailing unquoted backslash joins this line to the next, so the word
-    // boundary carries over; anything else ends the command at the newline.
-    let mut continued = false;
+    // Anything but a line continuation ends the command at the newline, so the
+    // next line starts a word.
     *carried_word_start = true;
     while index < line.len() {
+        // A trailing unquoted backslash joins this line to the next before bash
+        // looks for comments, so the word boundary has to survive the join.
+        // `advance` cannot report this on its own: it clamps the escape pair to
+        // the end of the line, which is indistinguishable from an ordinary
+        // single-character step. A backslash inside single quotes is literal and
+        // joins nothing.
+        let literal_backslash = state.quote == Some('\'') && !state.in_backtick;
+        let escapes_newline = line[index] == '\\' && index + 1 == line.len() && !literal_backslash;
         let next_index = state.advance(line, index);
-        if next_index != index + 1 {
-            continued = line[index] == '\\' && index + 1 == line.len();
-            if !continued {
-                word_start = false;
-            }
+        if escapes_newline {
+            *carried_word_start = word_start;
             index = next_index;
             continue;
         }
-        continued = false;
+        if next_index != index + 1 {
+            word_start = false;
+            index = next_index;
+            continue;
+        }
         if state.is_top_level() && line[index] == '#' && word_start {
             return matches;
         }
@@ -190,9 +198,6 @@ fn heredoc_declarations(
         }
         word_start = next_word_start;
         index += 1;
-    }
-    if continued {
-        *carried_word_start = word_start;
     }
     matches
 }
