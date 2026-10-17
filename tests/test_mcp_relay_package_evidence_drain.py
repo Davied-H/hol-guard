@@ -181,6 +181,25 @@ def test_the_artifact_is_rebuilt_from_the_recorded_call(
     assert parsed["build"] == [("codex", parsed["intent"], CONFIG_PATH, SOURCE_SCOPE)]
 
 
+def test_a_call_the_relay_decided_without_a_search_path_is_still_recorded(
+    tmp_path: Path, calls: list[tuple[str, dict[str, Any]]], parsed: dict[str, Any]
+) -> None:
+    """The gate states an absent ``PATH`` as ``None``; the rebuild binds it empty."""
+
+    assert record_mcp_relay_package_evidence(object(), tmp_path, _record(package=_package(path=None)))
+
+    [(_, _, kwargs)] = parsed["extract"]
+    assert kwargs["environment"] == {"PATH": ""}
+    [(kind, _)] = calls
+    assert kind == "allow"
+
+
+def test_a_search_path_the_relay_could_not_have_written_is_dropped(tmp_path: Path) -> None:
+    """An empty string is neither a path nor the absence the gate states."""
+
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, _record(package=_package(path="")))
+
+
 def test_a_block_is_recorded_without_a_policy_workspace(
     tmp_path: Path, calls: list[tuple[str, dict[str, Any]]], parsed: dict[str, Any]
 ) -> None:
@@ -393,9 +412,6 @@ def test_a_record_the_proxy_could_not_have_written_is_dropped(
         lambda package: package.update(evidence=[["not", "a", "mapping"]]),
         lambda package: package.update(evaluation="warn"),
         lambda package: package.update(workspace="  "),
-        # A relay that parsed under no search path at all cannot be reproduced
-        # here, where an unbound environment means the daemon's own.
-        lambda package: package.update(path=None),
         lambda package: package.update(path="  "),
         lambda package: package.pop("path"),
     ],

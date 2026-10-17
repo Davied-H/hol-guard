@@ -311,14 +311,15 @@ def _package_facts(package: object, *, forwarded: bool) -> dict[str, Any] | None
         not isinstance(artifact_id, str)
         or not isinstance(artifact_hash, str)
         or not isinstance(workspace, str)
-        or not isinstance(path, str)
+        or not isinstance(path, (str, type(None)))
         or not isinstance(evaluation, dict)
         or not isinstance(evidence, list)
         or not all(isinstance(item, dict) for item in evidence)
         or not isinstance(signals, list)
         or not all(isinstance(item, str) for item in signals)
         or not isinstance(policy_workspace, (str, type(None)))
-        or not all(field.strip() for field in (artifact_id, artifact_hash, workspace, path))
+        or not all(field.strip() for field in (artifact_id, artifact_hash, workspace))
+        or (path is not None and not path.strip())
     ):
         return None
     return {
@@ -339,7 +340,7 @@ def _package_artifact(
     tool_name: str,
     arguments: object,
     workspace: Path,
-    path: str,
+    path: str | None,
     guard_home: Path,
     config_path: str,
     source_scope: str,
@@ -347,7 +348,11 @@ def _package_artifact(
     """``_package_request_artifact`` for the call the record carries.
 
     ``path`` is the relay's own search path, bound here so the resident
-    resolves the command's manager exactly as it did for the decision.
+    resolves the command's manager exactly as it did for the decision. A relay
+    that ran without a ``PATH`` states ``None``, and the resolution is bound to
+    an empty search path, which is what the gate resolved under. Leaving the
+    key out instead would hand the resident the daemon's own ``PATH``
+    (``_resident_environment``), which is no part of the call being rebuilt.
     """
 
     from ..proxy.runtime_mcp import _command_argument  # pyright: ignore[reportPrivateUsage]
@@ -360,7 +365,7 @@ def _package_artifact(
         action_envelope_command=_command_argument(arguments),
         workspace=workspace,
         guard_home=guard_home,
-        environment={"PATH": path},
+        environment={"PATH": "" if path is None else path},
     )
     if intent is None:
         return None

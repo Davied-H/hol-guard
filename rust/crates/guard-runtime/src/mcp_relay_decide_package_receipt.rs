@@ -90,8 +90,9 @@ pub(super) fn record(
         "artifact_id": artifact.artifact_id,
         "artifact_hash": answer.artifact_hash,
         "workspace": workspace,
-        // The gate reads no `PATH` out of an absent or empty one, and a drain
-        // that cannot be given that same absence drops the record instead.
+        // The gate reads no `PATH` out of an absent or empty one, and both are
+        // stated the same way so the drain rebuilds the call under the empty
+        // search path the gate resolved under.
         "path": request.path.as_deref().filter(|path| !path.is_empty()),
         "evaluation": Value::Object(answer.evaluation.clone()),
         "evidence": Value::Array(answer.evidence.clone()),
