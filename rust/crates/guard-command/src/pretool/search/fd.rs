@@ -122,9 +122,17 @@ const FORMAT_SUFFIXES: &[&str] = &[
     "yml",
 ];
 
+/// `fd` matches its pattern anywhere in a name and reads `.` as a wildcard,
+/// so a fragment of a suffix selects the same files the whole suffix does:
+/// `fd son ~/.codex` and `fd h.json ~/.codex` both print `auth.json`. A
+/// pattern is read the way a secret stem is, overlapping a suffix in either
+/// direction rather than spelling one exactly.
 fn bare_format_suffix(pattern: &str) -> bool {
     let lowered = pattern.to_ascii_lowercase();
-    FORMAT_SUFFIXES.contains(&lowered.trim_start_matches('.'))
+    let lowered = lowered.trim_start_matches('.');
+    FORMAT_SUFFIXES
+        .iter()
+        .any(|suffix| crate::credential_store_names::wildcards_reach(lowered, suffix))
 }
 
 /// A pattern of word characters alone. `fd` reads its pattern as a regular

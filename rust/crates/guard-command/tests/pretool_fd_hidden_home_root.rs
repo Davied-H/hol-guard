@@ -167,6 +167,10 @@ fn a_wildcard_or_a_shared_root_keeps_its_review() {
         "fd json ~/.codex",
         "fd yaml ~/.agents",
         "fd toml ~/.codex",
+        // A fragment of a suffix, or a spelling written around one, selects
+        // those files too.
+        "fd son ~/.codex",
+        "fd h.json ~/.codex",
         // `~/.config` holds one directory per tool, so a walk below it
         // prints paths through the credential stores beside them.
         "fd yml ~/.config",

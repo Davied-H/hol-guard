@@ -213,7 +213,7 @@ pub(crate) fn pattern_can_select_secret(pattern: &str) -> bool {
 
 /// Whether `pattern`, whose `.`, `?` and `*` stand for any character, and
 /// `word` name the same thing anywhere they overlap.
-fn wildcards_reach(pattern: &str, word: &str) -> bool {
+pub(crate) fn wildcards_reach(pattern: &str, word: &str) -> bool {
     let pattern: Vec<char> = pattern.chars().collect();
     let word: Vec<char> = word.chars().collect();
     if pattern.is_empty() || word.is_empty() {
