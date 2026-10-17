@@ -8,7 +8,8 @@ person would see. Remote ``url`` servers are not wrapped by the proxy, so no
 case can replay one.
 
 Nothing leaves the machine: the child is a short local script that answers
-``initialize`` and ``tools/list`` and never serves a ``tools/call``.
+``initialize`` and ``tools/list``, and answers ``tools/call`` with a fixed
+text result so a call that got past Guard shows up in the response.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from ci.gauntlet.approval_rows import CONNECTOR_GROUP_ID, approval_rows
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
+from codex_plugin_scanner.guard.blocked_request_mode import SAFE_ALTERNATIVE_GUIDANCE
 from codex_plugin_scanner.guard.config import GuardConfig
 from codex_plugin_scanner.guard.local_cli_trust import utc_now
 from codex_plugin_scanner.guard.mcp_tool_calls import RUNTIME_TOOL_CALL_CONNECTOR_SETUP_REQUIRED
@@ -197,12 +199,20 @@ def mcp_failure(case: McpCase, response: dict[str, Any], rows: list[dict[str, An
     if case.expect != "setup":
         if is_setup or any(groups):
             return "a server with an admin decision must not be held as setup"
+        # A proxy failure or an unavailable decision is an error too; only a policy
+        # stop that queued one per-call review row is the ordinary review expected here.
+        if data.get("transportOutcome") != "not-forwarded" or not data.get("guardPolicyAction"):
+            return f"expected a Guard policy stop, got {error}"
+        if len(rows) != 1 or not rows[0].get("allow_scopes"):
+            return f"expected one ordinary review row, got {rows}"
         return None
     text = str(error.get("message", "")).lower()
     if not is_setup or "reviewUrl" in data:
         return f"not answered as setup: {error}"
     if f"`{case.server}` (mcp server)" not in text:
         return "setup text does not name the server"
+    if SAFE_ALTERNATIVE_GUIDANCE.lower() not in text:
+        return "setup lost the safe-alternative guidance"
     leaked = [word for word in FORBIDDEN_WORDING if word in text]
     if leaked:
         return f"default-mode setup text carries {leaked}"
