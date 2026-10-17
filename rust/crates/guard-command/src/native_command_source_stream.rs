@@ -47,6 +47,25 @@ fn frame(reader: &mut impl Read) -> Result<Vec<u8>, &'static str> {
     Ok(bytes)
 }
 
+/// Shared build-time ingestion for stdin records and Cargo source files.
+/// Strict syntax and source validation precede normalization and retention.
+pub fn validate_and_compact_source(
+    bytes: &[u8],
+    server: bool,
+    remaining: &mut usize,
+) -> Result<(Vec<u8>, usize), &'static str> {
+    let value = json::decode(bytes)?;
+    let document = if server {
+        mcp::lower(bytes)?.document
+    } else {
+        serde_json::from_value::<SourceDocument>(value.clone())
+            .map_err(|_| "command_source_contract_invalid")?
+    };
+    validation::validate(&document, server)?;
+    let rules = document.extension.rules.len();
+    Ok((json::compact_record(&value, remaining)?, rules))
+}
+
 /// Compile a complete release catalog from bounded records. No file paths,
 /// includes, activation, or network authority is accepted by this protocol.
 pub fn compile_source_stream(
@@ -80,21 +99,15 @@ pub fn compile_source_stream(
             let bytes = frame(&mut reader)?;
             // Duplicate keys, depth, values and typed unknown fields are checked
             // before compacting. Whitespace cannot consume another source's budget.
-            let value = json::decode(&bytes)?;
-            let document = if record < header.sources {
-                serde_json::from_value::<SourceDocument>(value.clone())
-                    .map_err(|_| "command_source_contract_invalid")?
-            } else {
-                mcp::lower(&bytes)?.document
-            };
-            validation::validate(&document, record >= header.sources)?;
+            let (compact, count) =
+                validate_and_compact_source(&bytes, record >= header.sources, &mut remaining)?;
             rules = rules
-                .checked_add(document.extension.rules.len())
+                .checked_add(count)
                 .ok_or("command_source_program_rule_budget_exceeded")?;
             if rules > super::super::MAX_RULES {
                 return Err("command_source_program_rule_budget_exceeded");
             }
-            json::compact_record(&value, &mut remaining)
+            Ok(compact)
         };
         let bytes = ingest().map_err(|code| SourceStreamError {
             code,

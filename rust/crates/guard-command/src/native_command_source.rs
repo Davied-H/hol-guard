@@ -36,7 +36,7 @@ pub use contract::{descriptor_schema, source_schema};
 pub use evaluation_batch::evaluate_batch;
 pub use fixtures::run_fixtures;
 pub use parity::compare_programs;
-pub use stream::{compile_source_stream, SourceStreamError};
+pub use stream::{compile_source_stream, validate_and_compact_source, SourceStreamError};
 
 pub const MAX_SOURCE_INPUT_BYTES: usize = json::MAX_SOURCE_BYTES;
 

@@ -59,10 +59,17 @@ fn sources(root: &Path, directory: &str, command: bool) -> Vec<String> {
         .collect();
     paths.sort();
     assert!(paths.len() <= 512, "canonical source count exceeded");
+    let mut remaining = guard_command_build::native_command_program::source::MAX_SOURCE_INPUT_BYTES;
     paths
         .iter()
         .map(|path| {
-            let text = read_input(root, path);
+            let mut text = read_input(root, path);
+            if matches!(directory, "contributions/command-sources" | "contributions/mcp-servers") {
+                let (bytes, _) = guard_command_build::native_command_program::source::validate_and_compact_source(
+                    text.as_bytes(), directory == "contributions/mcp-servers", &mut remaining,
+                ).unwrap_or_else(|error| panic!("invalid canonical source {}: {error}", path.display()));
+                text = String::from_utf8(bytes).expect("validated source UTF-8");
+            }
             if command {
                 let value: Value = serde_json::from_str(&text).expect("source JSON");
                 assert_eq!(
