@@ -74,6 +74,14 @@ class ApprovalScopeContract:
     once_only_reason: str | None = None
     version: str = APPROVAL_SCOPE_CONTRACT_VERSION
 
+    @property
+    def can_run_once(self) -> bool:
+        return bool(self.allow_scopes) and RETRY_CANNOT_REUSE_APPROVAL not in self.restrictions
+
+    @property
+    def can_persist_exact_version(self) -> bool:
+        return bool(self.allow_scopes) and self.exact_action_persistence_eligible
+
     def to_dict(self) -> dict[str, object]:
         return {
             "scope_contract_version": self.version,
@@ -93,6 +101,14 @@ class ApprovalScopeContract:
             },
             "exact_action_persistence_eligible": self.exact_action_persistence_eligible,
             "once_only_reason": self.once_only_reason,
+            "execution_approval": {
+                "schema": "guard.execution-approval.v1",
+                "can_record_decision": bool(self.block_scopes),
+                "can_run_once": self.can_run_once,
+                "can_persist_exact_version": self.can_persist_exact_version,
+                "delivery_reason": "execution_binding_unavailable"
+                if RETRY_CANNOT_REUSE_APPROVAL in self.restrictions else None,
+            },
         }
 
 
@@ -160,7 +176,7 @@ def _contract_from_native(payload: Mapping[str, object]) -> ApprovalScopeContrac
         or any(item is not None and item not in DECISION_SCOPE_VALUES for item in recommended_scopes)
     ):
         return None
-    return ApprovalScopeContract(
+    contract = ApprovalScopeContract(
         allow_scopes=allow_scopes,
         block_scopes=block_scopes,
         recommended_allow_scope=_decision_scope(recommended_allow) if isinstance(recommended_allow, str) else None,
@@ -172,6 +188,11 @@ def _contract_from_native(payload: Mapping[str, object]) -> ApprovalScopeContrac
         exact_action_persistence_eligible=persistence,
         once_only_reason=once_only,
     )
+    # Older residents expose the retry restriction without capability fields.
+    # When present, the versioned projection must agree with that authority.
+    if "execution_approval" in payload and payload["execution_approval"] != contract.to_dict()["execution_approval"]:
+        return None
+    return contract
 
 
 def request_scope_contracts(requests: Sequence[Mapping[str, object]]) -> list[ApprovalScopeContract]:

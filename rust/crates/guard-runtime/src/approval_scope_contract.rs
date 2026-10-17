@@ -99,7 +99,7 @@ pub(crate) fn contract(view: &View<'_>) -> ScopeContract {
     };
     let non_overridable = allow_is_non_overridable(view);
     let unverified = unverified_provider_execution(view);
-    let allow_scopes = if non_overridable {
+    let mut allow_scopes = if non_overridable {
         Vec::new()
     } else {
         reusable_allow_scopes(view, &artifact_scopes, unverified)
@@ -130,6 +130,10 @@ pub(crate) fn contract(view: &View<'_>) -> ScopeContract {
     let mut restrictions = vec!["reusable_allow_is_action_bound"];
     if native_retry_cannot_reuse_approval(view) {
         restrictions.push("retry_cannot_reuse_approval");
+        if !persistence_eligible {
+            allow_scopes.clear();
+            restrictions.push("execution_binding_unavailable");
+        }
     }
     if unverified {
         restrictions.push("provider_account_unverified_once_only");

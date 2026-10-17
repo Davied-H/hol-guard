@@ -360,6 +360,25 @@ fn evaluate(request: &ApprovalResolutionPlanRequestV1) -> Result<Value, String> 
         .filter(|hash| parse_context_token(&Value::String(hash.clone())).is_some());
     let exact_context_allow = allow && context_token.is_some();
     let persist = request.persist_policy;
+    // Older daemon clients must not turn an unbound native review into a
+    // saved once decision. A persistent exact token is a separate delivery
+    // path and requires an explicit artifact-duration choice.
+    if allow
+        && request_artifact_id
+            .as_deref()
+            .is_some_and(|id| id.contains(":native-pretool:"))
+        && !request_artifact_hash
+            .as_deref()
+            .is_some_and(|hash| hash.starts_with("native-review-v4:"))
+        && !(scope == "artifact"
+            && persist == Some(true)
+            && (context_token.is_some()
+                || text(&request.native_exact_token).is_some_and(|token| {
+                    parse_context_token(&Value::String(token.to_owned())).is_some()
+                })))
+    {
+        return Err("execution_binding_unavailable".to_owned());
+    }
 
     let mut scoped_id = if matches!(scope, "artifact" | "harness" | "global") {
         request_artifact_id.clone()

@@ -116,6 +116,10 @@ function declaredScopesForAction(
   item: GuardApprovalRequest,
   action: ApprovalResolutionAction,
 ): DecisionScope[] | null {
+  if (action === "allow" && item.scope_restrictions?.includes("retry_cannot_reuse_approval") &&
+      item.exact_action_persistence_eligible !== true) {
+    return [];
+  }
   if (hasScopeContractMetadata(item) && !hasCompleteScopeContractBinding(item)) {
     return [];
   }
@@ -267,6 +271,11 @@ export function taskCapabilityExplanation(item: GuardApprovalRequest): string | 
   if (item.exact_action_persistence_eligible === true) {
     return null;
   }
+  if (item.scope_restrictions?.includes("retry_cannot_reuse_approval")) {
+    // Retry guidance and the scope controls explain unavailable delivery.
+    // The normal once-only explanation would falsely promise usable consent.
+    return null;
+  }
   if (eligibility.reason_codes.includes("task_capability_not_enabled")) {
     // Task access only applies to GitHub workflow requests. For everything else
     // the useful question is why "Always allow" is missing.
@@ -320,6 +329,10 @@ export function buildDecisionPayload(input: {
     normalizedScope,
     input.persistExactAction === true,
   );
+  if (input.action === "allow" && input.item.scope_restrictions?.includes("retry_cannot_reuse_approval") &&
+      !persistExactAction) {
+    throw new Error("Guard cannot bind this app's retry to the reviewed action. A one-time approval is unavailable.");
+  }
   return {
     requestId: input.item.request_id,
     action: input.action,

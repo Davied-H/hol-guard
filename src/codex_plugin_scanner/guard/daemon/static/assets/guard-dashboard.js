@@ -13239,6 +13239,9 @@ function hasCompleteScopeContractBinding(item) {
   return typeof item.scope_contract_version === "string" && item.scope_contract_version.length > 0 && typeof item.scope_contract_digest === "string" && item.scope_contract_digest.length > 0;
 }
 function declaredScopesForAction(item, action) {
+  if (action === "allow" && item.scope_restrictions?.includes("retry_cannot_reuse_approval") && item.exact_action_persistence_eligible !== true) {
+    return [];
+  }
   if (hasScopeContractMetadata(item) && !hasCompleteScopeContractBinding(item)) {
     return [];
   }
@@ -13335,6 +13338,9 @@ function taskCapabilityExplanation(item) {
   if (item.exact_action_persistence_eligible === true) {
     return null;
   }
+  if (item.scope_restrictions?.includes("retry_cannot_reuse_approval")) {
+    return null;
+  }
   if (eligibility.reason_codes.includes("task_capability_not_enabled")) {
     const reason = item.once_only_reason;
     if (item.extension_recommendation && !EXTENSION_ROUTE_BLOCKED_REASONS.has(reason ?? "")) {
@@ -13362,6 +13368,9 @@ function buildDecisionPayload(input) {
     normalizedScope,
     input.persistExactAction === true
   );
+  if (input.action === "allow" && input.item.scope_restrictions?.includes("retry_cannot_reuse_approval") && !persistExactAction) {
+    throw new Error("Guard cannot bind this app's retry to the reviewed action. A one-time approval is unavailable.");
+  }
   return {
     requestId: input.item.request_id,
     action: input.action,
@@ -14260,7 +14269,7 @@ function allowPermissionLabels(item) {
   return labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
 }
 function retryCannotReuseApprovalHint(item, harness) {
-  const base = `Approving just this once records your decision but does not let ${harness} run this command; it will be blocked again.`;
+  const base = `Guard cannot bind ${harness}'s one-time retry to the reviewed action. Run once is unavailable.`;
   if (item.exact_action_persistence_eligible === true) {
     return `${base} To let ${harness} run this exact command, choose "Always allow exact action".`;
   }
@@ -14299,8 +14308,7 @@ function countRetryBlockedActions(groups, items) {
 }
 function bulkApproveConsequenceCopyForSelection(actionCount, retryBlockedActionCount, defaultCopy) {
   if (retryBlockedActionCount <= 0) return defaultCopy(actionCount);
-  const blocked = `${retryBlockedActionCount} of them ${retryBlockedActionCount === 1 ? "is a command" : "are commands"} the agent will still be blocked on.`;
-  return `Guard will record your decision for ${actionCount} ${actionCount === 1 ? "action" : "actions"} once and won't remember it. ${blocked} Mass approval skips opening each request, so an unexpected action is harder to catch.`;
+  return `Run once is unavailable for ${retryBlockedActionCount} of these ${actionCount} actions. Open those requests to inspect their execution limitations before approving the remaining actions.`;
 }
 const APPROVAL_RETRY_BLOCKED_OVERRIDE = "approval-approved-retry-blocked";
 const APPROVAL_LEFT_STOPPED_LABEL = "Approved, still stopped";
@@ -28836,6 +28844,7 @@ function QueueBulkDrawer(props) {
     return Array.from(map.entries());
   }, [riskLines]);
   const gateReady = isBulkApproveGateReady(props.approvalGate);
+  const executionApprovalAvailable = (props.retryBlockedActionCount ?? 0) === 0;
   const actionFooter = /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center justify-end gap-2", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
@@ -28851,7 +28860,7 @@ function QueueBulkDrawer(props) {
       "button",
       {
         type: "submit",
-        disabled: props.step === "submitting" || !props.canConfirm,
+        disabled: props.step === "submitting" || !props.canConfirm || !executionApprovalAvailable,
         className: "min-h-11 rounded-full bg-brand-blue px-6 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-blue/90 disabled:cursor-not-allowed disabled:opacity-50",
         children: submitLabel
       }
@@ -28865,7 +28874,7 @@ function QueueBulkDrawer(props) {
       footer: actionFooter,
       onSubmit: (event) => {
         event.preventDefault();
-        if (props.step !== "submitting" && props.canConfirm) props.onConfirmApprove();
+        if (props.step !== "submitting" && props.canConfirm && executionApprovalAvailable) props.onConfirmApprove();
       },
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "flex items-start justify-between gap-4", children: [
@@ -28972,7 +28981,7 @@ function QueueBulkDrawer(props) {
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground", children: "Step 2 of 2" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "h-px flex-1 bg-slate-200", "aria-hidden": "true" })
           ] }),
-          gateReady ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-3 space-y-3 rounded-xl border border-slate-200 bg-white p-4", children: [
+          !executionApprovalAvailable ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 text-sm text-brand-attention", role: "status", children: "Run once is unavailable for part of this selection. Open those requests individually before approving the remaining actions." }) : gateReady ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-3 space-y-3 rounded-xl border border-slate-200 bg-white p-4", children: [
             bulkApproveCooldownOpen(props.approvalGate) && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-brand-dark/80", children: "Your approval window is still open, so no password is needed." }),
             props.approvalGate?.totp_enabled !== true && !bulkApproveCooldownOpen(props.approvalGate) && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
@@ -29124,9 +29133,8 @@ function buildBulkRiskDisclosure(stats) {
     };
   }
   const retryBlocked = stats.retryBlockedActionCount ?? 0;
-  const onceVerb = retryBlocked > 0 ? "is approved once" : "runs once";
   const bullets = [
-    `Approving ${mix} from ${stats.groupCount} ${pluralItems(stats.groupCount)}. Each ${onceVerb}; the decision is not remembered.`
+    retryBlocked > 0 ? `Reviewing ${mix} from ${stats.groupCount} ${pluralItems(stats.groupCount)}. This selection includes actions that cannot run on once consent.` : `Approving ${mix} from ${stats.groupCount} ${pluralItems(stats.groupCount)}. Each runs once; the decision is not remembered.`
   ];
   if (stats.highActionCount > 0) {
     bullets.push(
@@ -29140,7 +29148,7 @@ function buildBulkRiskDisclosure(stats) {
   }
   if (retryBlocked > 0) {
     bullets.push(
-      `${retryBlocked} of the selected ${pluralActions(stats.actionCount)} ${retryBlocked === 1 ? "is a command the agent" : "are commands the agent"} will still be blocked on after approval. Approving records your decision only. To let the agent run ${retryBlocked === 1 ? "it" : "them"}, open ${retryBlocked === 1 ? "it" : "each one"} and use "Always allow exact action" where Guard offers it, set a matching Extensions pattern to Allow, or run ${retryBlocked === 1 ? "it" : "them"} yourself.`
+      `Run once is unavailable for ${retryBlocked} of the selected ${pluralActions(stats.actionCount)}. Open those requests individually to inspect supported approval or recovery choices.`
     );
   }
   if (stats.duplicateActionCount > 0) {
@@ -29154,6 +29162,17 @@ function buildBulkRiskDisclosure(stats) {
     bullets.push(
       `${stats.sensitiveCount} sensitive ${stats.sensitiveCount === 1 ? "action stays" : "actions stay"} in the queue and will NOT be approved here.${sampleText}`
     );
+  }
+  if (retryBlocked > 0) {
+    return {
+      tier,
+      tone: "attention",
+      headline: "This selection cannot be approved once",
+      body: "Open the unavailable actions individually to inspect supported approval or recovery choices, then remove them from this selection.",
+      bullets,
+      requiresTypedConfirm: false,
+      confirmPhrase: phrase
+    };
   }
   if (tier === "high") {
     return {
@@ -29171,7 +29190,7 @@ function buildBulkRiskDisclosure(stats) {
       tier,
       tone: "amber",
       headline: `Approving ${mix}`,
-      body: stats.elevatedActionCount > 0 ? `This batch includes elevated-risk actions (shell, edits, network). Each ${onceVerb} and the decision is not remembered. Skim the list before confirming.` : `Each selected action ${onceVerb} and the decision is not remembered. Skim the list before confirming.`,
+      body: stats.elevatedActionCount > 0 ? "This batch includes elevated-risk actions (shell, edits, network). Each runs once and the decision is not remembered. Skim the list before confirming." : "Each selected action runs once and the decision is not remembered. Skim the list before confirming.",
       bullets,
       requiresTypedConfirm: false,
       confirmPhrase: phrase
@@ -29181,7 +29200,7 @@ function buildBulkRiskDisclosure(stats) {
     tier,
     tone: "green",
     headline: `Approving ${mix}`,
-    body: `Each selected action ${onceVerb}. The decision is not remembered, so these will ask again next time.`,
+    body: "Each selected action runs once. The decision is not remembered, so these will ask again next time.",
     bullets,
     requiresTypedConfirm: false,
     confirmPhrase: phrase
@@ -29259,8 +29278,8 @@ function useQueueBulkApprove(props) {
     [riskDisclosure, typedConfirm]
   );
   const canConfirm = reactExports.useMemo(
-    () => credentialError === null && confirmMatches && selectedGroupCount > 0,
-    [credentialError, confirmMatches, selectedGroupCount]
+    () => credentialError === null && confirmMatches && selectedGroupCount > 0 && (selectionStats.retryBlockedActionCount ?? 0) === 0,
+    [credentialError, confirmMatches, selectedGroupCount, selectionStats.retryBlockedActionCount]
   );
   const resetBulkFlow = reactExports.useCallback(() => {
     setDrawerOpen(false);
@@ -29349,6 +29368,10 @@ function useQueueBulkApprove(props) {
     if (drawerStep === "submitting" || drawerStep === "completed" || selectedBulkGroups.length === 0) {
       return;
     }
+    if ((selectionStats.retryBlockedActionCount ?? 0) > 0) {
+      setBulkApproveError("Run once is unavailable for part of this selection. Open those requests individually.");
+      return;
+    }
     const ids = bulkApprovePrimaryIds(selectedBulkGroups);
     const approvedActionCount = bulkApproveActionCount(selectedBulkGroups);
     const credentialErrorCheck = validateBulkApproveCredentials(props.approvalGate, {
@@ -29389,7 +29412,8 @@ function useQueueBulkApprove(props) {
     props.approvalGate,
     props.onBulkApprove,
     riskDisclosure,
-    selectedBulkGroups
+    selectedBulkGroups,
+    selectionStats.retryBlockedActionCount
   ]);
   const bulkSelectableMap = reactExports.useMemo(() => {
     const map = /* @__PURE__ */ new Map();
@@ -29973,7 +29997,7 @@ function buildEvidenceItems(item) {
 function ReviewScopeControls(props) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 space-y-2", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(SectionLabel, { children: "Approval scope" }),
-    !props.hasAllowScope && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-brand-attention", role: "status", children: "This action cannot be approved under its current Guard policy." }),
+    !props.hasAllowScope && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-brand-attention", role: "status", children: props.oneTimeRetryBlocked ? "Guard cannot bind this app's retry to the reviewed version. Execution approval is unavailable." : "This action cannot be approved under its current Guard policy." }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "grid grid-cols-1 gap-2 md:grid-cols-2", role: "radiogroup", "aria-label": "Allow scope selection", children: props.commonScopeOptions.map((choice) => /* @__PURE__ */ jsxRuntimeExports.jsx(
       ScopeChoiceButton,
       {
@@ -30043,7 +30067,7 @@ function ExactActionPersistenceChoice(props) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("fieldset", { className: "rounded-lg border border-brand-blue/20 bg-brand-blue/[0.03] p-3", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("legend", { className: "px-1 text-sm font-semibold text-brand-dark", children: "How long should Guard allow it?" }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: exactActionChoiceClassName(!props.checked), children: [
+      !props.oneTimeRetryBlocked && /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: exactActionChoiceClassName(!props.checked), children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "input",
           {
@@ -30056,7 +30080,7 @@ function ExactActionPersistenceChoice(props) {
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block text-sm font-semibold text-brand-dark", children: "This time" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-0.5 block text-xs text-muted-foreground", children: props.oneTimeRetryBlocked ? "Records your decision; the agent stays blocked." : `Retry within ${props.retryWindowMinutes} minutes.` })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-0.5 block text-xs text-muted-foreground", children: `Retry within ${props.retryWindowMinutes} minutes.` })
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: exactActionChoiceClassName(props.checked), children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -31945,6 +31969,7 @@ function ReviewDecisionCard(props) {
   const taskCapabilityCopy = item ? taskCapabilityExplanation(item) : null;
   const watchOnlyObservation = item !== null && isWatchOnlyObservation(item);
   const hasAllowScope = availableScopeChoices.length + advancedScopeOptions.length > 0;
+  const canSubmitAllow = hasAllowScope && (item === null || !retryCannotReuseApproval(item) || allowScope === "artifact" && rememberExactAction && item.exact_action_persistence_eligible === true);
   const decisionContractKey = item ? approvalDecisionContractKey(item) : null;
   const decisionSubjectKey = item ? approvalDecisionSubjectKey(item) : null;
   reactExports.useEffect(() => {
@@ -31994,7 +32019,7 @@ function ReviewDecisionCard(props) {
     setAllowScope,
     availableScopeChoices,
     blockScopeOptions,
-    hasAllowScope,
+    hasAllowScope: canSubmitAllow,
     watchOnlyObservation,
     rememberExactAction,
     extensionDialogActive,
@@ -32058,6 +32083,8 @@ function ReviewDecisionCard(props) {
     resolvedAllowButtonLabel = "Keep allowing";
   } else if (persistExactAllow) {
     resolvedAllowButtonLabel = "Approve and remember";
+  } else if (retryCannotReuseApproval(item)) {
+    resolvedAllowButtonLabel = "Choose an available approval duration";
   }
   let resolvedBlockButtonLabel = blockButtonLabel(blockScope);
   if (watchOnlyObservation || persistExactBlock) {
@@ -32143,7 +32170,7 @@ function ReviewDecisionCard(props) {
           item,
           approvalGate,
           allowScope,
-          disabled: !hasAllowScope || submitting !== null || pendingAction !== null,
+          disabled: !canSubmitAllow || submitting !== null || pendingAction !== null,
           onResolve: props.onResolve,
           onApproved: handleExtensionApproved,
           onDialogActiveChange: setExtensionDialogActive
@@ -32186,13 +32213,13 @@ function ReviewDecisionCard(props) {
         ] })
       ] }) }),
       resolutionBlockReason === null && resolved === null && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
+        hasAllowScope && /* @__PURE__ */ jsxRuntimeExports.jsx(
           ActionButton,
           {
             ref: allowButtonRef,
             variant: "success",
             onClick: handleAllow,
-            disabled: !hasAllowScope || submitting !== null || pendingAction !== null,
+            disabled: !canSubmitAllow || submitting !== null || pendingAction !== null,
             children: submitting === "allow" ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "flex items-center gap-2", children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniArrowPath, { className: "h-4 w-4 animate-spin", "aria-hidden": "true" }),
               "Approving..."

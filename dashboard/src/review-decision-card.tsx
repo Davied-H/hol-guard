@@ -109,6 +109,8 @@ export function ReviewDecisionCard(props: {
   const taskCapabilityCopy = item ? taskCapabilityExplanation(item) : null;
   const watchOnlyObservation = item !== null && isWatchOnlyObservation(item);
   const hasAllowScope = availableScopeChoices.length + advancedScopeOptions.length > 0;
+  const canSubmitAllow = hasAllowScope && (item === null || !retryCannotReuseApproval(item) ||
+    (allowScope === "artifact" && rememberExactAction && item.exact_action_persistence_eligible === true));
   const decisionContractKey = item ? approvalDecisionContractKey(item) : null;
   const decisionSubjectKey = item ? approvalDecisionSubjectKey(item) : null;
 
@@ -161,7 +163,7 @@ export function ReviewDecisionCard(props: {
     setAllowScope,
     availableScopeChoices,
     blockScopeOptions,
-    hasAllowScope,
+    hasAllowScope: canSubmitAllow,
     watchOnlyObservation,
     rememberExactAction,
     extensionDialogActive,
@@ -231,6 +233,8 @@ export function ReviewDecisionCard(props: {
     resolvedAllowButtonLabel = "Keep allowing";
   } else if (persistExactAllow) {
     resolvedAllowButtonLabel = "Approve and remember";
+  } else if (retryCannotReuseApproval(item)) {
+    resolvedAllowButtonLabel = "Choose an available approval duration";
   }
   let resolvedBlockButtonLabel = blockButtonLabel(blockScope);
   if (watchOnlyObservation || persistExactBlock) {
@@ -344,7 +348,7 @@ export function ReviewDecisionCard(props: {
             item={item}
             approvalGate={approvalGate}
             allowScope={allowScope}
-            disabled={!hasAllowScope || submitting !== null || pendingAction !== null}
+            disabled={!canSubmitAllow || submitting !== null || pendingAction !== null}
             onResolve={props.onResolve}
             onApproved={handleExtensionApproved}
             onDialogActiveChange={setExtensionDialogActive}
@@ -389,11 +393,11 @@ export function ReviewDecisionCard(props: {
         )}
 
         {resolutionBlockReason === null && resolved === null && <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <ActionButton
+          {hasAllowScope && <ActionButton
             ref={allowButtonRef}
             variant="success"
             onClick={handleAllow}
-            disabled={!hasAllowScope || submitting !== null || pendingAction !== null}
+            disabled={!canSubmitAllow || submitting !== null || pendingAction !== null}
           >
             {submitting === "allow" ? (
               <span className="flex items-center gap-2">
@@ -406,7 +410,7 @@ export function ReviewDecisionCard(props: {
                 {resolvedAllowButtonLabel}
               </span>
             )}
-          </ActionButton>
+          </ActionButton>}
           <ActionButton
             variant="outline"
             onClick={handleBlock}

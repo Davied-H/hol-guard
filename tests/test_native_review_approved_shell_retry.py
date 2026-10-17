@@ -17,13 +17,12 @@ Four rounds, each with its own command and its own grant:
   from the review anchor only for the ``pi`` and ``omp`` harnesses, so every
   other harness anchors its approval to an id its own retry will not repeat;
 * a reworded command: reviewed again, the approval binds the exact action;
-* an ordinary ``git`` command: its row is queued with no retry contract at
-  all, because ``payload_reuse`` binds a retry only for the commands in
-  ``DIRECT_REUSABLE_COMMANDS`` and ``ARGV_BOUND_COMMANDS``, and ``git`` is in
-  neither. Approving that row cannot carry even a byte-identical retry.
+* an ordinary ``git status`` command whose row has no once-retry contract:
+  attempting once approval is rejected without recording consent, and the
+  byte-identical retry remains stopped.
 
-The last three are recorded here as today's behaviour, not as behaviour this
-test endorses; they are hashgraph-online/hol-guard#3837.
+The new-id and reworded cases record the current exact-action boundary. An
+unavailable retry must never acquire a misleading saved once decision.
 
 Under the default ``blocked_request_mode = "safe-alternative"`` a review is
 rendered to the agent as a plain block with ``prompted`` false, so the queued
@@ -87,6 +86,7 @@ def _approve_then_retry(
     use_id: str,
     retry_command: str | None = None,
     retry_use_id: str | None = None,
+    expect_unavailable: bool = False,
 ) -> dict[str, Any]:
     """Review one command, grant that row, and report what its retry got.
 
@@ -101,7 +101,14 @@ def _approve_then_retry(
     assert first["policy_action"] != "allow", first
     assert len(queued) == 1, (first, queued)
     assert queued[0]["policy_action"] in REVIEW_ACTIONS, queued[0]
-    _grant(store, queued[0]["request_id"], workspace)
+    if expect_unavailable:
+        from codex_plugin_scanner.guard.approval_scope_support import IneligibleApprovalScopeError
+
+        with pytest.raises(IneligibleApprovalScopeError):
+            _grant(store, queued[0]["request_id"], workspace)
+        assert store.get_approval_request(queued[0]["request_id"])["status"] == "pending"
+    else:
+        _grant(store, queued[0]["request_id"], workspace)
 
     retry_payload = _payload(retry_command or command, retry_use_id or use_id, workspace)
     retry = worker.review_http_payload(payload=retry_payload, **kwargs)
@@ -161,7 +168,8 @@ def test_an_approval_carries_only_the_request_it_was_queued_for(
             retry_command="head -c 200 ledger.txt",
         )
         unbindable = _approve_then_retry(
-            worker, store, kwargs, workspace, seen, command="git status --short", use_id="toolu_git"
+            worker, store, kwargs, workspace, seen, command="git status --short", use_id="toolu_git",
+            expect_unavailable=True,
         )
     finally:
         worker.close()
@@ -181,8 +189,7 @@ def test_an_approval_carries_only_the_request_it_was_queued_for(
     # Same intent, the model's own wording: a different action, so a new review.
     assert reworded["policy_action"] != "allow", outcomes
     assert len(reworded["requeued_bindings"]) == 1, outcomes
-    # #3837 at its sharpest: a reviewed ``git`` command queues a row with no
-    # retry contract — its artifact hash is the bare request id — so approving
-    # it cannot carry the identical retry under the identical tool-use id.
+    # A reviewed git-status row has no once-retry contract. Resolution was
+    # rejected above; the identical retry cannot spend nonexistent consent.
     assert not unbindable["granted_binding"].startswith(RETRY_CONTRACT), outcomes
     assert unbindable["policy_action"] != "allow", outcomes
