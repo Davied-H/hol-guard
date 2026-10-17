@@ -4,8 +4,8 @@
 //! Two screens read these lists. A listing prints entry names and nothing else,
 //! so it refuses only the directories whose names reveal which accounts, hosts
 //! and keys exist. A content read returns the bytes, so it refuses those same
-//! directories and, on top of them, the file names a token is normally written
-//! under. Keeping both lists here is what stops the two from drifting apart,
+//! directories and, on top of them, the file names a token or a settings file
+//! is normally written under. Keeping both lists here is what stops the two from drifting apart,
 //! which is how a directory ends up guarded against listing and open to `cat`.
 
 use std::path::{Component, Path};
@@ -76,7 +76,7 @@ pub(crate) const NESTED_CREDENTIAL_STORE_NAMES: [&str; 16] = [
 /// hidden directory this is where a tool's own secret lives, whatever the
 /// directory is called: `~/.config/doctl/config.yaml` holds an API token, and
 /// `doctl` is not a name any directory screen can be expected to know.
-const SECRET_BEARING_STEMS: [&str; 22] = [
+const SECRET_BEARING_STEMS: [&str; 23] = [
     "account",
     "accounts",
     "apps",
@@ -97,6 +97,7 @@ const SECRET_BEARING_STEMS: [&str; 22] = [
     "oauth_creds",
     "service-account",
     "serviceaccount",
+    "settings",
     "token",
     "tokens",
 ];
@@ -174,56 +175,50 @@ pub(crate) fn secret_bearing_file_name(name: &str) -> bool {
     SECRET_BEARING_STEMS.contains(&bare.split('.').next().unwrap_or(bare))
 }
 
-/// The directories and files below a harness home that hold documents rather
-/// than an account. A harness home mixes the two: `~/.codex/skills` and
-/// `~/.claude/settings.json` are what an agent is asked to read all day, while
-/// `sessions/`, `projects/` and `shell-snapshots/` hold whole transcripts and
-/// captured environments, and the login sits in `auth.json` beside them. Naming
-/// the document side is what lets an ordinary
-/// `ls ~/.codex/plans/order-intake` through without opening the rest.
-pub(crate) const HARNESS_HOME_DOCUMENT_NAMES: [&str; 11] = [
-    "agents",
-    "agents.md",
-    "claude.md",
-    "commands",
-    "docs",
-    "plans",
-    "plugins",
-    "prompts",
-    "settings.json",
-    "settings.local.json",
-    "skills",
-];
-
-/// Whether every harness home on `lowered` is entered at its document side.
-///
-/// The home itself is refused: its entry names are the account surface. So is
-/// any child this list does not name, because a harness writes its login and
-/// its saved conversations beside the notes under names that change with the
-/// harness version.
-fn harness_home_reads_a_document(lowered: &[String]) -> bool {
-    lowered.iter().enumerate().all(|(index, name)| {
-        !HARNESS_HOME_NAMES.contains(&name.as_str())
-            || lowered
-                .get(index + 1)
-                .is_some_and(|child| HARNESS_HOME_DOCUMENT_NAMES.contains(&child.as_str()))
-    })
+/// Download caches. A cache holds third-party bytes a package manager
+/// fetched, which is not what this rule was opened for, and the package
+/// source rule already refuses to treat one as an install root.
+fn download_cache(name: &str) -> bool {
+    matches!(name, "cache" | "caches" | ".cache" | "_cacache")
 }
 
-/// Whether a content read of `path` may cross its hidden components. Every
-/// hidden component must clear the store screen, and the file's own name must
-/// not be one a secret is normally written under. A harness home is entered
-/// only at its document side: its login and its saved conversations live beside
-/// the notes, so the home itself and every child outside
-/// [`HARNESS_HOME_DOCUMENT_NAMES`] keep review.
+/// Whether a narrower rule already owns every read below `parents`.
+///
+/// A harness directory mixes documents with an account: `~/.claude/projects`
+/// holds whole transcripts, `~/.codex/auth.json` is the login, and
+/// `~/.agents/skills` is a `.md` tree whose sibling scripts are deliberately
+/// left outside the read rules. Each of those has a rule of its own with
+/// bounds a target screen cannot see, so this rule stands aside rather than
+/// giving the same path a second, looser answer.
+fn curated_tree_owns(parents: &[String]) -> bool {
+    parents.first().is_some_and(|first| {
+        crate::harness_config_names::HARNESS_DIRECTORIES.contains(&first.as_str())
+    }) || parents.iter().any(|name| download_cache(name))
+}
+
+/// Whether a content read may cross the hidden components of `lowered`, the
+/// lowercased names a path has below the home directory.
+///
+/// One hidden directory directly below home, holding ordinary files: that is
+/// the shape an agent reads all day (`~/.github/workflows/ci.yml`,
+/// `~/.hol-support/SAFETY.md`, a toolchain's `package.json`) and the shape the
+/// approval queue filled up with. Everything else keeps its review:
+///
+/// - a file directly below home (`~/.npmrc`, `~/.zshrc`), which is a tool's
+///   own configuration rather than a directory of content;
+/// - a hidden component below the first, which is private state of the tool
+///   that owns the directory, the same rule the listing screen applies;
+/// - a credential store at any depth, and a file named the way a token, key
+///   or settings file conventionally is;
+/// - a tree a narrower rule already owns, per [`curated_tree_owns`].
 pub(crate) fn hidden_content_read_allowed(lowered: &[String]) -> bool {
-    if !lowered.iter().any(|part| part.starts_with('.')) {
-        return true;
-    }
-    if names_hold_credential_store(lowered) || !harness_home_reads_a_document(lowered) {
+    let Some((name, parents)) = lowered.split_last() else {
         return false;
-    }
-    lowered
-        .last()
-        .is_none_or(|name| !secret_bearing_file_name(name))
+    };
+    parents.first().is_some_and(|first| first.starts_with('.'))
+        && !parents.iter().skip(1).any(|part| part.starts_with('.'))
+        && !name.starts_with('.')
+        && !curated_tree_owns(parents)
+        && !names_hold_credential_store(lowered)
+        && !secret_bearing_file_name(name)
 }

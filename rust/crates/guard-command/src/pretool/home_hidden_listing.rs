@@ -13,6 +13,8 @@
 //!
 //! The store lists themselves live in [`crate::credential_store_names`], so the
 //! content screen that `cat` and `rg` go through refuses the same directories.
+//! That content screen is the narrower of the two: it answers for one file's
+//! bytes, below one hidden directory, in a tree no other rule owns.
 
 use std::path::{Path, PathBuf};
 
@@ -111,11 +113,11 @@ fn narrow_guidance_rule_owns(lowered: &[String]) -> bool {
 /// workflows collected an approval nobody answered.
 ///
 /// What a hidden component has to clear is
-/// [`hidden_content_read_allowed`]: the stores the listing screen refuses, the
-/// harness homes entered anywhere but their document side, and the file names
-/// a token is normally written under. The path itself is canonicalized and
-/// compared with the spelling first, so a link cannot dress a credential store
-/// as an ordinary dot-directory.
+/// [`hidden_content_read_allowed`]: one hidden directory directly below home,
+/// no store at any depth, no name a secret is conventionally written under,
+/// and no tree a narrower rule already owns. The path itself is canonicalized
+/// and compared with the spelling first, so a link cannot dress a credential
+/// store as an ordinary dot-directory.
 pub(in crate::pretool) fn home_hidden_content_read(
     value: &str,
     home_dir: Option<&str>,
@@ -126,7 +128,6 @@ pub(in crate::pretool) fn home_hidden_content_read(
     };
     let lowered = lowered_names(&relative);
     canonical.is_file()
-        && lowered.first().is_some_and(|first| first.starts_with('.'))
         && hidden_content_read_allowed(&lowered)
         && !narrow_guidance_rule_owns(&lowered)
         && super::super::resolved_location_allowed(&canonical, home_dir, cwd, false)
@@ -154,7 +155,9 @@ pub(in crate::pretool) fn resolved_home_hidden_content_read(
         return false;
     };
     let lowered = lowered_names(relative);
-    lowered.first().is_some_and(|first| first.starts_with('.'))
+    // A listing asks a different question and has its own screen: this rule
+    // answers for the bytes of one file.
+    canonical.is_file()
         && hidden_content_read_allowed(&lowered)
         && !narrow_guidance_rule_owns(&lowered)
 }

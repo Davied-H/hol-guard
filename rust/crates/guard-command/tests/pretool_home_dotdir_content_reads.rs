@@ -2,11 +2,11 @@
 //! Content reads below a hidden directory in the home directory.
 //!
 //! A hidden component used to end the lookup on its own, so an ordinary
-//! `cat ~/.agents/skills/release-check/scripts/run.sh` collected an approval
-//! nobody answered. What a hidden component has to clear is the credential
-//! screen: the stores the listing screen refuses, the harness homes whose
-//! login sits beside the notes, and the file names a token is normally
-//! written under.
+//! `cat ~/.github/workflows/ci.yml` collected an approval nobody answered.
+//! What such a read has to clear: one hidden directory directly below home,
+//! no credential store at any depth, no file name a secret is conventionally
+//! written under, and no tree a narrower rule already owns — a harness home,
+//! a shared skill tree and a download cache each keep the rule they had.
 use guard_command::pretool::evaluate_pre_tool_envelope_with_context;
 use serde_json::json;
 use std::path::{Path, PathBuf};
@@ -137,9 +137,8 @@ fn ordinary_source_below_a_hidden_directory_reads() {
     let home = home("allowed");
     for harness in ["claude-code", "codex", "omp"] {
         for command in [
-            "cat ~/.agents/skills/release-check/scripts/run.sh",
-            "head -20 ~/.agents/skills/release-check/scripts/run.sh",
             "cat ~/.github/workflows/ci.yml",
+            "head -20 ~/.github/workflows/ci.yml",
             "cat ~/.nvm/versions/node/v25.2.1/lib/node_modules/pkg/package.json",
             "cat ~/.cargo/registry/src/index.crates.io/serde-1.0.0/src/lib.rs",
         ] {
@@ -191,42 +190,42 @@ fn secret_bearing_file_names_keep_review_in_benign_directories() {
     }
 }
 
-/// A narrower rule owns the agent guidance documents, with bounds a target
-/// screen cannot see: the line range it was asked for, and whether the path
-/// stays inside the home. Its verdict stands either way.
+/// A narrower rule owns the agent guidance documents: the skill-document rule
+/// answers a `SKILL.md`, and the safety-document rule answers
+/// `~/.hol-support/SAFETY.md` with bounds a target screen cannot see. This
+/// screen stands aside rather than giving those paths a second answer, so the
+/// script beside a skill document stays outside the read rules as before.
 #[test]
-fn agent_guidance_documents_keep_their_own_rule() {
+fn narrower_document_rules_keep_their_paths() {
     let home = home("guidance");
-    assert_eq!(
-        action(
-            &home,
-            "codex",
-            "cat ~/.agents/skills/release-check/SKILL.md"
-        ),
-        "allow"
-    );
     for command in [
-        "sed -n '1,501p' ~/.hol-support/SAFETY.md",
-        "sed -n '20,1p' ~/.hol-support/SAFETY.md",
+        "cat ~/.agents/skills/release-check/SKILL.md",
+        "cat ~/.hol-support/SAFETY.md",
+    ] {
+        assert_eq!(action(&home, "codex", command), "allow", "{command}");
+    }
+    for command in [
+        "cat ~/.agents/skills/release-check/scripts/run.sh",
+        "cat ~/.agents/skills/release-check/config.json",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }
 }
 
-/// A harness home mixes the documents an agent is asked to read all day with
-/// the login and the saved conversations beside them. Reading it at its
-/// document side goes through; the rest of the home keeps review.
+/// A harness home keeps the rule it had. Its document side was already open
+/// through the harness-notes rule; this screen adds nothing there, and the
+/// login, the settings file and the saved conversations stay reviewed.
 #[test]
-fn a_harness_home_opens_only_at_its_document_side() {
+fn a_harness_home_keeps_its_own_rule() {
     let home = home("harness");
     for command in [
         "cat ~/.codex/skills/release-check/notes.md",
         "cat ~/.codex/plans/order-intake/todo.md",
-        "grep -n -i guard ~/.claude/settings.json",
     ] {
         assert_eq!(action(&home, "codex", command), "allow", "{command}");
     }
     for command in [
+        "grep -n -i guard ~/.claude/settings.json",
         "cat ~/.codex/sessions/2026-10-16/rollout.jsonl",
         "cat ~/.claude/projects/app/7f3.jsonl",
         "cat ~/.claude/history.jsonl",
@@ -244,7 +243,6 @@ fn the_native_read_tool_answers_as_the_shell_does() {
     let home = home("native");
     for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
         for target in [
-            ".agents/skills/release-check/scripts/run.sh",
             ".github/workflows/ci.yml",
             ".nvm/versions/node/v25.2.1/lib/node_modules/pkg/package.json",
             ".cargo/registry/src/index.crates.io/serde-1.0.0/src/lib.rs",
@@ -257,6 +255,7 @@ fn the_native_read_tool_answers_as_the_shell_does() {
             );
         }
         for target in [
+            ".agents/skills/release-check/scripts/run.sh",
             ".ssh/config",
             ".config/gh/hosts.yml",
             ".config/gcloud/credentials.db",
