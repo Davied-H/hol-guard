@@ -103,6 +103,20 @@ fn other_surfaces_never_report_capabilities() {
 }
 
 #[test]
+fn a_capability_without_a_cli_observation_reports_nothing() {
+    // A partial salvage can restore the grant and capability rows but not the
+    // observation they were written against; without it nothing is widened.
+    let identity = script();
+    let fixture = Fixture::new();
+    fixture.connection.execute_batch(CAPABILITY_TABLE).unwrap();
+    fixture.capability(&identity, "loopback-network", "on");
+    fixture.grant(&identity, "allowed", None);
+    let found = payload(&fixture, &identity, "review", None);
+    assert_eq!(found["state"], "allowed");
+    assert_eq!(found["capabilities"], serde_json::json!([]));
+}
+
+#[test]
 fn allowed_launch_answer_carries_capabilities() {
     let identity = script();
     let fixture = Fixture::with_capabilities(&identity);

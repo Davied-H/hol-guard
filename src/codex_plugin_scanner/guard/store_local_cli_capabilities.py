@@ -47,7 +47,10 @@ def validated_capability_choices(raw: object) -> dict[str, LocalCliCapabilitySta
         raise LocalCliCapabilityError("invalid_capabilities")
     choices: dict[str, LocalCliCapabilityState] = {}
     for name, state in raw.items():
-        if name not in LOCAL_CLI_CAPABILITIES or state not in _STATES:
+        # A list or object is unhashable; check the type before the set lookup.
+        if not isinstance(name, str) or name not in LOCAL_CLI_CAPABILITIES:
+            raise LocalCliCapabilityError("invalid_capabilities")
+        if not isinstance(state, str) or state not in _STATES:
             raise LocalCliCapabilityError("invalid_capabilities")
         choices[name] = "on" if state == "on" else "off"
     return choices
@@ -76,9 +79,7 @@ def write_local_cli_capabilities(
     checked = validated_capability_choices(dict(choices))
     if not checked:
         return
-    observation = connection.execute(
-        "select surface from local_cli_observation where cli_id = ?", (cli_id,)
-    ).fetchone()
+    observation = connection.execute("select surface from local_cli_observation where cli_id = ?", (cli_id,)).fetchone()
     if observation is None or observation[0] != "cli":
         raise LocalCliCapabilityError("capabilities_require_cli_surface")
     if "on" in checked.values():

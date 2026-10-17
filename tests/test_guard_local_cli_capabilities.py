@@ -107,7 +107,16 @@ def test_apply_with_proof_persists_capabilities_and_lists_them(tmp_path: Path, m
 
 @pytest.mark.parametrize(
     "capabilities",
-    [{"raw-network": "on"}, {"state-dir-read": "yes"}, ["state-dir-read"], "state-dir-read"],
+    [
+        {"raw-network": "on"},
+        {"state-dir-read": "yes"},
+        {"state-dir-read": ["on"]},
+        {"state-dir-read": {"on": True}},
+        {"state-dir-read": None},
+        {"state-dir-read": 1},
+        ["state-dir-read"],
+        "state-dir-read",
+    ],
 )
 def test_unknown_or_malformed_capabilities_are_refused(tmp_path: Path, monkeypatch, capabilities) -> None:
     store, service = _service(tmp_path, monkeypatch)
@@ -135,15 +144,33 @@ def test_capabilities_are_only_for_cli_surface(tmp_path: Path, monkeypatch) -> N
     assert service.list_items()["items"][0]["capabilities"] == {}
 
 
-def test_unset_and_identity_change_clear_capabilities(tmp_path: Path, monkeypatch) -> None:
+def test_block_unset_and_identity_change_clear_capabilities(tmp_path: Path, monkeypatch) -> None:
     store, service = _service(tmp_path, monkeypatch)
     _apply(service, _payload(store, "allowed", {"state-dir-write": "on"}))
     _apply(service, _payload(store, "blocked", None))
-    assert store.read_local_cli_capabilities(_identity().cli_id)["state-dir-write"] == "on"
+    assert store.read_local_cli_capabilities(_identity().cli_id) == _ALL_OFF
+    _apply(service, _payload(store, "allowed", {"state-dir-write": "on"}))
     _apply(service, _payload(store, "unset", None))
     assert store.read_local_cli_capabilities(_identity().cli_id) == _ALL_OFF
     _apply(service, _payload(store, "allowed", {"state-dir-write": "on"}))
     _apply(service, _payload(store, "allowed", None, identity_hash="b" * 64))
+    assert store.read_local_cli_capabilities(_identity().cli_id) == _ALL_OFF
+
+
+def test_allow_block_allow_does_not_bring_capabilities_back(tmp_path: Path, monkeypatch) -> None:
+    store, service = _service(tmp_path, monkeypatch)
+    _apply(service, _payload(store, "allowed", {"loopback-network": "on"}))
+    _apply(service, _payload(store, "blocked", None))
+    _apply(service, _payload(store, "allowed", None))
+    assert store.read_local_cli_capabilities(_identity().cli_id) == _ALL_OFF
+    # A row that survived a block some other way (a salvage) is dropped on re-allow.
+    with sqlite3.connect(store.guard_home / "guard.db") as connection:
+        connection.execute(
+            "insert into local_cli_grant_capability values (?, 'state-dir-read', 'on', 1, 't')",
+            (_identity().cli_id,),
+        )
+        connection.execute("update local_cli_grant set state = 'blocked'")
+    _apply(service, _payload(store, "allowed", None))
     assert store.read_local_cli_capabilities(_identity().cli_id) == _ALL_OFF
 
 
@@ -162,6 +189,21 @@ def test_salvage_copies_capabilities_only_with_an_allowed_grant(tmp_path: Path, 
     with sqlite3.connect(destination) as connection:
         rows = connection.execute("select cli_id, capability from local_cli_grant_capability").fetchall()
     assert rows == [(_identity().cli_id, "loopback-network")]
+
+
+def test_salvage_drops_capabilities_without_a_restored_cli_observation(tmp_path: Path, monkeypatch) -> None:
+    store, service = _service(tmp_path, monkeypatch)
+    _apply(service, _payload(store, "allowed", {"loopback-network": "on"}))
+    source = store.guard_home / "guard.db"
+    with sqlite3.connect(source) as connection:
+        connection.execute("delete from local_cli_observation")
+    destination = tmp_path / "fresh.db"
+    with sqlite3.connect(destination) as connection:
+        ensure_local_cli_schema(connection)
+    assert salvage_local_cli_state(source=source, destination=destination)
+    with sqlite3.connect(destination) as connection:
+        assert connection.execute("select count(*) from local_cli_grant").fetchone()[0] == 1
+        assert connection.execute("select count(*) from local_cli_grant_capability").fetchone()[0] == 0
 
 
 _BASE = {"state": "allowed", "cli_id": "local-cli.lanectl-12345678", "identity_hash": "c" * 64}

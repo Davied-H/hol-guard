@@ -382,10 +382,15 @@ def salvage_local_cli_state(*, source: Path, destination: Path) -> bool:
             if not all(copied.get(table) for table in _REQUIRED_LOCAL_CLI_SALVAGE_TABLES):
                 dst.rollback()
                 return False
-            # A capability row without its allowed grant must never ride along.
+            # A capability row rides along only with an allowed grant and a
+            # restored cli-surface observation, the same two facts the apply
+            # required to write it. An observation that failed to copy leaves
+            # the row an orphan, so it goes.
             _ = dst.execute(
                 "delete from local_cli_grant_capability where cli_id not in "
-                "(select cli_id from local_cli_grant where state = 'allowed')"
+                "(select grant_row.cli_id from local_cli_grant as grant_row "
+                "join local_cli_observation as observed on observed.cli_id = grant_row.cli_id "
+                "where grant_row.state = 'allowed' and observed.surface = 'cli')"
             )
             dst.commit()
             return True

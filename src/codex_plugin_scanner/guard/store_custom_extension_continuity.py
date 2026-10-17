@@ -269,11 +269,12 @@ def _write_local_cli_grant(
 
     next_revision = current_revision + 1
     previous = connection.execute(
-        "select identity_hash from local_cli_grant where cli_id = ?", (identity.cli_id,)
+        "select identity_hash, state from local_cli_grant where cli_id = ?", (identity.cli_id,)
     ).fetchone()
-    if state == "unset" or previous is None or previous[0] != identity.identity_hash:
-        # Capabilities were chosen for this exact grant; a new, removed or
-        # re-identified grant never inherits rows (including salvaged orphans).
+    if state != "allowed" or previous is None or previous[0] != identity.identity_hash or previous[1] != state:
+        # Capabilities were chosen for one exact allowed grant. A grant that is
+        # blocked, reviewed, removed or re-identified, or that comes back from
+        # such a state, never inherits rows (including salvaged orphans).
         clear_local_cli_capabilities(connection, identity.cli_id)
     if state == "unset":
         connection.execute("delete from local_mcp_provider_grant where cli_id = ?", (identity.cli_id,))

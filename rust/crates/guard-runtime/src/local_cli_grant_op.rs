@@ -259,7 +259,7 @@ fn enabled_capabilities(
     cli_id: &str,
 ) -> Result<Vec<String>, &'static str> {
     if !table_exists(connection, "local_cli_grant_capability")?
-        || observation_surface(connection, cli_id)? != CLI_SURFACE
+        || !observed_as_cli(connection, cli_id)?
     {
         return Ok(Vec::new());
     }
@@ -405,6 +405,30 @@ fn command_state(
         // `review` and anything unknown are not CLI command states.
         _ => CommandState::Inherit,
     })
+}
+
+/// Whether an observation row says `cli_id` is a CLI connector. Unlike
+/// `observation_surface`, a missing row or table is not a CLI: a capability
+/// was written for an observed `cli` surface, so one left without that
+/// observation (a partial salvage) must not widen anything. A store from
+/// before the surface column reads its rows as `cli`.
+fn observed_as_cli(connection: &Connection, cli_id: &str) -> Result<bool, &'static str> {
+    if !table_exists(connection, "local_cli_observation")? {
+        return Ok(false);
+    }
+    let has_surface =
+        local_store_read::column_exists(connection, "local_cli_observation", "surface")
+            .map_err(store_error)?;
+    let query = if has_surface {
+        "select surface from local_cli_observation where cli_id = ?1"
+    } else {
+        "select 'cli' from local_cli_observation where cli_id = ?1"
+    };
+    let surface: Option<String> = connection
+        .query_row(query, params![cli_id], |row| row.get(0))
+        .optional()
+        .map_err(|_| STORE_UNAVAILABLE)?;
+    Ok(surface.as_deref() == Some(CLI_SURFACE))
 }
 
 fn observation_surface(connection: &Connection, cli_id: &str) -> Result<String, &'static str> {
