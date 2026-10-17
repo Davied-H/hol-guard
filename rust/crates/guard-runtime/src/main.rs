@@ -396,12 +396,13 @@ mod hook_authority_state_op;
 mod hook_bridge_daemon_start;
 mod hook_bridge_fallback;
 #[cfg(all(test, unix))]
+mod hook_cli_claude_text;
+#[cfg(all(test, unix))]
 mod hook_decision_benign_tool_action_tests;
 mod hook_decision_compose;
 mod hook_decision_directive;
 mod hook_decision_finalize;
 mod hook_decision_native_facts;
-#[cfg(all(test, unix))]
 mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;

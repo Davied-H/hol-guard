@@ -131,3 +131,27 @@ fn copilot_hook_response_kind_always_renders_a_document() {
     assert_eq!(payload["response"]["permissionDecision"], "allow");
     assert!(payload["response"]["permissionDecisionReason"].is_null());
 }
+
+#[test]
+fn claude_approval_copy_kind_returns_one_named_piece_of_text() {
+    let mut req = request("claude_approval_copy");
+    req.harness = "claude-code".to_owned();
+    req.cli = Some(json!({
+        "which": "permission_request_terminal_notice",
+        "payload": {"tool_name": "Bash"},
+        "reason": "Reviewing this",
+    }));
+    let payload = decode(evaluate_hook_render_request(&req).expect("encoded"))
+        .payload
+        .expect("payload");
+    assert_eq!(payload["outcome"], "document");
+    assert_eq!(
+        payload["response"]["value"],
+        "HOL Guard: reviewing Claude approval for Bash. Reviewing this."
+    );
+
+    req.cli = Some(json!({"which": "not-a-name", "payload": {}}));
+    let result = decode(evaluate_hook_render_request(&req).expect("encoded"));
+    assert_eq!(result.status, "error");
+    assert_eq!(result.code, "native_hook_render_invalid");
+}

@@ -5,6 +5,7 @@
 //! review), the resident returns the exact harness JSON. Rendering itself
 //! lives in `guard_command::hook_responses`, shared with the edge decision.
 
+use crate::hook_cli_claude_text::claude_approval_copy;
 use guard_command::hook_responses::cli_documents::{
     cli_document, cli_response, copilot_hook_response, CliOutcome,
 };
@@ -51,6 +52,23 @@ fn cli_payload(outcome: CliOutcome) -> Value {
 
 fn render(request: &HookRenderRequestV1) -> Result<Value, &'static str> {
     let harness = request.harness.as_str();
+    if request.kind == "claude_approval_copy" {
+        let params = object_of(request.cli.as_ref()).ok_or("native_hook_render_invalid")?;
+        let which = params
+            .get("which")
+            .and_then(Value::as_str)
+            .ok_or("native_hook_render_invalid")?;
+        let payload = object_of(params.get("payload"))
+            .cloned()
+            .unwrap_or_default();
+        let notice = object_of(params.get("notice")).cloned();
+        let reason = params.get("reason").and_then(Value::as_str).unwrap_or("");
+        let value = claude_approval_copy(which, &payload, notice.as_ref(), reason)
+            .ok_or("native_hook_render_invalid")?;
+        let mut document = Object::new();
+        document.insert("value".into(), value);
+        return Ok(cli_payload(CliOutcome::Document(document)));
+    }
     if matches!(
         request.kind.as_str(),
         "cli_response" | "cli_document" | "copilot_hook_response"

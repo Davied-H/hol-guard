@@ -84,12 +84,6 @@ def _claude_notification_tool_name(payload: dict[str, object]) -> str | None:
             return match.group(1)
     return None
 
-def _claude_notification_tool_display_name(payload: dict[str, object]) -> str | None:
-    tool_name = _claude_notification_tool_name(payload)
-    if tool_name and tool_name.strip():
-        return tool_name.strip()
-    return None
-
 def _approval_delivery_payload(
     harness: str,
     *,
@@ -716,7 +710,7 @@ def _runtime_detector_perf_payload(config: GuardConfig) -> list[dict[str, object
 
 __all__ = [
     "_approval_center_routed_message", "_approval_delivery_payload",
-    "_claude_notification_tool_display_name", "_claude_notification_tool_name", "_ensure_terminal_punctuation",
+    "_claude_notification_tool_name", "_ensure_terminal_punctuation",
     "_guard_cli_settings_payload", "_guard_settings_doctor_payload", "_guard_settings_explain_payload",
     "_guard_settings_payload", "_is_cloud_inbox_url", "_localize_decision_v2_review_copy",
     "_localize_pending_approval_copy", "_native_approval_center_context", "_native_hook_reason",

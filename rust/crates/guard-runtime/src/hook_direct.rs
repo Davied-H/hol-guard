@@ -474,7 +474,7 @@ fn answer(
 }
 
 #[path = "hook_direct_claude_permission_text.rs"]
-mod claude_permission_text;
+pub(crate) mod claude_permission_text;
 #[path = "hook_direct_claude_prompt_text.rs"]
 mod claude_prompt_text;
 #[path = "hook_direct_contained.rs"]
