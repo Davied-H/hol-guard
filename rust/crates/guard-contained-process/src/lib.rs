@@ -17,7 +17,11 @@ pub use probe::main as probe_main;
 pub mod runtime_files;
 pub mod runtime_resources;
 #[cfg(unix)]
+mod source_launch;
+#[cfg(unix)]
 mod unix;
+#[cfg(unix)]
+pub use source_launch::SourceLaunchGate;
 #[cfg(windows)]
 mod windows;
 
@@ -213,7 +217,7 @@ impl PinnedCommand {
             ));
         }
         #[cfg(unix)]
-        return unix::capture(self, input, cap, deadline, cancel, isolation);
+        return unix::capture(self, input, cap, deadline, cancel, isolation, None);
         #[cfg(windows)]
         return windows::capture(self, input, cap, deadline, cancel, isolation);
         #[cfg(not(any(unix, windows)))]
