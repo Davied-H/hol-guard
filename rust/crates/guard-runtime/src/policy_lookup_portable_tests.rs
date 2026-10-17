@@ -1,5 +1,5 @@
 use super::*;
-use crate::hook_direct_saved_decision::tests::{
+use crate::hook_direct::saved_decision::tests::{
     integrity_state, local_store, sign_decision, KEY, KEY_ID, SIGNED_AT,
 };
 use guard_contracts::{
