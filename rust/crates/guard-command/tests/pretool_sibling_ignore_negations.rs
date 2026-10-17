@@ -15,11 +15,12 @@ fn sibling_search_with_literal_negations_is_allowed() {
     let sibling = layout.org.join("service-api");
     write(
         sibling.join(".gitignore"),
-        "dist/\n*.log\n!keep.log\n.vscode/*\n!.vscode/settings.json\n!/.gitkeep\n",
+        "dist/\n*.log\n!keep.log\n.vscode/*\n!.vscode/settings.json\n!/.gitkeep\n!**/notes.md\n",
     );
     write(sibling.join("keep.log"), "fixture\n");
     write(sibling.join(".gitkeep"), "");
     write(sibling.join(".vscode/settings.json"), "{}\n");
+    write(sibling.join("docs/team/notes.md"), "fixture\n");
     write(sibling.join("src/.gitignore"), "generated/\n!README.md\n");
     write(sibling.join("src/README.md"), "fixture\n");
     write(sibling.join("web/.gitignore"), "!.gitkeep\n");
@@ -38,7 +39,7 @@ fn sibling_search_with_literal_negations_is_allowed() {
 
 #[test]
 fn sibling_search_whose_negations_could_reach_a_secret_is_reviewed() {
-    let cases: [(&str, &[(&str, &str)]); 6] = [
+    let cases: [(&str, &[(&str, &str)]); 7] = [
         (
             "env-example",
             &[
@@ -47,7 +48,20 @@ fn sibling_search_whose_negations_could_reach_a_secret_is_reviewed() {
             ],
         ),
         ("glob", &[(".gitignore", "*.pem\n!server*.pem\n")]),
-        ("double-star", &[(".gitignore", "!**/notes.md\n")]),
+        (
+            "double-star",
+            &[
+                (".gitignore", "!**/.env\n"),
+                ("services/api/.env", "TOKEN=fixture\n"),
+            ],
+        ),
+        (
+            "anchored-double-star",
+            &[
+                (".gitignore", "!src/**/.env\n"),
+                ("src/a/b/.env", "TOKEN=fixture\n"),
+            ],
+        ),
         ("pruned", &[(".gitignore", "target/\n!target\n")]),
         (
             "nested-pruned",

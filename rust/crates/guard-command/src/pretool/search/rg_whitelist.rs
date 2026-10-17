@@ -414,8 +414,11 @@ fn record_negation(pattern: &str, base: &Path, negations: &mut Negations) {
     let pattern = pattern.strip_suffix('/').unwrap_or(pattern);
     // Git anchors a pattern to its ignore file's directory as soon as it
     // carries a slash anywhere but the end, so only a bare name re-includes
-    // entries deeper down.
-    let anchored = pattern.starts_with('/') || pattern.contains('/');
+    // entries deeper down. `**` is the exception: it stands for any run of
+    // directories, so `!**/.env` and `!src/**/.env` re-include that name
+    // however deep it sits, and the anchored reading would miss it.
+    let anchored = (pattern.starts_with('/') || pattern.contains('/'))
+        && !pattern.split('/').any(|component| component.contains("**"));
     let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
     let mut components = Vec::new();
     for component in pattern.split('/') {
@@ -432,6 +435,13 @@ fn record_negation(pattern: &str, base: &Path, negations: &mut Negations) {
         let harmless = plain_name(component)
             && (!component.starts_with('.') || (screened && benign_hidden(component)));
         components.push((component.to_owned(), !harmless));
+    }
+    // A `**` pattern is held by its last component at any depth, which
+    // re-includes at least what Git does: `!src/**/.env` holds every `.env`
+    // below the ignore file rather than only the ones below `src`.
+    if !anchored && components.len() > 1 {
+        let last = components.pop().expect("components is not empty");
+        components = vec![last];
     }
     negations.risky.push(Risk {
         base: base.to_path_buf(),
