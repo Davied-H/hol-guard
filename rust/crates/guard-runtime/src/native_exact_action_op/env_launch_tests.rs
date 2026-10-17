@@ -44,6 +44,40 @@ impl Engines for Spelled {
     }
 }
 
+/// An engine whose `env` binary can be swapped without moving the lookup path.
+struct SwappableEnv(AtomicUsize);
+
+impl Engines for SwappableEnv {
+    fn launch_identity(
+        &self,
+        executable: &str,
+        args: &[String],
+        cwd: &str,
+        home: Option<&str>,
+        env: &BTreeMap<String, String>,
+    ) -> Value {
+        let mut identity = Spelled.launch_identity(executable, args, cwd, home, env);
+        if executable == "env" {
+            identity["content"] = json!(self.0.load(Ordering::Relaxed));
+        }
+        identity
+    }
+
+    fn launch_reusable(&self, identity: &Value) -> bool {
+        Spelled.launch_reusable(identity)
+    }
+
+    fn local_executions(
+        &self,
+        command: &str,
+        cwd: &str,
+        home: Option<&str>,
+        env: &BTreeMap<String, String>,
+    ) -> Option<Vec<LocalExecution>> {
+        Spelled.local_executions(command, cwd, home, env)
+    }
+}
+
 struct Scratch(PathBuf);
 
 impl Scratch {
@@ -318,4 +352,114 @@ fn an_approved_script_is_bound_to_its_content() {
     );
     scratch.script("release.sh", "#!/bin/sh\necho two\n");
     assert_ne!(first, bind(command).unwrap());
+}
+
+#[test]
+fn a_quoted_word_that_looks_like_a_setting_is_not_bound() {
+    let scratch = Scratch::new();
+    let environment = environment("a");
+    for command in [
+        "'FOO=1' ./scripts/release.sh production",
+        "\"FOO=1\" ./scripts/release.sh production",
+        "FOO='1' ./scripts/release.sh production",
+        "FOO=\"1\" ./scripts/release.sh production",
+        "'FOO'=1 ./scripts/release.sh production",
+        "env 'FOO=1' ./scripts/release.sh production",
+        "'env' FOO=1 ./scripts/release.sh production",
+    ] {
+        assert_eq!(
+            state_in(&scratch, command, &environment),
+            Err(MUTABLE_LAUNCHER),
+            "{command}"
+        );
+    }
+    // Quoting the program or an argument does not change what the settings mean.
+    assert!(state_in(
+        &scratch,
+        "FOO=1 './scripts/release.sh' 'production'",
+        &environment
+    )
+    .is_ok());
+}
+
+#[test]
+fn the_env_binary_is_bound_only_when_the_command_spells_it() {
+    let scratch = Scratch::new();
+    let environment = environment("a");
+    let engine = SwappableEnv(AtomicUsize::new(0));
+    let bind = |command: &str| env_state(command, &scratch.cwd(), Some(&environment), &engine);
+    let with_env = bind("env FOO=1 ./scripts/release.sh production").unwrap();
+    let bare = bind("FOO=1 ./scripts/release.sh production").unwrap();
+    engine.0.store(1, Ordering::Relaxed);
+    assert_ne!(
+        with_env,
+        bind("env FOO=1 ./scripts/release.sh production").unwrap()
+    );
+    assert_eq!(bare, bind("FOO=1 ./scripts/release.sh production").unwrap());
+    // An `env` the proof cannot call reusable is not approvable.
+    struct Unreusable;
+    impl Engines for Unreusable {
+        fn launch_identity(
+            &self,
+            executable: &str,
+            args: &[String],
+            cwd: &str,
+            home: Option<&str>,
+            env: &BTreeMap<String, String>,
+        ) -> Value {
+            let mut identity = Spelled.launch_identity(executable, args, cwd, home, env);
+            if executable == "env" {
+                identity["executable"] = json!("unreusable-env");
+            }
+            identity
+        }
+        fn launch_reusable(&self, identity: &Value) -> bool {
+            Spelled.launch_reusable(identity)
+        }
+        fn local_executions(
+            &self,
+            _command: &str,
+            _cwd: &str,
+            _home: Option<&str>,
+            _env: &BTreeMap<String, String>,
+        ) -> Option<Vec<LocalExecution>> {
+            None
+        }
+    }
+    assert_eq!(
+        env_state(
+            "env FOO=1 ./scripts/release.sh",
+            &scratch.cwd(),
+            Some(&environment),
+            &Unreusable
+        ),
+        Err(UNPROVEN_LAUNCH)
+    );
+}
+
+#[test]
+fn a_file_named_by_a_setting_is_bound_to_its_content() {
+    let scratch = Scratch::new();
+    let environment = environment("a");
+    let command = "FOO=deploy.yaml ./scripts/release.sh production";
+    let absent = state_in(&scratch, command, &environment).unwrap();
+    std::fs::write(scratch.0.join("deploy.yaml"), "target: staging\n").unwrap();
+    let first = state_in(&scratch, command, &environment).unwrap();
+    assert_ne!(absent, first);
+    assert_eq!(first, state_in(&scratch, command, &environment).unwrap());
+    std::fs::write(scratch.0.join("deploy.yaml"), "target: production\n").unwrap();
+    assert_ne!(first, state_in(&scratch, command, &environment).unwrap());
+    // A value that names a directory binds no content, so it is not approvable.
+    std::fs::create_dir(scratch.0.join("conf")).unwrap();
+    for command in [
+        "FOO=conf ./scripts/release.sh",
+        "FOO=. ./scripts/release.sh",
+        "FOO=.. ./scripts/release.sh",
+    ] {
+        assert_eq!(
+            state_in(&scratch, command, &environment),
+            Err(MUTABLE_LAUNCHER),
+            "{command}"
+        );
+    }
 }

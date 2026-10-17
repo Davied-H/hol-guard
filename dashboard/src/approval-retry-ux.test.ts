@@ -331,6 +331,20 @@ assert(
   !approvalCannotUnlock({ ...envPrefixed, exact_action_persistence_eligible: true }),
   "a review that can be remembered as an exact action can still be approved",
 );
+assert(
+  !approvalCannotUnlock({
+    ...envPrefixed,
+    extension_recommendation: recommendation("available", ["Git origin refresh"]) ?? undefined,
+  }),
+  "a review a verified Extensions permission would let run is not a run-it-yourself row",
+);
+assert(
+  approvalCannotUnlock({
+    ...envPrefixed,
+    extension_recommendation: recommendation("authority_unavailable", ["Git origin refresh"]) ?? undefined,
+  }),
+  "an Extensions permission the control authority cannot apply does not unlock the command",
+);
 const runYourselfMarkup = renderToStaticMarkup(createElement(ReviewRunYourself, { item: envPrefixed, harnessName: "Oh My Pi" }));
 assert(runYourselfMarkup.includes("Run this yourself"), "the review names the action the user should take");
 assert(runYourselfMarkup.includes("FOO=1 ./scripts/release.sh production"), "the review shows the command to run");

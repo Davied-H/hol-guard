@@ -14262,7 +14262,7 @@ function retryCannotReuseApproval(item) {
   return item.scope_restrictions?.includes("retry_cannot_reuse_approval") === true;
 }
 function approvalCannotUnlock(item) {
-  return retryCannotReuseApproval(item) && item.exact_action_persistence_eligible !== true;
+  return retryCannotReuseApproval(item) && item.exact_action_persistence_eligible !== true && allowPermissionLabels(item) === null;
 }
 function oneTimeRetryWindowMinutes(item) {
   return item.artifact_id.includes(":native-pretool:") ? 5 : 15;
