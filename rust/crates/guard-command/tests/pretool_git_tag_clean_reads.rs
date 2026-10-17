@@ -60,7 +60,7 @@ fn tag_listing_is_allowed_and_tag_writes_stay_reviewed() {
         ("", "git tag --delete v1.0.0", "review"),
         ("", "git tag -f v1.0.0", "review"),
         ("", "git tag -s v1.0.0", "review"),
-        ("", "git tag --list --format=%(refname)", "review"),
+        ("", "git tag --list '--format=%(refname)'", "review"),
         ("", "git tag -l -n", "review"),
         // The configured pager is a program the listing would start.
         (
@@ -81,6 +81,13 @@ fn tag_listing_is_allowed_and_tag_writes_stay_reviewed() {
         (
             "[core]\npager = ./synthetic-never-execute\n",
             "git tag --list | cat",
+            "allow",
+        ),
+        // A listing renders no diff, so a configured external driver is not a
+        // program it would start.
+        (
+            "[diff]\nexternal = ./synthetic-never-execute\n",
+            "git tag --list",
             "allow",
         ),
     ] {
@@ -119,6 +126,20 @@ fn clean_preview_is_allowed_and_removal_stays_reviewed() {
             "git clean -n",
             "allow",
         ),
+        // The preview renders no diff either.
+        (
+            "[diff]\nexternal = ./synthetic-never-execute\n",
+            "git clean -n",
+            "allow",
+        ),
+        // Finding the untracked paths refreshes the index, which starts a
+        // configured monitor.
+        (
+            "[core]\nfsmonitor = ./synthetic-never-execute\n",
+            "git clean -n",
+            "review",
+        ),
+        ("[core]\nfsmonitor = false\n", "git clean -n", "allow"),
         ("", "git clean", "review"),
         ("", "git clean -d", "review"),
         ("", "git clean -f", "review"),

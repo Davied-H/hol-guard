@@ -132,8 +132,9 @@ pub(super) fn safe_git_arguments(
     }
     if subcommand == "clean" {
         // A dry run prints the untracked paths it would remove and removes
-        // nothing; `git clean` starts no helper of its own.
-        return super::git_clean_preview::is_dry_run(&arguments[1..]);
+        // nothing, but reading the index to find them can start a configured
+        // `core.fsmonitor`, so the configuration probe clears it first.
+        return allow_helper_context && super::git_clean_preview::is_dry_run(&arguments[1..]);
     }
     if !matches!(
         subcommand,
