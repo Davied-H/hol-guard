@@ -96,6 +96,30 @@ def test_a_malformed_connector_fails_the_decision_closed(connector: object) -> N
         _validated_decision(_wire(connector_setup=connector))
 
 
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"action": "block", "policy_action": "block"},
+        {"policy_action": "require-reapproval"},
+        {"signals": ["network"]},
+        {"risk_categories": ["destructive_operation"]},
+        {"source": "local-mcp-extension"},
+        {"source": "temporary-mcp-grant"},
+        {"approval_reuse_claim_disposition": "consumed"},
+        {"pending_approval_reuse_decision": {"state": "pending"}},
+        {"post_claim_revalidated": True, "post_claim_authority": "fresh"},
+    ],
+)
+def test_a_connector_on_a_decision_nothing_but_non_recognition_caused_is_rejected(fields: dict[str, object]) -> None:
+    with pytest.raises(NativeMcpToolPolicyError, match="payload_invalid"):
+        _validated_decision(_wire(connector_setup=dict(CONNECTOR), **fields))
+
+
+def test_a_heuristic_review_may_name_a_connector() -> None:
+    decision = _validated_decision(_wire(source="heuristic", connector_setup=dict(CONNECTOR)))
+    assert decision["connector_setup"] == CONNECTOR
+
+
 def _projection() -> SimpleNamespace:
     return SimpleNamespace(
         display_launch_target="echo-mcp:lookup",

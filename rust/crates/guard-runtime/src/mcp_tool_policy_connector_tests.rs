@@ -180,6 +180,36 @@ fn unrecognised_remote_server_identity_carries_no_url_or_query() {
 }
 
 #[test]
+fn a_proxied_remote_call_with_a_bare_tool_name_names_the_same_connector() {
+    let home = home();
+    let mut bare = remote(&home, "https://mcp.example.test/mcp");
+    bare.tool_name = "lookup".to_owned();
+    let found = connector_setup(&subject(bare), &review("heuristic", &[])).unwrap();
+    let observed = observed_mcp_tool("codex", "mcp__echo-mcp__lookup").unwrap();
+    assert_eq!(found["identity_hash"], observed.identity_hash);
+    assert!(!found.to_string().contains("example.test"));
+}
+
+#[test]
+fn a_grant_under_either_remote_identity_is_an_answer() {
+    let configured = "f".repeat(64);
+    let observed = observed_mcp_tool("codex", "mcp__echo-mcp__lookup")
+        .unwrap()
+        .identity_hash;
+    for identity in [configured, observed] {
+        for state in ["allowed", "blocked"] {
+            let home = granted_home(&identity, state);
+            let mut bare = remote(&home, "https://mcp.example.test/mcp");
+            bare.tool_name = "lookup".to_owned();
+            assert!(
+                connector_setup(&subject(bare), &review("heuristic", &[])).is_none(),
+                "{identity} {state}"
+            );
+        }
+    }
+}
+
+#[test]
 fn recognised_but_risky_call_stays_a_generic_review() {
     let home = home();
     let risky = review("risk-policy", &["destructive_operation"]);
