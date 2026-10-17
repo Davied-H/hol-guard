@@ -59,6 +59,9 @@ fn segment_runs_helpers(original: &crate::CommandSegmentV1, context: PathContext
                         "blame" | "describe" | "reflog" => true,
                         // grep pages by default through pager.grep or core.pager.
                         "grep" => true,
+                        // A shortlog pages under pager.shortlog, and both
+                        // listings read the repository's configuration.
+                        "shortlog" | "check-ignore" => true,
                         _ => false,
                     }
                 })
