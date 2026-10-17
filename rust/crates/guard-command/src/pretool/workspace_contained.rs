@@ -445,12 +445,16 @@ pub(super) fn convert(
     let (launch_context, sent_text) = (context, command_text);
     // The sink expands a leading `cd ~/<dir>` itself and runs the rest from
     // the directory it reaches, so the checks below see that directory.
-    let issued = model;
     let home = home_cd::as_absolute_cd(model, context);
     let model = home.as_ref().map_or(model, |list| &list.model);
     let command_text = home
         .as_ref()
         .map_or(command_text, |list| Some(list.text.as_str()));
+    // The home spelling and the directory it expands to are the same command
+    // written two ways, so the screens that answer for what the agent issued
+    // answer for the expanded spelling too. The package projection below is a
+    // different list the sink synthesizes, which those screens never read.
+    let issued = model;
     let projected = super::contained_wrapper::package_dir::as_cd_list(model, context);
     let model = projected.as_ref().map_or(model, |list| &list.model);
     let command_text = projected

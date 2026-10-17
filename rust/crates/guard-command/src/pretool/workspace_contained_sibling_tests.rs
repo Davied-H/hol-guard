@@ -42,7 +42,12 @@ fn reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String {
 /// A harness stamps the shell's HOME on the way in, and `~` proves only when
 /// that HOME is the declared one; no stamp leaves the runtime reading its own
 /// HOME, which is never a fixture's.
-fn home_reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String {
+fn home_result(
+    harness: &str,
+    home: &Path,
+    cwd: &Path,
+    command: &str,
+) -> guard_contracts::PreToolResultV1 {
     let controls = controls();
     crate::pretool::evaluate_pre_tool_envelope_with_execution_context(
         harness,
@@ -62,7 +67,43 @@ fn home_reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String 
         },
         None,
     )
-    .reason_code
+}
+
+/// What the containment screens read besides the command itself, so a
+/// spelling that loses containment names the evidence that refused it
+/// rather than only the reason it ended with.
+fn evidence(result: &guard_contracts::PreToolResultV1) -> String {
+    let Some(extensions) = result.command_extensions.as_ref() else {
+        return format!("{} without extension evidence", result.reason_code);
+    };
+    let rules: Vec<String> = extensions
+        .observations
+        .iter()
+        .map(|observation| {
+            format!(
+                "{} {:?}",
+                observation.rule_id, observation.uncertainty_reasons
+            )
+        })
+        .collect();
+    let permissions: Vec<String> = extensions
+        .permission_observations
+        .iter()
+        .map(|observation| {
+            format!(
+                "{} {:?}",
+                observation.permission_id, observation.uncertainty_reasons
+            )
+        })
+        .collect();
+    format!(
+        "{} action={:?} sensitive={} uncertain={} error={:?} rules={rules:?} permissions={permissions:?}",
+        result.reason_code,
+        result.action.action_type,
+        result.action.sensitive_target,
+        extensions.binding.uncertainty_count,
+        extensions.evaluation_error,
+    )
 }
 
 /// A main checkout, a linked worktree beside it, an unrelated clone and a
@@ -291,12 +332,20 @@ fn a_home_spelled_sibling_root_runs_contained_from_that_root() {
             ),
         ),
     ] {
-        let absolute = home_reason("omp", &home, &main, &spelled);
-        assert_eq!(contained(&absolute), host(), "{spelled}: {absolute}");
+        let absolute = home_result("omp", &home, &main, &spelled);
         assert_eq!(
-            home_reason("omp", &home, &main, written),
-            absolute,
-            "{written}"
+            contained(&absolute.reason_code),
+            host(),
+            "{spelled}: {}",
+            evidence(&absolute)
+        );
+        let written_result = home_result("omp", &home, &main, written);
+        assert_eq!(
+            written_result.reason_code,
+            absolute.reason_code,
+            "{written}\n  written:  {}\n  absolute: {}",
+            evidence(&written_result),
+            evidence(&absolute)
         );
     }
     let _ = std::fs::remove_dir_all(home.parent().unwrap());
