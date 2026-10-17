@@ -163,6 +163,9 @@ impl State<'_, '_> {
             }
             self.argv.get(index).cloned()
         } else if matches!(name, "HOME") || ordinary_variable(name) {
+            if self.exported_names.contains(name) && !self.variables.contains_key(name) {
+                return Err(self.error(node, "bash_exported_environment_value_withheld"));
+            }
             self.variables.get(name).cloned()
         } else {
             return Err(self.error(node, "bash_dynamic_parameter"));

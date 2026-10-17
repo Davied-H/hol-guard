@@ -10,6 +10,7 @@ use std::time::Instant;
 use super::{Analysis, Operation, Result, Uncertainty, MAX_SOURCE_BYTES};
 
 mod inputs;
+mod output_preparation;
 
 const MAX_CODE_INPUTS: usize = 64;
 const MAX_GRAPH_CALLS: usize = 1024;
@@ -50,6 +51,10 @@ pub enum Executable {
 
 pub trait Resolver {
     fn resolve(&self, argv: &[String]) -> std::result::Result<Executable, &'static str>;
+    /// Full host-observed names, including exports whose values were withheld.
+    fn environment_names(&self) -> &[String] {
+        &[]
+    }
     fn resolve_source(&self, _path: &str) -> std::result::Result<Code, &'static str> {
         Err("bash_source_unresolved")
     }
@@ -85,9 +90,16 @@ pub struct Graph {
     // Frozen code alone does not establish a bound output/effect boundary.
     frozen_source: String,
     outputs_bound: bool,
+    initial_output: Option<super::Redirect>,
 }
 
 impl Graph {
+    /// The sole output may be prepared at launch only when initialization is
+    /// the first material operation. This is not permission to open it.
+    pub fn initial_output(&self) -> Option<&super::Redirect> {
+        self.initial_output.as_ref()
+    }
+
     pub fn source_for_launch(&self) -> Result<&str> {
         if !self.writes.is_empty() && !self.outputs_bound {
             return Err(Uncertainty {
@@ -127,6 +139,7 @@ struct Builder<'a> {
     active: BTreeSet<String>,
     bytes: usize,
     expanded_bytes: usize,
+    initial_output: Option<super::Redirect>,
 }
 
 /// Resolve and freeze every helper reached by these exact arguments.
@@ -195,10 +208,16 @@ fn build_inner(
         active: BTreeSet::new(),
         bytes: 0,
         expanded_bytes: 0,
+        initial_output: None,
     };
     let frozen_source = builder.visit(&entry, argv)?;
     if output_fds.is_some() {
         validate_output_order(&builder.writes)?;
+        output_preparation::validate(
+            &entry.original_path,
+            &builder.writes,
+            builder.initial_output.as_ref(),
+        )?;
     }
     Ok(Graph {
         entry_path: entry.original_path,
@@ -209,6 +228,7 @@ fn build_inner(
         writes: builder.writes,
         frozen_source,
         outputs_bound: output_fds.is_some(),
+        initial_output: builder.initial_output,
     })
 }
 
@@ -232,10 +252,14 @@ fn validate_output_order(writes: &[OutputEffect]) -> Result<()> {
 
 impl Builder<'_> {
     fn visit(&mut self, code: &Code, argv: &[String]) -> Result<String> {
+        let entry = self.active.is_empty();
         self.register(code, false)?;
         self.active.insert(code.resolved_path.clone());
         let analysis =
             super::source::analyze(code, argv, self.environment, self.resolver, self.deadline)?;
+        if entry && self.output_fds.is_some() {
+            self.initial_output = output_preparation::initial(&analysis);
+        }
         let transformed = self.operations(code, analysis)?;
         self.active.remove(&code.resolved_path);
         Ok(transformed)

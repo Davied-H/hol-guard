@@ -149,6 +149,48 @@ fn bash_resident_inspection_captures_real_fixture_without_permission_token() {
 }
 
 #[test]
+fn bash_resident_inspection_never_treats_withheld_exports_as_unset() {
+    let (_root, mut request) = fixture();
+    let entry = Path::new(&request.cwd).join("maintenance.sh");
+    for source in [
+        "printf '%s' \"${mode:-dry}\"",
+        "mode=dry; printf '%s' \"$mode\"",
+        "for mode in dry; do printf '%s' \"$mode\"; done",
+        ". ./settings.sh",
+    ] {
+        std::fs::write(&entry, source).unwrap();
+        std::fs::write(
+            Path::new(&request.cwd).join("settings.sh"),
+            "printf '%s' \"${mode:-dry}\"",
+        )
+        .unwrap();
+        let absent = inspect(&request).unwrap();
+        request
+            .execution_environment
+            .environment_names
+            .push("unrelated_export".into());
+        assert_eq!(
+            absent.identity_sha256().unwrap(),
+            inspect(&request).unwrap().identity_sha256().unwrap()
+        );
+        request.execution_environment.environment_names.pop();
+        request
+            .execution_environment
+            .environment_names
+            .push("mode".into());
+        assert!(
+            matches!(
+                inspect(&request),
+                Err("bash_exported_environment_value_withheld"
+                    | "bash_exported_environment_assignment_unproven")
+            ),
+            "accepted {source}"
+        );
+        request.execution_environment.environment_names.pop();
+    }
+}
+
+#[test]
 fn bash_resident_inspection_refuses_withheld_startup_and_function_values() {
     let (_root, mut request) = fixture();
     request

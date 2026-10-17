@@ -43,6 +43,8 @@ pub struct Redirect {
     pub start: usize,
     pub end: usize,
     pub statement_start: usize,
+    #[serde(skip)]
+    pub(crate) top_level: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,6 +98,16 @@ fn analyze_inner(
     deadline: Instant,
     source_context: Option<source::Context<'_>>,
 ) -> Result<Analysis> {
+    let names = source_context
+        .as_ref()
+        .map(source::Context::environment_names)
+        .unwrap_or(&[]);
+    if names.len() > 4096 || names.iter().map(String::len).sum::<usize>() > MAX_SOURCE_BYTES {
+        return Err(Uncertainty {
+            reason: "bash_environment_bounds",
+            line: 1,
+        });
+    }
     let context_bytes = argv.iter().map(String::len).sum::<usize>()
         + environment
             .iter()
@@ -122,7 +134,12 @@ fn analyze_inner(
             line: 1,
         });
     }
-    if environment.keys().any(|key| {
+    let exported_names: BTreeSet<String> = environment
+        .keys()
+        .cloned()
+        .chain(names.iter().cloned())
+        .collect();
+    if exported_names.iter().any(|key| {
         key.starts_with("BASH_FUNC_")
             || matches!(
                 key.as_str(),
@@ -135,7 +152,6 @@ fn analyze_inner(
         });
     }
     let tree = parse(source, deadline)?;
-    let exported_names = environment.keys().cloned().collect();
     let mut state = State {
         source,
         argv,

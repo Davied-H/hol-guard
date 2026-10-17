@@ -24,6 +24,10 @@ pub(super) struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    pub(super) fn environment_names(&self) -> &[String] {
+        self.resolver.environment_names()
+    }
+
     fn new(resolver: &'a dyn graph::Resolver, code: &graph::Code) -> Self {
         Self {
             resolver,

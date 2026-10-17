@@ -181,6 +181,9 @@ impl Resolver<'_> {
 }
 
 impl graph::Resolver for Resolver<'_> {
+    fn environment_names(&self) -> &[String] {
+        self.names
+    }
     fn resolve_source(&self, path: &str) -> Result<graph::Code> {
         self.check()?;
         if path.is_empty() || path.len() > 4096 || self.environment["PATH"].split(':').count() > 256

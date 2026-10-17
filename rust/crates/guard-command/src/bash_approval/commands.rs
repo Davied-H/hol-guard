@@ -156,6 +156,15 @@ impl State<'_, '_> {
         }
         let path = self.word(destination, false)?;
         self.charge(path.len(), destination)?;
+        let mut ancestor = node.parent();
+        let mut top_level = true;
+        while let Some(parent) = ancestor {
+            top_level &= matches!(
+                parent.kind(),
+                "program" | "command" | "redirected_statement"
+            );
+            ancestor = parent.parent();
+        }
         self.analysis.writes.push(Redirect {
             path,
             append: prefix == ">>",
@@ -163,6 +172,7 @@ impl State<'_, '_> {
             start: node.start_byte(),
             end: node.end_byte(),
             statement_start,
+            top_level,
         });
         Ok(())
     }
