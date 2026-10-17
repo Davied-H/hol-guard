@@ -232,29 +232,6 @@ pub fn generic_hook_payload_digest(payload: &Map<String, Value>) -> String {
     hex_sha256(&encoded)
 }
 
-/// `_generic_hook_workspace_identity` (`commands_hook_native_generic.py:298-303`):
-/// the runtime workspace root normalized to a forward-slash resolved path
-/// string; `None`/empty → empty string. `Path::resolve`/`as_posix` in Python
-/// collapse `.`/`..` and platform separators.
-pub fn generic_hook_workspace_identity(runtime_workspace: Option<&str>) -> String {
-    let Some(raw) = runtime_workspace else {
-        return String::new();
-    };
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    // Normalize separators the way Path.as_posix() does; `.`/`..` resolution
-    // is a host-side Path operation the caller performs before crossing the
-    // boundary — Rust keeps the string-level normalization (trailing slash
-    // strip + backslash→slash) only.
-    let mut normalized = trimmed.replace('\\', "/");
-    while normalized.len() > 1 && normalized.ends_with('/') {
-        normalized.pop();
-    }
-    normalized
-}
-
 // ─── memory command derivation ───────────────────────────────────────────
 // `commands_hook_native_generic.py:_generic_hook_memory_command` (306-312).
 
@@ -574,17 +551,6 @@ mod tests {
         assert!(d
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
-    }
-
-    #[test]
-    fn workspace_identity_normalizes() {
-        assert_eq!(generic_hook_workspace_identity(None), "");
-        assert_eq!(generic_hook_workspace_identity(Some("  ")), "");
-        assert_eq!(
-            generic_hook_workspace_identity(Some("C:\\proj\\x")),
-            "C:/proj/x"
-        );
-        assert_eq!(generic_hook_workspace_identity(Some("/a/b/")), "/a/b");
     }
 
     #[test]
