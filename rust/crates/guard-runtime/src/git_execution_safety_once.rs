@@ -24,13 +24,14 @@ use crate::git_execution_safety_probe::{ProbeOutput, Prober};
 use crate::guard_store_wfcap_frame::sha256_hex;
 
 /// ssh keywords that run or load a local program the binding cannot pin.
-const SSH_PROGRAM_KEYWORDS: [&str; 6] = [
+/// `XAuthLocation` is not one: ssh runs xauth only for X11 forwarding, which
+/// `ForwardX11` turns on, so that keyword is refused instead.
+const SSH_PROGRAM_KEYWORDS: [&str; 5] = [
     "proxycommand",
     "localcommand",
     "knownhostscommand",
     "pkcs11provider",
     "securitykeyprovider",
-    "xauthlocation",
 ];
 /// The include line distributions ship in the system ssh config. Every file
 /// in that folder is read and checked, whichever glob names it.
@@ -254,7 +255,9 @@ fn ssh_config_runs_no_program(text: &str, allows_system_include: bool) -> bool {
             && words
                 .iter()
                 .any(|word| word.trim_start_matches('!') == "exec");
-        !(SSH_PROGRAM_KEYWORDS.contains(&keyword) || matches_exec)
+        let forwards_x11 =
+            keyword == "forwardx11" && words.get(1).is_none_or(|value| value != "no");
+        !(SSH_PROGRAM_KEYWORDS.contains(&keyword) || matches_exec || forwards_x11)
     })
 }
 

@@ -1,4 +1,4 @@
-import { bk as fetchLocalCliApi, r as reactExports, bl as fetchExtensionCatalog, bm as normalizeExtensionCatalogSummary, bn as normalizeExtensionPermission, bo as ExtensionControlProtocolError, bp as ExtensionControlApiError, bq as normalizeExtensionCatalogItem, br as guardApiCacheScope, bs as fetchExtensionCatalogV2Api, bt as localPermissionDraftState, bu as setLocalPermissionDraftState, bv as extensionPolicyAuthorityUnchanged, bw as newExtensionPolicyDraftIdentity, bx as extensionPolicyDraftIsDirty, by as setLocalPermissionDraftStates, bz as buildExtensionPolicyDraftMutation, bA as fetchEffectiveExtensionControls, bB as previewExtensionMutation, bC as isCurrentExtensionPolicyDraft, bD as applyExtensionMutation, bE as fetchExtensionControlHistory, j as jsxRuntimeExports, I as HiMiniSparkles, s as HiMiniCheckCircle, bF as HiMiniNoSymbol, az as HiMiniLockClosed, T as HiMiniExclamationTriangle, aH as isApprovalProofSubmitDisabled, J as HiMiniXMark, aG as ApprovalProofFieldInputs, bG as useResolvedApprovalGate, aF as HiMiniArrowPath, y as HiMiniShieldCheck, bH as HiMiniInformationCircle, aI as buildApprovalProofCredentials, bI as GenIcon, U as HiMiniBolt, bJ as HiMiniGlobeAlt, bK as HiMiniCube, N as HiMiniCloud, bL as HiMiniServerStack, b as HiMiniCommandLine, bM as HiMiniFolder, bN as FaWindows, bO as FaAws, c as HiMiniChevronRight, L as HiMiniChevronDown, bP as approvalProofRecentlySatisfied, bQ as isBulkApproveGateReady, bR as HiMiniArrowLeft, bS as HiMiniPlus, bT as startGuardCloudConnect, bU as HiMiniArrowTopRightOnSquare, bV as fetchExtensionControlApi, aq as HiMiniClipboardDocumentCheck, ar as HiMiniClipboard, at as ApprovalProofModal, bW as fetchExtensionDiscoveryApi, bX as HiMiniArrowRight, bY as HiMiniClock, d as createCommandActivityClient, f as fetchCommandActivityApi, b3 as guardAwareHref, b1 as HiMiniMagnifyingGlass, aB as HiMiniAdjustmentsHorizontal, bZ as HiMiniCheck, b_ as HiMiniFunnel, b0 as WorkspacePageHeader, b$ as acknowledgeDegradedExtensionControlAuthority, c0 as recoverExtensionControlAuthority } from "../guard-dashboard.js";
+import { bk as fetchLocalCliApi, r as reactExports, bl as fetchExtensionCatalog, bm as normalizeExtensionCatalogSummary, bn as normalizeExtensionPermission, bo as ExtensionControlProtocolError, bp as ExtensionControlApiError, bq as normalizeExtensionCatalogItem, br as guardApiCacheScope, bs as fetchExtensionCatalogV2Api, bt as localPermissionDraftState, bu as setLocalPermissionDraftState, bv as extensionPolicyAuthorityUnchanged, bw as newExtensionPolicyDraftIdentity, bx as extensionPolicyDraftIsDirty, by as setLocalPermissionDraftStates, bz as buildExtensionPolicyDraftMutation, bA as fetchEffectiveExtensionControls, bB as previewExtensionMutation, bC as isCurrentExtensionPolicyDraft, bD as applyExtensionMutation, bE as fetchExtensionControlHistory, j as jsxRuntimeExports, I as HiMiniSparkles, s as HiMiniCheckCircle, bF as HiMiniNoSymbol, az as HiMiniLockClosed, T as HiMiniExclamationTriangle, aH as isApprovalProofSubmitDisabled, J as HiMiniXMark, aG as ApprovalProofFieldInputs, bG as useResolvedApprovalGate, aF as HiMiniArrowPath, y as HiMiniShieldCheck, bH as HiMiniInformationCircle, aI as buildApprovalProofCredentials, bI as approvalProofRecentlySatisfied, b1 as HiMiniMagnifyingGlass, c as HiMiniChevronRight, bJ as GenIcon, U as HiMiniBolt, bK as HiMiniGlobeAlt, bL as HiMiniCube, N as HiMiniCloud, bM as HiMiniServerStack, b as HiMiniCommandLine, bN as HiMiniFolder, bO as FaWindows, bP as FaAws, L as HiMiniChevronDown, bQ as isBulkApproveGateReady, bR as HiMiniArrowLeft, bS as HiMiniPlus, bT as startGuardCloudConnect, bU as HiMiniArrowTopRightOnSquare, bV as fetchExtensionControlApi, aq as HiMiniClipboardDocumentCheck, ar as HiMiniClipboard, at as ApprovalProofModal, bW as fetchExtensionDiscoveryApi, bX as HiMiniArrowRight, bY as HiMiniClock, d as createCommandActivityClient, f as fetchCommandActivityApi, b3 as guardAwareHref, aB as HiMiniAdjustmentsHorizontal, bZ as HiMiniCheck, b_ as HiMiniFunnel, b0 as WorkspacePageHeader, b$ as acknowledgeDegradedExtensionControlAuthority, c0 as recoverExtensionControlAuthority } from "../guard-dashboard.js";
 import { u as useConfirmDialog } from "./confirm-dialog.js";
 const EXTENSION_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const RULE_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
@@ -758,14 +758,14 @@ function keepsPackageScriptCatalog(query, commands) {
   if (looksLikeProjectRelocatePaste(trimmed)) return false;
   if (looksLikePackageScriptPaste(trimmed)) return true;
   const needle = packageScriptFilterNeedle(trimmed) || trimmed.toLowerCase();
-  return commands.some((command) => commandMatchesQuery(command, needle));
+  return commands.some((command) => commandMatchesQuery$1(command, needle));
 }
 function filterPackageScriptCommands(commands, query) {
   const needle = packageScriptFilterNeedle(query);
   if (!needle) return [...commands];
-  return commands.filter((command) => commandMatchesQuery(command, needle));
+  return commands.filter((command) => commandMatchesQuery$1(command, needle));
 }
-function commandMatchesQuery(command, needle) {
+function commandMatchesQuery$1(command, needle) {
   const haystacks = [command.name, command.usage, command.description];
   if (haystacks.some((value) => value.toLowerCase().includes(needle))) return true;
   return colonPartsMatch(command.name, needle);
@@ -845,7 +845,7 @@ function suggestionMatchesQuery(item, needle) {
     return true;
   }
   if (item.surface !== "package-scripts") return false;
-  return item.commands.some((command) => commandMatchesQuery(command, compact));
+  return item.commands.some((command) => commandMatchesQuery$1(command, compact));
 }
 async function readJson(response) {
   const payload = await response.json().catch(() => null);
@@ -2367,6 +2367,312 @@ function ExtensionPolicyPanel(props) {
     ) : null
   ] });
 }
+function mcpToolCanReceiveDirectAllow(command) {
+  if (command.command_id === "other") return false;
+  const name = command.usage.split("__").at(-1)?.toLowerCase();
+  return !name?.startsWith("composio_") || ["composio_search_tools", "composio_get_tool_schemas"].includes(name);
+}
+function mcpCatalogCopy(item) {
+  if (item.surface !== "mcp") return null;
+  const catalog = item.mcp_catalog;
+  if (!catalog) return {
+    title: "Inventory not checked",
+    description: "Guard knows observed tools from this connector. Its full inventory has not been verified."
+  };
+  const count = `${catalog.known_count} ${catalog.known_count === 1 ? "tool" : "tools"}`;
+  if (catalog.complete && catalog.fresh_until && Date.parse(catalog.fresh_until) <= Date.now()) return {
+    title: `${count} cached · Refresh available`,
+    description: "This inventory's freshness window ended. Existing choices are kept; list tools again to check for changes."
+  };
+  if (catalog.complete) return {
+    title: `${count} listed`,
+    description: "Discovery finished. Permission choices apply separately to each tool."
+  };
+  if (catalog.reason === "catalog_changed") return {
+    title: "Inventory changed during discovery",
+    description: "Guard kept your choices. List tools again to review a consistent inventory."
+  };
+  if (catalog.reason === "refresh_failed" || catalog.reason === "list_failed") return {
+    title: catalog.stale ? `${count} cached · Refresh failed` : "Discovery did not finish",
+    description: catalog.known_count > 0 ? "Known tools and choices are still available. Retry discovery to check the current inventory." : "Guard could not finish listing tools. Retry discovery to check this connector."
+  };
+  return {
+    title: `${count} known · Inventory incomplete`,
+    description: "Discovery reached a limit or returned an incomplete inventory. Unknown tools still need review."
+  };
+}
+function rebaseCommandDraft(current, previous, next, changedToolNames = []) {
+  const changed = new Set(changedToolNames);
+  const previousStates = new Map(previous.map((command) => [command.command_id, command.state]));
+  const edits = new Map(current.filter((command) => previousStates.has(command.command_id) && command.state !== previousStates.get(command.command_id)).map((command) => [command.command_id, command.state]));
+  return next.map((command) => edits.has(command.command_id) && !(edits.get(command.command_id) === "allow" && (changed.has(command.command_id) || changed.has(command.usage))) ? { ...command, state: edits.get(command.command_id) } : command);
+}
+function commandPermissionChanges(previous, next) {
+  const states = new Map(previous.map((command) => [command.command_id, command.state]));
+  return next.filter((command) => command.state !== states.get(command.command_id)).map((command) => ({
+    commandId: command.command_id,
+    name: command.name,
+    before: states.get(command.command_id) ?? null,
+    after: command.state
+  }));
+}
+const words = (code) => code.replaceAll("-", " ");
+const explanations = {
+  "reviewed-provider-mapping:v1": "Reviewed provider contract",
+  "schema:content-fields": "Schema accepts content",
+  "schema:credential-fields": "Schema accepts credentials",
+  "schema:destination-fields": "Schema accepts a recipient or endpoint",
+  "schema:execution-fields": "Schema accepts executable content",
+  "provider-annotations:unverified": "Provider behavior claims, not verified by Guard"
+};
+function McpClassificationEvidence({ value }) {
+  if (!value) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("summary", { className: "min-h-11 cursor-pointer py-3 font-semibold", children: [
+      value.effect === "unknown" ? "Effect not resolved" : `Suggested effect: ${words(value.effect)}`,
+      " · View evidence"
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("dl", { className: "grid gap-x-4 gap-y-2 sm:grid-cols-2", children: [
+      ["Effect", value.effect],
+      ["Data", value.data],
+      ["Destination", value.destination],
+      ["Reversibility", value.reversibility]
+    ].map(([label, content]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("dt", { className: "font-semibold", children: label }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("dd", { children: words(content) })
+    ] }, label)) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-3", children: [
+      "Evidence quality: ",
+      value.confidence === "reviewed-mapping" ? "reviewed contract" : "limited",
+      ". These suggestions do not verify behavior, account, or permission."
+    ] }),
+    value.evidence.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 list-disc pl-5", children: value.evidence.map((code) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: explanations[code] ?? "Unrecognized evidence" }, code)) }) : null,
+    value.warnings.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 font-semibold", children: value.warnings.map(words).join(" · ") }) : null
+  ] });
+}
+const COLLAPSE_GROUPS_AT = 30;
+const STATE_RANK = { block: 0, review: 1, allow: 2, inherit: 3 };
+const SPECIAL_COMMAND_IDS = /* @__PURE__ */ new Set(["root", "other"]);
+function commandMatchesQuery(command, query) {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = `${command.name}
+${command.usage}
+${command.description}`.toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+function commandChanged(command, saved) {
+  return (saved.get(command.command_id) ?? "inherit") !== command.state;
+}
+function savedStateMap(saved) {
+  return new Map(saved.map((command) => [command.command_id, command.state]));
+}
+function commandMatchesFilter(command, filter, saved) {
+  if (filter === "all") return true;
+  if (filter === "changed") return commandChanged(command, saved);
+  return command.state === filter;
+}
+function stateFilterCounts(commands, saved) {
+  const counts = { all: commands.length, changed: 0, inherit: 0, allow: 0, review: 0, block: 0 };
+  for (const command of commands) {
+    counts[command.state] += 1;
+    if (commandChanged(command, saved)) counts.changed += 1;
+  }
+  return counts;
+}
+function sortCommands(commands, sort) {
+  if (sort === "catalog") return [...commands];
+  const byName = (left, right) => left.name.localeCompare(right.name, void 0, { numeric: true, sensitivity: "base" });
+  if (sort === "name") return [...commands].sort(byName);
+  return [...commands].sort((left, right) => STATE_RANK[left.state] - STATE_RANK[right.state] || byName(left, right));
+}
+function commandGroupKey(command, surface) {
+  if (SPECIAL_COMMAND_IDS.has(command.command_id) || surface === "mcp") return `id:${command.command_id}`;
+  if (surface === "package-scripts") {
+    const colon = command.name.indexOf(":");
+    return `name:${colon > 0 ? command.name.slice(0, colon) : command.name}`;
+  }
+  return `id:${command.parent_id ? command.parent_id.split(".")[0] : command.command_id}`;
+}
+function groupCommands(commands, surface) {
+  const groups = /* @__PURE__ */ new Map();
+  const names = new Map(commands.map((command) => [command.command_id, command.name]));
+  for (const command of commands) {
+    const key = commandGroupKey(command, surface);
+    let group = groups.get(key);
+    if (!group) {
+      const raw = key.slice(key.indexOf(":") + 1);
+      group = { key, label: key.startsWith("name:") ? raw : names.get(raw) ?? raw, commands: [] };
+      groups.set(key, group);
+    }
+    group.commands.push(command);
+  }
+  return [...groups.values()];
+}
+function commandNamePrefix(name, groupLabel) {
+  return name.startsWith(`${groupLabel}:`) ? `${groupLabel}:` : "";
+}
+function groupStateSummary(commands) {
+  const counts = stateFilterCounts(commands, /* @__PURE__ */ new Map());
+  const parts = [
+    counts.allow > 0 ? `${counts.allow} allowed` : "",
+    counts.review > 0 ? `${counts.review} ask` : "",
+    counts.block > 0 ? `${counts.block} blocked` : ""
+  ].filter(Boolean);
+  if (parts.length === 0) return "All Recommended";
+  if (counts.inherit > 0) parts.push(`${counts.inherit} Recommended`);
+  return parts.join(" · ");
+}
+function commandRowUsageFor(command, surface) {
+  const usage = command.usage.trim();
+  if (usage === "" || usage === command.name) return null;
+  if (surface === "package-scripts" && usage.endsWith(` ${command.name}`)) return null;
+  return usage;
+}
+function commandDescriptionIsCode(command, surface) {
+  return surface === "package-scripts" && !SPECIAL_COMMAND_IDS.has(command.command_id);
+}
+function commandStatesPayload(commands) {
+  return commands.map((command) => ({ command_id: command.command_id, state: command.state }));
+}
+function withCommandState(commands, commandId, state) {
+  return commands.map((command) => command.command_id === commandId ? { ...command, state } : command);
+}
+function commandNestingDepth(command) {
+  if (command.parent_id) return command.parent_id.split(".").filter(Boolean).length;
+  const colons = command.name.split(":").length - 1;
+  return colons > 0 ? colons : 0;
+}
+function CustomExtensionCommandList(props) {
+  if (props.commands.length === 0) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm leading-6 text-brand-dark/75", children: emptyCommandCopy(props.surface) });
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "divide-y divide-slate-200", children: props.commands.map((command) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+    CustomExtensionCommandRow,
+    {
+      command,
+      disabled: props.disabled,
+      surface: props.surface,
+      onChange: props.onChange
+    },
+    command.command_id
+  )) });
+}
+function emptyCommandCopy(surface) {
+  if (surface === "mcp") {
+    return "Guard has not loaded tools for this MCP server yet. Find the server again to list its tools.";
+  }
+  if (surface === "package-scripts") {
+    return "Guard has not loaded scripts from package.json yet. Paste npm run, a project folder, or package.json.";
+  }
+  return "Guard has not loaded commands for this tool yet. Find the tool again to read its --help output.";
+}
+function CustomExtensionCommandRow(props) {
+  const handleChange = reactExports.useCallback((state) => {
+    props.onChange(props.command.command_id, state);
+  }, [props]);
+  const depth = props.groupLabel === void 0 ? commandNestingDepth(props.command) : 0;
+  const prefix = props.groupLabel === void 0 ? "" : commandNamePrefix(props.command.name, props.groupLabel);
+  const usage = commandRowUsageFor(props.command, props.surface);
+  const descriptionIsCode = commandDescriptionIsCode(props.command, props.surface);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "article",
+    {
+      className: "guard-pattern-row px-4 py-3",
+      "data-command-id": props.command.command_id,
+      "data-changed": props.changed ? "true" : void 0,
+      style: depth > 0 ? { paddingLeft: `${1.25 + depth * 1.1}rem` } : void 0,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 pr-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("h3", { className: "min-w-0 break-words text-sm font-semibold text-brand-dark", children: [
+              prefix ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-medium text-brand-dark/55", children: prefix }) : null,
+              props.command.name.slice(prefix.length)
+            ] }),
+            props.changed ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "inline-flex items-center gap-1 text-xs font-semibold text-brand-blue", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "size-1.5 rounded-full bg-brand-blue", "aria-hidden": "true" }),
+              "Unsaved"
+            ] }) : null
+          ] }),
+          usage ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "guard-pattern-example mt-1 truncate", title: props.command.usage, children: usage }) : null,
+          props.command.description ? descriptionIsCode ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "guard-pattern-example mt-1 truncate", title: props.command.description, children: props.command.description }) : /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-xs leading-5 text-brand-dark/70", children: props.command.description }) : null,
+          /* @__PURE__ */ jsxRuntimeExports.jsx(McpClassificationEvidence, { value: props.command.classification }),
+          props.surface === "mcp" && !mcpToolCanReceiveDirectAllow(props.command) ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1.5 text-xs leading-5 text-brand-dark/75", children: props.command.command_id === "other" ? "New tools require review. You can deny tools outside this inventory." : "Review the actions and account inside this tool. A wrapper permission cannot allow execution." }) : null
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          CommandDraftControl,
+          {
+            label: props.command.name,
+            state: props.command.state,
+            disabled: props.disabled,
+            mcpPolicy: props.surface === "mcp",
+            allowDisabled: props.surface === "mcp" && !mcpToolCanReceiveDirectAllow(props.command),
+            onChange: handleChange
+          }
+        )
+      ]
+    }
+  );
+}
+function CommandDraftControl(props) {
+  const choices = [
+    { value: "inherit", label: props.mcpPolicy ? "Policy" : "Recommended" },
+    { value: "allow", label: "Allow", disabled: props.allowDisabled },
+    ...props.mcpPolicy ? [{ value: "review", label: "Ask" }] : [],
+    { value: "block", label: props.mcpPolicy ? "Deny" : "Block" }
+  ];
+  const tabStopIndex = extensionPolicyRadioTabStop(choices, props.state, props.disabled);
+  const chooseAdjacent = (event, index) => {
+    const next = nextExtensionPolicyRadioIndex(choices, index, event.key, props.disabled);
+    if (next < 0) return;
+    event.preventDefault();
+    props.onChange(choices[next].value);
+    event.currentTarget.parentElement?.querySelectorAll('[role="radio"]')[next]?.focus();
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      role: "radiogroup",
+      "aria-label": `${props.label} protection setting`,
+      className: props.mcpPolicy ? "guard-segmented !grid grid-cols-2 sm:!flex [&_[role=radio]]:!min-h-11" : "guard-segmented",
+      children: choices.map((choice, index) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+        CommandChoiceButton,
+        {
+          choice,
+          checked: props.state === choice.value,
+          tabIndex: !props.disabled && index === tabStopIndex ? 0 : -1,
+          disabled: props.disabled || choice.disabled === true,
+          index,
+          onChoose: props.onChange,
+          onAdjacent: chooseAdjacent
+        },
+        choice.value
+      ))
+    }
+  );
+}
+function CommandChoiceButton(props) {
+  const handleClick = reactExports.useCallback(() => {
+    props.onChoose(props.choice.value);
+  }, [props]);
+  const handleKeyDown = reactExports.useCallback((event) => {
+    props.onAdjacent(event, props.index);
+  }, [props]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "button",
+    {
+      type: "button",
+      role: "radio",
+      "aria-checked": props.checked,
+      tabIndex: props.tabIndex,
+      disabled: props.disabled,
+      onKeyDown: handleKeyDown,
+      onClick: handleClick,
+      className: "disabled:cursor-not-allowed disabled:opacity-45",
+      children: props.choice.label
+    }
+  );
+}
 function enrollableCount(item) {
   return Math.max(enrollablePackageScriptCommands(item.commands).length, 0);
 }
@@ -2691,221 +2997,526 @@ function BulkPolicyChoice(props) {
     }
   );
 }
-function mcpToolCanReceiveDirectAllow(command) {
-  if (command.command_id === "other") return false;
-  const name = command.usage.split("__").at(-1)?.toLowerCase();
-  return !name?.startsWith("composio_") || ["composio_search_tools", "composio_get_tool_schemas"].includes(name);
-}
-function mcpCatalogCopy(item) {
-  if (item.surface !== "mcp") return null;
-  const catalog = item.mcp_catalog;
-  if (!catalog) return {
-    title: "Inventory not checked",
-    description: "Guard knows observed tools from this connector. Its full inventory has not been verified."
-  };
-  const count = `${catalog.known_count} ${catalog.known_count === 1 ? "tool" : "tools"}`;
-  if (catalog.complete && catalog.fresh_until && Date.parse(catalog.fresh_until) <= Date.now()) return {
-    title: `${count} cached · Refresh available`,
-    description: "This inventory's freshness window ended. Existing choices are kept; list tools again to check for changes."
-  };
-  if (catalog.complete) return {
-    title: `${count} listed`,
-    description: "Discovery finished. Permission choices apply separately to each tool."
-  };
-  if (catalog.reason === "catalog_changed") return {
-    title: "Inventory changed during discovery",
-    description: "Guard kept your choices. List tools again to review a consistent inventory."
-  };
-  if (catalog.reason === "refresh_failed" || catalog.reason === "list_failed") return {
-    title: catalog.stale ? `${count} cached · Refresh failed` : "Discovery did not finish",
-    description: catalog.known_count > 0 ? "Known tools and choices are still available. Retry discovery to check the current inventory." : "Guard could not finish listing tools. Retry discovery to check this connector."
-  };
-  return {
-    title: `${count} known · Inventory incomplete`,
-    description: "Discovery reached a limit or returned an incomplete inventory. Unknown tools still need review."
-  };
-}
-function rebaseCommandDraft(current, previous, next, changedToolNames = []) {
-  const changed = new Set(changedToolNames);
-  const previousStates = new Map(previous.map((command) => [command.command_id, command.state]));
-  const edits = new Map(current.filter((command) => previousStates.has(command.command_id) && command.state !== previousStates.get(command.command_id)).map((command) => [command.command_id, command.state]));
-  return next.map((command) => edits.has(command.command_id) && !(edits.get(command.command_id) === "allow" && (changed.has(command.command_id) || changed.has(command.usage))) ? { ...command, state: edits.get(command.command_id) } : command);
-}
-function commandPermissionChanges(previous, next) {
-  const states = new Map(previous.map((command) => [command.command_id, command.state]));
-  return next.filter((command) => command.state !== states.get(command.command_id)).map((command) => ({
-    commandId: command.command_id,
-    name: command.name,
-    before: states.get(command.command_id) ?? null,
-    after: command.state
-  }));
-}
-const words = (code) => code.replaceAll("-", " ");
-const explanations = {
-  "reviewed-provider-mapping:v1": "Reviewed provider contract",
-  "schema:content-fields": "Schema accepts content",
-  "schema:credential-fields": "Schema accepts credentials",
-  "schema:destination-fields": "Schema accepts a recipient or endpoint",
-  "schema:execution-fields": "Schema accepts executable content",
-  "provider-annotations:unverified": "Provider behavior claims, not verified by Guard"
-};
-function McpClassificationEvidence({ value }) {
-  if (!value) return null;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("summary", { className: "min-h-11 cursor-pointer py-3 font-semibold", children: [
-      value.effect === "unknown" ? "Effect not resolved" : `Suggested effect: ${words(value.effect)}`,
-      " · View evidence"
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("dl", { className: "grid gap-x-4 gap-y-2 sm:grid-cols-2", children: [
-      ["Effect", value.effect],
-      ["Data", value.data],
-      ["Destination", value.destination],
-      ["Reversibility", value.reversibility]
-    ].map(([label, content]) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("dt", { className: "font-semibold", children: label }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("dd", { children: words(content) })
-    ] }, label)) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-3", children: [
-      "Evidence quality: ",
-      value.confidence === "reviewed-mapping" ? "reviewed contract" : "limited",
-      ". These suggestions do not verify behavior, account, or permission."
-    ] }),
-    value.evidence.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 list-disc pl-5", children: value.evidence.map((code) => /* @__PURE__ */ jsxRuntimeExports.jsx("li", { children: explanations[code] ?? "Unrecognized evidence" }, code)) }) : null,
-    value.warnings.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 font-semibold", children: value.warnings.map(words).join(" · ") }) : null
-  ] });
-}
-function commandStatesPayload(commands) {
-  return commands.map((command) => ({ command_id: command.command_id, state: command.state }));
-}
-function withCommandState(commands, commandId, state) {
-  return commands.map((command) => command.command_id === commandId ? { ...command, state } : command);
-}
-function commandNestingDepth(command) {
-  if (command.parent_id) return command.parent_id.split(".").filter(Boolean).length;
-  const colons = command.name.split(":").length - 1;
-  return colons > 0 ? colons : 0;
-}
-function commandRowUsage(name, usage) {
-  const trimmed = usage.trim();
-  if (trimmed === "" || trimmed === name) return null;
-  return trimmed;
-}
-function CustomExtensionCommandList(props) {
-  if (props.commands.length === 0) {
-    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm leading-6 text-brand-dark/75", children: emptyCommandCopy(props.surface) });
+function customExtensionContinuityView(state) {
+  const privacyDisclosure = "Guard Cloud receives stable identity and compatibility metadata, not local source paths.";
+  switch (state) {
+    case "local-only":
+      return {
+        state,
+        title: "Available on this device",
+        description: "This custom protection remains local until portable continuity is enabled.",
+        canApplyAcrossDevices: false,
+        privacyDisclosure
+      };
+    case "identity-matched":
+      return {
+        state,
+        title: "Matched on another device",
+        description: "Guard matched the stable identity. Each device still uses its own verified definition.",
+        canApplyAcrossDevices: true,
+        privacyDisclosure
+      };
+    case "portable":
+      return {
+        state,
+        title: "Portable continuity enabled",
+        description: "A verified portable definition is available to compatible devices.",
+        canApplyAcrossDevices: true,
+        privacyDisclosure
+      };
+    case "incompatible":
+      return {
+        state,
+        title: "Needs a compatible definition",
+        description: "This device cannot apply the shared custom protection safely.",
+        canApplyAcrossDevices: false,
+        privacyDisclosure
+      };
+    case "pending-observation":
+      return {
+        state,
+        title: "Waiting for this device",
+        description: "Cloud settings stay pending until Guard observes the same extension identity locally.",
+        canApplyAcrossDevices: false,
+        privacyDisclosure
+      };
+    case "changed-identity":
+      return {
+        state,
+        title: "Identity changed",
+        description: "Guard refused the Cloud settings because this device observed a different identity.",
+        canApplyAcrossDevices: false,
+        privacyDisclosure
+      };
+    case "locally-overridden":
+      return {
+        state,
+        title: "Changed on this device",
+        description: "Guard kept this device's local setting until a newer Cloud revision is available.",
+        canApplyAcrossDevices: false,
+        privacyDisclosure
+      };
+    case "removed":
+      return {
+        state,
+        title: "Removed on this device",
+        description: "The local setting was removed. Guard did not delete the script, executable, or MCP configuration.",
+        canApplyAcrossDevices: false,
+        privacyDisclosure
+      };
+    case "stale":
+      return {
+        state,
+        title: "Cloud observation is stale",
+        description: "Guard kept the last-known-good local setting and did not apply expired Cloud state.",
+        canApplyAcrossDevices: false,
+        privacyDisclosure
+      };
   }
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "divide-y divide-slate-200", children: props.commands.map((command) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-    CustomExtensionCommandRow,
-    {
-      command,
-      disabled: props.disabled,
-      surface: props.surface,
-      onChange: props.onChange
-    },
-    command.command_id
-  )) });
 }
-function emptyCommandCopy(surface) {
+function customExtensionActionLabel(item) {
+  if (item.seeded === true) return `Set up ${item.display_name ?? item.name}`;
+  if (item.state !== "unset" || item.surface !== "cli" || !item.suggestable) return null;
+  return hasSuggestedRules(item) ? "Review suggested rules" : "Review and add";
+}
+const SUGGESTED_RULES_NOTICE = "Suggested rules are pre-selected for commands you have not set yet. Nothing changes until you review and confirm.";
+function randomToken$2() {
+  return crypto.randomUUID().replaceAll("-", "");
+}
+function customExtensionRowDescription(item, catalogTitle) {
+  if (item.seeded === true) return `${item.display_name ?? item.name} is not set up yet. Set it up to review its commands.`;
+  if (catalogTitle) return [item.source_label, catalogTitle].filter(Boolean).join(" · ");
+  if (item.source_label) return `${item.example_label} · ${item.source_label}`;
+  return item.example_label;
+}
+function nativePublicationMessage(publication, permissionScope) {
+  if (permissionScope === "configured-connection") {
+    return publication?.state === "failed" ? "Your choices are stored, but policy publication failed. Guard has not confirmed enforcement for this connection." : "Your choices are stored for this configured connection. Native host-hook calls use separately observed tool permissions until Guard verifies a binding to this connection.";
+  }
+  if (publication?.state === "acknowledged") {
+    return `Native policy acknowledged saved revision ${publication.revision}. Live calls still check host namespace and tool authority.`;
+  }
+  if (publication?.state === "pending") {
+    return "Your choices are stored. Waiting for the native runtime to acknowledge this revision before showing them as enforced.";
+  }
+  if (publication?.state === "failed") {
+    return "Your choices are stored, but native publication failed. Enforcement readiness is not confirmed.";
+  }
+  return "Your choices are stored. Native enforcement readiness has not been confirmed.";
+}
+function mcpPermissionStatusLabel(publication, permissionScope) {
+  if (permissionScope === "configured-connection") return "Connection choices stored · host binding unverified";
+  if (publication?.state === "acknowledged") return "Tool permissions saved and acknowledged";
+  if (publication?.state === "pending") return "Waiting for policy confirmation";
+  return "Policy confirmation unavailable";
+}
+function detailPolicyCopy(surface) {
   if (surface === "mcp") {
-    return "Guard has not loaded tools for this MCP server yet. Find the server again to list its tools.";
+    return "Ask requires approval. Allow and Deny apply within the scope shown in Connection details. Allow does not override stricter Guard policy, so protected MCP actions may still need fresh approval. Execution wrappers require review of their underlying actions.";
   }
   if (surface === "package-scripts") {
-    return "Guard has not loaded scripts from package.json yet. Paste npm run, a project folder, or package.json.";
+    return "Recommended keeps Guard's usual review. Allow or block applies to that npm, pnpm, yarn, or bun script in this project. Nested names such as guard:audit stay grouped.";
   }
-  return "Guard has not loaded commands for this tool yet. Find the tool again to read its --help output.";
+  return "Recommended keeps Guard's usual review. Allow or block applies to that command from this file. Pipes, wrappers, and destructive commands stay under Guard's usual rules.";
 }
-function CustomExtensionCommandRow(props) {
-  const handleChange = reactExports.useCallback((state) => {
-    props.onChange(props.command.command_id, state);
-  }, [props]);
-  const depth = commandNestingDepth(props.command);
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "article",
-    {
-      className: "guard-pattern-row px-4 py-3.5",
-      "data-command-id": props.command.command_id,
-      style: depth > 0 ? { paddingLeft: `${1.25 + depth * 1.1}rem` } : void 0,
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 pr-3", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-sm font-semibold text-brand-dark", children: props.command.name }),
-          commandRowUsage(props.command.name, props.command.usage) ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "guard-pattern-example mt-1", title: props.command.usage, children: props.command.usage }) : null,
-          props.command.description ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1.5 text-xs leading-5 text-brand-dark/70", children: props.command.description }) : null,
-          /* @__PURE__ */ jsxRuntimeExports.jsx(McpClassificationEvidence, { value: props.command.classification }),
-          props.surface === "mcp" && !mcpToolCanReceiveDirectAllow(props.command) ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1.5 text-xs leading-5 text-brand-dark/75", children: props.command.command_id === "other" ? "New tools require review. You can deny tools outside this inventory." : "Review the actions and account inside this tool. A wrapper permission cannot allow execution." }) : null
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          CommandDraftControl,
-          {
-            label: props.command.name,
-            state: props.command.state,
-            disabled: props.disabled,
-            mcpPolicy: props.surface === "mcp",
-            allowDisabled: props.surface === "mcp" && !mcpToolCanReceiveDirectAllow(props.command),
-            onChange: handleChange
-          }
-        )
-      ]
-    }
-  );
+function detailCatalogHeading(surface) {
+  if (surface === "mcp") return "MCP tools";
+  if (surface === "package-scripts") return "Package scripts";
+  return "Command patterns";
 }
-function CommandDraftControl(props) {
-  const choices = [
-    { value: "inherit", label: props.mcpPolicy ? "Policy" : "Recommended" },
-    { value: "allow", label: "Allow", disabled: props.allowDisabled },
-    ...props.mcpPolicy ? [{ value: "review", label: "Ask" }] : [],
-    { value: "block", label: props.mcpPolicy ? "Deny" : "Block" }
-  ];
-  const tabStopIndex = extensionPolicyRadioTabStop(choices, props.state, props.disabled);
-  const chooseAdjacent = (event, index) => {
-    const next = nextExtensionPolicyRadioIndex(choices, index, event.key, props.disabled);
-    if (next < 0) return;
-    event.preventDefault();
-    props.onChange(choices[next].value);
-    event.currentTarget.parentElement?.querySelectorAll('[role="radio"]')[next]?.focus();
+function detailCatalogHelper(surface) {
+  if (surface === "mcp") {
+    return "Choose Allow, Ask, or Deny for each tool. Policy follows Guard's existing rules.";
+  }
+  if (surface === "package-scripts") {
+    return "Recommended keeps Guard's usual review. Allow or Block applies to that script in this project. Scripts that share a prefix, such as build:web, sit together.";
+  }
+  return "Recommended keeps Guard's usual review. Allow or Block applies to that command from this file. Pipes, wrappers, and destructive commands stay under Guard's usual rules.";
+}
+function commandBrowserCopy(surface) {
+  if (surface === "mcp") {
+    return {
+      searchLabel: "Find a tool",
+      searchPlaceholder: "Find a tool by name or description",
+      catalogOrder: "Server order",
+      units: "tools",
+      unit: (count) => count === 1 ? "tool" : "tools"
+    };
+  }
+  if (surface === "package-scripts") {
+    return {
+      searchLabel: "Find a script",
+      searchPlaceholder: "Find a script by name or what it runs",
+      catalogOrder: "package.json order",
+      units: "scripts",
+      unit: (count) => count === 1 ? "script" : "scripts"
+    };
+  }
+  return {
+    searchLabel: "Find a command",
+    searchPlaceholder: "Find a command by name or usage",
+    catalogOrder: "Help order",
+    units: "commands",
+    unit: (count) => count === 1 ? "command" : "commands"
   };
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(
-    "div",
-    {
-      role: "radiogroup",
-      "aria-label": `${props.label} protection setting`,
-      className: props.mcpPolicy ? "guard-segmented !grid grid-cols-2 sm:!flex [&_[role=radio]]:!min-h-11" : "guard-segmented",
-      children: choices.map((choice, index) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-        CommandChoiceButton,
-        {
-          choice,
-          checked: props.state === choice.value,
-          tabIndex: !props.disabled && index === tabStopIndex ? 0 : -1,
-          disabled: props.disabled || choice.disabled === true,
-          index,
-          onChoose: props.onChange,
-          onAdjacent: chooseAdjacent
-        },
-        choice.value
-      ))
-    }
-  );
 }
-function CommandChoiceButton(props) {
-  const handleClick = reactExports.useCallback(() => {
-    props.onChoose(props.choice.value);
-  }, [props]);
-  const handleKeyDown = reactExports.useCallback((event) => {
-    props.onAdjacent(event, props.index);
-  }, [props]);
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+function bulkPolicyCopy(surface) {
+  if (surface === "mcp") {
+    return {
+      groupLabel: "Listed tools with direct permissions",
+      mixedCopy: "Custom mix. Use policy, allow, ask, or deny the listed tools with direct permissions."
+    };
+  }
+  if (surface === "package-scripts") {
+    return {
+      groupLabel: "All scripts protection setting",
+      mixedCopy: "Custom mix. Pick Recommended, Allow all, or Block all to reset every script."
+    };
+  }
+  return {
+    groupLabel: "All commands protection setting",
+    mixedCopy: "Custom mix. Pick Recommended, Allow all, or Block all to reset every command."
+  };
+}
+function reviewTitle(name, state) {
+  if (state === "allowed") return `Save ${name} command settings`;
+  if (state === "blocked") return `Block ${name}`;
+  return `Remove ${name}`;
+}
+function reviewModalDetail(gate) {
+  if (approvalProofRecentlySatisfied(gate)) {
+    return "Recently confirmed with your authenticator. A new code is not needed yet.";
+  }
+  if (gate?.totp_enabled === true) {
+    return "Enter the current authenticator code to save these settings on this device.";
+  }
+  return "This custom Extension remains local to this device until portable continuity is enabled.";
+}
+function customExtensionUnits(surface) {
+  if (surface === "mcp") return { unit: "tool", units: "tools", source: "this server" };
+  if (surface === "package-scripts") return { unit: "script", units: "scripts", source: "this project" };
+  return { unit: "command", units: "commands", source: "this file" };
+}
+function customExtensionStateLabel(item) {
+  if (item.seeded === true) return "Not set up yet. Guard keeps its usual review until you add it.";
+  if (item.state === "unset" && item.surface === "cli" && item.suggestable) {
+    return hasSuggestedRules(item) ? "Guard detected this tool. Review suggested rules before adding it." : "Guard detected this tool. Review it before adding it.";
+  }
+  const { unit, units, source } = customExtensionUnits(item.surface);
+  if (item.stale) {
+    if (item.surface === "mcp") return "This connection changed. Review its permissions again.";
+    return item.surface === "package-scripts" ? "package.json scripts changed. Review the extension again." : "This file changed. Review the extension again.";
+  }
+  if (item.state === "blocked") return `Every ${unit} from ${source} is blocked.`;
+  if (item.state === "allowed") {
+    if (item.surface === "mcp") {
+      const tools = item.commands.filter((command) => command.command_id !== "other");
+      if (tools.length === 0) return "No tools allowed yet. List the inventory to choose permissions.";
+      const allowed2 = tools.filter((command) => command.state === "allow" && mcpToolCanReceiveDirectAllow(command)).length;
+      const denied = tools.filter((command) => command.state === "block").length;
+      const ask = tools.filter((command) => command.state === "review" || !mcpToolCanReceiveDirectAllow(command) && command.state !== "block").length;
+      return `${allowed2} allowed · ${ask} ask · ${denied} denied. New tools require review.`;
+    }
+    if (item.commands.length === 0) {
+      return `Matching ${units} from ${source} are allowed.`;
+    }
+    const allowed = item.commands.filter((command) => command.state === "allow").length;
+    if (allowed > 0) return `${allowed} ${allowed === 1 ? unit : units} allowed. The rest follow Recommended.`;
+    return `${units.charAt(0).toUpperCase()}${units.slice(1)} follow Recommended until you allow or block them.`;
+  }
+  return item.surface === "mcp" ? "Detected · Permissions not configured. Inspect this connection." : item.example_label;
+}
+function continuityCopy(item) {
+  const status = item.continuity?.status;
+  if (status === "applied") {
+    const view = customExtensionContinuityView("identity-matched");
+    return { title: view.title, description: view.description };
+  }
+  if (status === "pending_observation") return customExtensionContinuityView("pending-observation");
+  if (status === "changed_identity") return customExtensionContinuityView("changed-identity");
+  if (status === "locally_overridden") return customExtensionContinuityView("locally-overridden");
+  if (status === "removed") return customExtensionContinuityView("removed");
+  if (status === "stale") return customExtensionContinuityView("stale");
+  return null;
+}
+function CustomExtensionCommandBrowser(props) {
+  const copy = commandBrowserCopy(props.surface);
+  const searchId = reactExports.useId();
+  const [query, setQuery] = reactExports.useState("");
+  const [filter, setFilter] = reactExports.useState("all");
+  const [sort, setSort] = reactExports.useState("catalog");
+  const saved = reactExports.useMemo(() => savedStateMap(props.savedCommands), [props.savedCommands]);
+  const searched = reactExports.useMemo(
+    () => props.commands.filter((command) => commandMatchesQuery(command, query)),
+    [props.commands, query]
+  );
+  const counts = reactExports.useMemo(() => stateFilterCounts(searched, saved), [searched, saved]);
+  const viewKey = [query, filter, sort, props.commands.map((command) => command.command_id).join("\n")].join("\0");
+  const [frozen, setFrozen] = reactExports.useState({ key: viewKey, saved, commands: props.commands });
+  let viewBase = frozen;
+  if (frozen.key !== viewKey || frozen.saved !== saved) {
+    viewBase = { key: viewKey, saved, commands: props.commands };
+    setFrozen(viewBase);
+  }
+  const visible = reactExports.useMemo(() => {
+    const live = new Map(props.commands.map((command) => [command.command_id, command]));
+    return sortCommands(
+      viewBase.commands.filter((command) => commandMatchesQuery(command, query) && commandMatchesFilter(command, filter, saved)),
+      sort
+    ).flatMap((command) => live.get(command.command_id) ?? []);
+  }, [viewBase.commands, props.commands, query, filter, saved, sort]);
+  const groups = reactExports.useMemo(() => groupCommands(visible, props.surface), [visible, props.surface]);
+  const families = groups.filter((group) => group.commands.length > 1);
+  const narrowed = query.trim() !== "" || filter !== "all";
+  const familyKeys = reactExports.useMemo(
+    () => groupCommands(props.commands, props.surface).filter((group) => group.commands.length > 1).map((group) => group.key),
+    [props.commands, props.surface]
+  );
+  const longCatalog = props.commands.length > COLLAPSE_GROUPS_AT;
+  const [collapsed, setCollapsed] = reactExports.useState(() => new Set(longCatalog ? familyKeys : []));
+  const [knownFamilies, setKnownFamilies] = reactExports.useState(() => new Set(familyKeys));
+  const newFamilies = familyKeys.filter((key) => !knownFamilies.has(key));
+  if (newFamilies.length > 0) {
+    setKnownFamilies(/* @__PURE__ */ new Set([...knownFamilies, ...newFamilies]));
+    if (longCatalog) setCollapsed((current) => /* @__PURE__ */ new Set([...current, ...newFamilies]));
+  }
+  const anyCollapsed = !narrowed && families.some((group) => collapsed.has(group.key));
+  const bulkTargets = visible.filter(props.bulkEligible);
+  const toggleGroup = reactExports.useCallback((key) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }, []);
+  const toggleAll = reactExports.useCallback(() => {
+    setCollapsed(anyCollapsed ? /* @__PURE__ */ new Set() : new Set(families.map((group) => group.key)));
+  }, [anyCollapsed, families]);
+  const clearView = reactExports.useCallback(() => {
+    setQuery("");
+    setFilter("all");
+  }, []);
+  const applyToVisible = reactExports.useCallback((state) => {
+    props.onBulkChange(new Set(bulkTargets.map((command) => command.command_id)), state);
+  }, [bulkTargets, props]);
+  if (props.commands.length === 0) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-sm leading-6 text-brand-dark/75", children: emptyCommandCopy(props.surface) });
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-4", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "sticky top-0 z-10 -mx-1 bg-white px-1 pb-3 pt-2", "data-testid": "custom-extension-command-toolbar", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { htmlFor: searchId, className: "relative block min-w-0 flex-1 basis-56", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "sr-only", children: copy.searchLabel }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniMagnifyingGlass, { className: "pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-brand-dark/50", "aria-hidden": "true" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              id: searchId,
+              type: "search",
+              value: query,
+              placeholder: copy.searchPlaceholder,
+              onChange: (event) => setQuery(event.target.value),
+              className: "min-h-11 w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 text-sm text-brand-dark placeholder:text-brand-dark/50 focus-visible:border-brand-blue focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-blue"
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { className: "inline-flex min-h-11 items-center gap-2 text-sm text-brand-dark/70", children: [
+          "Sort",
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "select",
+            {
+              value: sort,
+              onChange: (event) => setSort(event.target.value),
+              className: "min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-brand-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-blue",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "catalog", children: copy.catalogOrder }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "name", children: "Name" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "state", children: "Setting" })
+              ]
+            }
+          )
+        ] }),
+        families.length > 0 && !narrowed ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            onClick: toggleAll,
+            className: "min-h-11 rounded-xl px-3 text-sm font-semibold text-brand-dark/80 hover:text-brand-dark",
+            children: anyCollapsed ? "Expand all" : "Collapse all"
+          }
+        ) : null
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(StateFilterChips, { surface: props.surface, filter, counts, onChange: setFilter })
+    ] }),
+    bulkTargets.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        BulkPolicyPicker,
+        {
+          value: bulkCommandState(bulkTargets),
+          disabled: props.disabled,
+          onChange: applyToVisible,
+          groupLabel: narrowed ? `${bulkTargets.length} matching ${copy.unit(bulkTargets.length)} protection setting` : props.bulkGroupLabel,
+          allowLabel: props.surface === "mcp" ? "Allow listed" : void 0,
+          blockLabel: props.surface === "mcp" ? "Deny listed" : void 0,
+          mcpPolicy: props.surface === "mcp",
+          mixedCopy: narrowed ? `Custom mix. Pick one setting for the ${bulkTargets.length} ${copy.unit(bulkTargets.length)} shown.` : props.bulkMixedCopy
+        }
+      ),
+      narrowed ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2 text-xs leading-5 text-brand-dark/75", "data-testid": "custom-extension-bulk-scope", children: [
+        "Applies to the ",
+        bulkTargets.length,
+        " ",
+        copy.unit(bulkTargets.length),
+        " shown. Hidden ",
+        copy.units,
+        " keep their setting."
+      ] }) : null
+    ] }) : null,
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "sr-only", role: "status", "aria-live": "polite", children: narrowed ? `${visible.length} of ${props.commands.length} ${copy.units} shown` : "" }),
+    visible.length === 0 && props.commands.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-brand-dark/75", children: [
+        "No ",
+        copy.units,
+        " match this view."
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          type: "button",
+          onClick: clearView,
+          className: "mt-2 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-brand-blue",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniXMark, { className: "size-4", "aria-hidden": "true" }),
+            "Clear search and filters"
+          ]
+        }
+      )
+    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-3", children: groups.map((group) => group.commands.length > 1 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+      CommandFamily,
+      {
+        group,
+        open: narrowed || !collapsed.has(group.key),
+        collapsible: !narrowed,
+        unitLabel: copy.unit,
+        surface: props.surface,
+        disabled: props.disabled,
+        saved,
+        bulkEligible: props.bulkEligible,
+        onToggle: toggleGroup,
+        onChange: props.onChange,
+        onBulkChange: props.onBulkChange
+      },
+      group.key
+    ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
+      CustomExtensionCommandRow,
+      {
+        command: group.commands[0],
+        disabled: props.disabled,
+        surface: props.surface,
+        changed: commandChanged(group.commands[0], saved),
+        onChange: props.onChange
+      },
+      group.key
+    )) })
+  ] });
+}
+const FILTER_ORDER = ["all", "allow", "review", "block", "inherit", "changed"];
+function StateFilterChips(props) {
+  const mcp = props.surface === "mcp";
+  const label = (value) => {
+    if (value === "all") return "All";
+    if (value === "allow") return "Allowed";
+    if (value === "review") return "Ask";
+    if (value === "block") return mcp ? "Denied" : "Blocked";
+    if (value === "inherit") return mcp ? "Policy" : "Recommended";
+    return "Unsaved";
+  };
+  const shown = FILTER_ORDER.filter((value) => value === "all" || value === props.filter || props.counts[value] > 0);
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { role: "group", "aria-label": "Show by setting", className: "mt-2 flex flex-wrap gap-1.5", children: shown.map((value) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "button",
     {
       type: "button",
-      role: "radio",
-      "aria-checked": props.checked,
-      tabIndex: props.tabIndex,
-      disabled: props.disabled,
-      onKeyDown: handleKeyDown,
-      onClick: handleClick,
-      className: "disabled:cursor-not-allowed disabled:opacity-45",
-      children: props.choice.label
-    }
-  );
+      "aria-pressed": props.filter === value,
+      onClick: () => props.onChange(value),
+      className: "inline-flex min-h-9 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-brand-dark/80 transition-colors hover:border-brand-blue/60 hover:text-brand-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue aria-pressed:border-brand-blue aria-pressed:bg-brand-blue/10 aria-pressed:text-brand-dark motion-reduce:transition-none",
+      children: [
+        label(value),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "tabular-nums font-medium text-brand-dark/55", children: props.counts[value] })
+      ]
+    },
+    value
+  )) });
+}
+function CommandFamily(props) {
+  const panelId = reactExports.useId();
+  const eligible = props.group.commands.filter(props.bulkEligible);
+  const unsaved = props.group.commands.filter((command) => commandChanged(command, props.saved)).length;
+  const handleToggle = reactExports.useCallback(() => props.onToggle(props.group.key), [props]);
+  const handleFamily = reactExports.useCallback((state) => {
+    props.onBulkChange(new Set(eligible.map((command) => command.command_id)), state);
+  }, [eligible, props]);
+  const count = props.group.commands.length;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { "aria-label": `${props.group.label} ${props.unitLabel(count)}`, className: "border-b border-slate-200 last:border-b-0", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-2 py-2.5 pl-1 pr-4 sm:flex-row sm:items-center sm:justify-between", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "button",
+        {
+          type: "button",
+          "aria-expanded": props.open,
+          "aria-controls": panelId,
+          disabled: !props.collapsible,
+          onClick: handleToggle,
+          className: "group flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 text-left disabled:cursor-default",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              HiMiniChevronRight,
+              {
+                className: `size-4 shrink-0 text-brand-dark/55 transition-transform duration-150 motion-reduce:transition-none ${props.open ? "rotate-90" : ""}`,
+                "aria-hidden": "true"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "min-w-0", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block truncate font-mono text-sm font-semibold text-brand-dark", children: props.group.label }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "block text-xs text-brand-dark/60", children: [
+                count,
+                " ",
+                props.unitLabel(count),
+                " · ",
+                groupStateSummary(props.group.commands),
+                unsaved > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-semibold text-brand-blue", children: [
+                  " · ",
+                  unsaved,
+                  " unsaved"
+                ] }) : null
+              ] })
+            ] })
+          ]
+        }
+      ),
+      eligible.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+        CommandDraftControl,
+        {
+          label: `${props.group.label} family`,
+          state: bulkCommandState(eligible),
+          disabled: props.disabled,
+          mcpPolicy: props.surface === "mcp",
+          onChange: handleFamily
+        }
+      ) : null
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { id: panelId, hidden: !props.open, className: "border-t border-slate-100 sm:pl-6 [&>article:last-child]:border-b-0", children: props.open ? props.group.commands.map((command) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+      CustomExtensionCommandRow,
+      {
+        command,
+        disabled: props.disabled,
+        surface: props.surface,
+        groupLabel: props.group.label,
+        changed: commandChanged(command, props.saved),
+        onChange: props.onChange
+      },
+      command.command_id
+    )) : null })
+  ] });
 }
 const object$2 = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const integer$1 = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -3678,83 +4289,6 @@ function TechnicalDetails(props) {
 function InlineError({ message }) {
   return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "alert", className: "rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800", children: message });
 }
-function customExtensionContinuityView(state) {
-  const privacyDisclosure = "Guard Cloud receives stable identity and compatibility metadata, not local source paths.";
-  switch (state) {
-    case "local-only":
-      return {
-        state,
-        title: "Available on this device",
-        description: "This custom protection remains local until portable continuity is enabled.",
-        canApplyAcrossDevices: false,
-        privacyDisclosure
-      };
-    case "identity-matched":
-      return {
-        state,
-        title: "Matched on another device",
-        description: "Guard matched the stable identity. Each device still uses its own verified definition.",
-        canApplyAcrossDevices: true,
-        privacyDisclosure
-      };
-    case "portable":
-      return {
-        state,
-        title: "Portable continuity enabled",
-        description: "A verified portable definition is available to compatible devices.",
-        canApplyAcrossDevices: true,
-        privacyDisclosure
-      };
-    case "incompatible":
-      return {
-        state,
-        title: "Needs a compatible definition",
-        description: "This device cannot apply the shared custom protection safely.",
-        canApplyAcrossDevices: false,
-        privacyDisclosure
-      };
-    case "pending-observation":
-      return {
-        state,
-        title: "Waiting for this device",
-        description: "Cloud settings stay pending until Guard observes the same extension identity locally.",
-        canApplyAcrossDevices: false,
-        privacyDisclosure
-      };
-    case "changed-identity":
-      return {
-        state,
-        title: "Identity changed",
-        description: "Guard refused the Cloud settings because this device observed a different identity.",
-        canApplyAcrossDevices: false,
-        privacyDisclosure
-      };
-    case "locally-overridden":
-      return {
-        state,
-        title: "Changed on this device",
-        description: "Guard kept this device's local setting until a newer Cloud revision is available.",
-        canApplyAcrossDevices: false,
-        privacyDisclosure
-      };
-    case "removed":
-      return {
-        state,
-        title: "Removed on this device",
-        description: "The local setting was removed. Guard did not delete the script, executable, or MCP configuration.",
-        canApplyAcrossDevices: false,
-        privacyDisclosure
-      };
-    case "stale":
-      return {
-        state,
-        title: "Cloud observation is stale",
-        description: "Guard kept the last-known-good local setting and did not apply expired Cloud state.",
-        canApplyAcrossDevices: false,
-        privacyDisclosure
-      };
-  }
-}
 function actionTitle(action) {
   const prefix = `${action.toolkit.toUpperCase()}_`;
   const name = action.tool_slug.startsWith(prefix) ? action.tool_slug.slice(prefix.length) : action.tool_slug;
@@ -4036,144 +4570,6 @@ function ProviderWorkflows({ cliId }) {
       ] }) : null
     ] }) : null
   ] });
-}
-function customExtensionActionLabel(item) {
-  if (item.seeded === true) return `Set up ${item.display_name ?? item.name}`;
-  if (item.state !== "unset" || item.surface !== "cli" || !item.suggestable) return null;
-  return hasSuggestedRules(item) ? "Review suggested rules" : "Review and add";
-}
-const SUGGESTED_RULES_NOTICE = "Suggested rules are pre-selected for commands you have not set yet. Nothing changes until you review and confirm.";
-function randomToken$2() {
-  return crypto.randomUUID().replaceAll("-", "");
-}
-function customExtensionRowDescription(item, catalogTitle) {
-  if (item.seeded === true) return `${item.display_name ?? item.name} is not set up yet. Set it up to review its commands.`;
-  if (catalogTitle) return [item.source_label, catalogTitle].filter(Boolean).join(" · ");
-  if (item.source_label) return `${item.example_label} · ${item.source_label}`;
-  return item.example_label;
-}
-function nativePublicationMessage(publication, permissionScope) {
-  if (permissionScope === "configured-connection") {
-    return publication?.state === "failed" ? "Your choices are stored, but policy publication failed. Guard has not confirmed enforcement for this connection." : "Your choices are stored for this configured connection. Native host-hook calls use separately observed tool permissions until Guard verifies a binding to this connection.";
-  }
-  if (publication?.state === "acknowledged") {
-    return `Native policy acknowledged saved revision ${publication.revision}. Live calls still check host namespace and tool authority.`;
-  }
-  if (publication?.state === "pending") {
-    return "Your choices are stored. Waiting for the native runtime to acknowledge this revision before showing them as enforced.";
-  }
-  if (publication?.state === "failed") {
-    return "Your choices are stored, but native publication failed. Enforcement readiness is not confirmed.";
-  }
-  return "Your choices are stored. Native enforcement readiness has not been confirmed.";
-}
-function mcpPermissionStatusLabel(publication, permissionScope) {
-  if (permissionScope === "configured-connection") return "Connection choices stored · host binding unverified";
-  if (publication?.state === "acknowledged") return "Tool permissions saved and acknowledged";
-  if (publication?.state === "pending") return "Waiting for policy confirmation";
-  return "Policy confirmation unavailable";
-}
-function detailPolicyCopy(surface) {
-  if (surface === "mcp") {
-    return "Ask requires approval. Allow and Deny apply within the scope shown in Connection details. Allow does not override stricter Guard policy, so protected MCP actions may still need fresh approval. Execution wrappers require review of their underlying actions.";
-  }
-  if (surface === "package-scripts") {
-    return "Recommended keeps Guard's usual review. Allow or block applies to that npm, pnpm, yarn, or bun script in this project. Nested names such as guard:audit stay grouped.";
-  }
-  return "Recommended keeps Guard's usual review. Allow or block applies to that command from this file. Pipes, wrappers, and destructive commands stay under Guard's usual rules.";
-}
-function detailCatalogHeading(surface) {
-  if (surface === "mcp") return "MCP tools";
-  if (surface === "package-scripts") return "Package scripts";
-  return "Command patterns";
-}
-function detailCatalogHelper(surface) {
-  if (surface === "mcp") {
-    return "Choose Allow, Ask, or Deny for each tool. Policy follows Guard's existing rules.";
-  }
-  if (surface === "package-scripts") {
-    return "Same settings as built-in tools. Nested scripts stay indented under their prefix.";
-  }
-  return "Same settings as built-in tools. Recommended is the safe default.";
-}
-function bulkPolicyCopy(surface) {
-  if (surface === "mcp") {
-    return {
-      groupLabel: "Listed tools with direct permissions",
-      mixedCopy: "Custom mix. Use policy, allow, ask, or deny the listed tools with direct permissions."
-    };
-  }
-  if (surface === "package-scripts") {
-    return {
-      groupLabel: "All scripts protection setting",
-      mixedCopy: "Custom mix. Pick Recommended, Allow all, or Block all to reset every script."
-    };
-  }
-  return {
-    groupLabel: "All commands protection setting",
-    mixedCopy: "Custom mix. Pick Recommended, Allow all, or Block all to reset every command."
-  };
-}
-function reviewTitle(name, state) {
-  if (state === "allowed") return `Save ${name} command settings`;
-  if (state === "blocked") return `Block ${name}`;
-  return `Remove ${name}`;
-}
-function reviewModalDetail(gate) {
-  if (approvalProofRecentlySatisfied(gate)) {
-    return "Recently confirmed with your authenticator. A new code is not needed yet.";
-  }
-  if (gate?.totp_enabled === true) {
-    return "Enter the current authenticator code to save these settings on this device.";
-  }
-  return "This custom Extension remains local to this device until portable continuity is enabled.";
-}
-function customExtensionUnits(surface) {
-  if (surface === "mcp") return { unit: "tool", units: "tools", source: "this server" };
-  if (surface === "package-scripts") return { unit: "script", units: "scripts", source: "this project" };
-  return { unit: "command", units: "commands", source: "this file" };
-}
-function customExtensionStateLabel(item) {
-  if (item.seeded === true) return "Not set up yet. Guard keeps its usual review until you add it.";
-  if (item.state === "unset" && item.surface === "cli" && item.suggestable) {
-    return hasSuggestedRules(item) ? "Guard detected this tool. Review suggested rules before adding it." : "Guard detected this tool. Review it before adding it.";
-  }
-  const { unit, units, source } = customExtensionUnits(item.surface);
-  if (item.stale) {
-    if (item.surface === "mcp") return "This connection changed. Review its permissions again.";
-    return item.surface === "package-scripts" ? "package.json scripts changed. Review the extension again." : "This file changed. Review the extension again.";
-  }
-  if (item.state === "blocked") return `Every ${unit} from ${source} is blocked.`;
-  if (item.state === "allowed") {
-    if (item.surface === "mcp") {
-      const tools = item.commands.filter((command) => command.command_id !== "other");
-      if (tools.length === 0) return "No tools allowed yet. List the inventory to choose permissions.";
-      const allowed2 = tools.filter((command) => command.state === "allow" && mcpToolCanReceiveDirectAllow(command)).length;
-      const denied = tools.filter((command) => command.state === "block").length;
-      const ask = tools.filter((command) => command.state === "review" || !mcpToolCanReceiveDirectAllow(command) && command.state !== "block").length;
-      return `${allowed2} allowed · ${ask} ask · ${denied} denied. New tools require review.`;
-    }
-    if (item.commands.length === 0) {
-      return `Matching ${units} from ${source} are allowed.`;
-    }
-    const allowed = item.commands.filter((command) => command.state === "allow").length;
-    if (allowed > 0) return `${allowed} ${allowed === 1 ? unit : units} allowed. The rest follow Recommended.`;
-    return `${units.charAt(0).toUpperCase()}${units.slice(1)} follow Recommended until you allow or block them.`;
-  }
-  return item.surface === "mcp" ? "Detected · Permissions not configured. Inspect this connection." : item.example_label;
-}
-function continuityCopy(item) {
-  const status = item.continuity?.status;
-  if (status === "applied") {
-    const view = customExtensionContinuityView("identity-matched");
-    return { title: view.title, description: view.description };
-  }
-  if (status === "pending_observation") return customExtensionContinuityView("pending-observation");
-  if (status === "changed_identity") return customExtensionContinuityView("changed-identity");
-  if (status === "locally_overridden") return customExtensionContinuityView("locally-overridden");
-  if (status === "removed") return customExtensionContinuityView("removed");
-  if (status === "stale") return customExtensionContinuityView("stale");
-  return null;
 }
 function CustomExtensionReviewModal(props) {
   const [password, setPassword] = reactExports.useState("");
@@ -5456,20 +5852,16 @@ function LocalCliDetail(props) {
   const handleCommandState = reactExports.useCallback((commandId, state) => {
     setCommands((current) => withCommandState(current, commandId, state));
   }, []);
-  const applyBulk = reactExports.useCallback((state) => {
-    setCommands((current) => {
-      let excluded = /* @__PURE__ */ new Set();
-      if (props.item.surface === "package-scripts") excluded = /* @__PURE__ */ new Set(["root", "other"]);
-      if (props.item.surface === "mcp") {
-        excluded = new Set(current.filter((command) => !mcpToolCanReceiveDirectAllow(command)).map((command) => command.command_id));
-      }
-      return applyBulkCommandState(current, state, excluded);
-    });
+  const bulkEligible = reactExports.useCallback((command) => {
+    if (props.item.surface === "package-scripts") return command.command_id !== "root" && command.command_id !== "other";
+    if (props.item.surface === "mcp") return mcpToolCanReceiveDirectAllow(command);
+    return true;
   }, [props.item.surface]);
-  let bulkTargets = commands;
-  if (props.item.surface === "package-scripts") bulkTargets = enrollablePackageScriptCommands(commands);
-  if (props.item.surface === "mcp") bulkTargets = commands.filter(mcpToolCanReceiveDirectAllow);
-  const bulkState = bulkCommandState(bulkTargets);
+  const applyBulk = reactExports.useCallback((commandIds, state) => {
+    setCommands((current) => current.map((command) => commandIds.has(command.command_id) && bulkEligible(command) ? { ...command, state } : command));
+  }, [bulkEligible]);
+  const resetCommands = reactExports.useCallback(() => setCommands(prefillSuggestedStates(props.item)), [props.item]);
+  const bulkTargetCount = commands.filter(bulkEligible).length;
   const bulkCopy = bulkPolicyCopy(props.item.surface);
   const continuity = customExtensionContinuityView("local-only");
   const catalog = mcpCatalogCopy(props.item);
@@ -5533,21 +5925,23 @@ function LocalCliDetail(props) {
       "Extensions"
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "mt-4 border-b border-slate-200 pb-6", children: [
-      props.item.surface !== "mcp" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "font-mono text-xs font-semibold tracking-[0.14em] text-slate-400", children: props.item.example_label }) : null,
-      /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "mt-2 text-2xl font-semibold tracking-tight text-brand-dark", children: customExtensionDisplayName(props.item) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { className: "text-2xl font-semibold tracking-tight text-brand-dark", children: customExtensionDisplayName(props.item) }),
       props.item.surface === "mcp" && props.item.source_label ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-sm text-slate-600", children: props.item.source_label }) : null,
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 max-w-2xl text-sm leading-6 text-slate-500", children: customExtensionStateLabel(props.item) }),
-      lastSeenCopy(props.item.last_seen_at) ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-xs leading-5 text-slate-500", children: lastSeenCopy(props.item.last_seen_at) }) : null,
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2 flex max-w-2xl flex-wrap items-center gap-x-2 gap-y-1 text-sm leading-6 text-slate-600", children: [
+        props.item.surface !== "mcp" ? /* @__PURE__ */ jsxRuntimeExports.jsx("code", { className: "rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-brand-dark", children: props.item.example_label }) : null,
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: customExtensionStateLabel(props.item) }),
+        lastSeenCopy(props.item.last_seen_at) ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-slate-500", children: lastSeenCopy(props.item.last_seen_at) }) : null
+      ] }),
       continuityCopy(props.item) ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-3 max-w-2xl rounded-xl border border-slate-200 bg-slate-50 p-3", "data-testid": "custom-extension-continuity", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: continuityCopy(props.item)?.title }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-slate-600", children: continuityCopy(props.item)?.description })
       ] }) : null,
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 max-w-2xl text-sm leading-6 text-brand-dark/75", children: detailPolicyCopy(props.item.surface) }),
+      props.item.surface === "mcp" || !(added || hasSuggestedRules(props.item)) ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 max-w-2xl text-sm leading-6 text-brand-dark/75", children: detailPolicyCopy(props.item.surface) }) : null,
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-5 flex flex-wrap gap-3", children: [
         added ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
           props.item.state === "allowed" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "inline-flex min-h-11 items-center rounded-xl bg-slate-100 px-4 text-sm font-semibold text-brand-dark", children: props.item.surface === "mcp" ? mcpPermissionStatusLabel(props.nativePublication, props.item.permission_scope) : "Allowed on this device" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "min-h-11 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white", onClick: requestAllow, children: props.item.surface === "mcp" ? "Enable tool permissions" : "Allow this extension's commands" }),
           props.item.state === "blocked" ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "inline-flex min-h-11 items-center rounded-xl bg-slate-100 px-4 text-sm font-semibold text-brand-dark", children: "Blocked" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark", onClick: requestBlock, children: "Block this extension" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "min-h-11 rounded-xl px-4 text-sm font-semibold text-brand-dark/80", onClick: requestRemove, children: "Remove custom extension" })
+          /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "min-h-11 rounded-xl px-4 text-sm font-semibold text-brand-dark/70 hover:text-brand-dark", onClick: requestRemove, children: "Remove custom extension" })
         ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "min-h-11 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white", onClick: requestAdd, children: "Add custom extension" }) }),
         canForgetLocalCli(props.item) && /* @__PURE__ */ jsxRuntimeExports.jsx(
           ForgetLocalCliButton,
@@ -5694,52 +6088,61 @@ function LocalCliDetail(props) {
         }
       ) : null
     ] }) : null,
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4", "aria-labelledby": "custom-extension-continuity-heading", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "custom-extension-continuity-heading", className: "text-sm font-semibold text-brand-dark", children: continuity.title }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-sm leading-6 text-brand-dark/75", children: props.continuity.summary || continuity.description }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-xs leading-5 text-brand-dark/60", children: continuity.privacyDisclosure })
-    ] }),
     added || hasSuggestedRules(props.item) ? /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-8", "aria-labelledby": "custom-extension-commands-heading", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "custom-extension-commands-heading", className: "text-lg font-semibold text-brand-dark", children: detailCatalogHeading(props.item.surface) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 max-w-2xl text-sm leading-6 text-slate-500", children: detailCatalogHelper(props.item.surface) }),
       commandsDirty && hasSuggestedRules(props.item) && !added ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "note", className: "mt-2 max-w-2xl text-sm leading-6 text-brand-dark/75", children: SUGGESTED_RULES_NOTICE }) : null,
-      bulkTargets.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-        BulkPolicyPicker,
-        {
-          value: bulkState,
-          disabled: busy,
-          onChange: applyBulk,
-          groupLabel: bulkCopy.groupLabel,
-          allowLabel: props.item.surface === "mcp" ? "Allow listed" : void 0,
-          blockLabel: props.item.surface === "mcp" ? "Deny listed" : void 0,
-          mcpPolicy: props.item.surface === "mcp",
-          mixedCopy: bulkCopy.mixedCopy
-        }
-      ) : null,
-      props.item.surface === "mcp" && bulkTargets.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: [
-        "Bulk choices apply to ",
-        bulkTargets.length,
-        " listed ",
-        bulkTargets.length === 1 ? "tool" : "tools",
-        " with direct permissions. Execution wrappers and unlisted tools keep their separate review settings."
-      ] }) : null,
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-        CustomExtensionCommandList,
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        CustomExtensionCommandBrowser,
         {
           commands,
-          disabled: busy,
+          savedCommands: props.item.commands,
           surface: props.item.surface,
-          onChange: handleCommandState
-        }
-      ) }),
-      commandsDirty ? /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", className: "mt-4 min-h-11 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white", onClick: requestSaveCommands, children: [
-        "Review ",
-        commandChanges.length,
-        " ",
-        props.item.surface === "mcp" ? "tool" : "command",
-        " changes"
-      ] }) : null
+          disabled: busy,
+          bulkEligible,
+          bulkGroupLabel: bulkCopy.groupLabel,
+          bulkMixedCopy: bulkCopy.mixedCopy,
+          onChange: handleCommandState,
+          onBulkChange: applyBulk
+        },
+        props.item.cli_id
+      ),
+      props.item.surface === "mcp" && bulkTargetCount > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: "Bulk choices apply to listed tools with direct permissions. Execution wrappers and unlisted tools keep their separate review settings." }) : null,
+      commandsDirty ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-review-bar", "data-testid": "custom-extension-review-bar", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm text-brand-dark", children: [
+          commandChanges.length,
+          " unsaved ",
+          props.item.surface === "mcp" ? "tool" : "command",
+          " ",
+          commandChanges.length === 1 ? "change" : "changes",
+          "."
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap gap-2", children: [
+          added ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              type: "button",
+              disabled: busy,
+              onClick: resetCommands,
+              className: "min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark",
+              children: "Reset changes"
+            }
+          ) : null,
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", disabled: busy, className: "min-h-11 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white", onClick: requestSaveCommands, children: [
+            "Review ",
+            commandChanges.length,
+            " ",
+            props.item.surface === "mcp" ? "tool" : "command",
+            " changes"
+          ] })
+        ] })
+      ] }) }) : null
     ] }) : null,
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-10 max-w-2xl border-t border-slate-200 pt-5", "aria-labelledby": "custom-extension-continuity-heading", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "custom-extension-continuity-heading", className: "text-sm font-semibold text-brand-dark", children: continuity.title }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-brand-dark/75", children: props.continuity.summary || continuity.description }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-xs leading-5 text-brand-dark/60", children: continuity.privacyDisclosure })
+    ] }),
     error && !pending ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx(InlineError, { message: error }) }) : null,
     pending ? /* @__PURE__ */ jsxRuntimeExports.jsx(
       CustomExtensionReviewModal,

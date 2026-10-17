@@ -8,7 +8,11 @@ use guard_contracts::{
 };
 use serde_json::Value;
 
-use super::{config_origins, push_once_state, ssh_config_runs_no_program, transport, Transport};
+use super::{
+    config_origins, directory_files, push_once_state, ssh_config_runs_no_program, transport,
+    Transport, SYSTEM_SSH_CONFIG, SYSTEM_SSH_CONFIG_DIR,
+};
+use crate::git_execution_safety_binary::{binary_path_is_trusted, which_for_cwd};
 
 fn git(repository: &Path, home: &Path, arguments: &[&str]) -> String {
     let mut command = Command::new("git");
@@ -129,12 +133,47 @@ impl Fixture {
         }
         trusted && answers
     }
+
+    /// Whether this host's own ssh can be bound: a trusted `ssh` on `PATH`
+    /// and system client configs that run no program. Elsewhere the state
+    /// must fail closed.
+    fn host_ssh_can_bind(&self) -> bool {
+        let request = self.request();
+        let ssh = which_for_cwd("ssh", &self.repository, &request.environment, &self.home)
+            .and_then(|path| std::fs::canonicalize(path).ok());
+        let trusted = ssh.as_deref().is_some_and(|path| {
+            binary_path_is_trusted(path, &self.repository, &self.home, &request.groups)
+        });
+        let mut files = vec![(SYSTEM_SSH_CONFIG.to_owned(), true)];
+        let directory = directory_files(SYSTEM_SSH_CONFIG_DIR);
+        files.extend(directory.iter().flatten().map(|path| (path.clone(), false)));
+        let running: Vec<String> = files
+            .into_iter()
+            // A config the binding cannot read refuses it as well.
+            .filter(|(path, include)| match std::fs::read(path) {
+                Ok(data) => !ssh_config_runs_no_program(&String::from_utf8_lossy(&data), *include),
+                Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+            })
+            .map(|(path, _)| path)
+            .collect();
+        // Printed on failure, so a host this cannot bind names its reason.
+        eprintln!(
+            "host ssh {ssh:?} trusted={trusted}; {SYSTEM_SSH_CONFIG_DIR} {directory:?}; \
+             configs that run a program or cannot be read: {running:?}"
+        );
+        let bindable = trusted && directory.is_some() && running.is_empty();
+        if !bindable {
+            eprintln!("SKIPPED: host ssh cannot be bound");
+            assert!(self.state().is_none());
+        }
+        bindable
+    }
 }
 
 #[test]
 fn a_self_hosted_ssh_origin_is_bound_to_what_the_push_reads() {
     let fixture = Fixture::new();
-    if !fixture.host_can_prove() {
+    if !fixture.host_can_prove() || !fixture.host_ssh_can_bind() {
         return;
     }
     let state = fixture.state().expect("a plain ssh push is bindable");
@@ -182,7 +221,7 @@ fn https_pins_the_transport_helper_git_runs() {
 #[test]
 fn every_change_to_what_the_push_sends_or_runs_moves_the_state() {
     let fixture = Fixture::new();
-    if !fixture.host_can_prove() {
+    if !fixture.host_can_prove() || !fixture.host_ssh_can_bind() {
         return;
     }
     let before = fixture.state().unwrap();
@@ -294,11 +333,19 @@ fn ssh_config_that_runs_a_program_fails_closed_even_when_quoted() {
         "Host *\n    PKCS11Provider /tmp/lib.so\n",
         "Host *\n    SecurityKeyProvider /tmp/sk.so\n",
         "\"Include\" ~/.ssh/extra\n",
+        "Host *\n    ForwardX11 yes\n",
+        "Host *\n    ForwardX11=yes\n",
     ] {
         assert!(!ssh_config_runs_no_program(text, false), "{text}");
     }
     assert!(ssh_config_runs_no_program(
         "Host git.example.invalid\n    Port 30009\n    User git\n",
+        false
+    ));
+    // XQuartz adds `XAuthLocation` to the system config; without X11
+    // forwarding ssh never runs it.
+    assert!(ssh_config_runs_no_program(
+        "Host *\n    XAuthLocation /opt/X11/bin/xauth\n    ForwardX11 no\n",
         false
     ));
     let system = "Include /etc/ssh/ssh_config.d/*.conf\nHost *\n    SendEnv LANG LC_*\n";

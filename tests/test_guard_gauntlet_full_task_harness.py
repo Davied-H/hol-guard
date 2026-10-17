@@ -17,7 +17,8 @@ from ci.gauntlet.full_tasks import (
     load_full_tasks,
     would_have_stopped,
 )
-from ci.gauntlet.harnesses import FULL_TASK_CLAUDE_TOOLS, adapter
+from ci.gauntlet.claude_tools import FULL_TASK_CLAUDE_TOOLS
+from ci.gauntlet.harnesses import adapter
 from tests.test_guard_gauntlet_full_tasks import _shell
 
 LOCAL = ("flappy-bird-game", "todo-app-local")

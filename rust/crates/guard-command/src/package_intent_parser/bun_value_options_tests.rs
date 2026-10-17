@@ -167,6 +167,9 @@ fn bun_cwd_lockfile_inside_the_workspace_is_the_one_that_is_hashed() {
     );
 }
 
+// Windows canonical paths carry `\\?\` and backslashes, which `--cwd`
+// resolution refuses, so the directory stays unresolved there.
+#[cfg(unix)]
 #[test]
 fn yarn_cwd_lockfile_is_read_from_that_directory() {
     let tree = TempTree::new();
