@@ -96,6 +96,11 @@ pub struct LocalCliHookRequestV1 {
     pub env: BTreeMap<String, String>,
     /// Action the grant would refine.
     pub current_action: String,
+    /// The reason code of `current_action`, when the caller has one. Only
+    /// `native_workspace_containment_executable_outside_roots` changes how a
+    /// review is refined; it is omitted from the digest material when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_reason_code: Option<String>,
     /// Whether grants may refine the action; observation runs either way.
     pub grant_allowed: bool,
 }

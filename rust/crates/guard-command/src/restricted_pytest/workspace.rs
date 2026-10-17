@@ -27,6 +27,8 @@ struct Input {
     /// The receipt runs the checks contained and the trailing Git steps after
     /// them, outside the sandbox, once Guard proves those steps again.
     publish_suffix: bool,
+    /// The local CLI grant that widens the plan to `workspace-contained-grant-v1`.
+    grant: Option<super::workspace_grant::GrantInput>,
 }
 
 fn invalid(message: &str) -> RestrictedPytestError {
@@ -145,7 +147,8 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         }
         linked => linked.map(|(common, admin)| json!({"common": common, "admin": admin})),
     };
-    Ok(json!({
+    let whole = runs_whole(&shape);
+    let mut plan = json!({
         "profile_version": WORKSPACE_PROFILE,
         "backend": backend,
         "backend_executable": backend_executable,
@@ -167,7 +170,41 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
             "network", "host-home-read", "host-secret-environment", "docker-socket",
             "workspace-credential-read", "git-execution-config-write", "privileged-operation"
         ],
-    }))
+        "grant_identity_hash": null,
+        "capabilities": [],
+    });
+    if let Some(grant) = &input.grant {
+        // A grant widens only a command that runs whole, from its first program.
+        let program = whole
+            .then(|| first_program(&text))
+            .flatten()
+            .ok_or_else(|| invalid("The granted command is not eligible for the sandbox."))?;
+        super::workspace_grant::widen(
+            &mut plan,
+            grant,
+            &program,
+            &input.search_path,
+            input.home.as_deref(),
+            &workspace,
+            &input.platform,
+        )?;
+    }
+    Ok(plan)
+}
+
+/// The program the command's first segment runs.
+fn first_program(text: &str) -> Option<String> {
+    parse_command(&CommandModelRequestV1 {
+        command: text.to_owned(),
+        dialect: "posix".into(),
+        transport: "shell_string".into(),
+        extraction_provenance: "pre-tool-generic".into(),
+    })
+    .ok()?
+    .segments
+    .into_iter()
+    .next()?
+    .executable
 }
 
 /// The scripts outside `workspace` that `text` runs and the sandbox may read,

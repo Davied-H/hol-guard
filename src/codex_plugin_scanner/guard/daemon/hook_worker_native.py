@@ -26,6 +26,7 @@ from ..runtime.structured_output_mediation import (
     resolve_managed_structured_output_resolution,
 )
 from .hook_availability_policy import availability_harness_response
+from .hook_contained_grant import granted_containment_response
 from .hook_fail_closed import render_pre_tool, render_recording_only_pre_tool
 from .hook_native_cli_observer import observe_native_pre_tool_cli
 from .hook_native_local_cli import native_local_cli_block_response
@@ -595,6 +596,18 @@ class HookWorkerNativeMixin:
                         ),
                         True,
                     )
+            contained = granted_containment_response(
+                self.store,
+                native_result,
+                harness=native_harness,
+                payload=payload,
+                guard_home=guard_home,
+                home_dir=home_dir,
+                workspace=workspace,
+                deadline=deadline,
+            )
+            if contained is not None:
+                return (_record_native_pre_activity(self, native_harness, payload, contained, accepted_receipt), True)
             action = str(native_result.get("minimum_action") or "")
             if action in _NATIVE_PRE_TOOL_APPROVAL_ACTIONS:
                 response = pause_native_pre_tool_for_approval(
