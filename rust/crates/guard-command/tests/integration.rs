@@ -126,6 +126,7 @@ pub mod pretool_omp_eval_read_helpers;
 pub mod pretool_omp_fp_proofs;
 pub mod pretool_omp_hashline_edits;
 pub mod pretool_omp_home_documents;
+pub mod pretool_omp_home_dotdir_listing;
 pub mod pretool_omp_project_dotfiles;
 pub mod pretool_omp_tmp_alias_reads;
 pub mod pretool_omp_tools;
