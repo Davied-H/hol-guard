@@ -96,6 +96,25 @@ impl CorrelationApi for NativeCorrelation {
             approval_reuse_status,
         )
     }
+
+    fn build_unpaired_post_evidence(
+        &self,
+        activity_id: &str,
+        occurred_at: &str,
+        harness: &str,
+        succeeded: bool,
+    ) -> Result<Map<String, Value>, io::Error> {
+        unpaired_post_evidence(activity_id, occurred_at, harness, succeeded)
+    }
+
+    fn build_correlated_post_activity(
+        &self,
+        previous: &Map<String, Value>,
+        request_correlation: &CorrelationHandle,
+        succeeded: bool,
+    ) -> Result<Map<String, Value>, io::Error> {
+        correlated_post_activity(previous, request_correlation, succeeded)
+    }
 }
 
 /// `build_policy_only_pre_hook_evidence` (`command_activity_lifecycle.py:88`)
@@ -183,6 +202,104 @@ pub(crate) fn policy_only_pre_hook_evidence(
     evidence.insert("activity".into(), Value::Object(activity));
     evidence.insert("matches".into(), Value::Array(Vec::new()));
     Ok(evidence)
+}
+
+/// `build_unpaired_post_evidence` (`command_activity_lifecycle.py:207`)
+/// serialized through `store_command_activity_wire.evidence_wire`.
+///
+/// A post event that found no stored pre-hook row describes the outcome and
+/// nothing else: no policy action, no rule, no correlation, no receipt. The
+/// contract reads that emptiness as the proof level `unpaired_post`, so the
+/// row can never be mistaken for a decision Guard made.
+pub(crate) fn unpaired_post_evidence(
+    activity_id: &str,
+    occurred_at: &str,
+    harness: &str,
+    succeeded: bool,
+) -> Result<Map<String, Value>, io::Error> {
+    require_opaque_id(activity_id, "activity_id")?;
+    let occurred_at = require_utc_datetime(occurred_at)?;
+    require_harness(harness)?;
+
+    let mut activity = Map::new();
+    activity.insert("activity_id".into(), activity_id.into());
+    activity.insert("occurred_at".into(), occurred_at.into());
+    activity.insert("harness".into(), harness.into());
+    activity.insert("hook_phase".into(), post_hook_phase(succeeded).into());
+    activity.insert("execution_status".into(), "unpaired_post".into());
+    activity.insert("proof_level".into(), "unpaired_post".into());
+    activity.insert("policy_action".into(), Value::Null);
+    activity.insert("decision_reason_code".into(), Value::Null);
+    activity.insert("controlling_rule_id".into(), Value::Null);
+    activity.insert("parse_confidence".into(), Value::Null);
+    activity.insert("uncertainty_class".into(), Value::Null);
+    activity.insert("match_count".into(), 0.into());
+    activity.insert("prompted".into(), 0.into());
+    activity.insert("approval_reuse_status".into(), NOT_APPLICABLE.into());
+    activity.insert("receipt_link_status".into(), RECEIPT_NOT_APPLICABLE.into());
+    activity.insert("receipt_id".into(), Value::Null);
+    activity.insert("evaluation_latency_bucket".into(), "not_measured".into());
+    activity.insert("persistence_latency_bucket".into(), "not_measured".into());
+    activity.insert("schema_version".into(), SCHEMA_VERSION.into());
+    activity.insert("request_correlation".into(), Value::Null);
+    activity.insert("session_correlation".into(), Value::Null);
+
+    let mut evidence = Map::new();
+    evidence.insert("activity".into(), Value::Object(activity));
+    evidence.insert("matches".into(), Value::Array(Vec::new()));
+    Ok(evidence)
+}
+
+/// `build_correlated_post_activity` (`command_activity_lifecycle.py:183`)
+/// over the `activity_wire` map the resident already exchanges.
+///
+/// Python promotes a frozen dataclass and compares two `CorrelationHandle`s
+/// for equality, so every field of the handle has to agree with the stored
+/// row's. The serialized handle carries those same four keys, which is why
+/// the comparison here is a whole-value one rather than a digest check.
+pub(crate) fn correlated_post_activity(
+    previous: &Map<String, Value>,
+    request_correlation: &CorrelationHandle,
+    succeeded: bool,
+) -> Result<Map<String, Value>, io::Error> {
+    if previous.get("execution_status").and_then(Value::as_str) != Some("allowed_unconfirmed") {
+        return Err(invalid(
+            "only allowed-unconfirmed activity can receive post-hook proof",
+        ));
+    }
+    let harness = previous
+        .get("harness")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let expected = require_request_correlation(request_correlation, harness)?;
+    if previous.get("request_correlation") != Some(&expected) {
+        return Err(invalid(
+            "post-hook proof requires the exact pre-hook request correlation",
+        ));
+    }
+
+    let mut current = previous.clone();
+    current.insert("hook_phase".into(), post_hook_phase(succeeded).into());
+    current.insert(
+        "execution_status".into(),
+        if succeeded {
+            "confirmed_success".into()
+        } else {
+            "confirmed_failure".into()
+        },
+    );
+    current.insert("proof_level".into(), "post_hook".into());
+    current.insert("persistence_latency_bucket".into(), "not_measured".into());
+    Ok(current)
+}
+
+/// `CommandHookPhase.POST_SUCCESS if succeeded else POST_FAILURE`.
+fn post_hook_phase(succeeded: bool) -> &'static str {
+    if succeeded {
+        "post_success"
+    } else {
+        "post_failure"
+    }
 }
 
 /// `handle_wire` plus `_require_optional_correlation(…, REQUEST, harness)`.

@@ -237,3 +237,120 @@ fn the_seam_renders_the_redacted_preview_of_the_checked_command() {
         Some("echo hi")
     );
 }
+
+#[test]
+fn an_unpaired_post_row_claims_no_decision_at_all() {
+    assert_eq!(
+        Value::Object(
+            unpaired_post_evidence("activity-2", "2026-10-17T20:00:00Z", "claude-code", true,)
+                .expect("evidence"),
+        ),
+        json!({
+            "activity": {
+                "activity_id": "activity-2",
+                "occurred_at": "2026-10-17T20:00:00+00:00",
+                "harness": "claude-code",
+                "hook_phase": "post_success",
+                "execution_status": "unpaired_post",
+                "proof_level": "unpaired_post",
+                "policy_action": null,
+                "decision_reason_code": null,
+                "controlling_rule_id": null,
+                "parse_confidence": null,
+                "uncertainty_class": null,
+                "match_count": 0,
+                "prompted": 0,
+                "approval_reuse_status": "not-applicable",
+                "receipt_link_status": "not_applicable",
+                "receipt_id": null,
+                "evaluation_latency_bucket": "not_measured",
+                "persistence_latency_bucket": "not_measured",
+                "schema_version": "1.0.0",
+                "request_correlation": null,
+                "session_correlation": null,
+            },
+            "matches": [],
+        }),
+    );
+}
+
+#[test]
+fn a_failed_command_names_the_post_failure_phase() {
+    let evidence = unpaired_post_evidence(
+        "activity-2",
+        "2026-10-17T20:00:00+00:00",
+        "claude-code",
+        false,
+    )
+    .expect("evidence");
+    let activity = evidence["activity"].as_object().expect("activity");
+    assert_eq!(activity["hook_phase"], json!("post_failure"));
+    assert_eq!(activity["execution_status"], json!("unpaired_post"));
+}
+
+#[test]
+fn an_unpaired_post_row_rejects_an_unregistered_harness() {
+    assert!(unpaired_post_evidence(
+        "activity-2",
+        "2026-10-17T20:00:00+00:00",
+        "Claude-Code",
+        true,
+    )
+    .is_err());
+}
+
+fn allowed_unconfirmed_parent() -> Map<String, Value> {
+    let evidence = policy_only_pre_hook_evidence(
+        "activity-1",
+        "2026-10-17T20:00:00+00:00",
+        "claude-code",
+        "allow",
+        Some(&handle("request", "claude-code")),
+        None,
+        false,
+        NOT_APPLICABLE,
+    )
+    .expect("evidence");
+    evidence["activity"].as_object().expect("activity").clone()
+}
+
+#[test]
+fn post_hook_proof_promotes_the_stored_row_in_place() {
+    let previous = allowed_unconfirmed_parent();
+    let current = correlated_post_activity(&previous, &handle("request", "claude-code"), true)
+        .expect("activity");
+    assert_eq!(current["hook_phase"], json!("post_success"));
+    assert_eq!(current["execution_status"], json!("confirmed_success"));
+    assert_eq!(current["proof_level"], json!("post_hook"));
+    assert_eq!(current["activity_id"], previous["activity_id"]);
+    assert_eq!(
+        current["request_correlation"],
+        previous["request_correlation"],
+    );
+}
+
+#[test]
+fn a_failed_command_confirms_the_failure() {
+    let current = correlated_post_activity(
+        &allowed_unconfirmed_parent(),
+        &handle("request", "claude-code"),
+        false,
+    )
+    .expect("activity");
+    assert_eq!(current["hook_phase"], json!("post_failure"));
+    assert_eq!(current["execution_status"], json!("confirmed_failure"));
+}
+
+#[test]
+fn a_different_request_handle_cannot_claim_the_stored_decision() {
+    let mut other = handle("request", "claude-code");
+    other.digest = DIGEST.replace('0', "1");
+    assert!(correlated_post_activity(&allowed_unconfirmed_parent(), &other, true).is_err());
+}
+
+#[test]
+fn only_an_allowed_unconfirmed_row_accepts_post_hook_proof() {
+    let mut previous = allowed_unconfirmed_parent();
+    previous.insert("execution_status".into(), "prevented".into());
+    assert!(correlated_post_activity(&previous, &handle("request", "claude-code"), true,).is_err());
+}
