@@ -440,9 +440,10 @@ def main(args: Any) -> int:
             "sha": sha,
             "candidate_sha": args.candidate_sha,
             "qualified": qualified,
-            # One lane of twelve. The rest carry the work a person actually does,
-            # so the record names them rather than letting `qualified` stand for them.
-            "coverage": lane_coverage(),
+            # One lane of eleven, and null when no attempt started. The rest carry
+            # the work a person actually does, so the record names them rather
+            # than letting `qualified` stand for them.
+            "coverage": lane_coverage(driven=bool(attempts)),
             "prepare_only": args.prepare_only,
             "candidate": str(candidate) if prepared and error is None and candidate is not None else None,
             "independent_verifier": info.get("independent_verifier"),

@@ -297,7 +297,13 @@ def test_qualifying_attempt_verifies_and_returns_zero(tmp_path: Path, monkeypatc
     result = json.loads((tmp_path / "run" / "qualification.json").read_text())
     assert result["qualified"] is True and result["independent_verifier"] is True
     assert set(result["phase_seconds"]) == {
-        "preflight", "source", "wheel", "install", "live_cases", "verify", "cleanup",
+        "preflight",
+        "source",
+        "wheel",
+        "install",
+        "live_cases",
+        "verify",
+        "cleanup",
     }
     assert all(seconds >= 0 for seconds in result["phase_seconds"].values())
     assert result["attempts"][0]["pass"] is True
@@ -305,6 +311,30 @@ def test_qualifying_attempt_verifies_and_returns_zero(tmp_path: Path, monkeypatc
     assert result["attempts"][0]["work_root"] == str((tmp_path / "w" / "1").resolve())
     assert not (tmp_path / "w" / "1").exists()
     assert result["attempts"][0]["work_root"] not in result["kept"]
+
+
+def test_a_driven_run_names_the_lane_it_drove(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cases = [{"id": "a", "outcome": "pass", "reason": "ok"}]
+    _fake_setup(monkeypatch, tmp_path, [_summary(cases, True)])
+    assert qualify.main(_args(tmp_path)) == 0
+    coverage = json.loads((tmp_path / "run" / "qualification.json").read_text())["coverage"]
+    assert coverage["driven"] == {"harness": "omp", "profile": "core"}
+    assert coverage["is_qualifying_lane"] is True
+    assert {"harness": "cursor", "profile": "full-tasks"} not in coverage["not_driven"]
+
+
+def test_a_preparation_only_run_drove_no_lane(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--prepare-only` installs the candidate and stops, so nothing ran."""
+    _fake_setup(monkeypatch, tmp_path, [])
+    assert qualify.main(_args(tmp_path, prepare_only=True)) == 0
+    result = json.loads((tmp_path / "run" / "qualification.json").read_text())
+    assert result["prepare_only"] is True and result["attempts"] == []
+    assert result["qualified"] is False
+    coverage = result["coverage"]
+    assert coverage["driven"] is None
+    assert coverage["is_qualifying_lane"] is False
+    assert coverage["lane"] == {"harness": "omp", "profile": "core"}
+    assert {"harness": "omp", "profile": "core"} in coverage["not_driven"]
 
 
 def test_retryable_outcomes_earn_one_fresh_attempt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
