@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 SAFE_ALTERNATIVE_GUIDANCE = (
     "This action remains blocked. Continue with a safe, permitted alternative that respects "
     "the same protection. Do not retry an equivalent command, bypass Guard, or seek permission "
@@ -42,17 +44,33 @@ _CONNECTOR_SETUP_WAIT = (
     "continue with other work meanwhile."
 )
 _CONNECTOR_SURFACE_LABELS = {"cli": "local CLI", "package-scripts": "package script", "mcp": "MCP server"}
+CONNECTOR_SETUP_REASON_PREFIX = "HOL Guard has not been set up for `"
 
 
-def connector_setup_reason(name: str, surface: str, *, ask: bool) -> str:
+def connector_setup_reason(name: str, surface: str, *, ask: bool, permitted: Sequence[str] = ()) -> str:
     """Agent text for a review held only because Guard was never set up for the connector.
 
-    The default mode adds ``SAFE_ALTERNATIVE_GUIDANCE`` and no link or request to
-    ask the user; ``ask`` mode says it waits in the inbox, and the caller adds the link.
+    The default mode adds the computed redirect (``permitted``: alternatives this
+    device already allows; none are named when there are none) and
+    ``SAFE_ALTERNATIVE_GUIDANCE``, with no link or request to ask the user; ``ask``
+    mode says it waits in the inbox, and the caller adds the link.
+    Mirrored byte-for-byte by `blocked_request_mode::connector_setup_reason` in Rust.
     """
     label = _CONNECTOR_SURFACE_LABELS.get(surface, surface)
-    reason = f"HOL Guard has not been set up for `{name}` ({label}) on this device."
-    return f"{reason} {_CONNECTOR_SETUP_WAIT if ask else SAFE_ALTERNATIVE_GUIDANCE}"
+    reason = f"{CONNECTOR_SETUP_REASON_PREFIX}{name}` ({label}) on this device."
+    if ask:
+        return f"{reason} {_CONNECTOR_SETUP_WAIT}"
+    names = ", ".join(f"`{item}`" for item in permitted if item)
+    redirect = f"Permitted on this device: {names}." if names else ""
+    return " ".join(part for part in (reason, redirect, SAFE_ALTERNATIVE_GUIDANCE) if part)
+
+
+def is_unlinked_connector_setup_reason(text: object) -> bool:
+    """Whether ``text`` carries a default-mode connector setup reason.
+
+    Harness renderers add no approval link and no approval step to it.
+    """
+    return isinstance(text, str) and CONNECTOR_SETUP_REASON_PREFIX in text and SAFE_ALTERNATIVE_GUIDANCE in text
 
 
 # Plain-language next steps keyed by the reason code Rust already returned.
