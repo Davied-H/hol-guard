@@ -140,6 +140,15 @@ fn collection_link_metadata(input: &Input) -> Result<Vec<PathBuf>, RestrictedPyt
 }
 
 fn macos_profile(input: &Input) -> Result<String, RestrictedPytestError> {
+    // Capabilities widen only the grant profile; on any other they are refused.
+    if !input.capabilities.is_empty()
+        && input.profile_version != super::workspace_grant::GRANT_PROFILE
+    {
+        return Err(RestrictedPytestError::new(
+            PYTEST_INVALID_COMMAND_REASON_CODE,
+            "Invalid restricted execution request.",
+        ));
+    }
     if input.profile_version == WORKSPACE_CONTAINED_PROFILE {
         return workspace_profile::compose(input, &existing(MAC_ROOTS), &existing(MAC_FILES));
     }
@@ -155,12 +164,6 @@ fn macos_profile(input: &Input) -> Result<String, RestrictedPytestError> {
             &existing(MAC_FILES),
             &rules,
         );
-    }
-    if !input.capabilities.is_empty() {
-        return Err(RestrictedPytestError::new(
-            PYTEST_INVALID_COMMAND_REASON_CODE,
-            "Invalid restricted execution request.",
-        ));
     }
     let mut files = existing(MAC_FILES);
     if matches!(

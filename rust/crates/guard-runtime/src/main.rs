@@ -177,6 +177,7 @@ mod consumer_url;
 mod contained_op;
 #[cfg(unix)]
 mod contained_workspace_grant_plan;
+#[cfg(unix)]
 mod contained_workspace_sink;
 mod content_sensitivity_op;
 mod context_digest;

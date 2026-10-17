@@ -97,8 +97,12 @@ impl<'a> Reach<'a> {
     /// leads to; the system's own links at the filesystem root, such as
     /// `/bin`, are passed over, and any other directory link refuses.
     fn open(&mut self, path: &Path, directory: bool) -> Option<()> {
-        let reachable = executable_roots(self.workspace, self.exec_roots.clone());
-        if path_is_within_any_lexically(path, &reachable) {
+        // Roots the grant opened are matched by name: resolving one would let
+        // an opened link stand for the file it leads to.
+        let reachable = executable_roots(self.workspace, Vec::new());
+        if path_is_within_any_lexically(path, &reachable)
+            || self.exec_roots.iter().any(|root| path.starts_with(root))
+        {
             return Some(());
         }
         if directory {
