@@ -22,6 +22,7 @@ pub(crate) const REGISTRY_SOURCE: &str = r"HKLM\Software\Policies\HOL\Guard";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RegistryRead {
     /// The key or the value is not there: no administrator configured one.
+    #[cfg_attr(not(windows), allow(dead_code))]
     Missing,
     /// The key is there and this account may not read it.
     #[cfg_attr(not(windows), allow(dead_code))]
