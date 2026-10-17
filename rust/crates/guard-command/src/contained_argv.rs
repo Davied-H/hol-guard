@@ -19,12 +19,26 @@ fn local_package_entry(argument: &str, package_entry: &str) -> bool {
         .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/'))
 }
 
+/// The program name; on Windows without `.exe`, as the pre-tool parser reads
+/// it, so `node.exe` and a resolved `C:\...\python.exe` plan like `node` and
+/// `python`.
 fn basename(command: &[String]) -> &str {
-    command
+    let name = command
         .first()
         .and_then(|v| Path::new(v).file_name())
         .and_then(|v| v.to_str())
-        .unwrap_or("")
+        .unwrap_or("");
+    match name.len().checked_sub(4) {
+        Some(stem)
+            if cfg!(windows)
+                && stem > 0
+                && name.is_char_boundary(stem)
+                && name[stem..].eq_ignore_ascii_case(".exe") =>
+        {
+            &name[..stem]
+        }
+        _ => name,
+    }
 }
 
 pub fn node_runtime_args(command: &[String]) -> Result<Vec<String>, RestrictedPytestError> {

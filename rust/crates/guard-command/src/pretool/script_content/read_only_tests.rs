@@ -162,7 +162,6 @@ fn windows_route_takes_only_read_only_workspace_scripts() {
         "python scripts/missing.py",
         "python ../report.py",
         "node scripts/report.mjs | head",
-        "node.exe scripts/report.mjs",
         "FOO=1 node scripts/report.mjs",
         "bash scripts/report.mjs",
     ] {

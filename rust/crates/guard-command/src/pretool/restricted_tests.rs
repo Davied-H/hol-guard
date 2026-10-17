@@ -270,12 +270,7 @@ pub(super) fn windows_script_reason(
     if !segment.environment_names.is_empty() || segment.pipeline_index != 0 {
         return None;
     }
-    let executable = segment.executable.as_deref()?;
-    // The sink plans the bare names `python` and `node`, not `node.exe`.
-    if executable.to_ascii_lowercase().ends_with(".exe") {
-        return None;
-    }
-    let name = crate::program_basename(executable).to_ascii_lowercase();
+    let name = crate::program_basename(segment.executable.as_deref()?).to_ascii_lowercase();
     let arguments = segment.arguments.as_slice();
     let (language, script, reason) = if python_runtime_name(&name) {
         let [script, ..] = python_after_isolation_flags(arguments)? else {
