@@ -55,8 +55,9 @@ fn sibling_list(
     Some((target, rest))
 }
 
-/// The repository root for `cd <absolute dir in a sibling repository> &&
-/// <one command>`, optionally ending in `2>&1` and `| tail -N`: a directory
+/// The repository root for `cd <dir in a sibling repository> && <one
+/// command>`, the directory spelled absolutely or from the home `~` the
+/// proof expands, optionally ending in `2>&1` and `| tail -N`: a directory
 /// below the root, such as a worktree package, or the root itself with an
 /// output filter. The sink peels the same shape and, holding a workspace
 /// receipt, runs the text as issued from that root, so the `cd` stays below
@@ -70,7 +71,12 @@ fn sibling_cd_root(model: &CanonicalCommandV1, context: PathContext<'_>) -> Opti
     let [spelled] = model.segments.first()?.arguments.as_slice() else {
         return None;
     };
-    if !Path::new(spelled).is_absolute() {
+    // An unquoted leading `~` is the one expansion the directory proof and the
+    // sink both resolve to the same home (`home_targets_unquoted`,
+    // `peel_contained_wrapper`), so a home-spelled target anchors the run as an
+    // absolute one does. `~+`, `~-` and `~N` name the directory stack, which no
+    // directory proof admits.
+    if !Path::new(spelled).is_absolute() && !spelled.starts_with("~/") {
         return None;
     }
     let sequenced =

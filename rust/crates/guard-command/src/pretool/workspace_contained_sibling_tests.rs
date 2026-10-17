@@ -263,6 +263,11 @@ fn one_command_below_a_sibling_root_runs_contained_from_that_root() {
             "cd {0}/web 2>/dev/null; {0}/web/node_modules/.bin/vite build",
             tree.display()
         ),
+        // Agents spell the same directory from home. The proof and the sink
+        // expand an unquoted leading `~` to the same root.
+        "cd ~/projects/app-report && ./tools/report 2>&1 | tail -15".to_owned(),
+        "cd ~/projects/app-report/scripts && ./report.sh 2>&1 | tail -15".to_owned(),
+        "cd ~/projects/app-report/web && ./node_modules/.bin/report build".to_owned(),
     ] {
         assert_eq!(
             contained(&reason("omp", &home, &main, &command)),
@@ -310,6 +315,14 @@ fn a_command_below_a_sibling_root_reaching_outside_it_keeps_its_review() {
             "cd {}/web; ./node_modules/.bin/report build ../other/package.json",
             tree.display()
         ),
+        // Only an unquoted leading `~` expands to home. A quoted one is a
+        // literal directory name, and `~+`, `~-` and `~N` name the stack.
+        "cd '~/projects/app-report/scripts' && ./report.sh 2>&1 | tail -15".to_owned(),
+        "cd ~+/projects/app-report/scripts && ./report.sh 2>&1 | tail -15".to_owned(),
+        "cd ~1/projects/app-report/scripts && ./report.sh 2>&1 | tail -15".to_owned(),
+        // Home itself is no sibling root, and neither is a plain directory.
+        "cd ~ && ./report.sh 2>&1 | tail -15".to_owned(),
+        "cd ~/projects/plain && npm run build 2>&1 | tail -15".to_owned(),
     ] {
         assert!(
             !contained(&reason("omp", &home, &main, &command)),
