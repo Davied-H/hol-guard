@@ -329,6 +329,7 @@ def _sent_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     features: tuple[str, ...],
+    execution_environment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     monkeypatch.setattr(
         "codex_plugin_scanner.guard.native_pretool.native_runtime_status",
@@ -354,6 +355,7 @@ def _sent_request(
             guard_home=tmp_path,
             cwd=tmp_path / "app-portal",
             home_dir=tmp_path,
+            execution_environment=execution_environment,
         )
     return sent
 
@@ -369,6 +371,58 @@ def test_pre_tool_request_carries_the_directories_the_command_runs_in(
     )
     assert sent["request"]["cwd"] == str(tmp_path / "app-portal")
     assert sent["request"]["home_dir"] == str(tmp_path)
+
+
+def test_the_request_carries_the_shell_the_command_will_run_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runtime cannot read the agent's shell, so the hook says what it is.
+
+    A resident daemon is started with its own sanitized environment, so the
+    variables it can read are not the ones the command inherits. Every rule
+    that proves an inherited variable away — a ``RIPGREP_CONFIG_PATH`` that
+    prepends options to ``rg``, an npm or rustup variable that moves what a
+    tool loads — is answered from this stamp or not at all.
+    """
+
+    stamp = {"path": "/usr/bin:/bin", "environment_names": ["PATH"], "environment_digest": "0" * 64}
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        (
+            "pre-tool-command-authority-v1",
+            "resident-protocol-v2",
+            "pre-tool-path-context-v1",
+            "pre-tool-execution-environment-v1",
+        ),
+        execution_environment=stamp,
+    )
+    assert sent["request"]["execution_environment"] == stamp
+
+
+def test_a_caller_that_cannot_name_the_shell_sends_no_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unstamped request leaves the environment proofs unproven.
+
+    The alternative is worse than a review: the runtime would answer them
+    from its own variables, and a shell that exports a search config would
+    have the command admitted because the daemon exports none.
+    """
+
+    sent = _sent_request(
+        tmp_path,
+        monkeypatch,
+        (
+            "pre-tool-command-authority-v1",
+            "resident-protocol-v2",
+            "pre-tool-path-context-v1",
+            "pre-tool-execution-environment-v1",
+        ),
+    )
+    assert "execution_environment" not in sent["request"]
 
 
 def test_a_runtime_without_the_feature_is_asked_the_question_it_understands(

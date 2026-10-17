@@ -56,6 +56,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         "rich-command-model-v1".into(),
         "pre-tool-command-authority-v1".into(),
         crate::oneshot::PRE_TOOL_PATH_CONTEXT_FEATURE.into(),
+        crate::oneshot::PRE_TOOL_EXECUTION_ENVIRONMENT_FEATURE.into(),
         "pre-tool-generic-authority-v1".into(),
         guard_contracts::NATIVE_COMMAND_PROGRAM_CAPABILITY.into(),
         guard_contracts::NATIVE_COMMAND_CONTROL_FENCE_CAPABILITY.into(),

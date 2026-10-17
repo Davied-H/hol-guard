@@ -628,8 +628,26 @@ pub fn evaluate_pre_tool_in(
     request: &CommandModelRequestV1,
     home_dir: Option<&str>,
     cwd: Option<&str>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> Result<PreToolDecisionV1, String> {
-    evaluate_pre_tool_with_context(request, home_dir, cwd)
+    // Several proofs answer for what the command inherits: whether a
+    // `RIPGREP_CONFIG_PATH` can prepend options to `rg`, whether an npm or
+    // rustup variable can move what a tool loads, which HOME a `~` expands
+    // from. A caller that answers for another process's shell — a resident
+    // runtime started with its own sanitized environment, a one-shot
+    // evaluation of a request — knows none of that from its own variables,
+    // so an unstamped request is told so rather than being answered from
+    // this process. An environment with no valid shape is how the contract
+    // spells that, and every rule that needs one of those proofs keeps its
+    // review.
+    let unknown = guard_contracts::GuardExecutionEnvironmentV1::unavailable();
+    evaluate_pre_tool_with_execution_context(
+        request,
+        home_dir,
+        cwd,
+        None,
+        Some(execution_environment.unwrap_or(&unknown)),
+    )
 }
 
 pub(super) fn evaluate_pre_tool_with_context(

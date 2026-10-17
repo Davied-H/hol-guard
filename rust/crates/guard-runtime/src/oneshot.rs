@@ -218,10 +218,12 @@ pub(crate) fn evaluate_pre_tool_value(value: &Value) -> Result<Value, String> {
         transport: transport.to_owned(),
         extraction_provenance: extraction_provenance.to_owned(),
     };
+    let execution_environment = stamped_environment(value.get("execution_environment"));
     let decision = evaluate_pre_tool_in(
         &request,
         mapping_string(value, "home_dir"),
         mapping_string(value, "cwd"),
+        execution_environment.as_ref(),
     )?;
     let request_id = mapping_string(value, "request_id");
     Ok(pre_tool_response(request_id, decision))
@@ -232,6 +234,11 @@ pub(crate) fn evaluate_pre_tool_value(value: &Value) -> Result<Value, String> {
 /// runtime would ignore the fields and answer every path rule as though the
 /// command ran nowhere.
 pub(crate) const PRE_TOOL_PATH_CONTEXT_FEATURE: &str = "pre-tool-path-context-v1";
+
+/// The feature that says this runtime reads a stamped execution environment
+/// on a pre-tool request. Without it the caller sends none, and the
+/// environment proofs are answered as unknown.
+pub(crate) const PRE_TOOL_EXECUTION_ENVIRONMENT_FEATURE: &str = "pre-tool-execution-environment-v1";
 
 /// A pre-tool request, with the directories the command runs in.
 ///
@@ -245,6 +252,27 @@ pub(crate) struct PreToolRequestV1 {
     pub(crate) cwd: Option<String>,
     #[serde(default)]
     pub(crate) home_dir: Option<String>,
+    /// What the command will inherit from the shell it runs in. The runtime
+    /// cannot read it: a resident daemon has its own sanitized environment,
+    /// and a one-shot evaluation runs beside the hook rather than inside the
+    /// agent's shell. Without it the environment proofs stay unproven.
+    #[serde(default)]
+    pub(crate) execution_environment: Option<Value>,
+}
+
+/// The stamped environment of a request that carries a well-formed one.
+///
+/// A stamp that does not parse is read as no stamp rather than as an error:
+/// what it can decide is which rules get to prove an inherited variable
+/// away, so a malformed one costs a command its allow and nothing more.
+/// Failing the request instead would turn a caller's bad field into a block.
+fn stamped_environment(
+    value: Option<&Value>,
+) -> Option<guard_contracts::GuardExecutionEnvironmentV1> {
+    match value {
+        None | Some(Value::Null) => None,
+        Some(stamped) => serde_json::from_value(stamped.clone()).ok(),
+    }
 }
 
 pub(crate) fn evaluate_pre_tool_request(request: &PreToolRequestV1) -> Result<Vec<u8>, String> {
@@ -252,6 +280,7 @@ pub(crate) fn evaluate_pre_tool_request(request: &PreToolRequestV1) -> Result<Ve
         &request.model,
         request.home_dir.as_deref(),
         request.cwd.as_deref(),
+        stamped_environment(request.execution_environment.as_ref()).as_ref(),
     )?;
     crate::encode_response(&pre_tool_response(None, decision))
 }

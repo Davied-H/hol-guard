@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 from .native_resident_client import native_resident_client_request
@@ -25,6 +26,7 @@ _MAX_REQUEST_BYTES = 64 * 1024
 _MAX_RESULT_TEXT = 2_048
 _PRETOOL_AUTHORITY_FEATURE = "pre-tool-command-authority-v1"
 _PRETOOL_PATH_CONTEXT_FEATURE = "pre-tool-path-context-v1"
+_PRETOOL_EXECUTION_ENVIRONMENT_FEATURE = "pre-tool-execution-environment-v1"
 _RESIDENT_PROTOCOL_FEATURE = "resident-protocol-v2"
 _PRETOOL_RESULT_KEYS = {
     "schema",
@@ -198,6 +200,7 @@ def review_pre_tool_native(
     guard_home: Path,
     cwd: Path | None,
     home_dir: Path | None,
+    execution_environment: Mapping[str, object] | None = None,
     timeout_seconds: float = 0.5,
     record_health: bool = True,
 ) -> dict[str, Any] | None:
@@ -210,6 +213,14 @@ def review_pre_tool_native(
     reads a path needs them to resolve ``../sibling`` and ``~/Code``, and
     refuses the command without them, so a caller that leaves them out gets a
     review for commands the enforced hook lane allows.
+
+    ``execution_environment`` is the stamp the outer hook bridge took in the
+    shell the command will run in. The rules that answer for an inherited
+    variable — a ``RIPGREP_CONFIG_PATH`` that prepends options to ``rg``, an
+    npm or rustup variable that moves what a tool loads — cannot be proven
+    without it, because neither this process nor the resident runtime is that
+    shell. A caller that cannot name the environment leaves it out and those
+    rules keep their review.
     """
     status = native_runtime_status()
     if (
@@ -237,9 +248,26 @@ def review_pre_tool_native(
             request["cwd"] = str(cwd)
         if home_dir is not None:
             request["home_dir"] = str(home_dir)
+    # Several rules answer for what the command inherits from the shell: a
+    # RIPGREP_CONFIG_PATH that prepends options to rg, an npm or rustup
+    # variable that moves what a tool loads, the HOME a tilde expands from.
+    # The runtime cannot read any of it: the resident daemon is started with
+    # its own sanitized environment. This process is the hook, running in the
+    # agent's shell, so it is the one that can say.
+    if _PRETOOL_EXECUTION_ENVIRONMENT_FEATURE in status.capabilities.features and isinstance(
+        execution_environment, Mapping
+    ):
+        request["execution_environment"] = dict(execution_environment)
     encoded = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     if len(encoded) > _MAX_REQUEST_BYTES:
-        return record_native_hook_result("native_fail_safe", None)
+        # A shell with many exported names can outgrow the request bound. The
+        # environment is the one part that only widens what may be allowed, so
+        # dropping it leaves every rule that needs it unproven rather than
+        # losing the decision altogether.
+        request.pop("execution_environment", None)
+        encoded = json.dumps(request, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        if len(encoded) > _MAX_REQUEST_BYTES:
+            return record_native_hook_result("native_fail_safe", None)
     environment = _isolated_environment()
     if _RESIDENT_PROTOCOL_FEATURE in status.capabilities.features:
         resident = json.dumps(
@@ -287,6 +315,7 @@ def native_pre_tool_policy_floor(
     guard_home: Path,
     cwd: Path | None,
     home_dir: Path | None,
+    execution_environment: Mapping[str, object] | None = None,
 ) -> str | None:
     """Return a native PreToolUse floor, or ``block`` when native is expected but absent."""
     native = review_pre_tool_native(
@@ -294,6 +323,7 @@ def native_pre_tool_policy_floor(
         guard_home=guard_home,
         cwd=cwd,
         home_dir=home_dir,
+        execution_environment=execution_environment,
     )
     if native is not None:
         action = native.get("minimum_action")
