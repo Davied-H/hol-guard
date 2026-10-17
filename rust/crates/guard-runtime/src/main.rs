@@ -408,6 +408,10 @@ mod hook_direct;
 mod hook_direct_counters;
 mod hook_direct_evidence;
 mod hook_env_stamp;
+// Wired into the evidence writer when the Python seams retire; the
+// readers are already exercised by their own tests.
+#[allow(dead_code)]
+mod hook_evidence_composio;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
