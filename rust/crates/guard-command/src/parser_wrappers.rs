@@ -229,7 +229,10 @@ const INLINE_SCRIPT_OPTIONS: &[&str] = &["-c", "-lc", "-cl"];
 /// script on stdin, a prefix or assignment in front of the shell, and a
 /// pipeline or redirect around it all keep their existing paths.
 pub(super) fn inline_shell_script(raw: &str) -> Option<String> {
-    if raw.len() > crate::MAX_COMMAND_BYTES || raw.contains(['$', '`', '\n', '\r']) {
+    if raw.len() > crate::MAX_COMMAND_BYTES
+        || raw.contains(['$', '`', '\n', '\r'])
+        || carries_unquoted_operator(raw)
+    {
         return None;
     }
     let tokens = crate::shell_tokens(raw, false).ok()?;
@@ -243,6 +246,30 @@ pub(super) fn inline_shell_script(raw: &str) -> Option<String> {
         return None;
     }
     Some(script.clone())
+}
+
+/// Whether an operator stands outside the quoting, where the shell reads it as
+/// its own word.
+///
+/// The tokenizer splits on whitespace alone, so `sh -c 'a; b'>out` comes back
+/// as three words with the redirect stuck to the script. The shell instead
+/// redirects the whole invocation, so the script is not the command this text
+/// runs and the invocation keeps its existing path.
+fn carries_unquoted_operator(raw: &str) -> bool {
+    let mut quote: Option<char> = None;
+    let mut characters = raw.chars();
+    while let Some(character) = characters.next() {
+        match (quote, character) {
+            (None, '\\') | (Some('"'), '\\') => {
+                characters.next();
+            }
+            (Some(open), closing) if closing == open => quote = None,
+            (None, '\'' | '"') => quote = Some(character),
+            (None, '<' | '>' | '|' | '&' | ';' | '(' | ')') => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -278,6 +305,25 @@ mod tests {
         for command in ["bash -s", "bash -e ./preflight.sh", "sh --", "bash .sh"] {
             assert_eq!(parse(command).confidence, "uncertain", "{command}");
         }
+    }
+
+    #[test]
+    fn an_operator_outside_the_script_keeps_the_wrapper_path() {
+        // The tokenizer splits on whitespace, so each of these comes back as
+        // three words with the operator stuck to the script. The shell reads
+        // the operator as its own word around the whole invocation.
+        for command in [
+            "sh -c 'gh pr view 12'>/tmp/out",
+            "sh -c 'gh pr view 12' 2>&1",
+            "sh -c 'gh pr view 12'|cat",
+            "sh -c 'gh pr view 12';rm -rf /tmp/x",
+        ] {
+            assert!(super::inline_shell_script(command).is_none(), "{command}");
+        }
+        assert_eq!(
+            super::inline_shell_script("sh -c 'gh pr view 12 > /tmp/out'").as_deref(),
+            Some("gh pr view 12 > /tmp/out"),
+        );
     }
 
     #[test]

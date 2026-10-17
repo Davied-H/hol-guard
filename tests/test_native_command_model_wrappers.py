@@ -137,6 +137,12 @@ def test_a_shell_carrying_its_whole_script_is_bound_to_that_script() -> None:
         "perl -e 'gh pr view 12'",
         "sh -x 'gh pr view 12'",
         "gh pr view 12 ; true",
+        # The tokenizer keeps an operator with the word beside it, while the
+        # shell reads it as its own word around the whole invocation.
+        "sh -c 'gh pr view 12'>/tmp/out",
+        "sh -c 'gh pr view 12' 2>&1",
+        "sh -c 'gh pr view 12'|cat",
+        "sh -c 'gh pr view 12';rm -rf /tmp/x",
     ],
 )
 def test_any_other_spelling_keeps_the_strict_request_binding(command: str) -> None:

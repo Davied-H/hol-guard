@@ -58,7 +58,7 @@ def inline_shell_script(command: str) -> str | None:
     more than its script, returns None and keeps the strict binding.
     """
 
-    if any(character in command for character in "$`\n\r"):
+    if any(character in command for character in "$`\n\r") or _unquoted_operator(command):
         return None
     try:
         tokens = shlex.split(command)
@@ -70,3 +70,29 @@ def inline_shell_script(command: str) -> str | None:
     if shell not in _INLINE_SHELLS or option not in _INLINE_SCRIPT_OPTIONS or not script.strip():
         return None
     return script
+
+
+def _unquoted_operator(command: str) -> bool:
+    """Whether an operator stands outside the quoting, as its own shell word.
+
+    ``shlex.split`` splits on whitespace alone, so ``sh -c 'a; b'>out`` comes
+    back as three words with the redirect stuck to the script. The shell
+    redirects the whole invocation instead, so the script is not the command
+    the text runs.
+    """
+
+    quote: str | None = None
+    characters = iter(command)
+    for character in characters:
+        if quote is None and character == "\\":
+            next(characters, None)
+        elif quote == '"' and character == "\\":
+            next(characters, None)
+        elif quote is not None:
+            if character == quote:
+                quote = None
+        elif character in "'\"":
+            quote = character
+        elif character in "<>|&;()":
+            return True
+    return False
