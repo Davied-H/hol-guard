@@ -160,6 +160,11 @@ fn recursive_search_checks_every_reachable_path() {
             // `src/alias.ts` links to the `.env`, but `-r` lists it without
             // opening it, so the walk is proven by what grep actually reads.
             ("grep -rn ordinary src".to_owned(), true),
+            // BSD grep's `-S` turns the same walk into one that reads through
+            // every link it meets, so the `.env` behind `src/alias.ts` is back
+            // in what the search would open and the walk needs it proven.
+            ("grep -rSn ordinary src".to_owned(), false),
+            ("grep -rOn ordinary src".to_owned(), false),
             ("grep -rn ordinary __tests__/".to_owned(), true),
             (
                 "grep -rn --exclude='*.md' ordinary __tests__/".to_owned(),
@@ -364,6 +369,49 @@ fn a_package_store_is_walked_for_what_the_search_actually_reads() {
             // The link is the operand, so every recursive tool follows it and
             // the target still needs proof of its own.
             ("grep -rln ordinary src/alias.ts", false),
+        ] {
+            let result = evaluate_pre_tool_envelope_with_context(
+                harness,
+                "PreToolUse",
+                &json!({"toolName":"Bash", "toolInput":{"command":command}}),
+                None,
+                None,
+                root.to_str(),
+                root.to_str(),
+            );
+            assert_eq!(
+                result.minimum_action == "allow",
+                expected,
+                "{harness}: {command}"
+            );
+        }
+    }
+}
+
+/// A pipe in the tree is not a link: a search can be told to read it in place,
+/// and what it hands back is not something the walk could have proven.
+#[test]
+fn a_recursive_search_over_a_pipe_still_asks() {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/recursive-file-search")
+        .join(format!("pipe-{}-{nonce}", std::process::id()));
+    let _fixture = FixtureDirectory(root.clone());
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    std::fs::write(root.join("src/index.ts"), "ordinary").unwrap();
+    let status = std::process::Command::new("mkfifo")
+        .arg(root.join("src/stream"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    for harness in ["omp", "zcode"] {
+        for (command, expected) in [
+            ("grep -rln ordinary src/", false),
+            ("grep -rln --devices=read ordinary src/", false),
         ] {
             let result = evaluate_pre_tool_envelope_with_context(
                 harness,

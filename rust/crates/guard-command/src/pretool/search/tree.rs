@@ -441,7 +441,11 @@ fn walk_uncached(
             // the target belongs to whatever tree owns it, which this walk has
             // not proven. An operand named on the command line is followed by
             // every such tool, so it still needs proof of its own.
-            if follow_links || depth == 0 {
+            //
+            // Only a link is listed rather than read. A FIFO, socket or device
+            // is an entry a search can be told to read in place, and what comes
+            // back is not a file this walk could have proven, so it refuses.
+            if follow_links || depth == 0 || !metadata.is_symlink() {
                 return false;
             }
         }
