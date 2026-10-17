@@ -85,7 +85,7 @@ def test_extension_control_authority_blocks_only_downgrades_after_enrollment(
 ) -> None:
     class FakeStore:
         def read_extension_control_authority_for_registry(
-            self, registry: CommandSafetyExtensionRegistry
+            self, registry: CommandSafetyExtensionRegistry, **_kwargs
         ) -> ExtensionControlAuthorityView:
             return ExtensionControlAuthorityView(health, 0, registry.catalog_digest, ())
 
@@ -121,7 +121,7 @@ def test_update_blocks_protected_authority_downgrade_before_installer_execution(
 
     class ProtectedAuthorityStore:
         def read_extension_control_authority_for_registry(
-            self, registry: CommandSafetyExtensionRegistry
+            self, registry: CommandSafetyExtensionRegistry, **_kwargs
         ) -> ExtensionControlAuthorityView:
             return ExtensionControlAuthorityView(AuthorityHealth.PROTECTED, 1, registry.catalog_digest, ())
 

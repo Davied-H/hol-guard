@@ -382,6 +382,13 @@ PLAIN_DIRECTORY = "acme-plain"
 
 CALC_TEST = "def add(a, b):\n    return a + b\n\n\nassert add(2, 3) == 5\nprint('calc ok')\n"
 HOME_SKILL_DOC = "# Synthetic home skill\nInert reference text for the home skill document.\n"
+# A Node toolchain and a repository's own workflow, both below a hidden home
+# directory. Agents read files in these shapes all day; the names carry no
+# account, host or key.
+HOME_TOOLCHAIN_MANIFEST = ".nvm/versions/node/v25.2.1/lib/node_modules/inert-pkg/package.json"
+HOME_TOOLCHAIN_MANIFEST_TEXT = '{\n  "name": "inert-pkg",\n  "version": "3.1.0"\n}\n'
+HOME_WORKFLOW_DOC = ".github/workflows/inert-check.yml"
+HOME_WORKFLOW_TEXT = "name: inert-check\non: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n"
 HOME_ARTIFACT_DOC = "# Synthetic artifact\nInert build report text.\n"
 SIBLING_PROJECT_DOC = "Notes kept outside the project.\nretry policy: three attempts.\n"
 
@@ -438,6 +445,11 @@ def _add_realistic_shapes(main: Path, home: Path, environment: dict[str, str], s
         ("other-project/.keep", ""),
         # A plain directory with no .git, where a leaf probe finds nothing.
         (f"{PLAIN_DIRECTORY}/README.txt", "Plain notes directory.\n"),
+        # Ordinary files a toolchain and a repository's own automation keep
+        # below a hidden home directory. Nothing here names a credential;
+        # the hidden component is the only thing that sets them apart.
+        (HOME_TOOLCHAIN_MANIFEST, HOME_TOOLCHAIN_MANIFEST_TEXT),
+        (HOME_WORKFLOW_DOC, HOME_WORKFLOW_TEXT),
     ):
         target = home / relative
         target.parent.mkdir(parents=True, exist_ok=True)

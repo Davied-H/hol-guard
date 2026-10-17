@@ -726,6 +726,10 @@
     margin-inline: calc(var(--spacing) * -1);
   }
 
+  .-mx-5 {
+    margin-inline: calc(var(--spacing) * -5);
+  }
+
   .mx-1\.5 {
     margin-inline: calc(var(--spacing) * 1.5);
   }
@@ -6489,6 +6493,10 @@
 
     .sm\:col-span-2 {
       grid-column: span 2 / span 2;
+    }
+
+    .sm\:-mx-6 {
+      margin-inline: calc(var(--spacing) * -6);
     }
 
     .sm\:mt-0 {
