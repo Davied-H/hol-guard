@@ -35,7 +35,7 @@ mod chmod;
 #[path = "workspace_contained_git.rs"]
 mod git_metadata;
 #[path = "workspace_contained_home_cd.rs"]
-mod home_cd;
+pub(super) mod home_cd;
 #[path = "workspace_git_keeps_work.rs"]
 mod keeps_work;
 #[path = "workspace_contained_kill.rs"]

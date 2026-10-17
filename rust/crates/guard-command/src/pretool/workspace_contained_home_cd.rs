@@ -26,7 +26,7 @@ fn plain(word: &str) -> bool {
 }
 
 /// Rewrite `cd ~/<dir> <rest>` into `cd <expanded dir> <rest>`.
-pub(super) fn as_absolute_cd(
+pub(in crate::pretool) fn as_absolute_cd(
     model: &CanonicalCommandV1,
     context: PathContext<'_>,
 ) -> Option<Projected> {

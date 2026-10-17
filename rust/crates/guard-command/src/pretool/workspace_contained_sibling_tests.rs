@@ -156,6 +156,48 @@ fn contained(reason: &str) -> bool {
     reason.ends_with("_containment_required")
 }
 
+/// The home projection the containment screens start from, asked against this
+/// module's fixture. `as_absolute_cd` answers `None` for every spelling it
+/// cannot prove, so a home-spelled list that keeps its review says nothing
+/// about which proof refused it; the steps below name them one at a time.
+#[cfg(unix)]
+#[test]
+fn the_home_projection_answers_for_a_sibling_root() {
+    let (home, main, tree) = fixture();
+    worktree_packages(&main, &tree);
+    let context = crate::pretool::PathContext {
+        home_dir: home.to_str(),
+        cwd: main.to_str(),
+        shell_home_matches: true,
+        cdpath_unset: false,
+        rustup_override_absent: false,
+        npm_config_inert: false,
+        ripgrep_config_absent: false,
+        psql_environment: Default::default(),
+    };
+    assert_eq!(
+        crate::pretool::directory_targets::verified_cwd_target("~/projects/app-report", context)
+            .as_deref(),
+        tree.to_str(),
+        "verified target"
+    );
+    let model = crate::parse_command(&crate::CommandModelRequestV1 {
+        command: "cd ~/projects/app-report && ./tools/report 2>&1 | tail -15".to_owned(),
+        dialect: "posix".into(),
+        transport: "shell_string".into(),
+        extraction_provenance: "test".into(),
+    })
+    .unwrap();
+    let projected = crate::pretool::workspace_contained::home_cd::as_absolute_cd(&model, context)
+        .expect("a projected list");
+    assert_eq!(
+        projected.text,
+        format!("cd {} && ./tools/report 2>&1 | tail -15", tree.display()),
+        "projected text"
+    );
+    let _ = std::fs::remove_dir_all(home.parent().unwrap());
+}
+
 #[test]
 fn a_list_after_cd_into_a_sibling_root_runs_contained_there() {
     let (home, main, tree) = fixture();
