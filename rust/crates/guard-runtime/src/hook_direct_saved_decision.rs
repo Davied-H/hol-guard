@@ -341,7 +341,6 @@ fn overridable(result: &Object) -> bool {
     review("policy_action") && review("minimum_action") && overridable_type
 }
 
-/// Python truthiness of an optional JSON value.
 /// A review due only to non-recognition of a command that launches a local
 /// CLI (or may): the daemon reads whether this device was ever set up for the
 /// CLI and groups the row under its connector, so the resident leaves it.
@@ -355,6 +354,7 @@ fn connector_setup_candidate(context: &Context<'_>, result: &Object) -> bool {
         .unwrap_or(true)
 }
 
+/// Python truthiness of an optional JSON value.
 fn truthy(value: Option<&Value>) -> bool {
     match value {
         None | Some(Value::Null) => false,

@@ -37,7 +37,12 @@ def _native_review() -> dict[str, object]:
 
 
 def _pause(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, ask: bool, connector: SetupConnector | None
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    ask: bool,
+    connector: SetupConnector | None,
+    binding: str | None = "binding",
 ) -> tuple[str, list[dict[str, object]]]:
     queued: list[dict[str, object]] = []
 
@@ -47,17 +52,17 @@ def _pause(
 
     for name, value in {
         "native_review_policy_binding": lambda **_k: None,
-        "native_review_binding": lambda *_a, **_k: "binding",
+        "native_review_binding": lambda *_a, **_k: binding,
         "native_local_cli_grant_response": lambda *_a, **_k: None,
         "native_exact_action": lambda **_k: (None, None),
         "native_saved_review_response": lambda *_a, **_k: None,
         "native_review_matching_block": lambda *_a, **_k: False,
         "native_review_matching_allow": lambda *_a, **_k: False,
         "native_package_review_response": lambda *_a, **_k: None,
-        "_native_review_approval_center_url": lambda _store: "http://127.0.0.1:4781",
+        "native_review_approval_center_url": lambda _store: "http://127.0.0.1:4781",
         "native_review_setup_connector": lambda *_a, **_k: connector,
         "queue_native_pre_tool_review": queue,
-        "_record_silent_native_review_event": lambda *_a: None,
+        "record_silent_native_review_event": lambda *_a: None,
         # Rendering is native; the harness shape is tested with the renderers.
         "render_pre_tool": lambda _harness, verdict, **_k: dict(verdict),
         "render_pre_tool_review": lambda _harness, verdict, *, approval, **_k: {
@@ -97,6 +102,16 @@ def test_ask_mode_waits_in_the_inbox_with_the_link(tmp_path: Path, monkeypatch: 
     assert "has not been set up for `lanectl`" in text
     assert "not an approval of this action" in text
     assert _URL in text
+    assert queued[0]["connector"] == _CONNECTOR
+
+
+def test_ask_mode_gives_no_link_to_a_row_approval_cannot_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text, queued = _pause(tmp_path, monkeypatch, ask=True, connector=_CONNECTOR, binding=None)
+
+    assert "has not been set up for `lanectl`" in text
+    assert _URL not in text
     assert queued[0]["connector"] == _CONNECTOR
 
 

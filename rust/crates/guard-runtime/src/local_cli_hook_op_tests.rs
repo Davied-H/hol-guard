@@ -482,7 +482,11 @@ fn an_unset_review_names_the_connector_to_set_up() {
     assert_eq!(connector["surface"], "package-scripts");
     assert_eq!(
         connector["queue_group_id"],
-        crate::connector_setup::queue_group_id(&identity.identity_hash, "npm run build")
+        crate::connector_setup::queue_group_id(
+            &identity.identity_hash,
+            &request.cwd,
+            "npm run build"
+        )
     );
     let reply: Value =
         serde_json::from_slice(&evaluate_local_cli_hook_request(&request).unwrap()).unwrap();

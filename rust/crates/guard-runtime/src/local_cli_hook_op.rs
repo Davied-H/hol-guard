@@ -118,32 +118,9 @@ pub(crate) fn run_with_connector(
         Ok((_, launch)) => (current, launch.filter(|_| current == "review")),
         Err(()) => (unverified_action(request), None),
     };
-    let connector = match connector {
-        Some(launch) => setup_connector(request, &launch),
-        None => None,
-    };
+    let connector =
+        connector.and_then(|launch| crate::connector_setup::for_launch(request, &launch));
     Ok((action.to_owned(), connector))
-}
-
-/// The connector payload when this device has never decided on `launch`; a
-/// store that cannot answer leaves the review as it was.
-fn setup_connector(request: &LocalCliHookRequestV1, launch: &Launch) -> Option<Value> {
-    crate::local_cli_grant_op::grant_unset(
-        &request.guard_home,
-        &launch.cli_id,
-        &launch.identity_hash,
-    )
-    .ok()
-    .filter(|unset| *unset)
-    .map(|_| {
-        crate::connector_setup::payload(
-            &launch.cli_id,
-            &launch.identity_hash,
-            &launch.name,
-            &launch.kind,
-            &request.command,
-        )
-    })
 }
 
 /// `observe_unlisted_cli`: the package script identity, else every CLI a
