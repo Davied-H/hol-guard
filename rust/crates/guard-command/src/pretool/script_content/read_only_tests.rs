@@ -44,7 +44,7 @@ fn report_scripts_only_read() {
     assert!(read_only(Language::Node, &plain));
     let (_text, text) = script(
         "summary.py",
-        "import sys\nname = sys.argv[0].replace('_', ' ')\nprint(name)\n",
+        "import sys\nname = sys.argv[0].replace('_', ' ').replace(\n    str(1), ','\n)\nprint(name)\n",
     );
     assert!(read_only(Language::Python, &text));
     let (_pattern, pattern) = script(
@@ -72,6 +72,9 @@ fn writes_launches_and_packages_keep_review() {
         "import yaml\n",
         "from pathlib import Path\nPath('a').rename('b')\n",
         "from pathlib import Path\nPath('a').replace('b')\n",
+        "from pathlib import Path\nPath('a').replace(Path('b'))\n",
+        "from pathlib import Path\nsrc = Path('a')\nsrc.replace(src.with_suffix('.bak'))\n",
+        "from pathlib import Path\np = Path('a')\np.replace(\n    'b,c'\n)\n",
         "from yaml \\\nimport safe_load\n",
         "import os, \\\n    subprocess\n",
         "open('out.txt', mode='a')\n",

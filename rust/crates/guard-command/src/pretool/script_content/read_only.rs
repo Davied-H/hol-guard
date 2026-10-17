@@ -87,8 +87,6 @@ const NODE_MODULES: &[&str] = &[
 static PYTHON_EFFECTS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
         r"\.\s*(?:write_text|write_bytes|touch|mkdir|unlink|rmdir|rename|symlink_to|hardlink_to|link_to|chmod|lchmod)\s*\(",
-        // `Path.replace` takes one argument; `str.replace` takes two.
-        r"|\.\s*replace\s*\(\s*[^,()\n]*\)",
         r"|\bos\s*\.\s*(?:system|popen|exec\w*|spawn\w*|posix_spawn\w*|fork\w*|kill\w*|remove|unlink|rmdir|removedirs|mkdir|makedirs|rename|renames|replace|chmod|chown|lchown|link|symlink|truncate|ftruncate|write|open|mkfifo|mknod|utime|startfile|putenv|unsetenv)\b",
         // `compile` alone is also `re.compile`; the others stay blocked as
         // attributes too, such as `sys.modules['builtins'].exec`.
@@ -131,7 +129,11 @@ pub(in crate::pretool) fn read_only(language: Language, path: &Path) -> bool {
     // next line.
     let source = source.replace("\\\r\n", " ").replace("\\\n", " ");
     match language {
-        Language::Python => !PYTHON_EFFECTS.is_match(&source) && python_imports_read_only(&source),
+        Language::Python => {
+            !PYTHON_EFFECTS.is_match(&source)
+                && !path_replace(&source)
+                && python_imports_read_only(&source)
+        }
         Language::Node => {
             !NODE_EFFECTS.is_match(&source)
                 && NODE_SPECIFIERS.captures_iter(&source).all(|found| {
@@ -140,6 +142,39 @@ pub(in crate::pretool) fn read_only(language: Language, path: &Path) -> bool {
                 })
         }
     }
+}
+
+/// `Path.replace(target)` moves a file; `str.replace(old, new)` does not. A
+/// `.replace(` call without a top-level comma, or one left unclosed, is the
+/// former. Commas inside string literals and nested calls do not count.
+fn path_replace(source: &str) -> bool {
+    static CALL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.\s*replace\s*\(").unwrap());
+    CALL.find_iter(source).any(|call| {
+        let mut depth = 0_usize;
+        let mut quote = None;
+        let mut escaped = false;
+        for character in source[call.end()..].chars() {
+            if let Some(open) = quote {
+                if escaped {
+                    escaped = false;
+                } else if character == '\\' {
+                    escaped = true;
+                } else if character == open {
+                    quote = None;
+                }
+                continue;
+            }
+            match character {
+                '\'' | '"' => quote = Some(character),
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' if depth == 0 => return true,
+                ')' | ']' | '}' => depth -= 1,
+                ',' if depth == 0 => return false,
+                _ => {}
+            }
+        }
+        true
+    })
 }
 
 fn python_imports_read_only(source: &str) -> bool {
