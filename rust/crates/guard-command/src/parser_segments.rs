@@ -72,10 +72,17 @@ fn split_execution_segments_inner(
             '$' if chars.get(index + 1) == Some(&'{') => {
                 return Err("parameter_expansion_not_yet_supported");
             }
-            '$' if chars
-                .get(index + 1)
-                .is_some_and(|next| *next == '\'' || *next == '"') =>
-            {
+            '$' if chars.get(index + 1) == Some(&'\'') => {
+                // ANSI-C quoting spells a literal word with its escapes
+                // written out. The word runs nothing, so read it the way a
+                // single-quoted word is read and carry on past it.
+                let Some((_, end)) = ansi_c_literal(&chars, index + 2) else {
+                    return Err("non_posix_quoting_not_yet_supported");
+                };
+                index = end + 1;
+                continue;
+            }
+            '$' if chars.get(index + 1) == Some(&'"') => {
                 return Err("non_posix_quoting_not_yet_supported");
             }
             '<' | '>'
@@ -367,6 +374,79 @@ pub(super) fn push_segment(
     Ok(())
 }
 
+/// Reads an ANSI-C quoted word, `$'…'`, from the character after its opening
+/// quote, and answers with the word it spells and the position of its closing
+/// quote. The escapes are the ones a word can be written with and still mean
+/// one byte of plain text; `\u`, `\U` and `\c` spell characters this reader
+/// does not decode, and an escape it cannot decode leaves the whole command
+/// uncertain rather than a word spelled differently than the shell spells it.
+fn ansi_c_literal(chars: &[char], start: usize) -> Option<(String, usize)> {
+    let mut literal = String::new();
+    let mut index = start;
+    while index < chars.len() {
+        match chars[index] {
+            '\'' => return Some((literal, index)),
+            '\\' => {
+                let (character, next) = ansi_c_escape(chars, index + 1)?;
+                literal.push(character);
+                index = next;
+            }
+            character => {
+                literal.push(character);
+                index += 1;
+            }
+        }
+    }
+    None
+}
+
+/// Decodes one escape, from the character after its backslash, and answers
+/// with it and the position after it.
+fn ansi_c_escape(chars: &[char], index: usize) -> Option<(char, usize)> {
+    let current = *chars.get(index)?;
+    let simple = match current {
+        'a' => Some('\u{7}'),
+        'b' => Some('\u{8}'),
+        'e' | 'E' => Some('\u{1b}'),
+        'f' => Some('\u{c}'),
+        'n' => Some('\n'),
+        'r' => Some('\r'),
+        't' => Some('\t'),
+        'v' => Some('\u{b}'),
+        '\\' | '\'' | '"' | '?' => Some(current),
+        _ => None,
+    };
+    if let Some(character) = simple {
+        return Some((character, index + 1));
+    }
+    if current == 'x' {
+        return ansi_c_number(chars, index + 1, 16, 2);
+    }
+    if current.is_digit(8) {
+        return ansi_c_number(chars, index, 8, 3);
+    }
+    None
+}
+
+/// Reads up to `digits` digits in `radix` and answers with the character they
+/// spell. A byte past ASCII is a byte, not a character, and a NUL cannot be
+/// part of a word, so neither is decoded.
+fn ansi_c_number(chars: &[char], start: usize, radix: u32, digits: usize) -> Option<(char, usize)> {
+    let mut value = 0u32;
+    let mut index = start;
+    while index < chars.len() && index - start < digits {
+        let Some(digit) = chars[index].to_digit(radix) else {
+            break;
+        };
+        value = value * radix + digit;
+        index += 1;
+    }
+    if index == start || value == 0 || value > 0x7f {
+        return None;
+    }
+    Some((char::from_u32(value)?, index))
+}
+
 pub(crate) fn shell_tokens(
     command: &str,
     preserve_backslash: bool,
@@ -434,6 +514,16 @@ fn shell_tokens_mode(
                         characters.next();
                     }
                 }
+                '$' if chars.get(index + 1) == Some(&'\'') => {
+                    let Some((literal, end)) = ansi_c_literal(&chars, index + 2) else {
+                        return Err("non_posix_quoting_not_yet_supported");
+                    };
+                    token.push_str(&literal);
+                    token_started = true;
+                    for _ in index..end {
+                        characters.next();
+                    }
+                }
                 '\'' => {
                     quote = Quote::Single;
                     token_started = true;
@@ -471,3 +561,7 @@ fn shell_tokens_mode(
     }
     Ok(tokens)
 }
+
+#[cfg(test)]
+#[path = "parser_segments_ansi_c_tests.rs"]
+mod ansi_c_tests;
