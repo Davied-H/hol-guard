@@ -270,8 +270,8 @@ impl SqliteTimeoutApi for StubSqliteTimeout {
 fn deps() -> EvidenceWriterDeps {
     EvidenceWriterDeps {
         correlation: Box::new(StubCorrelation),
-        receipts: Box::new(StubReceipts),
-        composio: Box::new(StubComposio),
+        receipts: Arc::new(StubReceipts),
+        composio: Arc::new(StubComposio),
         journal: Box::new(StubJournal),
         sqlite_timeout: Box::new(StubSqliteTimeout),
     }
