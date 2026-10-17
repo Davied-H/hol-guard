@@ -525,5 +525,7 @@ pub(in crate::pretool) fn grep_walk_root(
             return false;
         }
     }
-    tree::walk(operand, excluded_files, excluded_directories, git_metadata)
+    // The caller reaches this route only where the command follows no
+    // link, so the walk does not either.
+    tree::walk(operand, excluded_files, excluded_directories, git_metadata, false)
 }
