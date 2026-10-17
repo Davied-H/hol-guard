@@ -510,6 +510,8 @@ fn local_lint_typecheck_requires_actual_protected_execution() {
         "npx prettier --check src --write",
         "pnpm exec prettier src",
         "bunx prettier -w .",
+        // A value spelling turns the same rewrite on.
+        "npx prettier --check --write=true src",
         "pnpm exec tsc --noEmit && rm -rf /",
         "NODE_OPTIONS=--require=x eslint src",
         "node --require=evil /home/tester/project/node_modules/typescript/bin/tsc --noEmit",

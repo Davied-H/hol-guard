@@ -76,16 +76,24 @@ def _tool_entry(name: str, cwd: Path, workspace: Path) -> tuple[Path, str]:
     """The `node_modules` directory holding the tool and its path below it.
 
     A tool may publish its executable under more than one name across major
-    versions, so take the first spelling the nearest project installs and let
-    the caller report a missing dependency when none of them is there.
+    versions, so look for every spelling and keep the one the nearest project
+    installs: a package that pins its own major is what the command would run,
+    not a copy hoisted further up a monorepo. When no project has any of them,
+    name the first spelling so the caller reports a missing dependency.
     """
+    installed = []
     for relative in _ENTRIES[name]:
         try:
             modules = nearest_project_root(cwd, workspace, "node_modules/" + relative) / "node_modules"
         except OSError:
             continue
         if (modules / relative).is_file():
-            return modules, relative
+            installed.append((len(modules.parts), modules, relative))
+    if installed:
+        # Deepest wins, and a tie keeps the order the spellings are declared in.
+        depth = max(entry[0] for entry in installed)
+        _, modules, relative = next(entry for entry in installed if entry[0] == depth)
+        return modules, relative
     first = _ENTRIES[name][0]
     return nearest_project_root(cwd, workspace, "node_modules/" + first) / "node_modules", first
 
@@ -377,7 +385,9 @@ def prepare_restricted_node_tool(
             "--write",
             "-w",
         }
-        or token.startswith(("--fix=", "--output-file="))
+        # A value spelling enables the same write: `--write=true` turns
+        # Prettier's rewrite on just as `--write` does.
+        or token.startswith(("--fix=", "--output-file=", "--write="))
         for token in args
     ):
         raise RestrictedPytestError("node_tool_invalid_command", "The lint/typecheck input has write or shell effects.")

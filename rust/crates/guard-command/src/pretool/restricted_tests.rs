@@ -505,6 +505,7 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
                     | "-w"
             ) || arg.starts_with("--output-file=")
                 || arg.starts_with("--fix=")
+                || arg.starts_with("--write=")
         })
     {
         return Some("native_node_tool_readonly_containment_required");
