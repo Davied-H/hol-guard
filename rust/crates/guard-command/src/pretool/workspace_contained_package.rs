@@ -208,28 +208,25 @@ struct UvCommand {
 /// may stand on one side of the verb or the other. An option this module does
 /// not know hides what the command does, so the command reads as nothing.
 fn uv_command(arguments: &[&str], directory: &Path, workspace: &Path) -> Option<UvCommand> {
-    let mut run = directory.to_owned();
-    let mut project: Option<PathBuf> = None;
+    let mut moved: Option<&str> = None;
+    let mut named: Option<&str> = None;
     let mut verb: Option<usize> = None;
+    let mut operand = None;
     let mut index = 0;
     while let Some(argument) = arguments.get(index) {
         let separator = *argument == "--";
         if !argument.starts_with('-') || separator {
-            let Some(verb) = verb else {
+            if verb.is_none() {
                 if separator {
                     return None;
                 }
                 verb = Some(index);
                 index += 1;
                 continue;
-            };
-            let operand = index + usize::from(separator);
-            return Some(UvCommand {
-                verb,
-                project: project.unwrap_or_else(|| run.clone()),
-                operand: (operand < arguments.len()).then_some(operand),
-                directory: run,
-            });
+            }
+            let first = index + usize::from(separator);
+            operand = (first < arguments.len()).then_some(first);
+            break;
         }
         let (name, value, step) = match argument.split_once('=') {
             Some((name, value)) => (name, Some(value), 1),
@@ -245,22 +242,32 @@ fn uv_command(arguments: &[&str], directory: &Path, workspace: &Path) -> Option<
         }
         let value = value?;
         if UV_PROJECT_OPTIONS.contains(&name) {
-            let moved = entered(&run, value, workspace)?;
+            // Wherever the two stand, uv enters `--directory` before it reads
+            // `--project`, and of each only the last one counts.
             if name == "--directory" {
-                run = moved;
+                moved = Some(value);
             } else {
-                project = Some(moved);
+                named = Some(value);
             }
         } else if !(verb.is_some() && UV_VERB_VALUE_OPTIONS.contains(&name)) {
             return None;
         }
         index += step;
     }
-    verb.map(|verb| UvCommand {
+    let verb = verb?;
+    let run = match moved {
+        Some(target) => entered(directory, target, workspace)?,
+        None => directory.to_owned(),
+    };
+    let project = match named {
+        Some(target) => entered(&run, target, workspace)?,
+        None => run.clone(),
+    };
+    Some(UvCommand {
         verb,
-        project: project.unwrap_or_else(|| run.clone()),
-        operand: None,
         directory: run,
+        project,
+        operand,
     })
 }
 

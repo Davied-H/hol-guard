@@ -291,3 +291,32 @@ fn a_script_is_read_where_the_run_will_stand() {
         assert_eq!(reason, CONTAINED, "{harness}");
     }
 }
+
+#[test]
+fn the_project_is_read_from_the_directory_the_run_enters() {
+    let ws = project("uv-project-order");
+    // uv enters `--directory` first and reads `--project` from there, however
+    // the two stand, and only the last of each counts. A project below the
+    // starting directory does not make the one uv would read materialized.
+    for command in [
+        "uv --project api --directory sub run pytest",
+        "uv --directory sub --project api run pytest",
+        "uv --directory api --directory sub run pytest",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+    std::fs::create_dir_all(ws.join("sub/api/.venv/bin")).unwrap();
+    std::fs::write(ws.join("sub/api/pyproject.toml"), PROJECT).unwrap();
+    for command in [
+        "uv --project api --directory sub run pytest",
+        "uv --directory sub --project api run pytest",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+}
