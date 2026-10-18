@@ -44,7 +44,7 @@ pub struct SkillDependenciesInputV1 {
     /// put on the wire. A key that is there but unreadable is not a skill
     /// that declared nothing.
     #[serde(deserialize_with = "required")]
-    pub text: Option<String>,
+    pub text: Option<String>, // NOSONAR: rust:S9334; required key, nullable value.
 }
 
 /// A declaration and the authority it is resolved against.
@@ -67,9 +67,9 @@ pub struct SkillWorkflowPreflightRequestV1 {
     pub request_id: String,
     pub subop: String,
     #[serde(deserialize_with = "required")]
-    pub dependencies: Option<SkillDependenciesInputV1>,
+    pub dependencies: Option<SkillDependenciesInputV1>, // NOSONAR: rust:S9334; required key, nullable value.
     #[serde(deserialize_with = "required")]
-    pub preflight: Option<SkillPreflightInputV1>,
+    pub preflight: Option<SkillPreflightInputV1>, // NOSONAR: rust:S9334; required key, nullable value.
 }
 
 /// One skill workflow preflight result.

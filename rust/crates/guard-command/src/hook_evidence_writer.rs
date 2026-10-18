@@ -277,9 +277,26 @@ pub struct ObservedMcpTool {
     /// Fully qualified `mcp__<server>__<tool>` name.
     pub qualified_name: String,
     /// `source.identity` passed to `ensure_local_mcp_observation`.
-    pub identity: String,
+    pub identity: ObservedCliIdentity,
     /// Server descriptor consumed by `record_composio_discovery`.
     pub server: ObservedMcpServerIdentity,
+}
+
+/// `ObservedMcpTool.identity` — the `UnlistedCliIdentity` the connector
+/// boundary stands in for, as `ensure_local_mcp_observation` records it. The
+/// observed form never carries a source path, runner or path class, so only
+/// the fields that call site reads are kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservedCliIdentity {
+    pub cli_id: String,
+    /// The MCP server segment of the tool name.
+    pub name: String,
+    /// Always `executable` for an observed connector.
+    pub kind: String,
+    pub identity_hash: String,
+    /// The `mcp__<server>__` namespace.
+    pub example_label: String,
+    pub interpreter_name: Option<String>,
 }
 
 /// Server identity carried inside [`ObservedMcpTool`].
@@ -1046,7 +1063,8 @@ impl RuntimeHookEvidenceWriter {
             invocation_preview,
         });
         let mut state = self.lock_state();
-        if state.records.len() >= self.max_records
+        if state.stopping
+            || state.records.len() >= self.max_records
             || state.queued_bytes + record.payload_bytes() > self.max_bytes
         {
             state.dropped += 1;
@@ -1106,7 +1124,8 @@ impl RuntimeHookEvidenceWriter {
             _ => unreachable!(),
         };
         let mut state = self.lock_state();
-        if state.records.len() >= self.max_records
+        if state.stopping
+            || state.records.len() >= self.max_records
             || state.queued_bytes + record.payload_bytes() > self.max_bytes
         {
             state.dropped += 1;
@@ -1123,6 +1142,12 @@ impl RuntimeHookEvidenceWriter {
     /// `submit_native_decision_receipt` (:237-270).
     pub fn submit_native_decision_receipt(&self, receipt: &Map<String, Value>) -> bool {
         let Some(validated) = self.deps.receipts.validate_native_decision_receipt(receipt) else {
+            // A receipt that does not validate is a dropped receipt, not a
+            // silent no-op: the counters are how a degraded writer is seen.
+            let mut state = self.lock_state();
+            state.receipt_dropped += 1;
+            state.dropped += 1;
+            state.degraded = true;
             return false;
         };
         let record = EvidenceRecord::NativeDecisionReceipt(NativeDecisionReceiptRecord {
@@ -1146,7 +1171,8 @@ impl RuntimeHookEvidenceWriter {
             state.receipt_deduped += 1;
             return true;
         }
-        if state.records.len() >= self.max_records
+        if state.stopping
+            || state.records.len() >= self.max_records
             || state.queued_bytes + record.payload_bytes() > self.max_bytes
         {
             state.receipt_dropped += 1;

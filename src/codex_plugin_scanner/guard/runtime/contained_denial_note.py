@@ -77,6 +77,10 @@ CAUSES = (
 )
 
 
+# Addresses that make a blocked connection one to this machine.
+LOOPBACK_MARKERS = (b"127.0.0.1", b"localhost", b"::1")
+
+
 def _word_byte(byte: int) -> bool:
     return byte < 0x80 and (chr(byte).isalnum() or chr(byte) in "/._-")
 
@@ -88,6 +92,27 @@ def _holds(line: bytes, marker: bytes) -> bool:
         end = start + len(marker)
         clear_start = start == 0 or not (_word_byte(marker[0]) and _word_byte(line[start - 1]))
         clear_end = end == len(line) or not (_word_byte(marker[-1]) and _word_byte(line[end]))
+        if clear_start and clear_end:
+            return True
+        start = line.find(marker, start + 1)
+    return False
+
+
+def _holds_address(line: bytes, marker: bytes) -> bool:
+    """Like `_holds`, but `::1` may not continue another IPv6 address such as `fe80::1`."""
+    ipv6 = marker.startswith(b":")
+    start = line.find(marker)
+    while start >= 0:
+        end = start + len(marker)
+        before = line[start - 1] if start else None
+        clear_start = before is None or not (
+            _word_byte(before) or (ipv6 and (before == ord(":") or chr(before) in "0123456789abcdef"))
+        )
+        after = line[end] if end < len(line) else None
+        clear_end = after is None or not _word_byte(after)
+        # A bracketed address must close right after the marker.
+        if ipv6 and before == ord("["):
+            clear_end = after == ord("]")
         if clear_start and clear_end:
             return True
         start = line.find(marker, start + 1)
@@ -114,3 +139,12 @@ def denial_note(outputs: Iterable[bytes]) -> str | None:
                 return note
             denied = denied or any(_holds(line, word) for word in DENIAL_WORDS)
     return GENERIC_NOTE if denied else None
+
+
+def loopback_denied(outputs: Iterable[bytes]) -> bool:
+    """Whether a line of `outputs` names a blocked connection to this machine."""
+    return any(
+        _line_note(line) == CONNECT_NOTE and any(_holds_address(line, marker) for marker in LOOPBACK_MARKERS)
+        for output in outputs
+        for line in output.lower().split(b"\n")
+    )

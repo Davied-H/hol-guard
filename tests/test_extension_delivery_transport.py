@@ -11,6 +11,55 @@ import pytest
 from codex_plugin_scanner.guard.catalog_delivery import transport
 
 
+def test_source_ancestry_is_bounded_and_skips_identical_sources(monkeypatch):
+    calls = []
+
+    def download(url, maximum):
+        calls.append((url, maximum))
+        return json.dumps(
+            {
+                "status": "ahead",
+                "base_commit": {"sha": "1" * 40},
+                "merge_base_commit": {"sha": "1" * 40},
+                "ahead_by": 2,
+                "behind_by": 0,
+            }
+        ).encode()
+
+    monkeypatch.setattr(transport, "download", download)
+    transport.require_source_ancestor("1" * 40, "1" * 40)
+    assert calls == []
+    transport.require_source_ancestor("1" * 40, "2" * 40)
+    assert len(calls) == 1
+    assert calls[0][1] == 64 * 1024
+    assert calls[0][0].endswith("?per_page=1&page=2")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"status": "behind"},
+        {"base_commit": None},
+        {"merge_base_commit": []},
+        {"merge_base_commit": {"sha": "3" * 40}},
+        {"behind_by": True},
+        {"ahead_by": 0},
+    ],
+)
+def test_source_ancestry_rejects_regression_divergence_or_malformed_responses(monkeypatch, change):
+    value = {
+        "status": "ahead",
+        "base_commit": {"sha": "1" * 40},
+        "merge_base_commit": {"sha": "1" * 40},
+        "ahead_by": 2,
+        "behind_by": 0,
+        **change,
+    }
+    monkeypatch.setattr(transport, "download", lambda *args: json.dumps(value).encode())
+    with pytest.raises(ValueError, match="descendant"):
+        transport.require_source_ancestor("1" * 40, "2" * 40)
+
+
 @pytest.mark.parametrize(
     "url",
     [

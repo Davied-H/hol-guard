@@ -19,8 +19,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use guard_command::hook_evidence_writer::{
-    ComposioActionSchema, ComposioApi, ComposioWorkflowProposal, ObservedMcpServerIdentity,
-    ObservedMcpTool,
+    ComposioActionSchema, ComposioApi, ComposioWorkflowProposal, ObservedCliIdentity,
+    ObservedMcpServerIdentity, ObservedMcpTool,
 };
 use guard_command::mcp_decision::build_mcp_server_identity;
 use guard_policy_snapshot::normalized_harness_selector;
@@ -93,6 +93,7 @@ pub(crate) fn observed_mcp_tool(harness: &str, tool_name: &str) -> Option<Observ
     if namespace.chars().count() > 155 {
         return None;
     }
+    let server_name = parts[split - 1].to_owned();
     let server = build_mcp_server_identity(
         "",
         &format!("{OBSERVED_MCP_PREFIX}{harness}:{namespace}"),
@@ -101,8 +102,15 @@ pub(crate) fn observed_mcp_tool(harness: &str, tool_name: &str) -> Option<Observ
         None::<&Map<String, Value>>,
         &[],
     );
-    // `UnlistedCliIdentity.cli_id` (:60-66) — the grant the connector binds.
-    let identity = format!("local-cli.mcp-{}", &server.identity_hash[..16]);
+    // `UnlistedCliIdentity` (:60-66) — the grant the connector binds.
+    let identity = ObservedCliIdentity {
+        cli_id: format!("local-cli.mcp-{}", &server.identity_hash[..16]),
+        name: server_name,
+        kind: "executable".to_owned(),
+        identity_hash: server.identity_hash.clone(),
+        example_label: namespace,
+        interpreter_name: None,
+    };
     Some(ObservedMcpTool {
         harness,
         qualified_name: tool_name.to_owned(),

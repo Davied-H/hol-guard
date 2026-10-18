@@ -15,6 +15,8 @@ use crate::native_command_program::{
 };
 use crate::CanonicalCommandV1;
 
+#[path = "native_command_controls_admission.rs"]
+mod admission;
 #[path = "native_command_controls_risk.rs"]
 mod risk;
 
@@ -41,20 +43,12 @@ impl CompiledNativeCommandControls {
         &self.binding.health
     }
 
-    // Production always supplies the packaged, attested program through new().
-    // The crate-local seam also lets diagnostic tests vary real compiled
-    // catalogs without duplicating any control admission or evaluation logic.
-    pub(crate) fn for_program(
+    fn for_program_inner(
         binding: &NativeCommandControlBindingV1,
         program: Arc<NativeCommandProgram>,
+        retain_inactive: bool,
     ) -> Result<Self, &'static str> {
-        binding.validate()?;
-        if binding.program_digest != program.program_digest
-            || binding.catalog_digest != program.catalog_digest
-            || binding.trust_digest != program.trust_digest
-        {
-            return Err("native_command_program_binding_mismatch");
-        }
+        admission::validate_binding(binding, &program)?;
         let extension_indices: BTreeMap<_, _> = program
             .extensions
             .iter()
@@ -90,8 +84,14 @@ impl CompiledNativeCommandControls {
             global_block |= layer.global_lockdown;
             for control in &layer.controls {
                 let is_extension = control.target_kind == "extension";
-                if (is_extension && !extension_indices.contains_key(control.target_id.as_str()))
-                    || (!is_extension && !permissions.contains_key(control.target_id.as_str()))
+                let unknown = (is_extension
+                    && !extension_indices.contains_key(control.target_id.as_str()))
+                    || (!is_extension && !permissions.contains_key(control.target_id.as_str()));
+                if unknown
+                    && (!retain_inactive
+                        || !admission::may_retain_inactive(control, &layer.kind, |owner| {
+                            extension_indices.contains_key(owner)
+                        }))
                 {
                     return Err("native_command_control_target_unknown");
                 }

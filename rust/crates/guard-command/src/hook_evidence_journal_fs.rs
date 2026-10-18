@@ -13,9 +13,10 @@ use std::sync::Arc;
 
 use serde_json::{json, Map, Value};
 
+#[cfg(unix)]
+use super::JOURNAL_FILE_MODE;
 use super::{
     ComposioApi, EvidenceJournalApi, EvidenceRecord, ReceiptValidationApi, EVIDENCE_SCHEMA,
-    JOURNAL_FILE_MODE,
 };
 
 /// `command_activity_display.INVOCATION_PREVIEW_MAX_CHARS`.
@@ -398,6 +399,7 @@ fn require_private_regular_file(file: &File) -> Result<(), io::Error> {
 }
 
 fn private_options() -> OpenOptions {
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut options = OpenOptions::new();
     #[cfg(unix)]
     {

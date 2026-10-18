@@ -24,7 +24,13 @@ from .restricted_pytest_model import (
     RestrictedPytestError,
 )
 from .restricted_pytest_sandbox import _restricted_environment, _run_backend_process
-from .restricted_workspace_grant_lookup import decided_grant, expected_grant, link_state_dir, require_unchanged
+from .restricted_workspace_grant_lookup import (
+    decided_grant,
+    expected_grant,
+    granted_denial_note,
+    link_state_dir,
+    require_unchanged,
+)
 from .restricted_workspace_grants import PLAN_FIELDS, ExpectedGrant, grant_script_roots, read_grants_valid
 
 WORKSPACE_REASON = "native_workspace_containment_required"
@@ -325,7 +331,7 @@ def run_workspace_contained(
                 timeout_seconds=timeout_seconds,
                 cwd=cwd,
                 merge_stderr=merge_stderr,
-                write_denial_note=denial_note,
+                write_denial_note=granted_denial_note(grant),
             )
 
         if isinstance(prefix, str):

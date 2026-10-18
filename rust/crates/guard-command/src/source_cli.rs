@@ -142,6 +142,7 @@ pub fn is_command(arguments: &[String]) -> bool {
         | "compare"
         | "evaluate-batch" => arguments.len() == 1,
         "check" => arguments.len() == 2,
+        "check-pack-cache" => arguments.len() == 3,
         _ => false,
     }
 }
@@ -182,6 +183,21 @@ fn run(arguments: &[String]) -> Result<Value, &'static str> {
     let Some(operation) = arguments.first().map(String::as_str) else {
         return Err("command_source_usage_expected_schema_validate_compile_check_or_test");
     };
+    if operation == "check-pack-cache" {
+        if arguments.len() != 3 {
+            return Err("command_pack_cache_usage_invalid");
+        }
+        let program = crate::native_command_program::NativeCommandProgram::from_pack_cache(
+            std::path::Path::new(&arguments[1]),
+            &arguments[2],
+            crate::native_command_program::PackAdmissionBudget::resident(),
+        )?;
+        return Ok(
+            json!({"schema":"guard.command-pack-cache-check.v1", "engine":env!("GUARD_COMMAND_SOURCE_IMPLEMENTATION"),
+            "program_digest":program.program_digest,"catalog_digest":program.catalog_digest,"trust_digest":program.trust_digest,
+            "extensions":program.extensions.len(),"rules":program.rules.len()}),
+        );
+    }
     if !matches!(
         operation,
         "validate" | "compile" | "check" | "test" | "compare" | "evaluate-batch"

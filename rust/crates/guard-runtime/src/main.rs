@@ -324,6 +324,7 @@ mod guard_store_local_cli_grant_vectors_tests;
 mod guard_store_local_cli_grants;
 #[cfg(test)]
 mod guard_store_local_cli_vectors_tests;
+mod guard_store_local_mcp_declarations;
 mod guard_store_local_mcp_observation;
 mod guard_store_native_receipts;
 #[cfg(test)]
@@ -422,14 +423,23 @@ mod hook_direct;
 mod hook_direct_counters;
 mod hook_direct_evidence;
 mod hook_env_stamp;
-// Wired into the evidence writer when the Python seams retire; the
-// readers are already exercised by their own tests.
+// The seams the evidence writer runs on. Each is reached through
+// hook_evidence_writer_op; the readers also have their own tests.
 #[allow(dead_code)]
 mod hook_evidence_activity;
 #[allow(dead_code)]
 mod hook_evidence_composio;
 #[allow(dead_code)]
 mod hook_evidence_correlation;
+#[allow(dead_code)]
+mod hook_evidence_store;
+#[allow(dead_code)]
+mod hook_evidence_store_gate;
+#[allow(dead_code)]
+mod hook_evidence_store_timeout;
+#[allow(dead_code)]
+mod hook_evidence_store_wire;
+mod hook_evidence_writer_op;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;

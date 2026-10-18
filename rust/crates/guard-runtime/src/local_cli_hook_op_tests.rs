@@ -104,7 +104,7 @@ impl Fixture {
             user_home: self.workspace.clone(),
             env: BTreeMap::new(),
             current_action: action.to_owned(),
-            current_reason_code: None,
+            current_reason_code: Some("native_command_review_required".to_owned()),
             grant_allowed,
         }
     }
@@ -563,3 +563,6 @@ fn a_decided_connector_is_never_sent_back_to_setup() {
         run_with_connector(&fixture.request("npm run build", "review", true)).unwrap();
     assert_eq!(connector, None);
 }
+
+#[path = "local_cli_hook_op_grant_lift_tests.rs"]
+mod grant_lift;

@@ -193,6 +193,27 @@ fn main() {
         "host/target compiler identity mismatch"
     );
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
+    println!(
+        "cargo:rustc-env=GUARD_PACKAGED_PROGRAM_ID={}",
+        compiled.program["program_digest"]
+            .as_str()
+            .expect("program identity")
+    );
+    let required: Vec<_> = compiled.program["extensions"]
+        .as_array()
+        .expect("program extensions")
+        .iter()
+        .filter(|extension| extension["required"] == true || extension["trust_class"] != "external")
+        .map(|extension| {
+            extension["extension_id"]
+                .as_str()
+                .expect("extension identity")
+        })
+        .collect();
+    println!(
+        "cargo:rustc-env=GUARD_DEFAULT_COMMAND_PACK_IDS={}",
+        required.join(",")
+    );
     write_json(&out.join("trust-class-map.v1.json"), &trust);
     write_embedded_json(
         &out,

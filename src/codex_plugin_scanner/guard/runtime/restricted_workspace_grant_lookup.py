@@ -13,12 +13,13 @@ stops the run.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .contained_denial_note import denial_note, loopback_denied
 from .restricted_pytest_model import PYTEST_INVALID_COMMAND_REASON_CODE, RestrictedPytestError
 from .restricted_workspace_grants import ExpectedGrant
 
@@ -70,6 +71,31 @@ def decided_grant(command: str, *, workspace: Path, home: Path) -> ContainedGran
     if action == "block":
         raise RestrictedPytestError("contained_test_authorization_failed", GRANT_BLOCKED)
     return grant if action == ALLOW_CONTAINED_WITH_GRANT else None
+
+
+def granted_denial_note(grant: ContainedGrant | None) -> Callable[[Iterable[bytes]], str | None]:
+    """The denial note, which also remembers a granted run's blocked loopback connection.
+
+    The remembered cause lets Protect suggest local network access. It changes
+    no grant and turns nothing on: only an admin preview and apply does that.
+    """
+
+    store = _STORE.get()
+    if grant is None or store is None or "loopback-network" in grant.capabilities:
+        return denial_note
+
+    def note(outputs: Iterable[bytes]) -> str | None:
+        outputs = list(outputs)
+        chosen = denial_note(outputs)
+        if chosen is not None and loopback_denied(outputs):
+            # Best effort: the run's own result never depends on this write.
+            with suppress(*_STORE_UNANSWERED):
+                store.note_local_cli_capability_cause(
+                    cli_id=grant.cli_id, identity_hash=grant.identity_hash, cause="connect_loopback"
+                )
+        return chosen
+
+    return note
 
 
 def expected_grant(grant: ContainedGrant, home: Path) -> ExpectedGrant:

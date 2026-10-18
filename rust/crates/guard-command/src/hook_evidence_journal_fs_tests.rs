@@ -5,7 +5,7 @@ use super::*;
 use std::sync::Arc;
 
 use crate::hook_evidence_writer::{
-    CommandActivityRecord, ComposioActionSchema, ComposioWorkflowProposal,
+    CommandActivityRecord, ComposioActionSchema, ComposioWorkflowProposal, ObservedCliIdentity,
     ObservedMcpServerIdentity, ObservedMcpTool,
 };
 
@@ -319,7 +319,14 @@ impl ComposioApi for OneDiscovery {
             || ObservedMcpTool {
                 harness: harness.to_owned(),
                 qualified_name: tool_name.to_owned(),
-                identity: "local-cli.mcp-test".to_owned(),
+                identity: ObservedCliIdentity {
+                    cli_id: "local-cli.mcp-test".to_owned(),
+                    name: "composio".to_owned(),
+                    kind: "executable".to_owned(),
+                    identity_hash: "0".repeat(64),
+                    example_label: "mcp__composio__".to_owned(),
+                    interpreter_name: None,
+                },
                 server: ObservedMcpServerIdentity {
                     identity_hash: "0".repeat(64),
                     command: None,

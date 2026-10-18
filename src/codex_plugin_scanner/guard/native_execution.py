@@ -166,6 +166,7 @@ def _resident_request(
             "local_cli_hook",
             "connector_setup_context",
             "guard_store",
+            "hook_evidence_writer",
             "local_mcp_grant_decide",
             "contributed_mcp_decide",
             "approval_proof_decide",
