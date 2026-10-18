@@ -43,7 +43,10 @@ fn go_builds_and_tests_the_module_inside_the_sandbox() {
             let (reason, minimum) = outcome(harness, command, &ws);
             assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
             if !host() {
-                assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+                assert_eq!(
+                    minimum, "review",
+                    "{reason}: no sandbox must require review"
+                );
             }
         }
     }
@@ -107,7 +110,10 @@ fn the_module_a_verb_builds_moves_with_the_command() {
         let (reason, minimum) = outcome(harness, "cd api && go build ./...", &ws);
         assert_eq!(reason == CONTAINED, host(), "{reason} {harness}");
         if !host() {
-            assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+            assert_eq!(
+                minimum, "review",
+                "{reason}: no sandbox must require review"
+            );
         }
         // `docs` is no module, so go would resolve imports through the proxy.
         let (reason, _) = outcome(harness, "cd docs && go build ./...", &ws);
@@ -145,7 +151,10 @@ fn a_fetching_flag_keeps_its_review_however_it_is_spelled() {
             let (reason, minimum) = outcome(harness, command, &ws);
             assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
             if !host() {
-                assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+                assert_eq!(
+                    minimum, "review",
+                    "{reason}: no sandbox must require review"
+                );
             }
         }
     }

@@ -50,7 +50,10 @@ fn cargo_builds_and_tests_the_package_inside_the_sandbox() {
             let (reason, minimum) = outcome(harness, command, &ws);
             assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
             if !host() {
-                assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+                assert_eq!(
+                    minimum, "review",
+                    "{reason}: no sandbox must require review"
+                );
             }
         }
     }
@@ -95,7 +98,10 @@ fn the_package_a_verb_compiles_moves_with_the_command() {
         let (reason, minimum) = outcome(harness, "cd crates/engine && cargo test --offline", &ws);
         assert_eq!(reason == CONTAINED, host(), "{reason} {harness}");
         if !host() {
-            assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+            assert_eq!(
+                minimum, "review",
+                "{reason}: no sandbox must require review"
+            );
         }
         let (reason, _) = outcome(harness, "cd docs && cargo test", &ws);
         assert_ne!(reason, CONTAINED, "{harness}");
