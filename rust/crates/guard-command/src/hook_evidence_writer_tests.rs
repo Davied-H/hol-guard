@@ -403,7 +403,7 @@ fn an_allowed_pre_event_records_the_evidence_under_its_own_correlation() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
@@ -442,7 +442,7 @@ fn a_prevented_pre_event_rewrites_the_correlation_digest() {
         Some("block"),
         Some("receipt-1"),
         true,
-        "accepted",
+        "rejected",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
@@ -456,6 +456,44 @@ fn a_prevented_pre_event_rewrites_the_correlation_digest() {
         evidence.get("correlation_digest").and_then(Value::as_str),
         Some("d5b3406976b245e21cb4b99a6f44865fb54da626c9acfecf354bc3be3917a324"),
         "a prevented attempt cannot pair with a post event, so it gets its own key"
+    );
+}
+
+#[test]
+fn metadata_the_journal_would_refuse_never_reaches_the_queue() {
+    let (store, writer) = fixture(false);
+    // A prompt and an accepted reuse contradict each other: either the saved
+    // approval carried the call or the user was asked, never both.
+    assert!(!writer.submit_command_activity(
+        "claude-code",
+        "PreToolUse",
+        &command_payload(),
+        true,
+        Some("allow"),
+        None,
+        true,
+        "accepted",
+    ));
+    // A receipt id outside `_SAFE_IDENTIFIER` is refused at submission, not
+    // carried until the journal drops it where no caller is left to see.
+    assert!(!writer.submit_command_activity(
+        "claude-code",
+        "PreToolUse",
+        &command_payload(),
+        true,
+        Some("allow"),
+        Some("receipt 1/../etc"),
+        false,
+        "not-applicable",
+    ));
+    assert!(writer.stop(5.0), "writer drained");
+
+    let calls = store.calls();
+    assert!(
+        !calls
+            .iter()
+            .any(|call| matches!(call, StoreCall::RecordCommandActivity { .. })),
+        "{calls:?}"
     );
 }
 
@@ -496,7 +534,7 @@ fn an_exact_pre_replay_is_probed_and_then_dropped() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
@@ -527,7 +565,7 @@ fn post_event_calls(store: &Arc<StubStore>, writer: RuntimeHookEvidenceWriter) -
         None,
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
     store.calls()
@@ -621,7 +659,7 @@ fn a_pre_event_without_a_command_never_reaches_the_store() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
@@ -1043,7 +1081,7 @@ fn a_rewrite_that_drops_invalid_lines_still_lets_the_writer_stop() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 

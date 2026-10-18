@@ -1054,7 +1054,7 @@ impl RuntimeHookEvidenceWriter {
             .build_invocation_preview_from_payload(&snapshot)
             .ok()
             .flatten();
-        let record = EvidenceRecord::CommandActivity(CommandActivityRecord {
+        let activity = CommandActivityRecord {
             record_id: uuid4_hex(),
             harness: harness.to_string(),
             event: event.to_string(),
@@ -1069,7 +1069,22 @@ impl RuntimeHookEvidenceWriter {
             prompted,
             approval_reuse_status: approval_reuse_status.to_string(),
             invocation_preview,
-        });
+        };
+        // `_CommandActivityRecord.from_json(json.loads(record.serialized()))
+        // is None: return False` (:179-180). The writer admits a record only
+        // when its own serialized form parses back, so metadata the journal
+        // would refuse on recovery -- an approval reuse that claims both a
+        // prompt and an accepted reuse, a malformed receipt id, a policy
+        // action on a post event -- is refused here, while the caller is
+        // still there to see the submission did not take.
+        let round_trip = serde_json::from_slice::<Value>(&activity.serialized());
+        let Ok(Value::Object(parsed)) = round_trip else {
+            return false;
+        };
+        if _command_activity_record_from_json(&parsed).is_none() {
+            return false;
+        }
+        let record = EvidenceRecord::CommandActivity(activity);
         let mut state = self.lock_state();
         if state.stopping
             || state.records.len() >= self.max_records
