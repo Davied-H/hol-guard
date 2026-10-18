@@ -16,9 +16,7 @@ from codex_plugin_scanner.guard.native_daemon_route import native_route_facts
 
 class _FakeHandler:
     _handle_hook_readiness = daemon_server_module._GuardDaemonHandler._handle_hook_readiness
-    _normalized_hook_workspace_string = staticmethod(
-        daemon_server_module._GuardDaemonHandler._normalized_hook_workspace_string
-    )
+    _hook_workspace_spelling = staticmethod(daemon_server_module._GuardDaemonHandler._hook_workspace_spelling)
 
     def __init__(self, daemon_server: object) -> None:
         self._fake_daemon_server = daemon_server

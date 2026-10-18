@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from http.server import HTTPServer
@@ -24,7 +25,6 @@ from codex_plugin_scanner.guard.daemon import manager as daemon_manager
 from codex_plugin_scanner.guard.daemon import runtime_hook_deadline as runtime_hook_deadline_module
 from codex_plugin_scanner.guard.daemon import server as daemon_server_module
 from codex_plugin_scanner.guard.daemon.server import GuardDaemonServer
-from codex_plugin_scanner.guard.runtime.local_temp_paths import trusted_temporary_root_for_path
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.codex_daemon_hook_bridge_fixtures import (
     _bridge_config,
@@ -1035,8 +1035,7 @@ def test_bridge_real_daemon_rejects_temp_root_workdir_without_falling_back_to_re
         ["git", "-C", str(repository), "remote", "add", "origin", "https://github.com/example/project.git"],
         check=True,
     )
-    temporary_root = trusted_temporary_root_for_path(tmp_path)
-    assert temporary_root is not None
+    temporary_root = Path(tempfile.gettempdir()).resolve()
     daemon = GuardDaemonServer(GuardStore(guard_home), host="127.0.0.1", port=0)
     _start_daemon(daemon, monkeypatch)
     config = _bridge_config(guard_home, daemon.port)

@@ -156,7 +156,7 @@ def _handle(worker: SimpleNamespace, harness: str, query: str = "workspace=/work
         _validated_hook_directory_string=lambda _kind, value, **kwargs: value,
         _validated_hook_guard_home=lambda value: value,
         _hook_safe_roots=lambda: (),
-        _normalized_hook_workspace_string=lambda value: value,
+        _hook_workspace_spelling=lambda value: value,
         _runtime_hook_exec_command_workdir=lambda payload: (False, None),
         _record_hook_path_rejection=lambda **values: None,
         _runtime_hook_fail_safe_response=lambda *args, **kwargs: {"reason_code": kwargs["reason_code"]},

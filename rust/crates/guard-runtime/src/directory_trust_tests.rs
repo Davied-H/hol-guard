@@ -305,6 +305,76 @@ fn the_operation_settles_every_candidate_in_one_call() {
 }
 
 #[test]
+fn a_rule_tells_two_spellings_of_the_same_workspace_apart() {
+    let install = Install::new();
+    let scratch = TempDir::new().expect("a scratch directory");
+    let body = evaluate(json!({
+        "schema": DIRECTORY_TRUST_REQUEST_SCHEMA,
+        "request_id": "req-directory-trust",
+        "guard_home": install.guard_home(),
+        "home_dir": install.home_dir(),
+        "temp_dir": text(&std::env::temp_dir()),
+        "candidates": [
+            {
+                "parameter": "workspace-workdir",
+                "rule": "exec-workdir",
+                "value": "none",
+            },
+            {
+                "parameter": "workspace-payload",
+                "rule": "hook-workspace",
+                "value": format!("{}/None", text(scratch.path())),
+            },
+            {
+                "parameter": "workspace-query",
+                "rule": "hook-workspace",
+                "value": "   ",
+            },
+        ],
+    }));
+
+    let results = body["results"].as_array().expect("results");
+    assert_eq!(results.len(), 3);
+    // A sentinel names no directory, which is not a rejection: the route
+    // falls through to the next spelling instead of refusing the request.
+    assert_eq!(results[0]["parameter"], json!("workspace-workdir"));
+    assert_eq!(results[0]["absent"], json!(true));
+    assert!(results[0].get("reason").is_none());
+    assert_eq!(results[1]["parameter"], json!("workspace-payload"));
+    assert_eq!(results[1]["path"], json!(text(&canonical(scratch.path()))));
+    assert_eq!(results[2]["absent"], json!(true));
+}
+
+#[test]
+fn a_payload_reference_is_read_only_where_guards_writer_put_it() {
+    let install = Install::new();
+    let holder = TempDir::new().expect("a temporary holder");
+    let directory = holder.path().join("hol-guard-hook-payload-abc123");
+    std::fs::create_dir(&directory).expect("a payload directory");
+    let payload = directory.join("payload.json");
+    std::fs::write(&payload, b"{}").expect("a payload file");
+    let stray = holder.path().join("payload.json");
+    std::fs::write(&stray, b"{}").expect("a stray file");
+
+    let body = evaluate(json!({
+        "schema": DIRECTORY_TRUST_REQUEST_SCHEMA,
+        "request_id": "req-directory-trust",
+        "guard_home": install.guard_home(),
+        "home_dir": install.home_dir(),
+        "temp_dir": text(holder.path()),
+        "candidates": [
+            {"parameter": "payload-reference", "value": text(&payload)},
+            {"parameter": "payload-reference", "value": text(&stray)},
+        ],
+    }));
+
+    let results = body["results"].as_array().expect("results");
+    assert_eq!(results[0]["path"], json!(text(&canonical(&payload))));
+    assert_eq!(results[1]["trusted"], json!(false));
+    assert_eq!(results[1]["reason"], json!("untrusted_payload_reference"));
+}
+
+#[test]
 fn an_unknown_field_is_refused_rather_than_ignored() {
     let request: Result<DirectoryTrustRequestV1, _> = serde_json::from_value(json!({
         "schema": DIRECTORY_TRUST_REQUEST_SCHEMA,

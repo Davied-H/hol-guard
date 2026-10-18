@@ -66,7 +66,7 @@ def test_server_deadline_includes_elapsed_admission_and_missing_policy_blocks(
         _validated_hook_directory_string=lambda _kind, value, **kwargs: value,
         _validated_hook_guard_home=lambda value: value,
         _hook_safe_roots=lambda: (),
-        _normalized_hook_workspace_string=lambda value: value,
+        _hook_workspace_spelling=lambda value: value,
         _runtime_hook_exec_command_workdir=lambda payload: (False, None),
         _runtime_hook_fail_safe_response=lambda *args, **kwargs: {
             "decision": "block",
