@@ -46,8 +46,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 #[cfg(all(test, unix))]
-use workspace::{expanduser, normalized_workspace, normpath};
-use workspace::{settled_directory, workspace_candidate};
+use workspace::normalized_workspace;
+use workspace::{expanduser, normpath, settled_directory, workspace_candidate};
 
 pub(crate) const HOOK_DIRECT_FEATURE: &str = "hook-direct-v1";
 /// The resident accepts the sink command that routes a sandbox requirement.
