@@ -24,6 +24,9 @@ const TOOL_DIRECTORY_NAMES: &[&str] = &["bin", "shims"];
 const AGENT_STATE: &[&str] = &[".claude", ".codex", ".hol-guard", ".omp"];
 /// Corepack's default cache, relative to HOME.
 const COREPACK_CACHE: &str = ".cache/node/corepack";
+/// Go's module cache, below GOPATH's default. It holds the dependency sources
+/// a build compiles, written read-only by `go` itself.
+const GO_MODULE_CACHE: &str = "go/pkg/mod";
 
 /// `canonical`, the resolved PATH entry, when it is a sealed tool directory
 /// of the caller's that a workspace run may read and execute from.
@@ -139,6 +142,20 @@ pub(super) fn shim_siblings(shims: &Path, homes: &[PathBuf], workspace: &Path) -
 pub(super) fn corepack_home(home: &Path) -> Option<PathBuf> {
     let cache = home.join(COREPACK_CACHE).canonicalize().ok()?;
     (cache.starts_with(home) && cache.is_dir() && sealed_ancestry(&cache)).then_some(cache)
+}
+
+/// Go's module cache below `home`, when it is sealed like a tool directory.
+/// A build compiles the dependency sources stored there, and the sandbox has
+/// no network to fetch them again, so the cache is granted read-only; `go`
+/// never writes it during a build, and the build cache is a private one.
+pub(super) fn go_module_cache(home: &Path) -> Option<PathBuf> {
+    let cache = home.join(GO_MODULE_CACHE).canonicalize().ok()?;
+    (cache.starts_with(home) && cache.is_dir() && sealed_ancestry(&cache)).then_some(cache)
+}
+
+/// [`go_module_cache`] for this account's HOME from the password database.
+pub(in crate::restricted_pytest) fn host_go_module_cache() -> Option<PathBuf> {
+    go_module_cache(&host_home_directory()?)
 }
 
 /// [`corepack_home`] for this account's HOME from the password database.

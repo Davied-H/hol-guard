@@ -25,16 +25,28 @@ use std::path::Path;
 const NODE_MANAGERS: &[&str] = &["npm", "pnpm", "yarn", "bun"];
 pub(super) const NODE_PACKAGE_EXTENSION: &str = "command.package.node";
 const PYTHON_PACKAGE_EXTENSION: &str = "command.package.python";
+const GO_PACKAGE_EXTENSION: &str = "command.package.go";
 // The package-firewall permissions that mark a manager's use. They record
 // which ecosystem ran, not a risk the run carries, so a local verb below one
 // of them is still ordinary workspace work.
-pub(super) const PACKAGE_EXTENSIONS: &[&str] = &[NODE_PACKAGE_EXTENSION, PYTHON_PACKAGE_EXTENSION];
+pub(super) const PACKAGE_EXTENSIONS: &[&str] = &[
+    NODE_PACKAGE_EXTENSION,
+    PYTHON_PACKAGE_EXTENSION,
+    GO_PACKAGE_EXTENSION,
+];
 // The Python managers the package firewall watches. Each installs what it
 // runs, so none of their verbs is local work; `uv` is the exception below.
 const PYTHON_MANAGERS: &[&str] = &["pip", "pip3", "pipx", "uvx", "poetry", "pipenv"];
 // uv drives a project environment the workspace holds. Only the verbs that
 // read it are local: `pip`, `add`, `tool` and the rest reach a registry.
 const UV_LOCAL_VERBS: &[&str] = &["run", "tree", "export", "version"];
+// A Go build compiles the sources the module cache already holds and writes
+// its objects to a private build cache. Only the verbs that stay there are
+// local: `get`, `install`, `mod` and `work` reach a registry, and `tool` and
+// `clean` are neither a build nor a read.
+const GO_LOCAL_VERBS: &[&str] = &[
+    "build", "test", "vet", "fmt", "list", "doc", "env", "version", "run", "generate",
+];
 // Verbs that fetch from, or publish to, a registry. Without network they would
 // fail silently, so they keep supply-chain admission or consent instead. This
 // excludes by effect; local verbs and script names are never enumerated.
@@ -125,6 +137,17 @@ const REGISTRY_VERBS: &[&str] = &[
 /// already holds. uv materializes a project environment before it runs
 /// anything, so without `.venv` the run would have to install, which the
 /// sandbox has no network for; those commands keep the admission they have.
+/// Whether `go` runs a local verb inside a module the workspace holds.
+/// Outside a module these verbs read the wider GOPATH, and the sandbox has no
+/// network to resolve a package by import path, so they keep the admission
+/// they have.
+fn local_go_work(arguments: &[&str], workspace: &Path) -> bool {
+    arguments
+        .first()
+        .is_some_and(|verb| GO_LOCAL_VERBS.contains(&verb.to_ascii_lowercase().as_str()))
+        && workspace.join("go.mod").is_file()
+}
+
 fn local_uv_work(arguments: &[&str], workspace: &Path) -> bool {
     arguments
         .first()
@@ -150,6 +173,15 @@ pub(super) fn local_package_work(
             return false;
         };
         let name = super::super::executable_basename(executable).to_ascii_lowercase();
+        if name == "go" {
+            let arguments: Vec<&str> = segment
+                .arguments
+                .iter()
+                .map(String::as_str)
+                .take_while(|argument| *argument != "--")
+                .collect();
+            return local_go_work(&arguments, workspace);
+        }
         if PYTHON_MANAGERS.contains(&name.as_str()) {
             // Every other Python manager installs what it runs, and `uvx`
             // fetches the tool it names, so each reaches a registry.
@@ -206,3 +238,7 @@ mod cargo_tests;
 #[cfg(test)]
 #[path = "workspace_contained_uv_tests.rs"]
 mod uv_tests;
+
+#[cfg(test)]
+#[path = "workspace_contained_go_tests.rs"]
+mod go_tests;

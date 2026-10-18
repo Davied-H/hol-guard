@@ -362,7 +362,13 @@ pub(super) fn compose_with(
     metadata.extend(existing(ROOT_LINKS));
     let mut files = files.to_vec();
     files.extend(existing(TOOLCHAIN_FILES));
-    let mut executable = vec![workspace.clone()];
+    // A toolchain that links a binary and then runs it — `go test`, a cgo
+    // build, a compiled test runner — writes it into the private directory
+    // the plan gives the run for temporary files. That directory is the run's
+    // own and already writable, as the workspace is, and the workspace is
+    // executable too, so running what this command itself just built reaches
+    // nothing the command could not already run.
+    let mut executable = vec![workspace.clone(), input.private_root.clone()];
     executable.extend(linked.map(|linked| linked.checkout().to_path_buf()));
     executable.extend(existing(&["/bin", "/usr/bin"]));
     executable.extend(input.exec_roots.iter().cloned());

@@ -194,6 +194,27 @@ pub(super) fn filter(
             }
         }
     }
+    // A Go build reads its dependencies from the module cache below the real
+    // HOME, which the plan grants read-only, and writes its build cache into
+    // the private directory. There is no network, so a toolchain switch or a
+    // module download would only fail late; refusing both reports it at once.
+    if allowed.is_empty() {
+        if let Some(cache) = super::toolchains::host_go_module_cache() {
+            result.insert(
+                "GOMODCACHE".to_owned(),
+                cache.to_string_lossy().into_owned(),
+            );
+        }
+        for (key, value) in [
+            ("GOCACHE", private_tmp.join("go-build")),
+            ("GOPATH", private_tmp.join("go")),
+        ] {
+            result.insert(key.to_owned(), value.to_string_lossy().into_owned());
+        }
+        for (key, value) in [("GOPROXY", "off"), ("GOTOOLCHAIN", "local")] {
+            result.insert(key.to_owned(), value.to_owned());
+        }
+    }
     // A linked user site is read through the private HOME; otherwise it stays off.
     if !user_site {
         result.insert("PYTHONNOUSERSITE".to_owned(), "1".to_owned());

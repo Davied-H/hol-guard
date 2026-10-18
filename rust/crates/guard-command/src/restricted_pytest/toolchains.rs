@@ -7,7 +7,7 @@ use std::os::unix::fs::MetadataExt;
 
 #[path = "user_tools.rs"]
 mod user_tools;
-pub(super) use user_tools::host_corepack_home;
+pub(super) use user_tools::{host_corepack_home, host_go_module_cache};
 
 /// Where `xcode-select -s` records the developer directory: the current
 /// location first, then the one older macOS releases used.
@@ -227,6 +227,14 @@ pub(super) fn workspace_exec_roots(
     // Corepack's shims (`pnpm`, `yarn`) read the package manager they run
     // from its cache; the launch environment points `COREPACK_HOME` there.
     if let Some(cache) = host_corepack_home() {
+        if !roots.contains(&cache) {
+            roots.push(cache);
+        }
+    }
+    // A Go build compiles the dependency sources in the module cache; the
+    // launch environment points `GOMODCACHE` there and writes its own build
+    // cache into the private directory instead.
+    if let Some(cache) = host_go_module_cache() {
         if !roots.contains(&cache) {
             roots.push(cache);
         }
