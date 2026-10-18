@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 import time
 import uuid
 from collections.abc import Sequence
@@ -37,6 +38,7 @@ from .native_runtime_resilience import (
     native_record_resident_failure,
     native_record_resident_success,
 )
+from .path_resolution_cache import IdentityWitness, identity_unchanged, identity_witness
 
 _FEATURE = "directory-trust-v1"
 _RESIDENT_PROTOCOL_FEATURE = "resident-protocol-v2"
@@ -93,11 +95,22 @@ def native_directory_trust(
     its own — a hook with a host budget to keep — passes it so a slow resident
     cannot spend the whole budget settling paths; without one the call waits
     the module's own timeout.
+
+    An identical ask the runtime has already answered is answered from that
+    reply, for as long as every directory it was framed against is still the
+    same object, owner and kind. See the memo below for what that reuse covers
+    and why it is bounded by the directories rather than by a clock.
     """
 
     if not candidates:
         return []
     home = Path.home() if home_dir is None else Path(home_dir)
+    temp_dir = tempfile.gettempdir()
+    asked = tuple((parameter, value) for parameter, value in candidates)
+    remembered_key = (str(guard_home), str(home), temp_dir, asked)
+    remembered = _remembered_answer(remembered_key)
+    if remembered is not None:
+        return remembered
     request: dict[str, Any] = {
         "schema": _REQUEST_SCHEMA,
         "request_id": uuid.uuid4().hex,
@@ -105,8 +118,8 @@ def native_directory_trust(
         "home_dir": str(home),
         # The resident has its own `TMPDIR`, which an isolated environment may
         # not share; the temporary-root rules follow this process's.
-        "temp_dir": tempfile.gettempdir(),
-        "candidates": [{"parameter": parameter, "value": value} for parameter, value in candidates],
+        "temp_dir": temp_dir,
+        "candidates": [{"parameter": parameter, "value": value} for parameter, value in asked],
     }
     result = _round_trip(
         request,
@@ -130,7 +143,78 @@ def native_directory_trust(
         if not isinstance(reason, str) or not reason:
             raise NativeDirectoryTrustError(_INVALID_RESULT)
         answers.append(DirectoryTrustVerdict(parameter, None, reason))
+    _remember_answer(remembered_key, asked, answers)
     return answers
+
+
+# A hook names the same few directories on every request, and settling them is
+# a round trip the hook's own budget pays for. An answer the runtime already
+# gave is reused while everything it could have been about is demonstrably
+# unchanged: every component of every spelling asked about, of every path the
+# runtime returned, and of the Guard home, home and temporary directory the
+# question was framed against is still the same object, with the same owner,
+# of the same kind, and reached without a symlink.
+#
+# Those are the facts the runtime's rules read -- where a path resolves to,
+# which root it falls under, whether it is a directory, and who owns a scratch
+# workspace under a temporary root -- so an answer whose witness still holds is
+# the answer the runtime would give again. That is why the reuse is bounded by
+# the directories rather than by a clock: a timer would let a changed directory
+# keep its old answer until it expired, and would spend a round trip on an
+# unchanged one.
+#
+# Nothing here works a verdict out. Reuse can only repeat an admission the
+# runtime made; a refusal is never remembered, so a path that was refused is
+# always asked about again, and a relative or `~` spelling this process must
+# not resolve is never remembered either.
+_MAX_REMEMBERED_ASKS = 256
+_memo_lock = threading.Lock()
+_AskKey = tuple[str, str, str, tuple[tuple[str, str], ...]]
+_remembered_asks: dict[_AskKey, tuple[tuple[tuple[str, str], ...], IdentityWitness]] = {}
+
+
+def _remembered_answer(key: _AskKey) -> list[DirectoryTrustVerdict] | None:
+    """The runtime's own answer to this exact ask, while its witness still holds."""
+
+    with _memo_lock:
+        entry = _remembered_asks.get(key)
+    if entry is None:
+        return None
+    settled, witness = entry
+    if not identity_unchanged(witness):
+        with _memo_lock:
+            _remembered_asks.pop(key, None)
+        return None
+    return [DirectoryTrustVerdict(parameter, path, None) for parameter, path in settled]
+
+
+def _remember_answer(
+    key: _AskKey,
+    asked: tuple[tuple[str, str], ...],
+    answers: Sequence[DirectoryTrustVerdict],
+) -> None:
+    """Remember an ask the runtime trusted every candidate of, if it can be witnessed."""
+
+    settled: list[tuple[str, str]] = []
+    for answer in answers:
+        if answer.path is None:
+            return
+        settled.append((answer.parameter, answer.path))
+    guard_home, home, temp_dir, _candidates = key
+    witness = identity_witness(
+        [guard_home, home, temp_dir] + [value for _parameter, value in asked] + [path for _parameter, path in settled]
+    )
+    if witness is None:
+        return
+    with _memo_lock:
+        if len(_remembered_asks) >= _MAX_REMEMBERED_ASKS:
+            _remembered_asks.clear()
+        _remembered_asks[key] = (tuple(settled), witness)
+
+
+def clear_remembered_directory_trust() -> None:
+    with _memo_lock:
+        _remembered_asks.clear()
 
 
 def _round_trip(
@@ -233,5 +317,6 @@ __all__ = [
     "UNAVAILABLE_REASON",
     "DirectoryTrustVerdict",
     "NativeDirectoryTrustError",
+    "clear_remembered_directory_trust",
     "native_directory_trust",
 ]

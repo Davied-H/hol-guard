@@ -16,6 +16,7 @@ import os
 import stat
 import threading
 import time
+from collections.abc import Iterable
 
 _RESOLUTION_LIFETIME_SECONDS = 1.0
 _MAX_REMEMBERED_PATHS = 512
@@ -97,6 +98,69 @@ def cached_realpath(path: str, *, strict: bool = False) -> str:
             _remembered.clear()
         _remembered[key] = (identity.st_dev, identity.st_ino, now, resolved, marks, _component_prefixes(resolved))
     return resolved
+
+
+#: What one path component was when it was witnessed: the object it named, who
+#: owns it, what it is, and, for a symlink, where it pointed. Identity alone is
+#: not enough for an answer that depended on ownership, on the component being
+#: a directory, or on where a link led.
+_ComponentIdentity = tuple[int, int, int, int, int, str | None]
+IdentityWitness = tuple[tuple[str, ...], tuple[_ComponentIdentity, ...]]
+
+
+def _component_identity(component: str) -> _ComponentIdentity | None:
+    """What this one component is, or ``None`` when it cannot be read."""
+
+    try:
+        info = os.lstat(component)
+    except (OSError, ValueError):
+        return None
+    link: str | None = None
+    if stat.S_ISLNK(info.st_mode):
+        try:
+            link = os.readlink(component)
+        except (OSError, ValueError):
+            return None
+    return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode, link)
+
+
+def identity_witness(paths: Iterable[str]) -> IdentityWitness | None:
+    """What every component of these paths is right now, or ``None``.
+
+    ``None`` means nothing derived from these spellings may be remembered: a
+    relative path names a different directory from a different working
+    directory, and a component that cannot be read says nothing at all. A
+    symlink is witnessed by where it pointed, so a repointed link ends the
+    reuse rather than preventing it; every component after it is read through
+    it and witnessed by the object it reached.
+    """
+
+    seen: dict[str, _ComponentIdentity] = {}
+    for path in paths:
+        if not os.path.isabs(path):
+            return None
+        for component in _component_prefixes(path):
+            if component in seen:
+                continue
+            identity = _component_identity(component)
+            if identity is None:
+                return None
+            seen[component] = identity
+    if not seen:
+        return None
+    return tuple(seen), tuple(seen.values())
+
+
+def identity_unchanged(witness: IdentityWitness) -> bool:
+    """Whether every witnessed component is still the same object, owner and kind."""
+
+    components, identities = witness
+    if len(components) != len(identities):
+        return False
+    for component, identity in zip(components, identities, strict=True):
+        if _component_identity(component) != identity:
+            return False
+    return True
 
 
 def clear_cached_realpaths() -> None:

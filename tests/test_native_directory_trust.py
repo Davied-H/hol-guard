@@ -180,6 +180,7 @@ def test_an_overloaded_runtime_is_recorded_as_overload(monkeypatch: pytest.Monke
         native_directory_trust([("workspace", "/tmp")], guard_home=Path("/nowhere"))
     assert overloads
 
+
 def test_an_expired_hook_deadline_skips_the_transport_and_health_accounting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -219,3 +220,100 @@ def test_caller_budget_timeout_does_not_count_as_resident_failure(
             deadline_monotonic=module.time.monotonic() + 0.05,
         )
     assert not failures
+
+
+def _counting_responder(results: list[dict[str, object]], asks: list[int]):
+    answer = _responder(results)
+
+    def client(**kwargs: object) -> bytes:
+        asks[0] += 1
+        return answer(**kwargs)  # type: ignore[arg-type]
+
+    return client
+
+
+def _install(tmp_path: Path) -> tuple[Path, Path, Path]:
+    home = tmp_path / "home"
+    guard_home = home / ".hol-guard"
+    workspace = home / "project"
+    for directory in (home, guard_home, workspace):
+        directory.mkdir(parents=True, exist_ok=True)
+    return home, guard_home, workspace
+
+
+def test_an_unchanged_directory_is_not_settled_twice(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The runtime answers once; the same question about the same directory reuses it."""
+
+    _force_available(monkeypatch)
+    home, guard_home, workspace = _install(tmp_path)
+    asks = [0]
+    monkeypatch.setattr(
+        module,
+        "native_resident_client_request",
+        _counting_responder([{"parameter": "workspace", "trusted": True, "path": str(workspace)}], asks),
+    )
+
+    def ask() -> list[module.DirectoryTrustVerdict]:
+        return native_directory_trust([("workspace", str(workspace))], guard_home=guard_home, home_dir=home)
+
+    first = ask()
+    assert [(verdict.parameter, verdict.path) for verdict in first] == [("workspace", str(workspace))]
+    assert asks == [1]
+    second = ask()
+    assert [(verdict.parameter, verdict.path) for verdict in second] == [("workspace", str(workspace))]
+    assert asks == [1]
+
+
+def test_a_replaced_directory_is_settled_again(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A remembered answer stands for the directory it was about, not for its name."""
+
+    _force_available(monkeypatch)
+    home, guard_home, workspace = _install(tmp_path)
+    asks = [0]
+    monkeypatch.setattr(
+        module,
+        "native_resident_client_request",
+        _counting_responder([{"parameter": "workspace", "trusted": True, "path": str(workspace)}], asks),
+    )
+    native_directory_trust([("workspace", str(workspace))], guard_home=guard_home, home_dir=home)
+    assert asks == [1]
+    workspace.rmdir()
+    (tmp_path / "elsewhere").mkdir()
+    workspace.symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    native_directory_trust([("workspace", str(workspace))], guard_home=guard_home, home_dir=home)
+    assert asks == [2]
+
+
+def test_a_refused_directory_is_asked_about_every_time(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Only an admission is remembered, so a refusal can never outlive its reason."""
+
+    _force_available(monkeypatch)
+    home, guard_home, workspace = _install(tmp_path)
+    asks = [0]
+    monkeypatch.setattr(
+        module,
+        "native_resident_client_request",
+        _counting_responder([{"parameter": "workspace", "trusted": False, "reason": "unexpected_root"}], asks),
+    )
+    for expected in (1, 2, 3):
+        verdicts = native_directory_trust([("workspace", str(workspace))], guard_home=guard_home, home_dir=home)
+        assert [verdict.reason for verdict in verdicts] == ["unexpected_root"]
+        assert asks == [expected]
+
+
+def test_a_spelling_this_process_must_not_resolve_is_never_remembered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``~`` and relative spellings mean whatever the runtime expands them to."""
+
+    _force_available(monkeypatch)
+    home, guard_home, workspace = _install(tmp_path)
+    asks = [0]
+    monkeypatch.setattr(
+        module,
+        "native_resident_client_request",
+        _counting_responder([{"parameter": "workspace", "trusted": True, "path": str(workspace)}], asks),
+    )
+    for expected in (1, 2):
+        native_directory_trust([("workspace", "~/project")], guard_home=guard_home, home_dir=home)
+        assert asks == [expected]
