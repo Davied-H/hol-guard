@@ -266,3 +266,26 @@ fn a_hidden_directory_without_the_marker_is_not_a_virtualenv() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn an_interpreter_beside_the_sourcing_is_judged_without_it() {
+    // `source` reads a file, so a command that sourced anything answered yes
+    // to "does an interpreter here name a file this scan did not read", and
+    // the module launch beside it lost its floor for the sourcing's sake.
+    // The sourced file is in hand; only what runs after it is still unknown.
+    let root = project("beside", BOUNDED);
+    for command in [
+        "source .venv/bin/activate && python -m pytest",
+        ". .venv/bin/activate && python3 -m pip list",
+    ] {
+        assert_ne!(reviewed(&root, command).1, FAILED, "{command}");
+    }
+    // A script file next to the sourcing is still a file nobody read.
+    for command in [
+        "source .venv/bin/activate && python tools/release.py",
+        "source .venv/bin/activate && bash scripts/deploy.sh",
+    ] {
+        assert_eq!(reviewed(&root, command).1, FAILED, "{command}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
