@@ -55,9 +55,9 @@ def _check_url(url):
 
 
 class _Redirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, request, response, code, message, headers, newurl):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         _check_url(newurl)
-        return super().redirect_request(request, response, code, message, headers, newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def download(url, maximum):
