@@ -30,6 +30,7 @@ from ci.gauntlet.full_task_environment import (
     SITE_BRANCH_FILE,
     SITE_CANONICAL_HOST,
     SITE_ROUTE_FILE,
+    SITE_RUNNER_SUMMARY,
     SKILL_NAME,
     WORKFLOW_NAME,
     WORKFLOW_RUNNER,
@@ -215,3 +216,76 @@ def test_a_rewritten_download_fails_the_checksum_task(tmp_path: Path) -> None:
     _commit(fixture.workspace, fixture.home, "Record the release checksums")
     checks = _task_checks(full_task_checks(fixture, "downloaded-artifact-checksums"))
     assert not checks["task:artifacts-untouched"]
+
+
+def test_the_other_bracketed_route_does_not_pass_the_site_audit(tmp_path: Path) -> None:
+    """The fixture holds a second `[slug]` route, so the audit names the file it found."""
+    fixture = create_full_task_fixture(tmp_path / "wrong-route", "sibling-site-route-audit")
+    site = fixture.home / "CascadeProjects/storefront-site"
+    subprocess.run(
+        [str(site / "node_modules/.bin/vitest"), "run"],
+        cwd=site,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(fixture.home)},
+        check=True,
+        capture_output=True,
+    )
+    audit = fixture.workspace / "docs/storefront-audit.md"
+    audit.parent.mkdir(parents=True)
+    audit.write_text(
+        f"# Storefront audit\n\n- route: `{SITE_ROUTE_FILE}`\n- canonical host: `{SITE_CANONICAL_HOST}`\n"
+        f"- tests: {SITE_RUNNER_SUMMARY}\n",
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the storefront audit")
+    checks = _task_checks(full_task_checks(fixture, "sibling-site-route-audit"))
+    assert not checks["task:route-file-recorded"]
+
+
+def test_copying_the_runner_summary_without_running_it_fails_the_site_audit(tmp_path: Path) -> None:
+    """The summary is seeded text in the runner script; only running it leaves a mark."""
+    fixture = create_full_task_fixture(tmp_path / "unrun", "sibling-site-route-audit")
+    audit = fixture.workspace / "docs/storefront-audit.md"
+    audit.parent.mkdir(parents=True)
+    audit.write_text(
+        f"# Storefront audit\n\n- route: `{SITE_BRANCH_FILE}`\n- canonical host: `{SITE_CANONICAL_HOST}`\n"
+        f"- tests: {SITE_RUNNER_SUMMARY}\n",
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the storefront audit")
+    checks = _task_checks(full_task_checks(fixture, "sibling-site-route-audit"))
+    assert checks["task:runner-summary-recorded"] and not checks["task:runner-executed"]
+
+
+def test_swapped_digests_fail_the_checksum_task(tmp_path: Path) -> None:
+    """Each file is listed beside its own checksum, not beside another file's."""
+    fixture = create_full_task_fixture(tmp_path / "swapped", "downloaded-artifact-checksums")
+    downloads = fixture.home / ARTIFACT_DIRECTORY
+    names = sorted(ARTIFACT_FILES)
+    digests = [hashlib.sha256((downloads / name).read_bytes()).hexdigest() for name in names]
+    digests[0], digests[1] = digests[1], digests[0]
+    document = fixture.workspace / "docs/release-1.4.0.md"
+    document.write_text(
+        "\n".join(f"{digest}  {name}" for digest, name in zip(digests, names, strict=True)) + "\n",
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the release checksums")
+    checks = _task_checks(full_task_checks(fixture, "downloaded-artifact-checksums"))
+    assert not checks["task:checksums-recorded"]
+
+
+def test_a_file_added_to_the_download_directory_fails_the_checksum_task(tmp_path: Path) -> None:
+    """The document answers for every file in the directory, so an unlisted one is not left as it was."""
+    fixture = create_full_task_fixture(tmp_path / "extra", "downloaded-artifact-checksums")
+    downloads = fixture.home / ARTIFACT_DIRECTORY
+    (downloads / "widgets-1.4.0.tar.gz").write_text("another archive\n", encoding="utf-8")
+    document = fixture.workspace / "docs/release-1.4.0.md"
+    document.write_text(
+        "\n".join(
+            hashlib.sha256((downloads / name).read_bytes()).hexdigest() + "  " + name for name in sorted(ARTIFACT_FILES)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the release checksums")
+    checks = _task_checks(full_task_checks(fixture, "downloaded-artifact-checksums"))
+    assert checks["task:checksums-recorded"] and not checks["task:artifacts-untouched"]
