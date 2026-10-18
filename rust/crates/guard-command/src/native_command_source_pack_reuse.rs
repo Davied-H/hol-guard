@@ -75,24 +75,36 @@ impl<F: FnMut(&str) -> Result<Vec<u8>, &'static str>> PackReleaseReuse<F> {
             return Ok(None);
         }
         let mut program = self.value(&manifest["program"])?;
-        let references = program["nodes"]
-            .as_object()
-            .ok_or("command_pack_reuse_nodes_invalid")?;
+        let Value::Object(references) = program
+            .as_object_mut()
+            .ok_or("command_pack_reuse_nodes_invalid")?
+            .remove("nodes")
+            .ok_or("command_pack_reuse_nodes_invalid")?
+        else {
+            return Err("command_pack_reuse_nodes_invalid");
+        };
         if references.len() > 16384 {
             return Err("command_pack_reuse_nodes_invalid");
         }
-        let references = references.clone();
+        program["nodes"] = serde_json::json!({});
         let mut retained = serde_json::to_vec(&program)
             .map_err(|_| "command_pack_encoding_failed")?
             .len();
-        for (identity, reference) in references {
+        for (index, (identity, reference)) in references.into_iter().enumerate() {
             let node = self.value(&reference)?;
+            // Charge the assembled JSON, replacing rather than also charging
+            // its storage references. Valid near-limit programs keep the same
+            // byte budget as cold compilation.
+            let key_bytes = serde_json::to_vec(&identity)
+                .map_err(|_| "command_pack_encoding_failed")?
+                .len();
             retained = retained
                 .checked_add(
                     serde_json::to_vec(&node)
                         .map_err(|_| "command_pack_encoding_failed")?
                         .len(),
                 )
+                .and_then(|size| size.checked_add(key_bytes + 1 + usize::from(index > 0)))
                 .filter(|size| *size <= objects::BLOB_BYTES)
                 .ok_or("command_pack_reuse_nodes_invalid")?;
             program["nodes"][identity] = node;
@@ -131,5 +143,53 @@ impl<F: FnMut(&str) -> Result<Vec<u8>, &'static str>> PackReleaseReuse<F> {
             catalog_projection_kind: "complete".to_owned(),
             base_program_digest: None,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn malformed_program_shapes_return_an_error_without_panicking() {
+        for program in [
+            serde_json::json!([]),
+            Value::Null,
+            serde_json::json!({"nodes":[]}),
+        ] {
+            let mut bytes = Vec::new();
+            let mut writer = objects::ObjectWriter::new(&mut bytes);
+            let reference = writer.json(&program).unwrap();
+            let manifest = writer.json(&serde_json::json!({
+                "schema":"guard.command-policy-pack.v1", "extension_id":"command.one",
+                "engine":env!("GUARD_COMMAND_SOURCE_IMPLEMENTATION"),
+                "semantic_profile":"cpython-3.12-ucd15", "cache_key":"unit-key", "program":reference,
+            })).unwrap();
+            let index = writer
+                .index(&[("command.one".to_owned(), manifest)])
+                .unwrap();
+            let root = serde_json::json!({"schema":"guard.command-pack-release.v1",
+                "engine":env!("GUARD_COMMAND_SOURCE_IMPLEMENTATION"), "extensions":1, "index":index});
+            let objects: BTreeMap<String, Vec<u8>> = bytes
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
+                .map(|line| {
+                    let row: Value = serde_json::from_slice(line).unwrap();
+                    (
+                        row["sha256"].as_str().unwrap().to_owned(),
+                        STANDARD.decode(row["data"].as_str().unwrap()).unwrap(),
+                    )
+                })
+                .collect();
+            let mut reuse =
+                PackReleaseReuse::new(&root, |id: &str| objects.get(id).cloned().ok_or("missing"))
+                    .unwrap();
+            assert_eq!(
+                reuse.get("command.one", "unit-key").unwrap_err(),
+                "command_pack_reuse_nodes_invalid"
+            );
+        }
     }
 }

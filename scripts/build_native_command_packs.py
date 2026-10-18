@@ -189,8 +189,6 @@ def _stage(
                 else:
                     reused += 1
             status = process.poll() if session else process.wait()
-            if reuse is not None and compilation is None:
-                raise ValueError("native compiler reuse report is missing")
             if session and (compilation is None or root is None):
                 raise ValueError(f"native compiler session failed: {session.error()}")
             if status or root is None:
@@ -198,6 +196,8 @@ def _stage(
                 raise ValueError(
                     f"native pack compiler failed ({status}): {errors.read(2048).decode(errors='replace')}"
                 )
+            if reuse is not None and compilation is None:
+                raise ValueError("native compiler reuse report is missing")
         finally:
             if not session and process.poll() is None:
                 process.terminate()

@@ -74,7 +74,10 @@ objects. A different engine starts a cold compilation. The native maintainer
 operation `compile-packs-reuse <cache-directory> <authenticated-root-digest>`
 checks the root bytes against the separately supplied digest and proves each
 requested pack through that root. The digest must come from the verified
-publication; a cache cannot supply its own authority.
+publication; a cache cannot supply its own authority. Supply a canonical cache
+directory: symlinked paths are rejected, consistently with the existing stager.
+The benchmark resolves its own temporary directory before passing it to native
+code, including system temporary-directory aliases.
 
 Every build still strictly decodes the current raw sources and validates all
 global relationships before reuse. Native-computed source, trust, interface,

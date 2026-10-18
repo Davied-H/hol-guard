@@ -178,8 +178,6 @@ def create_distribution(
     packs.safe_directory(output)
     policy = output / "compiled-policy"
     report = packs.stage(compiler, policy, reuse=compiled_reuse)
-    with (output / "compilation-report.json").open("xb") as stream:
-        stream.write(encoded(report))
     native_root = json.loads((policy / "release.json").read_bytes())
     plan = AssetPlan(output / "assets", commit, existing=existing_locations, publication_id=publication_id)
     store = LocatedStore(output / "metadata", publisher=plan)
@@ -203,6 +201,8 @@ def create_distribution(
     data = encoded(root)
     if len(data) > MAX_OBJECT_BYTES:
         raise ValueError("delivery root exceeds byte limit")
+    with (output / "compilation-report.json").open("xb") as stream:
+        stream.write(encoded(report))
     path = output / MANIFEST
     if path.is_symlink():
         raise ValueError("delivery root must not be a symlink")

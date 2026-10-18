@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import io
 import json
 from pathlib import Path
 
@@ -132,3 +133,51 @@ def test_build_stage_rejects_bare_cache_paths(prepared):
     with pytest.raises(ValueError, match="verified"):
         stage(Path("unused-compiler"), cache, reuse=cache)
     assert not cache.exists()
+
+
+def test_failed_reuse_compiler_preserves_exit_status_and_stderr(prepared, monkeypatch):
+    reuse, verified, cache, _, _, _, _ = prepared
+    import build_native_command_packs as packs
+
+    token = reuse.prepare(verified, cache, "1" * 64)
+    monkeypatch.setattr(packs, "input_stream", lambda *args: 1)
+
+    class Process:
+        stdout = io.BytesIO(b"")
+
+        def wait(self):
+            return 2
+
+        def poll(self):
+            return 2
+
+    def failed(*args, **kwargs):
+        kwargs["stderr"].write(b"unit compiler panic diagnostic")
+        return Process()
+
+    monkeypatch.setattr(packs.subprocess, "Popen", failed)
+    with pytest.raises(ValueError, match=r"failed \(2\).*unit compiler panic diagnostic"):
+        packs.stage(Path("unit-test-compiler"), cache.parent / "failed-output", reuse=token)
+
+
+def test_failed_distribution_does_not_leave_a_premature_compilation_report(prepared, monkeypatch):
+    _, _, cache, _, _, _, _ = prepared
+    import build_extension_delivery as delivery
+
+    monkeypatch.setattr(delivery, "verify_sources", lambda *args, **kwargs: None)
+
+    def stage(compiler, output, **kwargs):
+        output.mkdir(parents=True)
+        (output / "release.json").write_text("{}")
+        return {"schema": "guard.pack-build-report.v1", "extensions": 1}
+
+    monkeypatch.setattr(delivery.packs, "stage", stage)
+
+    def interrupted(*args, **kwargs):
+        raise ValueError("unit interrupted distribution")
+
+    monkeypatch.setattr(delivery, "build_from_packs", interrupted)
+    with pytest.raises(ValueError, match="unit interrupted"):
+        delivery.create_distribution(Path("unit-test-compiler"), cache, "1" * 40)
+    assert not (cache / "compilation-report.json").exists()
+    assert not (cache / delivery.MANIFEST).exists()
