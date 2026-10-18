@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
+
+import pytest
+
 from codex_plugin_scanner.guard.adapters.harness_mcp_discovery import persist_discovered_harness_mcp_servers
 from codex_plugin_scanner.guard.adapters.harness_mcp_remote import (
     MAX_DISCOVERED_MCP_SERVERS,
     _remote_servers,
     remote_scan_harnesses,
 )
+from codex_plugin_scanner.guard.daemon import local_cli_api
+from codex_plugin_scanner.guard.daemon.local_cli_api import LocalCliApiService
 from codex_plugin_scanner.guard.models import GuardArtifact, HarnessDetection
 
 
@@ -91,3 +98,48 @@ def test_a_capped_scan_is_not_a_full_scan() -> None:
     servers = tuple((f"echo-mcp-{index}", origin) for index in range(MAX_DISCOVERED_MCP_SERVERS))
     detections = [_detection("codex", *servers)]
     assert remote_scan_harnesses(detections, _remote_servers(detections)) is None
+
+
+class _FailingReconcileStore(_Store):
+    def reconcile_remote_mcp_declarations(self, *, harnesses: object, declared_cli_ids: object) -> int:
+        raise sqlite3.OperationalError("database is locked")
+
+
+def test_a_failed_reconcile_keeps_the_recorded_servers() -> None:
+    store = _FailingReconcileStore()
+    detections = [_detection("codex", ("echo-mcp", "https://mcp.example.test/mcp"))]
+    remote = _remote_servers(detections)
+    labels = persist_discovered_harness_mcp_servers(
+        store,
+        (),
+        seen_at="2026-01-01T00:00:00Z",
+        remote=remote,
+        remote_harnesses=remote_scan_harnesses(detections, remote),
+    )
+    assert len(labels) == 1
+
+
+class _ServiceStore:
+    guard_home = Path("/nonexistent-guard-home")
+
+    def get_managed_install(self, harness: str) -> None:
+        return None
+
+
+def test_a_failed_daemon_scan_forgets_its_remote_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = object.__new__(LocalCliApiService)
+    service._store = _ServiceStore()  # type: ignore[attr-defined]
+    service._discovery_cache = None  # type: ignore[attr-defined]
+    detections = [_detection("codex", ("echo-mcp", "https://mcp.example.test/mcp"))]
+    service._remote_discovery_cache = (  # type: ignore[attr-defined]
+        0.0,
+        _remote_servers(detections),
+        ("codex",),
+    )
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise OSError("unreadable")
+
+    monkeypatch.setattr(local_cli_api, "configured_harness_detections", fail)
+    assert service._discovered_servers() == ()
+    assert service._remote_scan() == ((), None)

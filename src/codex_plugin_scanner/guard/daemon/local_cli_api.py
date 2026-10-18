@@ -139,8 +139,10 @@ class LocalCliApiService:
         self._store = store
         self._codex_host_inventory = CodexHostInventoryCache()
         self._discovery_cache: tuple[float, tuple[DiscoveredHarnessMcpServer, ...]] | None = None
-        self._remote_discovery_cache: tuple[float, tuple[DiscoveredRemoteMcpServer, ...]] | None = None
-        self._remote_scan_harnesses: tuple[str, ...] | None = None
+        # The remote list and the harnesses it fully covers come from one scan.
+        self._remote_discovery_cache: (
+            tuple[float, tuple[DiscoveredRemoteMcpServer, ...], tuple[str, ...] | None] | None
+        ) = None
         self._discovery_jobs = McpDiscoveryJobs()
         self._registry_setup_lock = threading.Lock()
         self._registry_setup_undo = RegistrySetupUndo(store)
@@ -365,13 +367,14 @@ class LocalCliApiService:
                     requested_job_id=_client_discovery_job_id(payload),
                 )
             if payload.get("operation") == "configured-connections":
+                force_refresh = payload.get("force_refresh") is True
 
                 def discover(cancel: threading.Event) -> None:
                     if cancel.is_set():
                         return
                     # Existing host adapters read configuration and persisted
                     # observations only. This path never starts a server.
-                    self._observe_harness_mcp_servers(strict=True)
+                    self._observe_harness_mcp_servers(strict=True, fresh=force_refresh)
                     if not cancel.is_set():
                         try:
                             saturated = discover_observed_mcp_tools(self._store, seen_at=utc_now())
@@ -858,16 +861,19 @@ class LocalCliApiService:
         finally:
             notify_native_policy_mutation(self._store.guard_home)
 
-    def _observe_harness_mcp_servers(self, *, strict: bool = False) -> dict[str, str]:
+    def _observe_harness_mcp_servers(self, *, strict: bool = False, fresh: bool = False) -> dict[str, str]:
         try:
-            servers = self._discovered_servers(strict=True) if strict else self._discovered_servers()
-            remote = self._discovered_remote_servers()
+            if fresh:
+                # A forced refresh reads the configuration as it is now.
+                self._discovery_cache = self._remote_discovery_cache = None
+            servers = self._discovered_servers(strict=strict)
+            remote, remote_harnesses = self._remote_scan()
             return persist_discovered_harness_mcp_servers(
                 self._store,
                 servers,
                 seen_at=utc_now(),
                 remote=remote,
-                remote_harnesses=self._remote_scan_harnesses,
+                remote_harnesses=remote_harnesses,
             )
         except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
             if strict:
@@ -881,13 +887,14 @@ class LocalCliApiService:
             return Path(managed_workspace)
         return None
 
-    def _discovered_remote_servers(self) -> tuple[DiscoveredRemoteMcpServer, ...]:
-        # Remote servers are listed, never launched; a failed read lists none.
+    def _remote_scan(self) -> tuple[tuple[DiscoveredRemoteMcpServer, ...], tuple[str, ...] | None]:
+        # Remote servers are listed, never launched; a failed read lists none
+        # and covers no harness, so it forgets no declaration.
         cached = self._remote_discovery_cache
         if cached is None or time.monotonic() - cached[0] >= _DISCOVERY_TTL_SECONDS:
             _ = self._discovered_servers()
             cached = self._remote_discovery_cache
-        return cached[1] if cached is not None else ()
+        return (cached[1], cached[2]) if cached is not None else ((), None)
 
     def _discovered_servers(self, *, strict: bool = False) -> tuple[DiscoveredHarnessMcpServer, ...]:
         now = time.monotonic()
@@ -906,6 +913,8 @@ class LocalCliApiService:
                 detections=detections,
             )
         except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
+            # A failed read leaves no remote snapshot to reconcile against.
+            self._remote_discovery_cache = None
             if strict:
                 raise DiscoveryStageError("configured_host_scan_failed") from None
             return ()
@@ -921,8 +930,7 @@ class LocalCliApiService:
         except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
             # A failed read lists none and must not forget any declaration.
             remote, harnesses = (), None
-        self._remote_discovery_cache = (now, remote)
-        self._remote_scan_harnesses = harnesses
+        self._remote_discovery_cache = (now, remote, harnesses)
         return servers
 
     def _live_mcp_launch_command(self, payload: dict[str, object]) -> str | None:

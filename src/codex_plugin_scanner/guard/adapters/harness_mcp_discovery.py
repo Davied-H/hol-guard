@@ -180,7 +180,11 @@ def persist_discovered_harness_mcp_servers(
             remote_ids.append(cli_id)
     reconcile = getattr(store, "reconcile_remote_mcp_declarations", None)
     if remote_harnesses is not None and callable(reconcile) and len(remote_ids) == len(remote):
-        reconcile(harnesses=remote_harnesses, declared_cli_ids=remote_ids)
+        try:
+            reconcile(harnesses=remote_harnesses, declared_cli_ids=remote_ids)
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError, sqlite3.Error) as error:
+            # The cleanup is display-only; the observations above still stand.
+            logger.debug("remote MCP declaration reconcile skipped: %s", type(error).__name__)
     return labels
 
 
