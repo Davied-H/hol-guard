@@ -43,7 +43,7 @@ def input_stream(root: Path, output, identities: set[str] | None = None) -> int:
     frame(legacy.canonical_bytes({"schema": "guard.command-pack-source-stream.v1", "count": len(rows)}))
     for path, kind in rows:
         # Native strict decoding still sees the original bytes, including duplicate keys.
-        data = legacy.read_source_bytes(path)
+        data = legacy.read_source_bytes(path, root=root)
         value = legacy.source_object(data, path)
         extension_id = value.get("extension", {}).get("extension_id") if kind == "command" else value.get("id")
         if not isinstance(extension_id, str) or path.stem != extension_id:
@@ -55,7 +55,7 @@ def input_stream(root: Path, output, identities: set[str] | None = None) -> int:
         if identities is not None:
             identities.add(extension_id)
         binding_path = root / "contracts/extensions/trust" / f"{extension_id}.v1.json"
-        binding = legacy.read_object(binding_path)
+        binding = legacy.read_object(binding_path, root=root)
         if (
             binding.get("schemaVersion") != "guard.extension-trust-binding.v1"
             or binding.get("extension") != extension_id
@@ -95,14 +95,18 @@ def safe_directory(path: Path) -> None:
         raise ValueError("pack output must be a directory")
 
 
-def stage(compiler: Path, destination: Path, *, session: PackCompilerSession | None = None) -> dict:
+def stage(
+    compiler: Path, destination: Path, *, session: PackCompilerSession | None = None, source_root: Path | None = None
+) -> dict:
     if session:
         with session.request():
-            return _stage(compiler, destination, session=session)
-    return _stage(compiler, destination)
+            return _stage(compiler, destination, session=session, source_root=source_root)
+    return _stage(compiler, destination, source_root=source_root)
 
 
-def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | None = None) -> dict:
+def _stage(
+    compiler: Path, destination: Path, *, session: PackCompilerSession | None = None, source_root: Path | None = None
+) -> dict:
     safe_directory(destination)
     objects = destination / "objects"
     safe_directory(objects)
@@ -112,7 +116,7 @@ def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | 
     reused = created = changed_bytes = 0
     compilation = None
     with tempfile.TemporaryFile() as source, tempfile.TemporaryFile() as errors:
-        count = input_stream(legacy.ROOT, source, identities)
+        count = input_stream(source_root or legacy.ROOT, source, identities)
         process = (
             session.submit(compiler, source)
             if session

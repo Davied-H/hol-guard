@@ -51,3 +51,17 @@ fn bootstrap_tool_cannot_export_or_evaluate_a_packaged_program() {
     assert_eq!(status, 0);
     assert!(result.is_object());
 }
+
+#[test]
+fn bootstrap_build_reports_its_data_free_identity_and_rejects_truncated_input() {
+    let (status, info) = run("compiler-info", b"");
+    assert_eq!(status, 0);
+    assert_eq!(info["schema"], "guard.source-compiler-capabilities.v1");
+    assert_eq!(info["embedded_catalog"], false);
+    let digest = info["implementation_digest"].as_str().unwrap();
+    assert_eq!(digest.len(), 64);
+    assert!(digest.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    let (status, error) = run("compile-bootstrap-stream", b"HGCS");
+    assert_eq!(status, 2);
+    assert_eq!(error["code"], "command_source_stream_truncated");
+}

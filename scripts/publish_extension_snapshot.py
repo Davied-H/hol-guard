@@ -64,8 +64,14 @@ def download_asset(asset: dict, destination: Path) -> None:
         raise RuntimeError(result.stderr.decode("utf-8", errors="replace").strip() or "GitHub download failed")
 
 
-def github(*arguments: str) -> str:
-    result = subprocess.run(["gh", *arguments], capture_output=True, text=True, timeout=120)
+def github(*arguments: str, input_data: bytes | None = None) -> str:
+    result = subprocess.run(
+        ["gh", *arguments],
+        input=input_data.decode() if input_data is not None else None,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "GitHub request failed")
     return result.stdout
@@ -93,9 +99,19 @@ def verify_provenance(directory: Path, expected_sha: str) -> None:
         raise ValueError("snapshot provenance is missing or exceeds byte limit")
     for name in (ARCHIVE, MANIFEST):
         github(
-            "attestation", "verify", str(directory / name), "--bundle", str(bundle),
-            "--repo", REPOSITORY, "--signer-workflow", WORKFLOW,
-            "--source-ref", "refs/heads/main", "--source-digest", expected_sha,
+            "attestation",
+            "verify",
+            str(directory / name),
+            "--bundle",
+            str(bundle),
+            "--repo",
+            REPOSITORY,
+            "--signer-workflow",
+            WORKFLOW,
+            "--source-ref",
+            "refs/heads/main",
+            "--source-digest",
+            expected_sha,
         )
 
 
@@ -108,11 +124,24 @@ def publish(directory: Path, expected_sha: str) -> None:
     if release is None:
         release = json.loads(
             github(
-                "api", f"repos/{REPOSITORY}/releases", "--method", "POST",
-                "-f", "tag_name=" + tag, "-f", "target_commitish=" + expected_sha,
-                "-F", "draft=true", "-F", "prerelease=true", "-f", "make_latest=false",
-                "-f", "name=Extension artifacts " + expected_sha[:12],
-                "-f", "body=Verified extension directory and metadata for source commit " + expected_sha + ".",
+                "api",
+                f"repos/{REPOSITORY}/releases",
+                "--method",
+                "POST",
+                "-f",
+                "tag_name=" + tag,
+                "-f",
+                "target_commitish=" + expected_sha,
+                "-F",
+                "draft=true",
+                "-F",
+                "prerelease=true",
+                "-f",
+                "make_latest=false",
+                "-f",
+                "name=Extension artifacts " + expected_sha[:12],
+                "-f",
+                "body=Verified extension directory and metadata for source commit " + expected_sha + ".",
             )
         )
         if release.get("draft") is not True:
@@ -165,8 +194,18 @@ def publish(directory: Path, expected_sha: str) -> None:
         verify_bundle(downloaded, expected_sha)
         verify_provenance(downloaded, expected_sha)
     if release["draft"]:
-        published = json.loads(github("api", f"repos/{REPOSITORY}/releases/{release_id}",
-                                      "--method", "PATCH", "-F", "draft=false", "-f", "make_latest=false"))
+        published = json.loads(
+            github(
+                "api",
+                f"repos/{REPOSITORY}/releases/{release_id}",
+                "--method",
+                "PATCH",
+                "-F",
+                "draft=false",
+                "-f",
+                "make_latest=false",
+            )
+        )
         if published.get("draft") is not False or published.get("tag_name") != tag:
             raise ValueError("snapshot release publication was not confirmed")
         commit = json.loads(github("api", f"repos/{REPOSITORY}/commits/{tag}"))

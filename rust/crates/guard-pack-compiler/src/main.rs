@@ -53,7 +53,7 @@ fn main() {
         }
         return;
     }
-    if !matches!(arguments.as_slice(), [operation] if matches!(operation.as_str(), "compile-packs" | "schema" | "descriptor-schema"))
+    if !matches!(arguments.as_slice(), [operation] if matches!(operation.as_str(), "compiler-info" | "compile-bootstrap-stream" | "compile-packs" | "schema" | "descriptor-schema"))
     {
         println!(
             "{}",
