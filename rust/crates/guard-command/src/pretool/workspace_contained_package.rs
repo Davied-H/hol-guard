@@ -190,7 +190,7 @@ pub(super) fn names_a_manager(model: &CanonicalCommandV1) -> bool {
             let name = super::super::executable_basename(executable).to_ascii_lowercase();
             NODE_MANAGERS.contains(&name.as_str())
                 || PYTHON_MANAGERS.contains(&name.as_str())
-                || matches!(name.as_str(), "uv" | "go")
+                || matches!(name.as_str(), "uv" | "go" | "cargo")
         })
     })
 }
