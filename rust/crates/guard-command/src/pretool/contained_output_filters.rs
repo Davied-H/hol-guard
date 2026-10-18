@@ -152,7 +152,7 @@ pub(super) fn plain_source(source: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{grep_arguments, plain_source};
+    use super::{plain_source, stdin_arguments, GREP_SWITCHES, RG_SWITCHES};
 
     fn words(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -169,7 +169,10 @@ mod tests {
             &["-e", "FAIL", "-e", "Error"],
             &["--", "-x"],
         ] {
-            assert!(grep_arguments(&words(arguments)), "{arguments:?}");
+            assert!(
+                stdin_arguments(&words(arguments), GREP_SWITCHES),
+                "{arguments:?}"
+            );
         }
     }
 
@@ -194,7 +197,50 @@ mod tests {
             &["-", "x"],
             &["--color=always", "x"],
         ] {
-            assert!(!grep_arguments(&words(arguments)), "{arguments:?}");
+            assert!(
+                !stdin_arguments(&words(arguments), GREP_SWITCHES),
+                "{arguments:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ripgrep_reading_standard_input_is_a_filter() {
+        for arguments in [
+            &["FAIL"][..],
+            &["-A", "12", "FAIL|AssertionError"],
+            &["-n", "FAIL"],
+            &["-NU", "-e", "FAIL", "-e", "Error"],
+            &["-B2", "-A6", "-i", "error"],
+            &["-c", "FAIL"],
+        ] {
+            assert!(
+                stdin_arguments(&words(arguments), RG_SWITCHES),
+                "{arguments:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ripgrep_spelling_its_own_valued_options_is_not_a_filter() {
+        for arguments in [
+            &[][..],
+            &["x", "notes.txt"],
+            &["-f", "/home/user/.ssh/id_rsa"],
+            &["-l", "x"],
+            &["-P", "x"],
+            &["-z", "x"],
+            // `-g` and `-E` take a value in ripgrep, so the word after them
+            // is not a pattern and the stage is not a plain filter.
+            &["-g", "*.ts", "x"],
+            &["-E", "utf-8", "x"],
+            &["--files"],
+            &["--pre", "cat", "x"],
+        ] {
+            assert!(
+                !stdin_arguments(&words(arguments), RG_SWITCHES),
+                "{arguments:?}"
+            );
         }
     }
 
