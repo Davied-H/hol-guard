@@ -72,3 +72,21 @@ fn uv_installs_and_unmaterialized_projects_keep_their_review() {
         assert_ne!(reason, CONTAINED, "{harness}");
     }
 }
+
+#[test]
+fn the_other_python_managers_keep_their_review() {
+    let ws = project("uv-managers");
+    for command in [
+        "pip install requests",
+        "pip3 install -r requirements.txt",
+        "pipx install ruff",
+        "pipenv install",
+        "poetry add requests",
+        "poetry install",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+}
