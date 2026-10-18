@@ -30,7 +30,7 @@ fn a_names_only_search_of_a_sibling_repository_is_allowed() {
 fn a_sibling_tree_that_could_name_a_secret_is_reviewed() {
     let layout = layout("fd-sibling-secret");
     let sibling = layout.org.join("service-api");
-    write(sibling.join("config/credentials.json"), "{}\n");
+    write(sibling.join("config/service.pem"), "SYNTHETIC KEY\n");
     write(layout.home.join(".ssh/id_rsa"), "fixture\n");
     std::os::unix::fs::symlink(layout.home.join(".ssh"), sibling.join("keys")).unwrap();
     let cwd = layout.org.join("app-portal");
