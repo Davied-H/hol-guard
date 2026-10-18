@@ -2,11 +2,15 @@
 
 A chain of up to three `| head -N`, `| tail -N`, `| grep` and `| rg` stages
 that read only standard input. Head and tail run in-process. A matcher runs
-as its own binary on the captured output with a validated argument list: no
-file operand, pattern file, recursion or other output, so it can only print
-lines of the text it is given, and it runs inside the core's sandbox with an
-environment this module builds, never the caller's.
-`contained_output_filters.rs` accepts the same chain.
+as its own binary on the text the core already produced, in this process
+rather than in the core's sandbox, so its argument list is validated first:
+no file operand, pattern file, recursion or other output, so it can only
+print lines of the text it is given. The environment is built here, never
+the caller's. The binary is the installed one, located by ownership rather
+than by the caller's `PATH`; a matcher an agent could rewrite is one every
+plain `grep` or `rg` search already runs, so locating it this way is what
+this screen can decide, and the sandbox the core ran in does not extend
+here. `contained_output_filters.rs` accepts the same chain.
 """
 
 from __future__ import annotations
@@ -152,11 +156,13 @@ def _rewritable_only_by_owner(info: os.stat_result) -> bool:
 
 
 def _trusted_ripgrep() -> str:
-    """The installed ripgrep: a regular file only its owner can rewrite.
+    """The installed ripgrep: an executable file only its owner can rewrite.
 
     Its path is not fixed the way the system grep's is, so the install
     directories are searched in turn and the resolved file must belong to root
-    or to this user with no group or other write bit.
+    or to this user with no group or other write bit. A name that cannot be
+    executed is not the install, so the search goes on to the next directory
+    rather than failing on it.
     """
     for directory in _RG_DIRECTORIES:
         try:
@@ -164,7 +170,7 @@ def _trusted_ripgrep() -> str:
             info = resolved.stat()
         except OSError:
             continue
-        if _rewritable_only_by_owner(info):
+        if _rewritable_only_by_owner(info) and os.access(resolved, os.X_OK):
             return str(resolved)
     raise RuntimeError("no trusted ripgrep")
 
@@ -192,7 +198,14 @@ def _matcher_command(program: str, arguments: list[str]) -> list[str]:
 
 def _match_lines(text: str, stage: Stage) -> tuple[str, str, int]:
     program, *arguments = stage
-    command = _matcher_command(program, arguments)
+    try:
+        command = _matcher_command(program, arguments)
+    except RuntimeError:
+        # The shape was accepted before the core ran, so the core has already
+        # done its work. A machine without the matcher installed gets the
+        # status a shell gives a missing program, not an exception from the
+        # wrapper.
+        return "", f"hol-guard: {program}: not found\n", 127
     # No `RIPGREP_CONFIG_PATH` or `GREP_OPTIONS`: the environment is built here.
     environment = {"PATH": "/usr/bin:/bin"}
     environment.update({name: os.environ[name] for name in _LOCALE if name in os.environ})

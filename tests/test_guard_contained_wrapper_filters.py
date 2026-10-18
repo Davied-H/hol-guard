@@ -179,7 +179,31 @@ def test_a_group_writable_ripgrep_is_refused(monkeypatch: pytest.MonkeyPatch, tm
     planted.chmod(0o777)
     monkeypatch.setattr(filters, "_RG_DIRECTORIES", (directory,))
     with pytest.raises(RuntimeError):
-        filters.apply_filters("x\n", (("rg", "x"),))
+        filters._trusted_ripgrep()
+
+
+def test_a_ripgrep_that_cannot_run_leaves_the_search_to_the_next_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    first = tmp_path / "first"
+    first.mkdir()
+    (first / "rg").write_text("not the install\n")
+    second = tmp_path / "second"
+    second.mkdir()
+    installed = second / "rg"
+    installed.write_text("#!/bin/sh\ncat\n")
+    installed.chmod(0o755)
+    monkeypatch.setattr(filters, "_RG_DIRECTORIES", (first, second))
+    assert filters._trusted_ripgrep() == str(installed)
+
+
+def test_a_missing_matcher_reports_the_status_a_shell_gives(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(filters, "_RG_DIRECTORIES", (tmp_path / "missing",))
+    text, diagnostics, status = filters.apply_filters("x\n", (("rg", "x"),))
+    assert (text, status) == ("", 127)
+    assert "rg: not found" in diagnostics
 
 
 def test_untrusted_grep_binaries_are_refused(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -188,4 +212,4 @@ def test_untrusted_grep_binaries_are_refused(monkeypatch: pytest.MonkeyPatch, tm
     planted.chmod(0o777)
     monkeypatch.setattr(filters, "_GREP_BINARIES", (planted, tmp_path / "missing"))
     with pytest.raises(RuntimeError):
-        filters.apply_filters("x\n", (("grep", "x"),))
+        filters._trusted_grep()
