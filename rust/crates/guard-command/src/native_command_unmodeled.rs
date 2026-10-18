@@ -181,7 +181,7 @@ impl CompiledNativeCommandControls {
         {
             return None;
         }
-        if !reviewable_structure(command) {
+        if !reviewable_structure(command, context) {
             return None;
         }
         // A lookup such as `command -v doctl` only prints a path: it never
@@ -237,7 +237,7 @@ impl CompiledNativeCommandControls {
                 .is_some_and(|programs| !programs.is_empty());
         if INTERPRETERS.iter().any(|name| {
             interpreted.contains(*name)
-                && !(sourced_resolved && *name == "source")
+                && !(sourced_resolved && matches!(*name, "source" | "."))
                 && !(xargs_bounded && *name == "xargs")
         }) {
             // An `xargs` whose operands are not in the text is not bounded by
@@ -428,7 +428,10 @@ fn glued_redirect_runs_interpreter(text: &str) -> bool {
 /// Loops and conditionals, or one heredoc that only feeds standard input,
 /// with nothing in the shell text that substitutes or overrides `PATH` and no
 /// redirect except to a literal path.
-fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
+fn reviewable_structure(
+    command: &CanonicalCommandV1,
+    context: crate::pretool::PathContext<'_>,
+) -> bool {
     if command.path_overridden || command.confidence != "uncertain" {
         return false;
     }
@@ -463,8 +466,18 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         // is one, and the pipe carries arguments into the program the text
         // names. `find -exec`, `eval`, and `xargs sh` stay an evaluation
         // failure: those do not name a bounded program.
+        //
+        // The shell's `source` builtin is a nested executor too, and the file
+        // it reads does name a bounded program set, which the floor below
+        // already knows how to collect. Without this arm it never got the
+        // chance: `source .venv/bin/activate && pytest -q`, the first thing
+        // any Python project runs, reached an evaluation failure here and
+        // blocked outright, with no approval left to give it.
         Some("nested_command_executor_not_yet_supported") => {
+            let literal = unquoted_literal(&command.normalized_text);
             named_xargs_pipeline(&command.normalized_text)
+                || ((!moves_data(&literal) || literal_redirects_only(&command.normalized_text))
+                    && sourcing_bounds_its_owners(command, context))
         }
         Some("command_redirect_not_yet_supported") => {
             let text = without_lookups(&command.normalized_text);
@@ -514,6 +527,21 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether every nested executor the command holds is the shell's `source`
+/// builtin reading a file whose own words name every program it can run.
+///
+/// The floor reads the same files again to collect those names. Here the only
+/// question is whether the shape has an owner set at all, because a command
+/// that sources something this scan cannot read, or that nests anything else
+/// alongside the sourcing, keeps its evaluation failure.
+fn sourcing_bounds_its_owners(
+    command: &CanonicalCommandV1,
+    context: crate::pretool::PathContext<'_>,
+) -> bool {
+    crate::pretool::sole_sourcing_sources(command, context)
+        .is_some_and(|texts| !texts.is_empty() && texts.iter().all(|text| bounds_its_owners(text)))
 }
 
 /// A command with its heredocs removed that moves no data, or only to

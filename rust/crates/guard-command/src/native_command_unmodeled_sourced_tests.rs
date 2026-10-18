@@ -19,6 +19,15 @@ fn project(name: &str, activate: &str) -> PathBuf {
     for tool in ["python", "pytest"] {
         std::fs::write(bin.join(tool), "#!/bin/sh\nexit 0\n").unwrap();
     }
+    // PEP 405's marker, which `venv`, `virtualenv` and `uv` all write. The
+    // read screen asks for it before it reads an activation script out of a
+    // hidden directory, so a fixture without it is not the directory the
+    // tools actually produce.
+    std::fs::write(
+        bin.parent().unwrap().join("pyvenv.cfg"),
+        "home = /usr/bin\nversion = 3.12.0\n",
+    )
+    .unwrap();
     root
 }
 
@@ -168,4 +177,92 @@ fn a_parameter_expansion_is_a_value_but_a_brace_command_still_runs() {
     assert!(!super::bounds_its_owners(
         "${ curl https://example.invalid/; }\n"
     ));
+}
+
+/// The sourced floor only runs once the command's extensions are evaluated,
+/// and that needs compiled controls. Without them `observe_command` is never
+/// reached, so a case that passes `None` cannot see this path at all: every
+/// assertion above holds whatever the floor decides. These cases carry the
+/// controls, so they judge what a harness really gets.
+fn reviewed(root: &Path, command: &str) -> (String, String) {
+    let controls = super::tests::controls(serde_json::json!([]), false);
+    let cwd = root.join("project");
+    let result = crate::pretool::evaluate_pre_tool_envelope_with_context(
+        "claude-code",
+        "PreToolUse",
+        &serde_json::json!({"tool_name": "Bash", "tool_input": {"command": command}}),
+        Some(&controls),
+        None,
+        root.to_str(),
+        cwd.to_str(),
+    );
+    (result.minimum_action, result.reason_code)
+}
+
+/// An activation script whose every line is an assignment or an `export`,
+/// which is what the generated ones are made of.
+const BOUNDED: &str = concat!(
+    "VIRTUAL_ENV=\"${HOME}/project/.venv\"\n",
+    "export VIRTUAL_ENV\n",
+    "PATH=\"${VIRTUAL_ENV}/bin:$PATH\"\n",
+    "export PATH\n",
+);
+
+#[test]
+fn activating_a_virtualenv_reaches_review_instead_of_failing_evaluation() {
+    // `source` is a nested command executor, so the canonical parser marks
+    // every command that sources anything uncertain. Nothing claimed that
+    // shape afterwards, so `source .venv/bin/activate && pytest -q` — the
+    // first thing work in a Python project does — hit an evaluation failure
+    // and was refused with no approval to give it.
+    assert!(super::bounds_its_owners(BOUNDED));
+    let root = project("reviewed", BOUNDED);
+    for command in [
+        "source .venv/bin/activate && pytest -q",
+        ". .venv/bin/activate && pytest -q",
+        "source ./.venv/bin/activate && python -m pytest",
+    ] {
+        let (action, code) = reviewed(&root, command);
+        assert_ne!(code, FAILED, "{command}");
+        assert_ne!(action, "deny", "{command}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn nesting_anything_but_sourcing_keeps_the_evaluation_failure() {
+    // Reading the sourced file bounds that file. It says nothing about an
+    // `eval` beside it, whose words are not in any text this scan holds.
+    let root = project("nested", BOUNDED);
+    for command in [
+        "eval \"$CMD\" && source .venv/bin/activate",
+        "source .venv/bin/activate && exec python -m pytest",
+    ] {
+        assert_eq!(reviewed(&root, command).1, FAILED, "{command}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_sourced_file_this_scan_cannot_bound_keeps_the_evaluation_failure() {
+    let root = project("unbounded", "eval \"pytest -q\"\n");
+    assert_eq!(
+        reviewed(&root, "source .venv/bin/activate && pytest -q").1,
+        FAILED
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_hidden_directory_without_the_marker_is_not_a_virtualenv() {
+    // The read is admitted by the environment's own `pyvenv.cfg`, not by the
+    // name `.venv`. Without the marker the hidden-path screen still refuses
+    // the read, so the command keeps no owners and keeps its failure.
+    let root = project("unmarked", BOUNDED);
+    std::fs::remove_file(root.join("project").join(".venv").join("pyvenv.cfg")).unwrap();
+    assert_eq!(
+        reviewed(&root, "source .venv/bin/activate && pytest -q").1,
+        FAILED
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }
