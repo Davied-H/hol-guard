@@ -628,7 +628,7 @@ fn a_rewrite_that_drops_invalid_lines_still_lets_the_writer_stop() {
     let mut writer_deps = deps();
     writer_deps.journal = Box::new(InvalidLineJournal);
     let writer = RuntimeHookEvidenceWriter::new(
-        Arc::clone(&store),
+        store,
         writer_deps,
         64,
         1 << 20,
