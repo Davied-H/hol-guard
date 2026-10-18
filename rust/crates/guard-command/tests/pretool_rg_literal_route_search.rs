@@ -57,6 +57,8 @@ fn fixture() -> Fixture {
     // the shell folds case.
     write(app.join("app/[sidebar]/page.tsx"), "export default 2;\n");
     write(app.join("app/S/page.tsx"), "export default 3;\n");
+    // A route directory spelled with a dash, which the shell reads as a range.
+    write(app.join("app/[post-id]/page.tsx"), "export default 6;\n");
     // A route directory whose class spans the two cases: the default matcher
     // reaches the sibling named `_`, and that sibling keeps an environment
     // file, so the word the shell builds is not the clean route directory.
@@ -130,6 +132,10 @@ fn bracketed_searches_that_could_reach_more_keep_their_review() {
         // `[Z-a]` covers the bytes between the two cases, so the shell hands
         // `rg` the sibling named `_`, whose environment file keeps the review.
         "rg -n export ~/portal/app/[Z-a]",
+        // A dash reads as a range, and the shell expands a range in the
+        // locale's collating sequence: `t-i` can cover names these matchers
+        // place outside it, so the literal route is not proof of what is read.
+        "rg -n export ~/portal/app/[post-id]",
     ] {
         check(&f, command, false);
     }

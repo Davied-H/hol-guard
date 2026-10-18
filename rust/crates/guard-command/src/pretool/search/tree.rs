@@ -193,10 +193,11 @@ pub(in crate::pretool) fn safe_glob_operand(
 /// out, and it is screened exactly as the same path without brackets would
 /// be: the whole tree below it is walked, and an Oh My Pi agent-state tree is
 /// refused as for a literal search root. The class has to match nothing under
-/// both matchers: the default one, where `[Z-a]` covers the bytes between the
-/// two cases, and the folded one, since under `nocaseglob` `app/[slug]` would
-/// expand to a directory named `S` rather than reach the literal route
-/// directory.
+/// both matchers: the default one, which reads it byte by byte, and the folded
+/// one, since under `nocaseglob` `app/[slug]` would expand to a directory
+/// named `S` rather than reach the literal route directory. A class holding a
+/// range is left to review, because the shell expands the range in the
+/// locale's collating sequence, which neither matcher models.
 pub(in crate::pretool) fn safe_literal_bracket_search_target(
     value: &str,
     context: ReadContext<'_>,
@@ -231,8 +232,9 @@ fn literal_bracket_walk(value: &str, context: ReadContext<'_>) -> bool {
 /// through literally, so `ls app/[slug]` lists the Next.js route directory
 /// named `[slug]`; zsh's `nomatch` fails the command instead. The literal
 /// directory must clear the quoted-literal screens. A class that could match
-/// a leading dot under `dotglob`, including through a range, does not qualify,
-/// nor does syntax this matcher would close at the wrong `]`.
+/// a leading dot under `dotglob` does not qualify, nor does one holding a
+/// range, whose ends the shell compares in the locale's collating sequence,
+/// nor syntax this matcher would close at the wrong `]`.
 ///
 /// A `*` or `?` operand qualifies when the strict expansion proves that it
 /// matches nothing under any shell option: the program then receives either
