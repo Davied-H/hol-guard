@@ -86,22 +86,33 @@ fn digests_of_named_files_proceed() {
 }
 
 #[test]
-fn digests_that_reach_further_still_ask() {
+fn digests_that_reach_further_keep_their_review() {
     let home = home();
     for command in [
         // `-c` opens every file the list names, which no operand screened.
         "sha256sum -c checksums.txt",
         "shasum -a 256 --check checksums.txt",
         "sha256sum --ignore-missing -c checksums.txt",
-        // A private key is not a build artifact to fingerprint.
-        "shasum -a 256 ~/.ssh/id_ed25519",
-        "sha256sum ~/.ssh/id_ed25519",
         // The operand is a string the shell builds, not a path to screen.
         "md5 -s secret",
         "sha256sum $(cat checksums.txt)",
         // Nothing stands in for the operands the proof needs.
         "sha256sum",
     ] {
-        assert_eq!(shell(&home, command), "ask", "{command}");
+        assert_eq!(shell(&home, command), "review", "{command}");
+    }
+}
+
+/// A private key is not a build artifact to fingerprint. Whether the secret
+/// screens hold it at a review or block it outright is their call; the digest
+/// proof must not let it through.
+#[test]
+fn digests_of_a_private_key_do_not_proceed() {
+    let home = home();
+    for command in [
+        "shasum -a 256 ~/.ssh/id_ed25519",
+        "sha256sum ~/.ssh/id_ed25519",
+    ] {
+        assert_ne!(shell(&home, command), "allow", "{command}");
     }
 }
