@@ -1,5 +1,5 @@
-import { r as reactExports, bk as fetchExtensionCatalog, bl as normalizeExtensionCatalogSummary, bm as normalizeExtensionPermission, bn as ExtensionControlProtocolError, bo as ExtensionControlApiError, bp as normalizeExtensionCatalogItem, bq as guardApiCacheScope, br as fetchExtensionCatalogV2Api, bs as localPermissionDraftState, bt as setLocalPermissionDraftState, bu as extensionPolicyAuthorityUnchanged, bv as newExtensionPolicyDraftIdentity, bw as extensionPolicyDraftIsDirty, bx as setLocalPermissionDraftStates, by as buildExtensionPolicyDraftMutation, bz as fetchEffectiveExtensionControls, bA as previewExtensionMutation, bB as isCurrentExtensionPolicyDraft, bC as applyExtensionMutation, bD as fetchExtensionControlHistory, j as jsxRuntimeExports, bE as managedPermissionState, I as HiMiniSparkles, s as HiMiniCheckCircle, bF as HiMiniNoSymbol, az as HiMiniLockClosed, T as HiMiniExclamationTriangle, bG as controlProvenance, bH as treatmentLabel, aH as isApprovalProofSubmitDisabled, J as HiMiniXMark, aG as ApprovalProofFieldInputs, bI as useResolvedApprovalGate, bJ as groupPermissionsByFamily, aF as HiMiniArrowPath, y as HiMiniShieldCheck, bK as HiMiniInformationCircle, aI as buildApprovalProofCredentials, bL as approvalProofRecentlySatisfied, b1 as HiMiniMagnifyingGlass, bM as bulkCommandState, c as HiMiniChevronRight, bN as fetchLocalCliApi, bO as GenIcon, U as HiMiniBolt, bP as HiMiniGlobeAlt, bQ as HiMiniCube, N as HiMiniCloud, bR as HiMiniServerStack, b as HiMiniCommandLine, bS as HiMiniFolder, bT as FaWindows, bU as FaAws, L as HiMiniChevronDown, bV as fetchMcpProviderActions, bW as readJson, bX as LocalCliApiError, bY as enrollablePackageScriptCommands, bZ as seenSuggestionMeta, b_ as HiMiniPlus, b$ as looksLikeProjectRelocatePaste, c0 as packageScriptFilterNeedle, c1 as HiMiniCheck, c2 as suggestedPackageScriptExtensions, c3 as filterExtensionSuggestions, c4 as suggestedHarnessExtensions, c5 as suggestedSeenExtensions, c6 as keepsPackageScriptCatalog, c7 as recognizeLocalCli, c8 as preferredPackageScriptExtension, c9 as looksLikePackageScriptPaste, ca as enrollmentCommandStates, cb as previewLocalCliMutation, cc as applyLocalCliMutation, cd as isBulkApproveGateReady, ce as HiMiniArrowLeft, cf as fetchLocalCliList, cg as normalizeLocalCliList, ch as refreshMcpInventory, ci as startGuardCloudConnect, cj as extensionEffectiveState, ck as permissionEffectiveState, cl as HiMiniArrowTopRightOnSquare, cm as fetchExtensionControlApi, cn as permissionForRule, aq as HiMiniClipboardDocumentCheck, ar as HiMiniClipboard, at as ApprovalProofModal, co as fetchExtensionDiscoveryApi, cp as HiMiniArrowRight, cq as HiMiniClock, d as createCommandActivityClient, f as fetchCommandActivityApi, cr as startCancelableDiscoveryJob, cs as waitForMcpDiscoveryJob, ct as isLocalCliId, b3 as guardAwareHref, cu as localCliHref, cv as filterCodexHostApps, cw as connectorWorkspaceItems, cx as customExtensionNeedsReview, aB as HiMiniAdjustmentsHorizontal, cy as extensionDisplayName, cz as catalogRowSecondLine, cA as extensionStateLabel, cB as HiMiniFunnel, b0 as WorkspacePageHeader, cC as refreshCodexHostInventory, cD as loadCurrentDashboardBuild, cE as canonicalExtensionId, cF as extensionDetailHref, cG as DEFAULT_EXTENSION_DETAIL_URL_STATE, cH as acknowledgeDegradedExtensionControlAuthority, cI as recoverExtensionControlAuthority, cJ as readExtensionDetailUrlState, cK as parseProtectionRoute, cL as addCustomExtensionHref } from "../guard-dashboard.js";
-import { u as useConfirmDialog } from "./confirm-dialog-MYihCBU3.js";
+import { r as reactExports, bk as fetchExtensionCatalog, bl as normalizeExtensionCatalogSummary, bm as normalizeExtensionPermission, bn as ExtensionControlProtocolError, bo as ExtensionControlApiError, bp as normalizeExtensionCatalogItem, bq as guardApiCacheScope, br as fetchExtensionCatalogV2Api, bs as localPermissionDraftState, bt as setLocalPermissionDraftState, bu as extensionPolicyAuthorityUnchanged, bv as newExtensionPolicyDraftIdentity, bw as extensionPolicyDraftIsDirty, bx as setLocalPermissionDraftStates, by as buildExtensionPolicyDraftMutation, bz as fetchEffectiveExtensionControls, bA as previewExtensionMutation, bB as isCurrentExtensionPolicyDraft, bC as applyExtensionMutation, bD as fetchExtensionControlHistory, j as jsxRuntimeExports, bE as managedPermissionState, I as HiMiniSparkles, s as HiMiniCheckCircle, bF as HiMiniNoSymbol, az as HiMiniLockClosed, T as HiMiniExclamationTriangle, bG as controlProvenance, bH as treatmentLabel, aH as isApprovalProofSubmitDisabled, J as HiMiniXMark, aG as ApprovalProofFieldInputs, bI as useResolvedApprovalGate, bJ as groupPermissionsByFamily, aF as HiMiniArrowPath, y as HiMiniShieldCheck, bK as HiMiniInformationCircle, aI as buildApprovalProofCredentials, bL as approvalProofRecentlySatisfied, b1 as HiMiniMagnifyingGlass, bM as bulkCommandState, c as HiMiniChevronRight, bN as fetchLocalCliApi, bO as GenIcon, U as HiMiniBolt, bP as HiMiniGlobeAlt, bQ as HiMiniCube, N as HiMiniCloud, bR as HiMiniServerStack, b as HiMiniCommandLine, bS as HiMiniFolder, bT as FaWindows, bU as FaAws, L as HiMiniChevronDown, bV as fetchMcpProviderActions, bW as previewLocalCliMutation, bX as applyLocalCliMutation, bY as LocalCliApiError, bZ as LOCAL_CLI_CAPABILITIES, b_ as readJson, b$ as enrollablePackageScriptCommands, c0 as seenSuggestionMeta, c1 as HiMiniPlus, c2 as looksLikeProjectRelocatePaste, c3 as packageScriptFilterNeedle, c4 as HiMiniCheck, c5 as suggestedPackageScriptExtensions, c6 as filterExtensionSuggestions, c7 as suggestedHarnessExtensions, c8 as suggestedSeenExtensions, c9 as keepsPackageScriptCatalog, ca as recognizeLocalCli, cb as preferredPackageScriptExtension, cc as looksLikePackageScriptPaste, cd as enrollmentCommandStates, ce as isBulkApproveGateReady, cf as HiMiniArrowLeft, cg as fetchLocalCliList, ch as normalizeLocalCliList, ci as refreshMcpInventory, cj as startGuardCloudConnect, ck as extensionEffectiveState, cl as permissionEffectiveState, cm as HiMiniArrowTopRightOnSquare, cn as fetchExtensionControlApi, co as permissionForRule, aq as HiMiniClipboardDocumentCheck, ar as HiMiniClipboard, at as ApprovalProofModal, cp as fetchExtensionDiscoveryApi, cq as HiMiniArrowRight, cr as HiMiniClock, d as createCommandActivityClient, f as fetchCommandActivityApi, cs as startCancelableDiscoveryJob, ct as waitForMcpDiscoveryJob, cu as isLocalCliId, b3 as guardAwareHref, cv as localCliHref, cw as filterCodexHostApps, cx as connectorWorkspaceItems, cy as customExtensionNeedsReview, aB as HiMiniAdjustmentsHorizontal, cz as extensionDisplayName, cA as catalogRowSecondLine, cB as extensionStateLabel, cC as HiMiniFunnel, b0 as WorkspacePageHeader, cD as refreshCodexHostInventory, cE as loadCurrentDashboardBuild, cF as canonicalExtensionId, cG as extensionDetailHref, cH as DEFAULT_EXTENSION_DETAIL_URL_STATE, cI as acknowledgeDegradedExtensionControlAuthority, cJ as recoverExtensionControlAuthority, cK as readExtensionDetailUrlState, cL as parseProtectionRoute, cM as addCustomExtensionHref } from "../guard-dashboard.js";
+import { u as useConfirmDialog } from "./confirm-dialog-Cxs3dXTD.js";
 const PROFILE_SETUP_COMMANDS = { wrangler: "npx wrangler" };
 const PROFILE_COMMAND_PARAM = "command";
 function profileSetupCommand(item) {
@@ -3460,7 +3460,8 @@ function CustomExtensionReviewModal(props) {
   const [password, setPassword] = reactExports.useState("");
   const [totp, setTotp] = reactExports.useState("");
   const dialogRef = useModalDialog(props.onCancel, !props.busy);
-  const title = props.providerUpdates.length > 0 ? "Review app action permissions" : reviewTitle(props.item.name, props.nextState);
+  const change = props.capabilityChange;
+  const title = change ? `${change.next === "on" ? "Turn on" : "Turn off"} ${change.label.toLowerCase()} for ${props.item.name}` : props.providerUpdates.length > 0 ? "Review app action permissions" : reviewTitle(props.item.name, props.nextState);
   const handlePassword = reactExports.useCallback((event) => {
     setPassword(event.target.value);
   }, []);
@@ -3493,6 +3494,12 @@ function CustomExtensionReviewModal(props) {
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { children: connectionReviewMessage(props.nextState) })
     ] }) : null,
+    change ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-4 text-sm leading-6 text-brand-dark", children: [
+      change.label,
+      ": ",
+      change.next === "on" ? "Off → On" : "On → Off",
+      ". This applies to this device only."
+    ] }) : null,
     props.commandChanges.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { "aria-label": "Permission changes", className: "mt-4 text-sm leading-6 text-brand-dark", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "font-semibold", children: [
         props.commandChanges.length,
@@ -3500,13 +3507,13 @@ function CustomExtensionReviewModal(props) {
         props.item.surface === "mcp" ? "tool" : "command",
         " changes"
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 max-h-48 space-y-2 overflow-y-auto", children: props.commandChanges.map((change) => /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "break-words", children: [
-        change.name,
+      /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-2 max-h-48 space-y-2 overflow-y-auto", children: props.commandChanges.map((change2) => /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "break-words", children: [
+        change2.name,
         ": ",
-        permissionLabel(change.before),
+        permissionLabel(change2.before),
         " → ",
-        permissionLabel(change.after)
-      ] }, change.commandId)) })
+        permissionLabel(change2.after)
+      ] }, change2.commandId)) })
     ] }) : null,
     props.providerUpdates.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-3 max-h-48 overflow-y-auto text-sm leading-6 text-brand-dark", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { children: [
@@ -3552,6 +3559,151 @@ function connectionReviewMessage(state) {
   if (state === "blocked") return "The connection will deny every tool, including tools listed as Allow.";
   if (state === "unset") return "Saved connection permissions will be removed. Future calls return to Guard policy.";
   return "Unknown and future tools still require review. These choices do not verify the provider account.";
+}
+const CAPABILITY_COPY = {
+  "loopback-network": {
+    label: "Local network access",
+    description: "Connect to services running on this computer, such as a local server.",
+    blocked: "A run was stopped from connecting to this computer",
+    need: "Turn this on if it needs a service running on this computer."
+  },
+  "state-dir-read": {
+    label: "Read its settings",
+    description: "Read its own configuration and saved state in your home folder.",
+    blocked: "A run was stopped from reading its settings",
+    need: "Turn this on if it needs its saved configuration to work."
+  },
+  "state-dir-write": {
+    label: "Save its settings",
+    description: "Write its own configuration and saved state in your home folder.",
+    blocked: "A run was stopped from saving its settings",
+    need: "Turn this on if it needs to keep its configuration between runs."
+  }
+};
+function LocalCliCapabilities(props) {
+  const { resolvedApprovalGate, refreshApprovalGate } = useResolvedApprovalGate(null);
+  const [pending, setPending] = reactExports.useState(null);
+  const [busy, setBusy] = reactExports.useState(false);
+  const [error, setError] = reactExports.useState(null);
+  const name = customExtensionDisplayName(props.item);
+  const states = props.item.capabilities;
+  const suggested = props.item.suggested_capability;
+  const request2 = reactExports.useCallback(async (change) => {
+    setError(null);
+    await refreshApprovalGate();
+    setPending(change);
+  }, [refreshApprovalGate]);
+  const cancel = reactExports.useCallback(() => {
+    if (!busy) setPending(null);
+  }, [busy]);
+  const confirm = reactExports.useCallback(async (credentials) => {
+    if (pending === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const payload = {
+        cli_id: props.item.cli_id,
+        identity_hash: props.item.identity_hash,
+        name: props.item.name,
+        kind: props.item.kind,
+        example_label: props.item.example_label,
+        interpreter_name: props.item.interpreter_name,
+        state: "allowed",
+        previous_revision: props.revision,
+        session_nonce: randomToken$2(),
+        // The saved command states, so this change carries no unsaved draft.
+        commands: commandStatesPayload(props.item.commands),
+        capabilities: { [pending.capability]: pending.next },
+        ...credentials
+      };
+      await previewLocalCliMutation(payload);
+      await applyLocalCliMutation(payload);
+      await props.onRefresh();
+      await refreshApprovalGate();
+      setPending(null);
+    } catch (caught) {
+      setError(caught instanceof LocalCliApiError ? caught.message : "Guard could not change this access.");
+    } finally {
+      setBusy(false);
+    }
+  }, [pending, props, refreshApprovalGate]);
+  if (states === void 0) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-8 max-w-2xl", "aria-labelledby": "local-cli-capabilities-heading", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "local-cli-capabilities-heading", className: "text-lg font-semibold text-brand-dark", children: "Access on this device" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-1 text-sm leading-6 text-slate-600", children: [
+      "Contained runs of ",
+      name,
+      " stay inside the workspace. Each access below widens that on this device only."
+    ] }),
+    suggested ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      "div",
+      {
+        role: "status",
+        "data-testid": "local-cli-capability-suggestion",
+        className: "mt-4 rounded-2xl border border-brand-blue/20 bg-blue-50/70 p-4",
+        children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: CAPABILITY_COPY[suggested].blocked }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-1 text-sm leading-6 text-brand-dark/80", children: [
+            CAPABILITY_COPY[suggested].need,
+            " Everything else outside the workspace stays blocked."
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              disabled: busy,
+              onClick: () => void request2({ capability: suggested, next: "on" }),
+              className: "mt-3 min-h-11 rounded-xl bg-brand-blue px-4 text-sm font-semibold text-white disabled:opacity-60",
+              children: [
+                "Turn on ",
+                CAPABILITY_COPY[suggested].label.toLowerCase()
+              ]
+            }
+          )
+        ]
+      }
+    ) : null,
+    /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { className: "mt-4 divide-y divide-slate-200 border-y border-slate-200", children: LOCAL_CLI_CAPABILITIES.map((capability) => {
+      const on = states[capability] === "on";
+      const copy = CAPABILITY_COPY[capability];
+      return /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-sm font-semibold text-brand-dark", children: [
+            copy.label,
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "ml-2 font-normal text-slate-600", children: on ? "On" : "Off" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-0.5 text-sm leading-6 text-slate-600", children: copy.description })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            disabled: busy,
+            "aria-label": `${on ? "Turn off" : "Turn on"} ${copy.label.toLowerCase()}`,
+            onClick: () => void request2({ capability, next: on ? "off" : "on" }),
+            className: "min-h-11 shrink-0 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark hover:bg-slate-50 disabled:opacity-60",
+            children: on ? "Turn off" : "Turn on"
+          }
+        )
+      ] }, capability);
+    }) }),
+    error && !pending ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx(InlineError, { message: error }) }) : null,
+    pending ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+      CustomExtensionReviewModal,
+      {
+        item: props.item,
+        nextState: "allowed",
+        commandChanges: [],
+        providerUpdates: [],
+        capabilityChange: { label: CAPABILITY_COPY[pending.capability].label, next: pending.next },
+        busy,
+        error,
+        approvalGate: resolvedApprovalGate,
+        onCancel: cancel,
+        onConfirm: confirm
+      }
+    ) : null
+  ] });
 }
 async function forgetLocalCli(item) {
   await readJson(await fetchLocalCliApi("/v1/local-clis/forget", {
@@ -5140,6 +5292,7 @@ function LocalCliDetail(props) {
         )
       ] })
     ] }),
+    props.item.surface === "cli" && props.item.state === "allowed" ? /* @__PURE__ */ jsxRuntimeExports.jsx(LocalCliCapabilities, { item: props.item, revision: props.revision, onRefresh: props.onRefresh }) : null,
     props.item.surface === "mcp" && added ? /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-5 rounded-xl border border-slate-200 p-4", "aria-labelledby": "mcp-publication-heading", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "mcp-publication-heading", className: "text-sm font-semibold text-brand-dark", children: props.item.permission_scope === "configured-connection" ? "Policy status" : "Enforcement status" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "status", className: "mt-2 text-sm leading-6 text-brand-dark/75", children: nativePublicationMessage(props.nativePublication, props.item.permission_scope) }),

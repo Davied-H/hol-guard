@@ -133,6 +133,22 @@ pub(super) fn denial_note(outputs: &[&[u8]]) -> Option<&'static str> {
     denied.then_some(GENERIC_NOTE)
 }
 
+/// Addresses that make a blocked connection one to this machine.
+const LOOPBACK_MARKERS: [&[u8]; 3] = [b"127.0.0.1", b"localhost", b"::1"];
+
+/// Whether a line of `outputs` names a blocked connection to this machine.
+pub(super) fn loopback_denied(outputs: &[&[u8]]) -> bool {
+    outputs.iter().any(|output| {
+        output
+            .to_ascii_lowercase()
+            .split(|byte| *byte == b'\n')
+            .any(|line| {
+                line_note(line) == Some(CONNECT_NOTE)
+                    && LOOPBACK_MARKERS.iter().any(|marker| holds(line, marker))
+            })
+    })
+}
+
 #[cfg(test)]
 #[path = "contained_workspace_sink_denial_tests.rs"]
 mod tests;

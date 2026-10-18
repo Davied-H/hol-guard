@@ -77,6 +77,10 @@ CAUSES = (
 )
 
 
+# Addresses that make a blocked connection one to this machine.
+LOOPBACK_MARKERS = (b"127.0.0.1", b"localhost", b"::1")
+
+
 def _word_byte(byte: int) -> bool:
     return byte < 0x80 and (chr(byte).isalnum() or chr(byte) in "/._-")
 
@@ -114,3 +118,12 @@ def denial_note(outputs: Iterable[bytes]) -> str | None:
                 return note
             denied = denied or any(_holds(line, word) for word in DENIAL_WORDS)
     return GENERIC_NOTE if denied else None
+
+
+def loopback_denied(outputs: Iterable[bytes]) -> bool:
+    """Whether a line of `outputs` names a blocked connection to this machine."""
+    return any(
+        _line_note(line) == CONNECT_NOTE and any(_holds(line, marker) for marker in LOOPBACK_MARKERS)
+        for output in outputs
+        for line in output.lower().split(b"\n")
+    )
