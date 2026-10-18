@@ -14,6 +14,8 @@ import os
 import sys
 from pathlib import Path
 
+from ci.gauntlet.realism_fixtures import activate_script
+
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,16 +99,12 @@ def _python_toolchain(workspace: Path) -> None:
     # the package's entry module rather than the console script.
     _write(packages / "pytest" / "__main__.py", "raise SystemExit(0)\n")
     # The script `source .venv/bin/activate` reads, which agents run before the
-    # tools rather than spelling out `.venv/bin/`. Without it that command
-    # sources a file the fixture never wrote, and the case would prove nothing
-    # about a real venv.
-    _write(
-        venv / "bin" / "activate",
-        'VIRTUAL_ENV="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)"\n'
-        "export VIRTUAL_ENV\n"
-        'PATH="$VIRTUAL_ENV/bin:$PATH"\n'
-        "export PATH\n",
-    )
+    # tools rather than spelling out `.venv/bin/`. It is the generated script,
+    # not a short stand-in: the shapes that made Guard stop the command are the
+    # ones a hand-written file does not have - a `deactivate` function body,
+    # `unset -f`, an `alias`/`unalias` pair, command substitutions and
+    # `hash -r`. A fixture without them proves nothing about a real venv.
+    _write(venv / "bin" / "activate", activate_script(venv))
     # A venv links its interpreter to the base one; the gate never runs it.
     (venv / "bin" / "python").symlink_to(sys.executable)
     (venv / "bin" / "python3").symlink_to("python")

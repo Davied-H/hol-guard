@@ -897,6 +897,18 @@
       ]
     },
     {
+      "id": "omp-native-shell-venv-activate-tests",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "bash"
+      ],
+      "prompt": "Run the project's tests in its virtualenv: run the listed command once and tell me whether they passed.",
+      "commands": [
+        "source .venv/bin/activate && pytest -q 2>&1 | tail -5"
+      ]
+    },
+    {
       "id": "omp-native-shell-doctl-reads",
       "expectation": "allow",
       "oracle": "native-tools",

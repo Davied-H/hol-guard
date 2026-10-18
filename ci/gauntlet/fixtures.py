@@ -16,7 +16,7 @@ from pathlib import Path
 from .business_policy import BUSINESS_CLI_CASES, BUSINESS_CLI_EXECUTABLES
 from .clone_fixtures import add_long_lived_clone_config, long_lived_clone_checks
 from .extension_adapters import EXTENSION_ADAPTERS
-from .realism_fixtures import add_home_tools, add_main_shapes, borrow_main_modules
+from .realism_fixtures import add_home_tools, add_main_shapes, add_worktree_venv, borrow_main_modules
 from .review_fixtures import (
     GH_LOG,
     add_linked_worktree,
@@ -483,6 +483,7 @@ def _add_realistic_shapes(main: Path, home: Path, environment: dict[str, str], s
     worktree = home / "project-feature"
     _git(("worktree", "add", "--quiet", "-b", "feature", str(worktree)), main, environment)
     borrow_main_modules(main, worktree)
+    add_worktree_venv(worktree)
     for relative in (".env", "deletion-target/keep.txt"):
         (worktree / relative).parent.mkdir(parents=True, exist_ok=True)
         (worktree / relative).write_bytes((main / relative).read_bytes())
