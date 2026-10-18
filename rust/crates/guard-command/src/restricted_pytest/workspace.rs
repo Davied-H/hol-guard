@@ -257,20 +257,19 @@ fn reaches_go_modules(text: &str, workspace: &Path) -> bool {
 /// contained remainder keeps a toolchain named in a bootstrap or a publish
 /// suffix in view, so each stage of the text is read in turn.
 fn runs_go(text: &str) -> bool {
-    text.split(|character: char| matches!(character, ';' | '&' | '|' | '(' | ')' | '\n'))
-        .any(|stage| {
-            stage
-                .split_whitespace()
-                .map(|word| word.trim_matches(['"', '\'']))
-                // `FOO=bar sudo go build` runs the toolchain, and so does a
-                // stage a `then` or a `do` opens. None of those words is the
-                // program itself.
-                .find(|word| {
-                    !(GO_PREFIXES.contains(word) || (word.contains('=') && !word.starts_with('-')))
-                })
-                .and_then(|word| word.rsplit('/').next())
-                .is_some_and(|name| name == "go")
-        })
+    text.split([';', '&', '|', '(', ')', '\n']).any(|stage| {
+        stage
+            .split_whitespace()
+            .map(|word| word.trim_matches(['"', '\'']))
+            // `FOO=bar sudo go build` runs the toolchain, and so does a
+            // stage a `then` or a `do` opens. None of those words is the
+            // program itself.
+            .find(|word| {
+                !(GO_PREFIXES.contains(word) || (word.contains('=') && !word.starts_with('-')))
+            })
+            .and_then(|word| word.rsplit('/').next())
+            .is_some_and(|name| name == "go")
+    })
 }
 
 /// Words that stand where the program stands without being the program.
