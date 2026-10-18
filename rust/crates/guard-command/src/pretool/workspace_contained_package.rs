@@ -155,6 +155,22 @@ fn local_uv_work(arguments: &[&str], workspace: &Path) -> bool {
         && workspace.join(".venv").is_dir()
 }
 
+/// Whether any segment runs a manager this module decides a verb for. The
+/// fallback in [`local_package_work`] admits every executable that is not a
+/// package tool, which is right for the other half of a mixed command but is
+/// no evidence on its own that a manager did local work: `npx` names neither
+/// a manager nor a package tool, and the package it fetches is the point.
+pub(super) fn names_a_manager(model: &CanonicalCommandV1) -> bool {
+    model.segments.iter().any(|segment| {
+        segment.executable.as_deref().is_some_and(|executable| {
+            let name = super::super::executable_basename(executable).to_ascii_lowercase();
+            NODE_MANAGERS.contains(&name.as_str())
+                || PYTHON_MANAGERS.contains(&name.as_str())
+                || name == "uv"
+        })
+    })
+}
+
 /// Whether every package-manager segment is a manager running a local verb.
 /// A registry verb anywhere before `--` keeps the whole command out, so
 /// option spellings that hide the verb from a parser cannot slip one through.
