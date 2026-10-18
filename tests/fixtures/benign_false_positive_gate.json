@@ -10493,6 +10493,88 @@
       "expect": "not_allow"
     },
     {
+      "id": "rg-replace-trailing-flag-sibling-search",
+      "fix_area": "shell",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n \"alpha|beta_gamma|delta\" ${ORG}/app-portal/scripts/report.ts ${ORG}/app-portal/src -r | head -30"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "rg-replace-bundled-flag-grep-only-include",
+      "fix_area": "shell",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -rn \"a\\b|b.*c\\b\" ${ORG}/app-portal/src/app/page.tsx ${ORG}/app-portal/scripts/report.ts 2>/dev/null | head -10; rg -rn \"p\\(|q\" ${ORG}/app-portal/src --include=\"*.ts\" -l | head -8"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-rg-replace-reaches-hidden-env",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n token ${ORG}/app-portal --hidden --no-ignore -r | head -5"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "guard-settings-list",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "hol-guard settings list"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "guard-settings-list-piped",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "hol-guard settings list | head -30"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "session-claude-ask-user-question-answered",
       "fix_area": "read",
       "harnesses": [

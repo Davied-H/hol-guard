@@ -172,6 +172,7 @@ pub mod pretool_recursive_file_search;
 pub mod pretool_request_path_context;
 pub mod pretool_rg_inclusion_globs;
 pub mod pretool_rg_literal_route_search;
+pub mod pretool_rg_replace_reads;
 pub mod pretool_rg_sibling_bracket_search;
 pub mod pretool_ripgrep_config;
 pub mod pretool_root_removal;
