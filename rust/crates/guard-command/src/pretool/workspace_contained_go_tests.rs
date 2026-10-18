@@ -70,3 +70,39 @@ fn the_fetching_verbs_and_a_bare_directory_keep_their_review() {
         assert_ne!(reason, CONTAINED, "{harness}");
     }
 }
+
+#[test]
+fn a_verb_reaching_the_module_proxy_keeps_its_review() {
+    let ws = module("go-proxy");
+    for command in [
+        // A version names a module the proxy resolves, whatever the verb.
+        "go run golang.org/x/tools/cmd/stringer@latest",
+        "go run example.com/tool@v1.2.3 ./...",
+        "go list -m golang.org/x/text@latest",
+        "go build golang.org/x/text@v0.14.0",
+        // These ask the proxy what else a module has.
+        "go list -m -u all",
+        "go list -m -versions golang.org/x/text",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, minimum) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+            assert_eq!(minimum, "review", "{harness}: {command} ({reason})");
+        }
+    }
+}
+
+#[test]
+fn the_module_a_verb_builds_moves_with_the_command() {
+    let ws = module("go-nested");
+    std::fs::create_dir_all(ws.join("api")).unwrap();
+    std::fs::write(ws.join("api/go.mod"), MODULE).unwrap();
+    std::fs::create_dir_all(ws.join("docs")).unwrap();
+    for harness in ["codex", "claude-code", "omp"] {
+        let (reason, _) = outcome(harness, "cd api && go build ./...", &ws);
+        assert_eq!(reason, CONTAINED, "{harness}");
+        // `docs` is no module, so go would resolve imports through the proxy.
+        let (reason, _) = outcome(harness, "cd docs && go build ./...", &ws);
+        assert_ne!(reason, CONTAINED, "{harness}");
+    }
+}

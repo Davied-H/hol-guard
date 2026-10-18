@@ -51,6 +51,11 @@ fn runners_that_could_fetch_a_package_keep_their_review() {
         "cd app && npx vite build",
         "bun add left-pad",
         "bun install left-pad",
+        // A manager's own local verb beside a runner proves nothing about
+        // the package the runner fetches.
+        "npm test && npx cowsay hi",
+        "npm run build && bunx serve .",
+        "pnpm test && npx --yes left-pad",
     ] {
         let got = reason("omp", command, &ws, true);
         assert_ne!(got, CONTAINED, "{command}");
