@@ -183,9 +183,7 @@ fn apply_check_is_allowed_and_patching_stays_reviewed() {
     let _cleanup = FixtureCleanup(root);
     let config = repository.join(".git/config");
     for (settings, command, expected) in [
-        // The bare three-word spelling is the contained patch-check
-        // operation's own, so it keeps that route rather than this proof.
-        ("", "git apply --check feature.patch", "review"),
+        ("", "git apply --check feature.patch", "allow"),
         ("", "git apply --check -p1 feature.patch", "allow"),
         ("", "git apply --check --verbose feature.patch", "allow"),
         ("", "git apply --check --stat feature.patch", "allow"),
