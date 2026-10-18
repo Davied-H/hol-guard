@@ -133,8 +133,12 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
     let write_denials = workspace_write_denials(&workspace, input.home.as_deref(), &variables)
         .ok_or_else(|| invalid("The repository configuration is not eligible."))?;
     let text = shape.remainder.clone().unwrap_or(contained);
-    let (exec_roots, sandbox_path) =
-        workspace_exec_roots(&input.search_path, input.home.as_deref(), &workspace);
+    let (exec_roots, sandbox_path) = workspace_exec_roots(
+        &input.search_path,
+        input.home.as_deref(),
+        &workspace,
+        reaches_go_modules(&input.text, &workspace),
+    );
     // A linked worktree's index, HEAD and objects live in the main checkout's
     // `.git`, which the backend must also let the run write.
     // Its main checkout becomes readable too, so it must be admissible as a
@@ -228,6 +232,51 @@ fn sole_program(text: &str) -> Option<String> {
 pub fn workspace_script_reads(text: &str, workspace: &Path) -> Option<Vec<PathBuf>> {
     exact_shape(text, workspace).map(|shape| shape.read_files)
 }
+
+/// Whether this run has a reason to read the Go module cache.
+///
+/// A text that names the toolchain does, and so does any run inside a module
+/// or workspace the root holds: `make test` and `./scripts/ci.sh` drive `go`
+/// without naming it, and a build that cannot read its dependencies fails
+/// where it used to pass. A multi-module repository carries only `go.work` at
+/// its root, with every `go.mod` in a subdirectory, so reading `go.mod` alone
+/// would strand exactly those builds. A workspace with neither marker and no
+/// `go` in its text - a Node or Python project - has no such reason.
+fn reaches_go_modules(text: &str, workspace: &Path) -> bool {
+    runs_go(text) || workspace.join("go.mod").is_file() || workspace.join("go.work").is_file()
+}
+
+/// Whether the command runs the Go toolchain.
+///
+/// The module cache below the real HOME is dependency source a Go build
+/// compiles, and the plan grants it beside the workspace. Nothing else a
+/// workspace runs reads it, and it holds whatever `go mod download` fetched,
+/// a private module included, so a text that never runs `go` does not get
+/// it. Only a command word counts: `pytest -k go` and `rg go` pass the name
+/// as an argument and compile nothing. Reading the whole text rather than the
+/// contained remainder keeps a toolchain named in a bootstrap or a publish
+/// suffix in view, so each stage of the text is read in turn.
+fn runs_go(text: &str) -> bool {
+    text.split([';', '&', '|', '(', ')', '\n']).any(|stage| {
+        stage
+            .split_whitespace()
+            .map(|word| word.trim_matches(['"', '\'']))
+            // `FOO=bar sudo go build` runs the toolchain, and so does a
+            // stage a `then` or a `do` opens. None of those words is the
+            // program itself.
+            .find(|word| {
+                !(GO_PREFIXES.contains(word) || (word.contains('=') && !word.starts_with('-')))
+            })
+            .and_then(|word| word.rsplit('/').next())
+            .is_some_and(|name| name == "go")
+    })
+}
+
+/// Words that stand where the program stands without being the program.
+const GO_PREFIXES: &[&str] = &[
+    "do", "then", "else", "elif", "!", "time", "command", "builtin", "nohup", "sudo", "env",
+    "exec", "nice", "ionice", "stdbuf",
+];
 
 pub(super) fn evaluate(operation: &str, input: &Value) -> Option<Value> {
     if operation != "prepare_workspace_contained" {

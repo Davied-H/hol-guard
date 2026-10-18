@@ -586,3 +586,72 @@ fn a_pre_event_without_a_command_never_reaches_the_store() {
 
     assert!(store.calls().is_empty(), "{:?}", store.calls());
 }
+
+/// A journal whose rewrite always reports invalid lines it dropped.
+struct InvalidLineJournal;
+
+impl EvidenceJournalApi for InvalidLineJournal {
+    fn append_journal(&self, _path: &Path, _record: &EvidenceRecord) -> Result<(), io::Error> {
+        Ok(())
+    }
+
+    fn rewrite_journal(
+        &self,
+        _path: &Path,
+        _remove_record_id: &str,
+        _max_bytes: usize,
+    ) -> Result<u64, io::Error> {
+        Ok(2)
+    }
+
+    fn recover_journal_records(
+        &self,
+        _path: &Path,
+        _max_bytes: usize,
+    ) -> Result<(Vec<Map<String, Value>>, u64), io::Error> {
+        Ok((Vec::new(), 0))
+    }
+
+    fn now_utc_iso(&self) -> String {
+        "2026-10-17T00:00:00+00:00".to_owned()
+    }
+}
+
+/// The worker records the lines a rewrite dropped while it already holds the
+/// shared state. Counting them through a second lock would wedge the worker
+/// on its own mutex, holding the lock a stop waits for, and every request
+/// serialised behind that stop with it.
+#[test]
+fn a_rewrite_that_drops_invalid_lines_still_lets_the_writer_stop() {
+    let home = PathBuf::from("/hol-guard-evidence-writer-tests");
+    let store = StubStore::new(home.clone(), false);
+    let mut writer_deps = deps();
+    writer_deps.journal = Box::new(InvalidLineJournal);
+    let writer = RuntimeHookEvidenceWriter::new(
+        store,
+        writer_deps,
+        64,
+        1 << 20,
+        8,
+        0.01,
+        Some(home.join("runtime-hook-evidence.jsonl")),
+    )
+    .expect("writer");
+
+    assert!(writer.submit_command_activity(
+        "claude-code",
+        "PreToolUse",
+        &command_payload(),
+        true,
+        Some("allow"),
+        None,
+        false,
+        "none",
+    ));
+    assert!(writer.stop(5.0), "writer drained");
+
+    let stats = writer.stats();
+    assert_eq!(stats.processed, 1);
+    assert_eq!(stats.failures, 2);
+    assert!(stats.degraded);
+}

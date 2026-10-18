@@ -1,6 +1,6 @@
 use super::{
-    cache_list_arguments, inert_line, list_arguments, npmrc_inert, plain_registry_spec,
-    view_arguments,
+    cache_list_arguments, global_configuration_inert, inert_line, list_arguments, npmrc_inert,
+    plain_registry_spec, view_arguments,
 };
 
 fn arguments(text: &str) -> Vec<String> {
@@ -182,7 +182,11 @@ fn npmrc_files_are_inert_only_when_absent_or_regular_and_clean() {
     let oversized = root.join("oversized");
     std::fs::write(&oversized, "a=b\n".repeat(20_000)).unwrap();
 
+    let stray = root.join("stray");
+    std::fs::write(&stray, "not a directory\n").unwrap();
+
     assert!(npmrc_inert(&root.join("absent")));
+    assert!(npmrc_inert(&stray.join("etc/npmrc")));
     assert!(npmrc_inert(&clean));
     assert!(!npmrc_inert(&moved));
     assert!(!npmrc_inert(&carriage_return));
@@ -194,5 +198,33 @@ fn npmrc_files_are_inert_only_when_absent_or_regular_and_clean() {
         std::os::unix::fs::symlink(&clean, &linked).unwrap();
         assert!(!npmrc_inert(&linked));
     }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// macOS leaves a `.DS_Store` file beside the version directories a Node
+/// version manager keeps. Reading a configuration path below that file fails
+/// with `ENOTDIR`, which is as absent as a missing file, so the stray entry
+/// must not send an ordinary `npm ls` to review.
+#[test]
+fn a_version_root_with_a_stray_file_reads_like_one_without_it() {
+    let root = std::env::temp_dir().join(format!("guard-npm-versions-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let bare = root.join("bare");
+    std::fs::create_dir_all(&bare).unwrap();
+    let stray = root.join("stray");
+    let versions = stray.join(".nvm/versions/node");
+    std::fs::create_dir_all(versions.join("v22.1.0/etc")).unwrap();
+    std::fs::write(versions.join("v22.1.0/etc/npmrc"), "save-exact=true\n").unwrap();
+    std::fs::write(versions.join(".DS_Store"), "\x00\x01").unwrap();
+
+    // The stray entry has to read as an absent configuration on its own.
+    // Comparing the two homes alone proves nothing on a host that keeps a
+    // live `<prefix>/etc/npmrc`, since both homes are then not inert whether
+    // or not `ENOTDIR` is handled.
+    assert!(npmrc_inert(&versions.join(".DS_Store").join("etc/npmrc")));
+    assert_eq!(
+        global_configuration_inert(&stray),
+        global_configuration_inert(&bare)
+    );
     let _ = std::fs::remove_dir_all(&root);
 }

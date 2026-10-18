@@ -1518,9 +1518,17 @@ impl EvidenceWorker {
                             state.receipt_processed += 1;
                         }
                         state.processed += 1;
-                        if self.rewrite_journal(&record.record_id()).is_err() {
-                            state.failures += 1;
-                            state.degraded = true;
+                        match self.rewrite_journal(&record.record_id()) {
+                            Ok(invalid_records) => {
+                                if invalid_records > 0 {
+                                    state.failures += invalid_records;
+                                    state.degraded = true;
+                                }
+                            }
+                            Err(_) => {
+                                state.failures += 1;
+                                state.degraded = true;
+                            }
                         }
                     }
                     PersistOutcome::Deduped => {
@@ -1529,9 +1537,17 @@ impl EvidenceWorker {
                         if record.is_receipt() {
                             state.receipt_deduped += 1;
                         }
-                        if self.rewrite_journal(&record.record_id()).is_err() {
-                            state.failures += 1;
-                            state.degraded = true;
+                        match self.rewrite_journal(&record.record_id()) {
+                            Ok(invalid_records) => {
+                                if invalid_records > 0 {
+                                    state.failures += invalid_records;
+                                    state.degraded = true;
+                                }
+                            }
+                            Err(_) => {
+                                state.failures += 1;
+                                state.degraded = true;
+                            }
                         }
                     }
                     PersistOutcome::Retry => {
@@ -1552,8 +1568,9 @@ impl EvidenceWorker {
                                 state.receipt_failures += 1;
                             }
                             state.degraded = true;
-                            if self.rewrite_journal(&record.record_id()).is_err() {
-                                state.failures += 1;
+                            match self.rewrite_journal(&record.record_id()) {
+                                Ok(invalid_records) => state.failures += invalid_records,
+                                Err(_) => state.failures += 1,
                             }
                         } else {
                             state.queued_bytes += record.payload_bytes();
@@ -1708,18 +1725,18 @@ impl EvidenceWorker {
     }
 
     /// `_rewrite_journal` (:496-502).
-    fn rewrite_journal(&self, remove_record_id: &str) -> Result<(), io::Error> {
-        let invalid_records = self.deps.journal.rewrite_journal(
-            &self.journal_path,
-            remove_record_id,
-            self.max_bytes,
-        )?;
-        if invalid_records > 0 {
-            let mut state = self.lock_state();
-            state.degraded = true;
-            state.failures += invalid_records;
-        }
-        Ok(())
+    /// Rewrite the journal without the record, and report how many invalid
+    /// lines the rewrite dropped.
+    ///
+    /// The count is returned rather than recorded here. Every caller runs
+    /// inside the worker loop holding the shared state, and this lock is not
+    /// reentrant: taking it again on the same thread would wedge the worker
+    /// while it holds the lock a stop needs, and every request behind that
+    /// stop with it.
+    fn rewrite_journal(&self, remove_record_id: &str) -> Result<u64, io::Error> {
+        self.deps
+            .journal
+            .rewrite_journal(&self.journal_path, remove_record_id, self.max_bytes)
     }
 
     fn lock_state(&self) -> MutexGuard<'_, EvidenceState> {

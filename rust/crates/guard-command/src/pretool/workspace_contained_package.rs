@@ -15,6 +15,13 @@
 //! `--project` and a `cd` ahead of it, so the environment is looked for where
 //! the command will actually stand.
 //!
+//! `go` joins them for the same reason, with its module cache and toolchain
+//! read-only beside the workspace. A verb only counts as local inside a
+//! module the directory it runs in holds, since outside one go resolves
+//! imports through the proxy. An argument naming a version, and `go list`'s
+//! `-u` and `-versions`, reach that proxy even inside a module, so each
+//! keeps the admission it has.
+//!
 //! Cargo stays out even with a committed `Cargo.lock` and `--locked`. Its
 //! `build.rs` scripts and proc macros run dependency code like npm scripts,
 //! but a Node project keeps its tools and dependencies in `node_modules`
@@ -33,16 +40,28 @@ const NODE_MANAGERS: &[&str] = &["npm", "pnpm", "yarn", "bun"];
 const PACKAGE_RUNNERS: &[&str] = &["npx", "bunx", "pnpx"];
 pub(super) const NODE_PACKAGE_EXTENSION: &str = "command.package.node";
 const PYTHON_PACKAGE_EXTENSION: &str = "command.package.python";
+const GO_PACKAGE_EXTENSION: &str = "command.package.go";
 // The package-firewall permissions that mark a manager's use. They record
 // which ecosystem ran, not a risk the run carries, so a local verb below one
 // of them is still ordinary workspace work.
-pub(crate) const PACKAGE_EXTENSIONS: &[&str] = &[NODE_PACKAGE_EXTENSION, PYTHON_PACKAGE_EXTENSION];
+pub(crate) const PACKAGE_EXTENSIONS: &[&str] = &[
+    NODE_PACKAGE_EXTENSION,
+    PYTHON_PACKAGE_EXTENSION,
+    GO_PACKAGE_EXTENSION,
+];
 // The Python managers the package firewall watches. Each installs what it
 // runs, so none of their verbs is local work; `uv` is the exception below.
 const PYTHON_MANAGERS: &[&str] = &["pip", "pip3", "pipx", "uvx", "poetry", "pipenv"];
 // uv drives a project environment the workspace holds. Only the verbs that
 // read it are local: `pip`, `add`, `tool` and the rest reach a registry.
 const UV_LOCAL_VERBS: &[&str] = &["run", "tree", "export", "version"];
+// A Go build compiles the sources the module cache already holds and writes
+// its objects to a private build cache. Only the verbs that stay there are
+// local: `get`, `install`, `mod` and `work` reach a registry, and `tool` and
+// `clean` are neither a build nor a read.
+const GO_LOCAL_VERBS: &[&str] = &[
+    "build", "test", "vet", "fmt", "list", "doc", "env", "version", "run", "generate",
+];
 // uv options a local verb may carry: each changes what the verb reads, never
 // what it has to fetch. The list is an allowlist because uv's installing
 // options are many and grow: an option this module does not know keeps the
@@ -179,6 +198,40 @@ const REGISTRY_VERBS: &[&str] = &[
     "ping",
     "doctor",
 ];
+
+/// Whether `go` runs a local verb inside a module that `directory` holds.
+/// Outside a module these verbs read the wider GOPATH, and the sandbox has no
+/// network to resolve a package by import path, so they keep the admission
+/// they have. A version an argument names is one go resolves through the
+/// module proxy, and `go list`'s `-u` and `-versions` ask the proxy what else
+/// a module has, as does `-retracted`, so each of those keeps that admission
+/// too.
+fn local_go_work(arguments: &[&str], directory: &Path) -> bool {
+    let Some((verb, rest)) = arguments.split_first() else {
+        return false;
+    };
+    GO_LOCAL_VERBS.contains(&verb.to_ascii_lowercase().as_str())
+        && !rest
+            .iter()
+            .any(|argument| names_a_go_fetch(argument) || argument.contains('@'))
+        && directory.join("go.mod").is_file()
+}
+
+/// Whether an argument names one of the flags that send a Go verb to a module
+/// proxy. Go's flag package reads one dash or two alike and takes a boolean's
+/// value either as the next argument or behind an `=`, so the name is read
+/// the same way here. A flag turned off by its value still keeps the command
+/// out: a run that names it is one the sandbox has no reason to decide for.
+fn names_a_go_fetch(argument: &str) -> bool {
+    let name = argument.trim_start_matches('-');
+    if !(1..=2).contains(&(argument.len() - name.len())) {
+        return false;
+    }
+    matches!(
+        name.split_once('=').map_or(name, |(name, _)| name),
+        "u" | "versions" | "retracted"
+    )
+}
 
 /// Where a literal `target` below the workspace moves a run that stands in
 /// `directory`, or `None` when the sandbox cannot follow it there.
@@ -327,7 +380,7 @@ pub(super) fn names_a_manager(model: &CanonicalCommandV1) -> bool {
             let name = super::super::executable_basename(executable).to_ascii_lowercase();
             NODE_MANAGERS.contains(&name.as_str())
                 || PYTHON_MANAGERS.contains(&name.as_str())
-                || name == "uv"
+                || matches!(name.as_str(), "uv" | "go")
         })
     })
 }
@@ -360,6 +413,18 @@ pub(super) fn local_package_work(
                 _ => None,
             };
             return true;
+        }
+        if name == "go" {
+            let Some(directory) = directory.as_deref() else {
+                return false;
+            };
+            let arguments: Vec<&str> = segment
+                .arguments
+                .iter()
+                .map(String::as_str)
+                .take_while(|argument| *argument != "--")
+                .collect();
+            return local_go_work(&arguments, directory);
         }
         if PYTHON_MANAGERS.contains(&name.as_str()) {
             // Every other Python manager installs what it runs, and `uvx`
@@ -425,3 +490,7 @@ mod cargo_tests;
 #[cfg(test)]
 #[path = "workspace_contained_uv_tests.rs"]
 mod uv_tests;
+
+#[cfg(test)]
+#[path = "workspace_contained_go_tests.rs"]
+mod go_tests;

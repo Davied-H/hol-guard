@@ -181,6 +181,27 @@ fn corepack_cache_is_granted_only_when_sealed_and_inside_home() {
 }
 
 #[test]
+fn the_go_module_cache_is_granted_only_when_sealed_and_inside_home() {
+    let tree = Tree::new();
+    let home = tree.dir("home", 0o755);
+    assert_eq!(go_module_cache(&home), None);
+    let cache = tree.dir("home/go/pkg/mod", 0o755);
+    assert_eq!(go_module_cache(&home), tree.sealed.then(|| cache.clone()));
+    fs::set_permissions(home.join("go/pkg"), fs::Permissions::from_mode(0o777)).unwrap();
+    assert_eq!(go_module_cache(&home), None);
+
+    // A GOPATH that leaves HOME takes the cache out of reach.
+    let other = tree.dir("other", 0o755);
+    let elsewhere = tree.dir("elsewhere/pkg/mod", 0o755);
+    symlink(
+        elsewhere.parent().unwrap().parent().unwrap(),
+        other.join("go"),
+    )
+    .unwrap();
+    assert_eq!(go_module_cache(&other), None);
+}
+
+#[test]
 fn shim_siblings_grant_the_machinery_a_shim_dispatches_to() {
     let tree = Tree::new();
     let home = tree.dir("home", 0o755);
