@@ -123,7 +123,36 @@ fn a_receipt_the_validator_refuses_is_not_queued() {
         }),
     );
     assert_eq!(answer["payload"]["queued"], json!(false));
+    let stats = call(&home, json!({"action": "stats"}))["payload"].clone();
+    assert_eq!(
+        stats["receipt_dropped"],
+        json!(1),
+        "a refused receipt is a dropped receipt"
+    );
+    assert_eq!(stats["dropped"], json!(1));
+    assert_eq!(stats["degraded"], json!(true));
     call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
+}
+
+#[test]
+fn a_drain_budget_too_large_for_a_duration_is_clamped() {
+    let home = store_home("writer-op-drain-budget", "record_basic");
+    let started = call(
+        &home,
+        json!({
+            "action": "submit_command_activity",
+            "harness": "claude-code",
+            "event": "PostToolUse",
+            "payload": {"tool_name": "Bash", "tool_input": {"command": "pwd"}},
+            "succeeded": true,
+        }),
+    );
+    assert_eq!(started["payload"]["queued"], json!(true));
+    // The budget arrives as an unvalidated JSON number. A value no `Duration`
+    // can hold is clamped rather than carried into the drain deadline.
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 1e300}));
+    assert_eq!(stopped["status"], json!("ok"));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
 }
 
 #[test]
