@@ -248,9 +248,14 @@ class NativeHookEvidenceWriter:
         to two, so the value is always sent rather than left to either default.
         """
 
+        # The resident re-serializes the request to check the digest it binds
+        # its reply to, and it holds the budget as a float. An int sent here
+        # would canonicalise as `2` on this side and `2.0` on that one, so the
+        # reply would arrive unbound after the writer has already been drained.
+        budget = float(max(0.0, timeout_seconds))
         payload = self._call(
-            {"action": "stop", "timeout_seconds": max(0.0, timeout_seconds)},
-            timeout_seconds=max(0.0, timeout_seconds) + _STOP_TRANSPORT_SLACK_SECONDS,
+            {"action": "stop", "timeout_seconds": budget},
+            timeout_seconds=budget + _STOP_TRANSPORT_SLACK_SECONDS,
         )
         # Read the drain result before recovery runs: this writer has already
         # left the resident's registry, so a recovery that raises here would

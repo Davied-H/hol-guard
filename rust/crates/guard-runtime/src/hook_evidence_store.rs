@@ -25,7 +25,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use guard_command::hook_evidence_writer::{
@@ -104,9 +104,27 @@ struct PendingFatal {
     code: &'static str,
 }
 
-/// Identifiers are unique within the process, so an acknowledgement cannot
-/// clear a failure the client has not seen.
+/// Identifiers are unique within the process, and the counter alone is not
+/// enough: a client holding an acknowledgement outlives the resident that
+/// issued it, so a restarted resident numbering from one again would see that
+/// stale acknowledgement clear a failure the client never recovered from.
+/// Every process draws its own nonce, so an identifier from an earlier one is
+/// never matched.
 static NEXT_FATAL_ID: AtomicU64 = AtomicU64::new(1);
+static FATAL_ID_NONCE: OnceLock<String> = OnceLock::new();
+
+/// This process's share of a fatal identifier. A random draw that fails leaves
+/// the process with a fixed nonce; the counter still separates failures inside
+/// it, which is what the old identifiers gave on their own.
+fn fatal_id_nonce() -> &'static str {
+    FATAL_ID_NONCE.get_or_init(|| {
+        let mut bytes = [0_u8; 8];
+        if getrandom::fill(&mut bytes).is_err() {
+            return "process".to_owned();
+        }
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    })
+}
 
 impl StoreFatalSignal {
     /// Record `code` unless a failure is already waiting to be acknowledged.
@@ -120,7 +138,7 @@ impl StoreFatalSignal {
         if slot.is_none() {
             let id = NEXT_FATAL_ID.fetch_add(1, Ordering::Relaxed);
             *slot = Some(PendingFatal {
-                id: format!("fatal-{id}"),
+                id: format!("fatal-{}-{id}", fatal_id_nonce()),
                 code,
             });
         }
