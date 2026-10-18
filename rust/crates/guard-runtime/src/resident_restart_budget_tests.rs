@@ -66,6 +66,22 @@ fn read_budget(scope: &Path) -> RestartBudget {
     serde_json::from_slice(&std::fs::read(scope.join("restart-budget.json")).unwrap()).unwrap()
 }
 
+/// Put this scope's window far enough in the past that a release carrying a
+/// synthetic `ran_for` still belongs to it. A real spawn always happens
+/// after the window it is charged to opens and before its own exit; a test
+/// that charges and releases in the same millisecond has to say so.
+fn backdate_window(scope: &Path, ms_ago: u64) {
+    let private_root = crate::resident_state::private_root_for_scope(scope).unwrap();
+    let mut budget = read_budget(scope);
+    budget.window_start_ms = now_ms().unwrap().saturating_sub(ms_ago);
+    write_private(
+        &scope.join("restart-budget.json"),
+        &serde_json::to_vec(&budget).unwrap(),
+        &private_root,
+    )
+    .unwrap();
+}
+
 #[test]
 fn backoff_doubles_to_a_bounded_ceiling() {
     assert_eq!(backoff_ms(0), 2_000);
@@ -262,6 +278,7 @@ fn repeated_one_shot_client_cycles_never_open_the_restart_circuit() {
     let scope = temp_scope("one-shot-cycles");
     for _ in 0..10 {
         consume(&scope).expect("an answered one-shot cycle is never refused");
+        backdate_window(&scope, SERVED_RUN.as_millis() as u64 + 1_000);
         release_after_exit(&scope, true, SERVED_RUN).unwrap();
         assert_eq!(read_budget(&scope).attempts, 0);
     }
@@ -315,6 +332,7 @@ fn a_served_run_after_crashes_closes_the_open_circuit() {
     );
     assert!(read_budget(&scope).circuit_until_ms > now_ms().unwrap());
 
+    backdate_window(&scope, SERVED_RUN.as_millis() as u64 + 1_000);
     release_after_exit(&scope, true, SERVED_RUN).unwrap();
     let recovered = read_budget(&scope);
     assert_eq!(recovered.attempts, MAX_RESTARTS_PER_WINDOW - 1);
@@ -330,6 +348,36 @@ fn a_release_without_a_budget_writes_nothing() {
     let scope = temp_scope("no-budget");
     release_after_exit(&scope, true, SERVED_RUN).unwrap();
     assert!(!scope.join("restart-budget.json").exists());
+
+    std::fs::remove_dir_all(scope).unwrap();
+}
+
+#[test]
+fn an_older_run_cannot_clear_a_newer_windows_crash_circuit() {
+    // A resident spawned in an earlier window can exit cleanly long after a
+    // crash loop has started in the current one. Its charge was paid to the
+    // window that has since rolled over, so releasing it here would hand the
+    // loop a free restart and wipe the backoff pacing it.
+    let scope = temp_scope("stale-release");
+    for _ in 0..MAX_RESTARTS_PER_WINDOW {
+        consume(&scope).unwrap();
+    }
+    assert_eq!(
+        consume(&scope).unwrap_err(),
+        "native_resident_restart_circuit_open"
+    );
+    let crashing = read_budget(&scope);
+
+    release_after_exit(&scope, true, Duration::from_millis(RESTART_WINDOW_MS * 2)).unwrap();
+
+    let after = read_budget(&scope);
+    assert_eq!(after.attempts, crashing.attempts);
+    assert_eq!(after.circuit_until_ms, crashing.circuit_until_ms);
+    assert_eq!(after.backoff_steps, crashing.backoff_steps);
+    assert_eq!(
+        consume(&scope).unwrap_err(),
+        "native_resident_restart_circuit_open"
+    );
 
     std::fs::remove_dir_all(scope).unwrap();
 }

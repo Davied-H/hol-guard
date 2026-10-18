@@ -341,7 +341,7 @@ pub(crate) fn supervise_managed_for_owner(
         let mut child = child
             .spawn()
             .map_err(|_| "native_resident_spawn_failed".to_owned())?;
-        let stderr_record = exit_record::capture_resident_stderr(&mut child, &scope);
+        let stderr_record = exit_record::capture_resident_stderr(&mut child);
         let mut liveness_writer = child
             .stdin
             .take()
@@ -368,7 +368,7 @@ pub(crate) fn supervise_managed_for_owner(
         let _ = watcher.join();
         exit_record::record_supervised_exit(
             &scope,
-            stderr_record.and_then(|record| record.recv_timeout(MANAGED_STOP_TIMEOUT).ok()),
+            stderr_record.and_then(|stderr| stderr.recv_timeout(MANAGED_STOP_TIMEOUT).ok()),
             status.success(),
             status.code(),
             ran_for,

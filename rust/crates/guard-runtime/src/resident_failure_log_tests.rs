@@ -70,7 +70,7 @@ fn a_flooding_resident_cannot_grow_the_record_past_its_bound() {
     drop(log);
 
     let recorded = fs::read(ResidentFailureLog::path(&scope)).expect("read record");
-    assert_eq!(recorded.len() as u64, MAX_RESIDENT_FAILURE_BYTES);
+    assert_eq!(recorded.len(), MAX_RESIDENT_FAILURE_BYTES);
     assert!(recorded.iter().all(|byte| *byte == b'x'));
 
     fs::remove_dir_all(scope).expect("remove failure-log test scope");
@@ -95,12 +95,21 @@ fn the_record_is_private_to_its_owner() {
 
 #[cfg(not(windows))]
 #[test]
-fn resident_stderr_is_drained_into_the_record() {
-    let scope = temp_scope("drain");
-    let mut log = ResidentFailureLog::for_scope(&scope);
-    log.drain(&b"thread 'main' panicked at resident.rs:1:1:\nnative_resident_startup_failed\n"[..]);
-    log.note("native_resident_managed_exit_failed exit_code=101 ran_for_ms=12");
-    drop(log);
+fn resident_stderr_is_collected_up_to_the_record_bound() {
+    let flood = vec![b'x'; MAX_RESIDENT_FAILURE_BYTES + 8192];
+    let collected = collect_resident_stderr(&flood[..]);
+    assert_eq!(collected.len(), MAX_RESIDENT_FAILURE_BYTES);
+    assert!(collected.iter().all(|byte| *byte == b'x'));
+}
+
+#[test]
+fn a_published_run_keeps_its_stderr_and_its_exit_note() {
+    let scope = temp_scope("published");
+    write_run(
+        &scope,
+        b"thread 'main' panicked at resident.rs:1:1:\nnative_resident_startup_failed\n",
+        Some("native_resident_managed_exit_failed exit_code=101 ran_for_ms=12"),
+    );
 
     let recorded = fs::read_to_string(ResidentFailureLog::path(&scope)).expect("read record");
     assert_eq!(
@@ -110,6 +119,60 @@ fn resident_stderr_is_drained_into_the_record() {
             "native_resident_startup_failed\n",
             "native_resident_managed_exit_failed exit_code=101 ran_for_ms=12\n",
         )
+    );
+
+    fs::remove_dir_all(scope).expect("remove failure-log test scope");
+}
+
+#[test]
+fn a_flooding_resident_cannot_push_the_exit_note_out_of_the_record() {
+    let scope = temp_scope("reserved");
+    let note = "native_resident_managed_exit_failed exit_code=101 ran_for_ms=12";
+    write_run(&scope, &vec![b'x'; MAX_RESIDENT_FAILURE_BYTES], Some(note));
+
+    let recorded = fs::read(ResidentFailureLog::path(&scope)).expect("read record");
+    assert_eq!(recorded.len(), MAX_RESIDENT_FAILURE_BYTES);
+    assert!(recorded.ends_with(format!("{note}\n").as_bytes()));
+
+    fs::remove_dir_all(scope).expect("remove failure-log test scope");
+}
+
+#[test]
+fn an_exit_note_is_recorded_when_no_stderr_arrived() {
+    // A grandchild can hold the stderr pipe open past the supervisor's wait,
+    // and the reason the run ended still has to reach the user.
+    let scope = temp_scope("note-only");
+    write_run(
+        &scope,
+        b"",
+        Some("native_resident_managed_exit_premature exit_code=0 ran_for_ms=4"),
+    );
+
+    let recorded = fs::read_to_string(ResidentFailureLog::path(&scope)).expect("read record");
+    assert_eq!(
+        recorded,
+        "native_resident_managed_exit_premature exit_code=0 ran_for_ms=4\n"
+    );
+
+    fs::remove_dir_all(scope).expect("remove failure-log test scope");
+}
+
+#[test]
+fn a_healthy_run_leaves_the_previous_record_untouched() {
+    // Only a run with something to report publishes, so the record of the
+    // failure that denied a call survives the next successful cycle.
+    let scope = temp_scope("healthy");
+    write_run(
+        &scope,
+        b"",
+        Some("native_resident_managed_exit_failed exit_code=1 ran_for_ms=3"),
+    );
+    write_run(&scope, b"", None);
+
+    let recorded = fs::read_to_string(ResidentFailureLog::path(&scope)).expect("read record");
+    assert_eq!(
+        recorded,
+        "native_resident_managed_exit_failed exit_code=1 ran_for_ms=3\n"
     );
 
     fs::remove_dir_all(scope).expect("remove failure-log test scope");

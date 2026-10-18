@@ -416,6 +416,16 @@ pub(super) fn release_after_exit(
     if budget.attempts == 0 && budget.circuit_until_ms == 0 && budget.backoff_steps == 0 {
         return Ok(());
     }
+    // The charge this run is giving back was taken from the window that was
+    // open when it was spawned. If the budget has rolled into a newer window
+    // since, every attempt and any circuit on it belong to later runs, and a
+    // long-lived resident finishing now must not clear the crash loop that
+    // started after it.
+    let started_ms =
+        now_ms()?.saturating_sub(u64::try_from(ran_for.as_millis()).unwrap_or(u64::MAX));
+    if budget.window_start_ms > started_ms {
+        return Ok(());
+    }
     budget.attempts = budget.attempts.saturating_sub(1);
     // A resident that completed a full cycle is not the one the backoff was
     // pacing, so the next spawn starts from the free restarts again.

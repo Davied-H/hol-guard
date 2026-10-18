@@ -7,6 +7,11 @@
 //! supervisor owns the resident until it exits, so it writes that stderr and
 //! the exit it waited for into one private, size-bounded file next to the
 //! rest of the runtime scope state.
+//!
+//! The supervisor is the only writer. A stderr pump runs on its own thread
+//! because a grandchild can hold the pipe open after the resident is gone,
+//! but it only collects bytes in memory: a pump that outlives its run can
+//! never truncate the record of the run that replaced it.
 
 use std::fs::File;
 #[cfg(not(windows))]
@@ -20,7 +25,7 @@ pub(crate) const RESIDENT_FAILURE_FILE_NAME: &str = "resident-stderr.v1.log";
 /// A resident that floods stderr must not fill the home. Past this the run's
 /// record keeps its first bytes, which hold the startup failure, and drops
 /// the rest.
-const MAX_RESIDENT_FAILURE_BYTES: u64 = 64 * 1024;
+const MAX_RESIDENT_FAILURE_BYTES: usize = 64 * 1024;
 #[cfg(not(windows))]
 const DRAIN_CHUNK_BYTES: usize = 4096;
 
@@ -30,7 +35,7 @@ const DRAIN_CHUNK_BYTES: usize = 4096;
 pub(crate) struct ResidentFailureLog {
     scope: PathBuf,
     file: Option<File>,
-    written: u64,
+    written: usize,
     refused: bool,
 }
 
@@ -89,9 +94,7 @@ impl ResidentFailureLog {
         if bytes.is_empty() || remaining == 0 {
             return;
         }
-        let accepted = usize::try_from(remaining)
-            .unwrap_or(usize::MAX)
-            .min(bytes.len());
+        let accepted = remaining.min(bytes.len());
         let Some(file) = self.open() else {
             return;
         };
@@ -101,7 +104,7 @@ impl ResidentFailureLog {
             self.refused = true;
             return;
         }
-        self.written = self.written.saturating_add(accepted as u64);
+        self.written = self.written.saturating_add(accepted);
     }
 
     /// Append one `native_`-prefixed line of the supervisor's own evidence.
@@ -111,21 +114,48 @@ impl ResidentFailureLog {
         rendered.push('\n');
         self.append(rendered.as_bytes());
     }
+}
 
-    /// Read a resident's stderr to end of file. The pipe is drained even
-    /// after the record refuses a write, so a resident never blocks on a
-    /// stderr write that nobody is reading.
-    #[cfg(not(windows))]
-    pub(crate) fn drain(&mut self, mut reader: impl Read) {
-        let mut buffer = [0u8; DRAIN_CHUNK_BYTES];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(read) => self.append(&buffer[..read]),
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break,
+/// Read a resident's stderr to end of file, keeping at most the bytes the
+/// record can hold. The pipe is drained past that bound so a resident never
+/// blocks on a stderr write that nobody is reading, and the bytes are held
+/// in memory so only the supervisor ever touches the record file.
+#[cfg(not(windows))]
+pub(crate) fn collect_resident_stderr(mut reader: impl Read) -> Vec<u8> {
+    let mut collected = Vec::new();
+    let mut buffer = [0u8; DRAIN_CHUNK_BYTES];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                let room = MAX_RESIDENT_FAILURE_BYTES.saturating_sub(collected.len());
+                if room > 0 {
+                    collected.extend_from_slice(&buffer[..read.min(room)]);
+                }
             }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => break,
         }
+    }
+    collected
+}
+
+/// Publish one supervised run: the resident's stderr, then the supervisor's
+/// own classification of the exit. The note is written from space reserved
+/// for it, so a resident that floods stderr cannot push the one line that
+/// explains the exit out of the record.
+pub(crate) fn write_run(scope: &Path, stderr: &[u8], note: Option<&str>) {
+    let reserved = note.map_or(0, |note| note.len() + 1);
+    let kept = MAX_RESIDENT_FAILURE_BYTES
+        .saturating_sub(reserved)
+        .min(stderr.len());
+    if kept == 0 && note.is_none() {
+        return;
+    }
+    let mut record = ResidentFailureLog::for_scope(scope);
+    record.append(&stderr[..kept]);
+    if let Some(note) = note {
+        record.note(note);
     }
 }
 
