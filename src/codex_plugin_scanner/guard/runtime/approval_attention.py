@@ -6,10 +6,11 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import final
 
 from ..config import GuardConfig, load_guard_config
-from ..directory_path_authority import trusted_guard_directory_roots, validate_guard_directory_path
+from ..native_directory_trust import NativeDirectoryTrustError, native_directory_trust
 from ..store import GuardStore
 from .surface_server import GuardSurfaceRuntime
 
@@ -210,18 +211,26 @@ class ApprovalAttentionCoordinator:
             for candidate in self._store.list_guard_operations(session_id=session_id)
         )
 
+    def _trusted_workspace(self, value: str | None) -> Path | None:
+        """Ask the native owner whether this request may name `value`.
+
+        The runtime owns the answer, so a runtime that cannot give one refuses
+        the workspace rather than leaving the loop to work it out. Either way
+        the caller sees a `ValueError`, which is what the attention loop
+        already treats as a workspace it must not open.
+        """
+
+        if value is None:
+            return None
+        verdict = native_directory_trust([("workspace", value)], guard_home=self._store.guard_home)[0]
+        if verdict.path is None:
+            raise NativeDirectoryTrustError(verdict.reason or "unexpected_root")
+        return Path(verdict.path)
+
     def _config_for_requests(self, requests: list[dict[str, object]]) -> GuardConfig:
         workspace_value = next(
             (value for request in requests if isinstance((value := request.get("workspace")), str)),
             None,
         )
-        workspace = (
-            validate_guard_directory_path(
-                workspace_value,
-                trusted_guard_directory_roots(self._store.guard_home),
-                allow_owned_temporary=True,
-            )
-            if workspace_value is not None
-            else None
-        )
+        workspace = self._trusted_workspace(workspace_value)
         return load_guard_config(self._store.guard_home, workspace, require_canonical_workspace=True)

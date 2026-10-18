@@ -242,6 +242,9 @@ pub(crate) fn evaluate_resident_bytes(
                     "envelope_digest": verified.envelope_digest,
                 }))
             }
+            ResidentOperationV1::DirectoryTrust(request) => {
+                crate::directory_trust::evaluate_directory_trust_request(&request)
+            }
             ResidentOperationV1::ContextDigest(request) => {
                 crate::context_digest::evaluate_context_digest_request(&request)
             }
