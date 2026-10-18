@@ -148,6 +148,17 @@ fn try_home_states(
     Ok(None)
 }
 
+/// Whether discovery finds a live resident that runs `digest`.
+fn live_resident_of_runtime(state_base: &Path, digest: &str) -> bool {
+    // An unreadable state keeps the old behaviour of spending the budget.
+    match discover_home_states_prefer(state_base, Some(digest)) {
+        Ok(states) => states
+            .iter()
+            .any(|(_, _, state)| state.runtime_sha256 == digest),
+        Err(_) => true,
+    }
+}
+
 pub(super) fn client_request_with_deadline(
     state_base: &Path,
     payload: &[u8],
@@ -252,9 +263,16 @@ fn client_request_with_deadline_inner(
     let (generation, token, mut spawned) = observe(Phase::ClientSpawn, || -> Result<_, String> {
         // A resident from another Guard install holds the home-wide owner
         // lock. A spawn here could only fail on that lock, so name the owner
-        // instead of spending the restart budget on it.
+        // instead of spending the restart budget on it. A live resident of
+        // this runtime holding the lock is unhealthy, not foreign: it keeps
+        // spending the budget so the restart circuit still opens.
         match super::acquire_managed_owner_lock(state_base) {
-            Err(error) if error == "native_resident_owner_busy" => return Err(error),
+            Err(error)
+                if error == "native_resident_owner_busy"
+                    && !live_resident_of_runtime(state_base, &digest) =>
+            {
+                return Err(error)
+            }
             probe => drop(probe),
         }
         restart_budget::consume_for_spawn(state_base, &scope)?;

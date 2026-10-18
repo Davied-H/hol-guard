@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Literal, TypedDict
 
 from ..adapters.diagnostic_probes import skipped_command_probe
+from ..native_policy_snapshot_constants import NATIVE_RUNTIME_STATE_DIRECTORY
+from ..resident_state_prune import pid_is_alive, probe_owner_lock
 
 
 class _NativeAvailabilityFields(TypedDict):
@@ -20,6 +24,8 @@ class NativeAvailabilityResult(_NativeAvailabilityFields, total=False):
     message: str
 
 
+_MAX_STATE_BYTES = 64 * 1024
+
 # Two Guard installs (for example a desktop app and a package-manager CLI) share
 # one home-wide resident. Only one owns it; the other is healthy, not broken.
 _REASON_MESSAGES = {
@@ -31,7 +37,30 @@ _REASON_MESSAGES = {
 }
 
 
-def doctor_native_availability() -> NativeAvailabilityResult:
+def _resident_owned_elsewhere(state_base: Path, runtime_sha256: str) -> bool:
+    """True when a process holds the home-wide owner lock and no live resident runs this runtime.
+
+    Reads only the lock and the resident state files; it never takes the lock
+    for longer than the probe and never starts or stops a resident.
+    """
+
+    if probe_owner_lock(state_base) is not False:
+        return False
+    for state_path in state_base.glob("resident-v3-*/generation-*.json"):
+        try:
+            with state_path.open("rb") as handle:
+                state = json.loads(handle.read(_MAX_STATE_BYTES))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(state, dict) or state.get("runtime_sha256") != runtime_sha256:
+            continue
+        process_id = state.get("process_id")
+        if isinstance(process_id, int) and pid_is_alive(process_id):
+            return False
+    return True
+
+
+def doctor_native_availability(guard_home: Path | None = None) -> NativeAvailabilityResult:
     """Use null availability for an unperformed probe, never a false failure."""
     # This only queries the passive scope; its command metadata is not emitted.
     if skipped_command_probe(["hol-guard-runtime", "capabilities", "--json"]) is not None:
@@ -66,6 +95,13 @@ def doctor_native_availability() -> NativeAvailabilityResult:
         "reason_code": reason,
         "evaluation_verified": False,
     }
+    identity = status.identity
+    if (
+        guard_home is not None
+        and identity is not None
+        and _resident_owned_elsewhere(guard_home / NATIVE_RUNTIME_STATE_DIRECTORY, identity.sha256)
+    ):
+        reason = "native_resident_owner_busy"
     message = _REASON_MESSAGES.get(reason)
     if message is not None:
         result["message"] = message
