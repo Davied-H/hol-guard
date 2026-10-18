@@ -44,7 +44,6 @@ fn shell(home: &Path, command: &str) -> String {
             &json!({"tool_name": "bash", "tool_input": {"command": command}}),
             None,
             None,
-            None,
             PathContext {
                 home_dir: home.to_str(),
                 cwd: project.to_str(),
