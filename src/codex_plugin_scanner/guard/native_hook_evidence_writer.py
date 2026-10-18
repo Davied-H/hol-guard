@@ -208,12 +208,11 @@ class NativeHookEvidenceWriter:
     def start(self) -> bool:
         """Build the resident's writer for this home before a hook needs it.
 
-        Constructing the writer replays its journal. The Python writer paid
-        that at daemon startup because the daemon built the object itself;
-        building it lazily on the first submission would move the replay onto
-        a hook's decision path. The daemon calls this where it used to build.
+        Constructing the writer replays its journal. A caller that knows it
+        is about to record evidence, and that can afford the replay now
+        rather than on the submission that follows, warms the writer here.
 
-        Warming is not the daemon's to fail on. A resident that refuses here
+        Warming is not the caller's to fail on. A resident that refuses here
         refuses the submission too, and that is where the caller learns it.
         """
 
