@@ -353,36 +353,47 @@ fn lookup_run(text: &str, options_allowed: bool) -> Option<(Vec<&str>, usize)> {
 }
 
 /// How far a run of plain redirections reaches, when it ends at the close of a
-/// command substitution.
+/// command substitution, and whether that run discards what the lookup prints.
 ///
-/// Only redirections count: an optional file descriptor, a `>` or `<` operator
-/// in one of its spellings, and a plain target word. `&& rm -rf ~)` is not one,
-/// so it reads as no run at all and the substitution keeps its `true`. The
-/// answer is the offset of the `)` within `text`.
-fn redirections_end(text: &str) -> Option<usize> {
+/// Only redirections the shell cannot write a file of the user's with count:
+/// `/dev/null` and a duplicated descriptor. The stripped text is what the rest
+/// of this scan reviews, so a target naming a path has to keep its
+/// substitution opaque — `$(command -v doctl > .git/hooks/post-checkout)`
+/// truncates that hook, and reading it as `doctl` would hide the write.
+/// `&& rm -rf ~)` is not a redirection either, so it reads as no run at all
+/// and the substitution keeps its `true`. The answer is the offset of the `)`
+/// within `text`.
+fn redirections_end(text: &str) -> Option<(usize, bool)> {
     let bytes = text.as_bytes();
     let mut at = 0;
     let mut seen = false;
+    let mut discards_stdout = false;
     loop {
         while matches!(bytes.get(at), Some(b' ') | Some(b'\t')) {
             at += 1;
         }
         match bytes.get(at) {
-            Some(b')') => return seen.then_some(at),
+            Some(b')') => return seen.then_some((at, discards_stdout)),
             None => return None,
             _ => {}
         }
+        let descriptor = at;
         while bytes.get(at).is_some_and(u8::is_ascii_digit) {
             at += 1;
         }
-        if matches!(bytes.get(at), Some(b'&')) {
+        let numbered = &text[descriptor..at];
+        // `&>` sends both streams, so it carries stdout whatever precedes it.
+        let both_streams = matches!(bytes.get(at), Some(b'&'));
+        if both_streams {
             at += 1;
         }
         if !matches!(bytes.get(at), Some(b'>') | Some(b'<')) {
             return None;
         }
+        let writes = bytes[at] == b'>';
         at += 1;
         // `>>` appends and `>&` duplicates; both still only redirect.
+        let duplicating = matches!(bytes.get(at), Some(b'&'));
         if matches!(bytes.get(at), Some(b'>') | Some(b'&')) {
             at += 1;
         }
@@ -395,9 +406,14 @@ fn redirections_end(text: &str) -> Option<usize> {
         }) {
             at += 1;
         }
-        if at == target {
+        let word = &text[target..at];
+        let duplicates =
+            duplicating && !word.is_empty() && word.bytes().all(|letter| letter.is_ascii_digit());
+        if !(word == "/dev/null" || duplicates) {
             return None;
         }
+        discards_stdout |=
+            writes && word == "/dev/null" && (both_streams || matches!(numbered, "" | "1"));
         seen = true;
     }
 }
@@ -428,17 +444,21 @@ fn strip_one_lookup(text: &str) -> Option<String> {
             let closing = if !before.ends_with("$(") {
                 None
             } else if rest.starts_with(')') {
-                Some(end + 1)
+                Some((end + 1, false))
             } else {
-                redirections_end(rest).map(|offset| end + offset + 1)
+                redirections_end(rest).map(|(offset, discarded)| (end + offset + 1, discarded))
             };
-            let filler = if closing.is_some() {
-                names.join(" ")
-            } else {
-                "true".to_owned()
+            // A run that discards the lookup's stdout leaves the substitution
+            // printing nothing, so the surrounding command never sees the name
+            // the lookup found; only its exit status survives. Standing the
+            // whole substitution down to `true` says that, where expanding it
+            // to the name would read as a program the shell went on to run.
+            let filler = match closing {
+                Some((_, false)) => names.join(" "),
+                _ => "true".to_owned(),
             };
             let (from, to) = match closing {
-                Some(close) => (before.len() - 2, close),
+                Some((close, _)) => (before.len() - 2, close),
                 None => (at, end),
             };
             return Some(format!("{}{}{}", &text[..from], filler, &text[to..]));
