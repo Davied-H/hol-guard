@@ -102,6 +102,7 @@ def doctor_native_availability(guard_home: Path | None = None) -> NativeAvailabi
         and _resident_owned_elsewhere(guard_home / NATIVE_RUNTIME_STATE_DIRECTORY, identity.sha256)
     ):
         reason = "native_resident_owner_busy"
+        result["reason_code"] = reason
     message = _REASON_MESSAGES.get(reason)
     if message is not None:
         result["message"] = message
