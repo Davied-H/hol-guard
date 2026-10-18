@@ -84,10 +84,14 @@ fn check(f: &Fixture, command: &str, want_allow: bool) {
 fn searches_of_bracketed_route_paths_are_allowed() {
     let f = fixture();
     for command in [
+        // A home-rooted route is the spelling an agent working from a
+        // multi-repository parent types, and the screens it has to clear.
+        "rg -n useRouter ~/portal/app/blog/[slug]/page.tsx",
+        "rg -n useRouter ~/portal/app/blog/[slug]",
+        "rg -ln export ~/portal/app/[locale]",
+        "rg -n export ~/portal/app/[locale]/layout.tsx ~/portal/app/blog/[slug]/page.tsx",
+        // The cwd-relative spellings of the same searches.
         "rg -n useRouter app/blog/[slug]/page.tsx",
-        "rg -n useRouter app/blog/[slug]",
-        "rg -ln export app/[locale]",
-        "rg -n export app/[locale]/layout.tsx app/blog/[slug]/page.tsx",
         "rg -n export app/[locale] src",
     ] {
         check(&f, command, true);
@@ -98,15 +102,16 @@ fn searches_of_bracketed_route_paths_are_allowed() {
 fn bracketed_searches_that_could_reach_more_keep_their_review() {
     let f = fixture();
     for command in [
-        // The route keeps an environment file the search would read.
-        "rg -n TOKEN app/admin/[id]",
+        // The route keeps an environment file, so the tree below it is not
+        // ordinary and the walk gives no proof.
+        "rg -n TOKEN ~/portal/app/admin/[id]",
         // A negated class is this matcher's own refusal, not a literal name.
-        "rg -n export app/[!x]",
+        "rg -n export ~/portal/app/[!x]",
         // Nothing is there to screen, so there is no proof to give.
-        "rg -n export app/blog/[missing]/page.tsx",
+        "rg -n export ~/portal/app/blog/[missing]/page.tsx",
         // A class that can match a leading dot would name a hidden entry
         // under `dotglob`.
-        "rg -n export app/[,-0]",
+        "rg -n export ~/portal/app/[,-0]",
         // A parent component leaves the tree whose rules were inspected.
         "rg -n export ../portal/app/[locale]",
     ] {
