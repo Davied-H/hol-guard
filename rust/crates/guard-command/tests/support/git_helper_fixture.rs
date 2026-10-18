@@ -88,14 +88,11 @@ pub fn evaluate_with_node(
     home: &std::path::Path,
     cwd: Option<&str>,
 ) -> guard_contracts::PreToolResultV1 {
-    use std::os::unix::fs::PermissionsExt;
-    let bin = home.join(".nvm/versions/node/v25.2.1/bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    for name in ["node", "npm", "npx"] {
-        let tool = bin.join(name);
-        std::fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    let bin = stand_ins(
+        home,
+        ".nvm/versions/node/v25.2.1/bin",
+        &["node", "npm", "npx"],
+    );
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
     evaluate_on_path(
         (harness, event),
@@ -104,6 +101,54 @@ pub fn evaluate_with_node(
         (home.to_str(), cwd, true),
         path,
     )
+}
+
+/// As [`evaluate_with_node`], with a Python the workspace sandbox may run as
+/// well. Hosted runners keep Python in a tool cache the sandbox refuses to
+/// execute from, just as they do Node.
+#[cfg(unix)]
+pub fn evaluate_with_node_and_python(
+    harness: &str,
+    event: &str,
+    payload: &serde_json::Value,
+    controls: Option<&guard_command::native_command_controls::CompiledNativeCommandControls>,
+    home: &std::path::Path,
+    cwd: Option<&str>,
+) -> guard_contracts::PreToolResultV1 {
+    let node = stand_ins(
+        home,
+        ".nvm/versions/node/v25.2.1/bin",
+        &["node", "npm", "npx"],
+    );
+    let python = stand_ins(home, ".pyenv/versions/3.12.8/bin", &["python3"]);
+    let path = format!(
+        "{}:{}:{}",
+        node.display(),
+        python.display(),
+        std::env::var("PATH").unwrap()
+    );
+    evaluate_on_path(
+        (harness, event),
+        payload,
+        (controls, None),
+        (home.to_str(), cwd, true),
+        path,
+    )
+}
+
+/// Writes runnable stand-ins for `names` into `home`/`dir` and returns that
+/// directory.
+#[cfg(unix)]
+fn stand_ins(home: &std::path::Path, dir: &str, names: &[&str]) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = home.join(dir);
+    std::fs::create_dir_all(&bin).unwrap();
+    for name in names {
+        let tool = bin.join(name);
+        std::fs::write(&tool, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin
 }
 
 fn evaluate_on_path(
