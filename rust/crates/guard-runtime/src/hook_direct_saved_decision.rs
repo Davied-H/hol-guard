@@ -35,6 +35,7 @@
 
 use super::local_cli::block::ReviewVerdict;
 use super::{reviewed_edge, HookDirectDefer, PRE_TOOL_USE};
+use crate::connector_setup::grant_lifts;
 use crate::local_store_read::{
     open_read_only, schema_version, table_exists, STORE_FILE_NAME, SUPPORTED_SCHEMA_VERSION,
 };
@@ -171,13 +172,10 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
             Err(_) => {}
         }
     }
-    // The custom allow lifts only a review the saved decision left standing
-    // and the daemon may override, and only one due to non-recognition, so it
-    // never weakens a block, a floor or a risk signal on the operands.
-    if custom == Some(ReviewVerdict::Allowed)
-        && overridable(&result)
-        && crate::connector_setup::grant_lifts(result.get("reason_code").and_then(Value::as_str))
-    {
+    // The custom allow lifts only an overridable review due to non-recognition,
+    // so it never weakens a block, a floor or a risk signal on the operands.
+    let reason = result.get("reason_code").and_then(Value::as_str);
+    if custom == Some(ReviewVerdict::Allowed) && overridable(&result) && grant_lifts(reason) {
         let mut allowed = result.clone();
         for key in ["decision", "minimum_action", "policy_action"] {
             allowed.insert(key.to_owned(), json!("allow"));
