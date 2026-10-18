@@ -140,6 +140,64 @@ pub(super) fn link_state(
     })
 }
 
+/// Records a loopback denial as the latest cause, so Protect points at the
+/// access the most recent denied run lacked.
+const REPLACEABLE_CAUSE_SQL: &str = "update local_cli_observation \
+     set first_blocked_cause = 'connect_loopback' \
+     where cli_id = ?1 and identity_hash = ?2 and surface = 'cli' \
+     and first_blocked_cause is not 'connect_loopback'";
+
+/// Remembers that a granted run failed on a blocked connection to this
+/// machine, so Protect can suggest local network access. It changes no
+/// grant and turns on nothing: only an admin preview and apply does that.
+pub(super) struct LoopbackNote<'a> {
+    store_path: &'a str,
+    grant: Option<(&'a str, &'a str)>,
+}
+
+impl<'a> LoopbackNote<'a> {
+    pub(super) fn new(store: &'a LocalCliHookRequestV1, grant: Option<&'a Value>) -> Self {
+        // A grant that already has local network access needs no suggestion.
+        let grant = grant
+            .filter(|grant| {
+                grant["capabilities"]
+                    .as_array()
+                    .is_none_or(|names| !names.iter().any(|name| name == "loopback-network"))
+            })
+            .and_then(|grant| Some((grant["cli_id"].as_str()?, grant["identity_hash"].as_str()?)));
+        Self {
+            store_path: &store.store_path,
+            grant,
+        }
+    }
+
+    /// Best effort: the run's own result never depends on this write.
+    pub(super) fn keep(&self) {
+        let Some((cli_id, identity_hash)) = self.grant else {
+            return;
+        };
+        let Ok(connection) = rusqlite::Connection::open_with_flags(
+            self.store_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) else {
+            return;
+        };
+        let _ = keep_loopback_cause(&connection, cli_id, identity_hash);
+    }
+}
+
+fn keep_loopback_cause(
+    connection: &rusqlite::Connection,
+    cli_id: &str,
+    identity_hash: &str,
+) -> rusqlite::Result<usize> {
+    connection.busy_timeout(Duration::from_millis(STORE_BUSY_MILLISECONDS))?;
+    connection.execute(
+        REPLACEABLE_CAUSE_SQL,
+        rusqlite::params![cli_id, identity_hash],
+    )
+}
+
 /// Fails unless the store still decides `first` for the command.
 pub(super) fn unchanged(first: &Option<Value>, now: Outcome<Option<Value>>) -> Outcome<()> {
     match now {

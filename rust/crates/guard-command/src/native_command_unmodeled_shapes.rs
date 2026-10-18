@@ -273,33 +273,112 @@ pub(super) fn without_lookups(text: &str) -> String {
     current
 }
 
+/// `which` options that only change how the lookup prints its answer. None of
+/// them runs the program being looked up.
+const LOOKUP_OPTIONS: &[&str] = &[
+    "-a",
+    "-s",
+    "--all",
+    "--read-alias",
+    "--read-functions",
+    "--show-dot",
+    "--show-tilde",
+    "--silent",
+    "--skip-alias",
+    "--skip-dot",
+    "--skip-functions",
+    "--skip-tilde",
+    "--tty-only",
+];
+
+/// How many bytes of `text` the leading plain word covers. The name charset is
+/// the one a lookup operand may use; anything else ends the word.
+fn lookup_word_end(text: &str) -> usize {
+    text.char_indices()
+        .take_while(|(_, letter)| {
+            letter.is_ascii_alphanumeric() || matches!(letter, '.' | '_' | '+' | '-')
+        })
+        .map(|(at, letter)| at + letter.len_utf8())
+        .last()
+        .unwrap_or(0)
+}
+
+/// Whether `letter` ends a lookup operand the way the shell does. A quote
+/// does not: the shell glues `foo'bar'` into one word, so the plain prefix is
+/// not an operand of its own and the run stops before it.
+fn ends_lookup_word(letter: char) -> bool {
+    letter.is_whitespace() || matches!(letter, ';' | '&' | '|' | ')' | '}' | '`')
+}
+
+/// The names a lookup prints paths for, and how far its operands reach.
+///
+/// `which` takes a list, so `which doctl kubectl` looks up both and runs
+/// neither; reading only the first left the rest of the line looking like a
+/// program. Options come before the names, as `which` reads them. A word that
+/// is neither a known option nor a plain name leaves the whole lookup alone.
+fn lookup_run(text: &str, options_allowed: bool) -> Option<(Vec<&str>, usize)> {
+    let mut names: Vec<&str> = Vec::new();
+    let mut reading_options = options_allowed;
+    let mut cursor = 0;
+    let mut end = 0;
+    loop {
+        let rest = &text[cursor..];
+        let length = lookup_word_end(rest);
+        if length == 0 || length > 64 {
+            break;
+        }
+        let word = &rest[..length];
+        // A word the shell does not end here, and an option this list does
+        // not know, end the run: what follows is not proven to be an operand.
+        if !rest[length..].chars().next().is_none_or(ends_lookup_word) {
+            break;
+        }
+        if word.starts_with('-') {
+            if !(reading_options && LOOKUP_OPTIONS.contains(&word)) {
+                break;
+            }
+        } else {
+            reading_options = false;
+            names.push(word);
+        }
+        cursor += length;
+        end = cursor;
+        let blanks = rest[length..].len() - rest[length..].trim_start_matches([' ', '\t']).len();
+        if blanks == 0 {
+            break;
+        }
+        cursor += blanks;
+    }
+    (!names.is_empty()).then_some((names, end))
+}
+
 fn strip_one_lookup(text: &str) -> Option<String> {
-    for lead in ["command -v ", "command -V ", "which "] {
+    for (lead, options_allowed) in [
+        ("command -v ", false),
+        ("command -V ", false),
+        ("which ", true),
+    ] {
         for (at, _) in text.match_indices(lead) {
             let before = text[..at].trim_end_matches([' ', '\t']);
             if !(before.is_empty() || before.ends_with([';', '&', '|', '(', '{', '\n', '`'])) {
                 continue;
             }
             let name_start = at + lead.len();
-            let name: String = text[name_start..]
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-'))
-                .collect();
-            if name.is_empty() || name.starts_with('-') || name.len() > 64 {
+            let Some((names, length)) = lookup_run(&text[name_start..], options_allowed) else {
                 continue;
-            }
-            let end = name_start + name.len();
+            };
+            let end = name_start + length;
             let after = text[end..].chars().next();
-            if !after.is_none_or(|c| {
-                c.is_whitespace() || matches!(c, ';' | '&' | '|' | ')' | '"' | '\'' | '}' | '`')
-            }) {
-                continue;
-            }
             let whole = before.ends_with("$(") && after == Some(')');
-            let (from, to, filler) = if whole {
-                (before.len() - 2, end + 1, name.as_str())
+            let filler = if whole {
+                names.join(" ")
             } else {
-                (at, end, "true")
+                "true".to_owned()
+            };
+            let (from, to) = if whole {
+                (before.len() - 2, end + 1)
+            } else {
+                (at, end)
             };
             return Some(format!("{}{}{}", &text[..from], filler, &text[to..]));
         }

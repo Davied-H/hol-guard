@@ -9,8 +9,7 @@
 //! that fails, fails closed with the reason that command printed, and nothing
 //! runs outside the sandbox except the `git init` a plan bootstraps.
 //!
-//! Rust owns every verdict here: the receipt comes from the resident, the
-//! plan and the sandbox profile from the restricted-execution operations.
+//! Rust owns every verdict: the resident's receipt, the operations' plan.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -358,6 +357,7 @@ fn run_workspace_contained(
         exec_roots: &exec_roots,
         write_denials: &write_denials,
         signals,
+        loopback: grant::LoopbackNote::new(&store, decided.as_ref()),
     };
     if let Some(prefix) = &plan.prefix {
         // `prefix && git init && rest`: a failed prefix ends the command.

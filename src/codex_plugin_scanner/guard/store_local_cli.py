@@ -20,6 +20,7 @@ from .runtime.local_mcp_stdio import McpCatalogResult
 from .runtime.mcp_classification import McpClassificationUnavailableError, classify_mcp_actions
 from .store_custom_extension_continuity import _write_local_cli_grant
 from .store_local_cli_capabilities import LocalCliCapabilityState, capability_map, load_local_cli_capabilities
+from .store_local_cli_context import implied_capabilities, note_capability_cause
 from .store_local_cli_retention import mark_shared_enrolled_servers, utc_now_iso
 from .store_local_cli_rows import (
     _grant_from_row,
@@ -105,6 +106,7 @@ class StoreLocalCliMixin:
             catalog_map = load_mcp_catalogs(connection)
             provider_map = load_provider_catalog_summaries(connection)
             capability_rows = load_local_cli_capabilities(connection)
+            implied = implied_capabilities(connection)
         grants = {_row_text(row, 0): _grant_from_row(row) for row in grant_rows}
         items: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -148,6 +150,9 @@ class StoreLocalCliMixin:
             item["capabilities"] = (
                 capability_map(capability_rows.get(str(item["cli_id"]))) if item.get("surface") == "cli" else {}
             )
+            suggested = _suggested_capability(item, implied.get(str(item["cli_id"])))
+            if suggested is not None:
+                item["suggested_capability"] = suggested
             catalog = catalog_map.get(str(item["cli_id"]))
             if catalog is not None and item.get("surface") == "mcp" and catalog[0] == item.get("identity_hash"):
                 item["mcp_catalog"] = catalog[1]
@@ -196,6 +201,13 @@ class StoreLocalCliMixin:
             ensure_local_cli_schema(connection)
             row = connection.execute("select surface from local_cli_observation where cli_id = ?", (cli_id,)).fetchone()
         return None if row is None or not isinstance(row[0], str) else row[0]
+
+    def note_local_cli_capability_cause(self, *, cli_id: str, identity_hash: str, cause: str) -> int:
+        """Keep the capability cause a contained run of an allowed CLI was denied."""
+
+        with self._connect() as connection:
+            ensure_local_cli_schema(connection)
+            return note_capability_cause(connection, cli_id=cli_id, identity_hash=identity_hash, cause=cause)
 
     def read_local_cli_capabilities(self, cli_id: str) -> dict[str, LocalCliCapabilityState]:
         """The full ``{name: on|off}`` map stored for ``cli_id``."""
@@ -464,3 +476,16 @@ def _load_commands_by_cli(connection: sqlite3.Connection) -> dict[str, list[dict
             }
         )
     return grouped
+
+
+def _suggested_capability(item: Mapping[str, object], implied: tuple[str, str] | None) -> str | None:
+    """The capability an allowed CLI's recorded cause points at while it is still off."""
+
+    if implied is None or item.get("state") != "allowed" or item.get("stale") is True:
+        return None
+    identity_hash, capability = implied
+    if identity_hash != item.get("identity_hash"):
+        return None
+    capabilities = item.get("capabilities")
+    on = isinstance(capabilities, Mapping) and capabilities.get(capability) == "on"
+    return None if on else capability

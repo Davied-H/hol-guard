@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from ..blocked_request_mode import connector_setup_reason
-from .hook_native_exact_action import launch_cwd
+from .hook_native_exact_action import launch_cwd, launch_path
 from .hook_request_parsing import pre_tool_command
 
 if TYPE_CHECKING:
@@ -70,6 +70,7 @@ def native_review_setup_connector(
             command=command,
             cwd=cwd,
             home_dir=home_dir,
+            path=launch_path(payload),
         )
     except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as error:
         # Without an answer the review stays an ordinary per-action one.

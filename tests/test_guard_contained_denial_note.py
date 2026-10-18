@@ -110,3 +110,33 @@ def test_rust_keeps_the_same_notes_and_markers_in_the_same_order() -> None:
     assert rust_order == [
         next(name for name in _NOTE_NAMES if getattr(notes, name) == cause[0]) for cause in notes.CAUSES
     ]
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        (b"Error: connect EPERM 127.0.0.1:8080", True),
+        (b"curl: (7) Failed to connect to localhost port 8080: Operation not permitted", True),
+        (b"Error: connect EPERM ::1:8080", True),
+        (b"Error: connect EPERM [::1]:8080", True),
+        (b"Error: connect EPERM ::1", True),
+        (b"Error: connect EPERM fe80::1", False),
+        (b"Error: connect EPERM 2001:db8::1:443", False),
+        (b"Error: connect EPERM ::10:443", False),
+        (b"Error: connect EPERM [::1:abcd]:443", False),
+        (b"Error: connect EPERM 203.0.113.7:443", False),
+        (b"getaddrinfo ENOTFOUND mcp.example.test", False),
+        (b"EPERM: operation not permitted, mkdir '/tmp/localhost'", False),
+        (b"listening on 127.0.0.1:8080", False),
+    ],
+)
+def test_only_a_blocked_connection_to_this_machine_counts_as_loopback(output: bytes, expected: bool) -> None:
+    assert notes.loopback_denied([b"", output]) is expected
+
+
+def test_rust_keeps_the_same_loopback_markers() -> None:
+    source = _RUST.read_text(encoding="utf-8")
+    declared = re.search(r"const LOOPBACK_MARKERS: \[&\[u8\]; \d+\] = \[([^\]]*)\];", source)
+    assert declared is not None
+    rust_markers = tuple(marker.encode() for marker in re.findall(r'b"((?:[^"\\]|\\.)*)"', declared.group(1)))
+    assert rust_markers == notes.LOOPBACK_MARKERS

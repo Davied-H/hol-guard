@@ -115,6 +115,7 @@ pub mod github_workflow_operations;
 mod harness_config_names;
 mod home_path_text;
 pub mod homebrew_intent;
+mod inline_shell_quoting;
 pub mod jsonc;
 #[cfg(unix)]
 pub mod launch_identity;
@@ -490,10 +491,11 @@ fn parse_command_unbound(request: &CommandModelRequestV1) -> Result<CanonicalCom
 ///
 /// A Windows agent runs PowerShell, which reads quotes differently from the
 /// shell this text names: `''` closes and reopens a POSIX single-quoted word
-/// while PowerShell hands the shell a literal `'`. The two readings disagree
-/// about where the script ends, so on that host the text keeps the existing
-/// PowerShell path instead of becoming an exact model of a command the shell
-/// would never run.
+/// while PowerShell hands the shell a literal `'`. Where the two readings could
+/// disagree about where the script ends, that host keeps the existing
+/// PowerShell path instead of an exact model of a command the shell would
+/// never run. A plain quoted script reads the same under both, so it is
+/// modelled there too (`inline_shell_quoting`).
 ///
 /// The raw text is no longer the command, so `exact_raw_text` is false and a
 /// matcher that reads the literal raw spelling keeps failing closed.
@@ -503,7 +505,8 @@ fn parse_inline_shell_script(
 ) -> Option<CanonicalCommandV1> {
     if request.dialect != "posix"
         || request.transport != "shell_string"
-        || powershell_reads::windows_powershell_host()
+        || (powershell_reads::windows_powershell_host()
+            && !inline_shell_quoting::powershell_reads_the_same_words(raw))
     {
         return None;
     }

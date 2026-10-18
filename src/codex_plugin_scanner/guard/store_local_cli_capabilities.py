@@ -15,6 +15,8 @@ import sqlite3
 from collections.abc import Mapping
 from typing import Final, Literal
 
+from .store_local_cli_context import CAPABILITY_BY_CAUSE
+
 LOCAL_CLI_CAPABILITIES: Final = ("loopback-network", "state-dir-read", "state-dir-write")
 LocalCliCapabilityState = Literal["on", "off"]
 _STATES: Final = frozenset({"on", "off"})
@@ -98,6 +100,24 @@ def write_local_cli_capabilities(
             """,
             (cli_id, name, state, revision, updated_at),
         )
+    _clear_resolved_causes(connection, cli_id, [name for name, state in checked.items() if state == "on"])
+
+
+def _clear_resolved_causes(connection: sqlite3.Connection, cli_id: str, enabled: list[str]) -> None:
+    """Drop a blocked cause once the capability it points at is on."""
+
+    causes = tuple(cause for cause, capability in CAPABILITY_BY_CAUSE.items() if capability in enabled)
+    if not causes:
+        return
+    columns = {str(row[1]) for row in connection.execute("pragma table_info(local_cli_observation)")}
+    if "first_blocked_cause" not in columns:
+        return
+    marks = ", ".join("?" for _ in causes)
+    connection.execute(
+        f"update local_cli_observation set first_blocked_cause = null "
+        f"where cli_id = ? and first_blocked_cause in ({marks})",
+        (cli_id, *causes),
+    )
 
 
 def clear_local_cli_capabilities(connection: sqlite3.Connection, cli_id: str) -> None:

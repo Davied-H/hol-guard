@@ -89,8 +89,9 @@ pub(crate) fn benign_command_segments(
             // from upgrading those lexical-only proofs; callers with verified
             // home/cwd context retain the bounded path proof below.
             let requires_path_context = !path_free
-                && matches!(
-                    basename,
+                && (super::digest_reads::digest_program(basename)
+                    || matches!(
+                        basename,
                     "ls" | "cat"
                         | "base64"
                         | "cp"
@@ -115,7 +116,7 @@ pub(crate) fn benign_command_segments(
                         | "npm"
                         | "jq"
                         | "pkill"
-                )
+                ))
                 // A file operand prints a source line on a syntax error, so it
                 // gets the same session proof as `cat`.
                 || (matches!(basename, "node" | "nodejs")
@@ -182,6 +183,8 @@ pub(super) fn stdin_filter_segment(segment: &crate::CommandSegmentV1) -> bool {
             || (basename == "wc"
                 && safe_reads::safe_word_count_stdin_arguments(&segment.arguments))
             || (basename == "od" && safe_reads::safe_byte_dump_stdin_arguments(&segment.arguments))
+            || (super::digest_reads::digest_program(basename)
+                && super::digest_reads::safe_digest_stdin_arguments(&segment.arguments))
             || (basename == "grep" && search::safe_grep_stdin_arguments(&segment.arguments))
             || (basename == "rg" && search::safe_rg_stdin_arguments(&segment.arguments))
             || (basename == "sed" && safe_reads::safe_sed_stdin_arguments(&segment.arguments))
@@ -370,6 +373,13 @@ pub(super) fn exact_safe_segment_with_context(
             segment.pipeline_index > 0,
             context,
         ),
+        name if super::digest_reads::digest_program(name) => {
+            super::digest_reads::safe_digest_arguments(
+                &segment.arguments,
+                segment.pipeline_index > 0,
+                context,
+            )
+        }
         "sort" | "uniq" | "cut" | "tr" => {
             segment.pipeline_index > 0
                 && super::stdin_filters::safe_arguments(basename, &segment.arguments)

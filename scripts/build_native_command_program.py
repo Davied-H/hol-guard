@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -30,15 +31,26 @@ def canonical_bytes(value: object) -> bytes:
 MAX_SOURCE_BYTES = 8 * 1024 * 1024
 
 
-def read_source_bytes(path: Path) -> bytes:
-    relative = path.relative_to(ROOT)
-    current = ROOT
+def _compiler_transport():
+    path = Path(__file__).with_name("command_compiler_receipt.py")
+    spec = importlib.util.spec_from_file_location("command_compiler_receipt", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def read_source_bytes(path: Path, *, root: Path | None = None) -> bytes:
+    root = root or ROOT
+    relative = path.relative_to(root)
+    current = root
+    if root.is_symlink():
+        raise ValueError("source root cannot be a symlink")
     for part in relative.parts:
         current = current / part
         if current.is_symlink():
             raise ValueError(f"invalid source file: {relative}")
     if not path.is_file():
-        raise ValueError(f"invalid source file: {path.relative_to(ROOT)}")
+        raise ValueError(f"invalid source file: {relative}")
     with path.open("rb") as stream:
         data = stream.read(MAX_SOURCE_BYTES + 1)
     if not data or len(data) > MAX_SOURCE_BYTES:
@@ -46,8 +58,8 @@ def read_source_bytes(path: Path) -> bytes:
     return data
 
 
-def read_object(path: Path) -> dict:
-    return source_object(read_source_bytes(path), path)
+def read_object(path: Path, *, root: Path | None = None) -> dict:
+    return source_object(read_source_bytes(path, root=root), path)
 
 
 def source_object(data: bytes, path: Path) -> dict:
@@ -197,14 +209,26 @@ def implementation_digest() -> str:
     return digest.hexdigest()
 
 
+class DeliveryBudgetError(ValueError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class NativeCompilationError(ValueError):
+    def __init__(self, code: str | None, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 def check_delivery_budgets(*, program: bytes, catalog: bytes) -> None:
     """Refuse to publish artifacts that the packaged loader would reject."""
 
     limits = read_object(DELIVERY_LIMITS)
     if len(program) > limits["max_native_command_program_bytes"]:
-        raise ValueError("native command program exceeds its delivery budget")
+        raise DeliveryBudgetError("program-bytes", "native command program exceeds its delivery budget")
     if len(catalog) > limits["max_generated_catalog_artifact_bytes"]:
-        raise ValueError("generated catalog artifact exceeds its delivery budget")
+        raise DeliveryBudgetError("catalog-bytes", "generated catalog artifact exceeds its delivery budget")
 
 
 def compilation_failure(completed: subprocess.CompletedProcess, paths: list[Path]) -> ValueError:
@@ -225,10 +249,11 @@ def compilation_failure(completed: subprocess.CompletedProcess, paths: list[Path
         detail = f"{location}: {failure['code'][:1024]}"
     else:
         detail = ": " + completed.stdout[:1024].decode(errors="replace")
-    return ValueError(f"native source compilation failed (exit {completed.returncode}){detail}")
+    code = failure.get("code") if isinstance(failure, dict) else None
+    return NativeCompilationError(code, f"native source compilation failed (exit {completed.returncode}){detail}")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Build or strictly check projections bound to current native implementation and authored sources."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="Reject a missing or stale generated artifact.")
@@ -253,7 +278,7 @@ def main() -> int:
         action="store_true",
         help="Read-only check of public descriptor bytes in HEAD before scratch preparation.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.descriptor_dir and args.publish_descriptor:
         parser.error("Use --publish-descriptor with the default runtime destination.")
     command = (
@@ -276,7 +301,9 @@ def main() -> int:
         ]
     )
     with source_stream() as (stream, trust_value, paths):
-        completed = subprocess.run(command, stdin=stream, stdout=subprocess.PIPE, cwd=ROOT, timeout=600, check=False)
+        completed, bootstrap = _compiler_transport().compile_stream(
+            command[:-1], stream, root=ROOT, implementation=implementation_digest(), inspect_mode=bool(args.compiler)
+        )
     if completed.returncode:
         raise compilation_failure(completed, paths)
     compiled = json.loads(completed.stdout)
@@ -290,12 +317,19 @@ def main() -> int:
         raise ValueError("canonical contributions lack authored trust bindings: " + ", ".join(missing_bindings))
     if compiled["implementation_digest"] != implementation_digest():
         raise ValueError("source compiler does not match the current native implementation; rebuild it")
-    built = subprocess.run([*command[:-1], "export-built"], stdout=subprocess.PIPE, cwd=ROOT, timeout=60, check=False)
-    if built.returncode or json.loads(built.stdout) != compiled:
-        raise ValueError("source compiler does not embed the current authored sources; rebuild it before staging")
-    trust = subprocess.run([*command[:-1], "export-trust"], stdout=subprocess.PIPE, cwd=ROOT, timeout=60, check=False)
-    if trust.returncode or json.loads(trust.stdout) != trust_value:
-        raise ValueError("source compiler trust map does not match the authored bindings; rebuild it before staging")
+    if not bootstrap:
+        built = subprocess.run(
+            [*command[:-1], "export-built"], stdout=subprocess.PIPE, cwd=ROOT, timeout=60, check=False
+        )
+        if built.returncode or json.loads(built.stdout) != compiled:
+            raise ValueError("source compiler does not embed the current authored sources; rebuild it before staging")
+        trust = subprocess.run(
+            [*command[:-1], "export-trust"], stdout=subprocess.PIPE, cwd=ROOT, timeout=60, check=False
+        )
+        if trust.returncode or json.loads(trust.stdout) != trust_value:
+            raise ValueError(
+                "source compiler trust map does not match the authored bindings; rebuild it before staging"
+            )
     public_directory = ROOT / "contributions/extensions"
     descriptors = {descriptor["id"]: descriptor for descriptor in compiled["descriptors"]}
     if set(args.publish_descriptor) - descriptors.keys():
@@ -400,24 +434,25 @@ def main() -> int:
                 )
             )
             return 1
-        embedded = subprocess.run(
-            [*command[:-1], "evaluate-batch"],
-            input=canonical_bytes(
-                {
-                    "schema": "guard.command-extension-evaluation-batch.v1",
-                    "cases": [{"id": "embedded-identity", "command": "pwd"}],
-                }
-            ),
-            stdout=subprocess.PIPE,
-            cwd=ROOT,
-            timeout=60,
-            check=False,
-        )
-        if embedded.returncode:
-            raise ValueError("native compiler embedded-program verification failed")
-        identity = json.loads(embedded.stdout)
-        if any(identity.get(key) != program[key] for key in ("program_digest", "catalog_digest")):
-            raise ValueError("native compiler embeds a stale program; rebuild it after generating the artifacts")
+        if not bootstrap:
+            embedded = subprocess.run(
+                [*command[:-1], "evaluate-batch"],
+                input=canonical_bytes(
+                    {
+                        "schema": "guard.command-extension-evaluation-batch.v1",
+                        "cases": [{"id": "embedded-identity", "command": "pwd"}],
+                    }
+                ),
+                stdout=subprocess.PIPE,
+                cwd=ROOT,
+                timeout=60,
+                check=False,
+            )
+            if embedded.returncode:
+                raise ValueError("native compiler embedded-program verification failed")
+            identity = json.loads(embedded.stdout)
+            if any(identity.get(key) != program[key] for key in ("program_digest", "catalog_digest")):
+                raise ValueError("native compiler embeds a stale program; rebuild it after generating the artifacts")
     else:
         if not args.projections_only:
             descriptor_directory.mkdir(parents=True, exist_ok=True)

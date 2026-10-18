@@ -26,6 +26,7 @@ import { bulkPolicyCopy, connectorGroupOutcomeCopy, continuityCopy, customExtens
 import { connectorGroupOutcome, connectorSetupMatch, customExtensionDisplayName, hasSuggestedRules, prefillSuggestedStates, type ConnectorSetupLink } from "./custom-extension-profile";
 import { ConnectorSetupBanner } from "./connector-setup-banner";
 import { CustomExtensionReviewModal } from "./local-cli-review-modal";
+import { LocalCliCapabilities } from "./local-cli-capabilities";
 import { canForgetLocalCli, ForgetLocalCliButton, lastSeenCopy } from "./local-cli-forget";
 
 export { customExtensionStateLabel } from "./local-cli-panel-copy";
@@ -260,6 +261,9 @@ export function LocalCliDetail(props: {
           )}
         </div>
       </header>
+      {props.item.surface === "cli" && props.item.state === "allowed" ? (
+        <LocalCliCapabilities item={props.item} revision={props.revision} onRefresh={props.onRefresh} />
+      ) : null}
       {props.item.surface === "mcp" && added ? (
         <section className="mt-5 rounded-xl border border-slate-200 p-4" aria-labelledby="mcp-publication-heading">
           <h2 id="mcp-publication-heading" className="text-sm font-semibold text-brand-dark">{props.item.permission_scope === "configured-connection" ? "Policy status" : "Enforcement status"}</h2>

@@ -84,14 +84,25 @@ fn evaluate_with(
     })
 }
 
-/// The persistent exact-action token of `query`, or the reason the action
-/// stays one-time, for a resident caller that already holds the query.
+/// The proven exact-action token of `query`, or the reason Guard cannot
+/// prove what it runs, for a resident caller that already holds the query.
+#[cfg(test)]
 pub(crate) fn exact_action_token(query: &NativeExactActionQueryV1) -> Result<String, &'static str> {
     let NativeExactActionQueryV1::ExactAction { budget_ms, .. } = query else {
         return Err("native_exact_action_query_invalid");
     };
     let budget = Duration::from_millis((*budget_ms).min(NATIVE_EXACT_ACTION_MAX_BUDGET_MS));
     token::exact_action(query, Instant::now() + budget, &ResidentEngines)
+}
+
+/// The token an approval of `query` is saved and matched under
+/// (`token::approval_token`), for a resident caller that holds the query.
+pub(crate) fn approval_token(query: &NativeExactActionQueryV1) -> Result<String, &'static str> {
+    let NativeExactActionQueryV1::ExactAction { budget_ms, .. } = query else {
+        return Err("native_exact_action_query_invalid");
+    };
+    let budget = Duration::from_millis((*budget_ms).min(NATIVE_EXACT_ACTION_MAX_BUDGET_MS));
+    token::approval_token(query, Instant::now() + budget, &ResidentEngines)
 }
 
 /// The review identity the daemon binds an approve-once retry of `query` to
@@ -122,6 +133,7 @@ pub(crate) fn review_binding_for(
             execution_environment,
             &ResidentEngines,
         )
+        .or(Some(reuse_shape::Reuse::Argv))
     };
     binding::review_binding(
         harness,
@@ -136,6 +148,17 @@ pub(crate) fn review_binding_for(
         policy_binding,
         launcher,
     )
+}
+
+/// What an unprovable command falls back to (`CommandHash`), or the strict
+/// proofs alone that the recorded parity vectors expect (`Strict`).
+#[derive(Clone, Copy, PartialEq)]
+enum Fallback {
+    /// A command Guard cannot prove binds to its own hash: an approval holds
+    /// until the command changes (`docs/guard/approval-invariant.md`).
+    CommandHash,
+    #[cfg(test)]
+    Strict,
 }
 
 /// The launcher state a one-time approval of `command` binds to: a plain
@@ -160,6 +183,14 @@ fn launcher_reuse(
 fn decide(
     request: &NativeExactActionRequestV1,
     engines: &dyn Engines,
+) -> Result<NativeExactActionPayloadV1, &'static str> {
+    decide_with(request, engines, Fallback::CommandHash)
+}
+
+fn decide_with(
+    request: &NativeExactActionRequestV1,
+    engines: &dyn Engines,
+    fallback: Fallback,
 ) -> Result<NativeExactActionPayloadV1, &'static str> {
     if request.schema != NATIVE_EXACT_ACTION_REQUEST_SCHEMA {
         return Err("native_exact_action_schema_mismatch");
@@ -202,13 +233,19 @@ fn decide(
                         execution_environment.as_ref(),
                         engines,
                     )
+                    .or((fallback == Fallback::CommandHash).then_some(reuse_shape::Reuse::Argv))
                 },
             ),
         },
         NativeExactActionQueryV1::ExactAction { budget_ms, .. } => {
             let budget = Duration::from_millis((*budget_ms).min(NATIVE_EXACT_ACTION_MAX_BUDGET_MS));
             let deadline = Instant::now() + budget;
-            match token::exact_action(&request.query, deadline, engines) {
+            let minted = match fallback {
+                Fallback::CommandHash => token::approval_token(&request.query, deadline, engines),
+                #[cfg(test)]
+                Fallback::Strict => token::exact_action(&request.query, deadline, engines),
+            };
+            match minted {
                 Ok(token) => NativeExactActionPayloadV1::ExactAction {
                     token: Some(token),
                     once_only_reason: None,
@@ -225,6 +262,14 @@ fn decide(
 #[cfg(test)]
 #[path = "native_exact_action_op_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "native_exact_action_op/approval_fallback_tests.rs"]
+mod approval_fallback_tests;
+
+#[cfg(test)]
+#[path = "native_exact_action_op/wire_tests.rs"]
+mod wire_tests;
 
 #[cfg(all(test, windows))]
 #[path = "native_exact_action_op/windows_tests.rs"]

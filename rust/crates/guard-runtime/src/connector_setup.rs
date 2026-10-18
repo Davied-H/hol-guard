@@ -27,6 +27,18 @@ pub(crate) const NON_RECOGNITION_REASON_CODES: [&str; 2] = [
     "native_workspace_containment_executable_outside_roots",
 ];
 
+/// The one review an allowed grant lifts to `allow`: the generic review due
+/// only to non-recognition. The outside-roots review runs in the grant's
+/// sandbox instead, and every other review keeps its risk signal.
+pub(crate) const GRANT_LIFTABLE_REASON_CODE: &str = NON_RECOGNITION_REASON_CODES[0];
+
+/// Whether an allowed grant may lift a review with `reason_code` to `allow`.
+/// The CLI hook names no reason: it settles the grant against the native
+/// floor afterwards, so its review keeps lifting as before.
+pub(crate) fn grant_lifts(reason_code: Option<&str>) -> bool {
+    reason_code.is_none_or(|code| code == GRANT_LIFTABLE_REASON_CODE)
+}
+
 /// Hex digits of the action digest in a connector group id.
 const ACTION_DIGEST_HEX: usize = 16;
 

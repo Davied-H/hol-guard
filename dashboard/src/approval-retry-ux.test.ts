@@ -2,7 +2,6 @@ import { normalizeApprovalRequest } from "./guard-api";
 import { normalizeApprovalExtensionRecommendation } from "./approval-extension-recommendation";
 import { buildBulkApproveConsequenceCopy, buildRetryAfterApprovalCopy, summarizeBulkApproveSelection } from "./approval-center-utils";
 import {
-  approvalCannotUnlock,
   bulkApproveConsequenceCopyForSelection,
   countRetryBlockedActions,
   receiptDescribesRequest,
@@ -15,7 +14,6 @@ import { bulkApprovalRiskTier, groupDuplicates } from "./queue-state";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { approvalGateRefreshNeeded, resolvedStateForItem } from "./review-decision-state";
-import { ReviewRunYourself } from "./review-run-yourself";
 import { ReviewScopeControls } from "./review-scope-controls";
 import { buildDecisionPayload, requestSupportsScope } from "./approval-scopes";
 import { buildBulkRiskDisclosure } from "./queue-bulk-risk-disclosure";
@@ -76,9 +74,9 @@ assert(retryCannotReuseApproval(unbound), "unbound native review is flagged as n
 assert(!retryCannotReuseApproval(bound), "bound native review is not flagged");
 const unboundCopy = buildRetryAfterApprovalCopy(unbound, "allow");
 assert(!unboundCopy.includes("within 15 minutes"), "unbound approval copy drops the retry window");
-assert(unboundCopy.includes("will still be blocked"), "unbound approval copy says the agent stays blocked");
+assert(unboundCopy.includes("run the command again"), "unbound approval copy sends the agent's retry to a fresh request");
 assert(!unboundCopy.includes("Extensions"), "approval copy without a verified allow hint never promises Extensions");
-assert(unboundCopy.includes("run it yourself"), "approval copy without a hint says to run the command yourself");
+assert(!/run it yourself/i.test(unboundCopy), "approval copy never tells the user to run the command themselves");
 assert(
   buildRetryAfterApprovalCopy(bound, "allow").includes("retry within 5 minutes"),
   "bound native approval copy uses the native 5-minute retry window",
@@ -107,7 +105,8 @@ assert(
 );
 const noHint = retryCannotReuseApprovalHint(unbound, "Oh My Pi");
 assert(!noHint.includes("Extensions"), "pre-approval hint without a verified allow hint never promises Extensions");
-assert(noHint.includes("Copy the command and run it yourself"), "pre-approval hint falls back to running it yourself");
+assert(noHint.includes("offers Allow once and Always allow"), "pre-approval hint points to the fresh request");
+assert(!/run it yourself/i.test(noHint), "pre-approval hint never tells the user to run the command themselves");
 
 // #3942: only a daemon-verified recommendation names the Extensions permission to allow.
 function recommendation(status: string, labels: string[]) {
@@ -320,34 +319,14 @@ assert(bulkApprovalRiskTier(pythonGroup) === "elevated", "uncategorized shell co
 const [line] = summarizeBulkApproveSelection([pythonGroup]);
 assert(line.command === pythonChain, "bulk approval line carries the command text");
 
-// An approval that can neither be reused by the retry nor remembered cannot unlock the command,
-// so the review says to run it yourself instead of offering Approve.
+// docs/guard/approval-invariant.md: no review hides Approve behind a "run it yourself" dead end.
 const envPrefixed = nativeBashRequest("66666666666666666666666666666666", "FOO=1 ./scripts/release.sh production", [
   "retry_cannot_reuse_approval",
 ]);
-assert(approvalCannotUnlock(envPrefixed), "a review the retry can never match cannot be unlocked by approving");
-assert(!approvalCannotUnlock(bound), "an action-bound review can still be approved");
-assert(
-  !approvalCannotUnlock({ ...envPrefixed, exact_action_persistence_eligible: true }),
-  "a review that can be remembered as an exact action can still be approved",
-);
-assert(
-  !approvalCannotUnlock({
-    ...envPrefixed,
-    extension_recommendation: recommendation("available", ["Git origin refresh"]) ?? undefined,
-  }),
-  "a review a verified Extensions permission would let run is not a run-it-yourself row",
-);
-assert(
-  approvalCannotUnlock({
-    ...envPrefixed,
-    extension_recommendation: recommendation("authority_unavailable", ["Git origin refresh"]) ?? undefined,
-  }),
-  "an Extensions permission the control authority cannot apply does not unlock the command",
-);
-const runYourselfMarkup = renderToStaticMarkup(createElement(ReviewRunYourself, { item: envPrefixed, harnessName: "Oh My Pi" }));
-assert(runYourselfMarkup.includes("Run this yourself"), "the review names the action the user should take");
-assert(runYourselfMarkup.includes("FOO=1 ./scripts/release.sh production"), "the review shows the command to run");
-assert(!/>\s*Approve/.test(runYourselfMarkup), "the run-yourself panel offers no approval button");
+for (const item of [envPrefixed, { ...envPrefixed, exact_action_persistence_eligible: true }]) {
+  for (const copy of [retryCannotReuseApprovalHint(item, "Oh My Pi"), retryBlockedApprovalCopy(item, "Oh My Pi")]) {
+    assert(!/run (it|this|the command) yourself|change nothing/i.test(copy), `no dead-end copy: ${copy}`);
+  }
+}
 
 console.log("approval-retry-ux tests passed");
