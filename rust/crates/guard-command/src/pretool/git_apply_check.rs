@@ -12,15 +12,24 @@ use super::git_branch_listing::bounded_pattern;
 
 /// `arguments` are the tokens after the `apply` subcommand.
 pub(crate) fn is_check_only(arguments: &[String]) -> bool {
+    patch_targets(arguments).is_some()
+}
+
+/// The patch files a proven check reads, or `None` when the invocation is no
+/// proven check. Named with no patch at all, Git reads the standard input it
+/// was handed, so a check names at least one file of its own.
+pub(crate) fn patch_targets(arguments: &[String]) -> Option<Vec<&str>> {
     let mut checking = false;
     let mut index = 0;
     let mut patches_only = false;
+    let mut patches = Vec::new();
     while let Some(argument) = arguments.get(index) {
         index += 1;
         if patches_only {
             if !patch_target(argument) {
-                return false;
+                return None;
             }
+            patches.push(argument.as_str());
             continue;
         }
         match argument.as_str() {
@@ -47,7 +56,7 @@ pub(crate) fn is_check_only(arguments: &[String]) -> bool {
                     .get(index)
                     .is_some_and(|value| bounded_pattern(value))
                 {
-                    return false;
+                    return None;
                 }
                 index += 1;
             }
@@ -57,32 +66,38 @@ pub(crate) fn is_check_only(arguments: &[String]) -> bool {
                     .or_else(|| value.strip_prefix("--include="))
                 {
                     if !bounded_pattern(pattern) {
-                        return false;
+                        return None;
                     }
                 } else if let Some(mode) = value.strip_prefix("--whitespace=") {
                     // `fix` rewrites the lines it applies; the rest only
                     // decide what the check reports.
                     if !matches!(mode, "nowarn" | "warn" | "error" | "error-all") {
-                        return false;
+                        return None;
                     }
-                } else if !(depth_option(value) || patch_target(value)) {
-                    return false;
+                } else if patch_target(value) {
+                    patches.push(value);
+                } else if !depth_option(value) {
+                    return None;
                 }
             }
         }
     }
-    checking
+    (checking && !patches.is_empty()).then_some(patches)
 }
 
 /// A patch the caller names inside the workspace. Git quotes the offending
 /// line of whatever it was handed, so an absolute path or a `..` segment —
 /// a file the workspace proof never read — is not one, and neither is an
 /// option this grammar does not know, including a bare `-` for standard
-/// input.
+/// input. A glob is not one either: the shell hands Git whatever the pattern
+/// happened to match, which is not the file this spelling names.
 fn patch_target(value: &str) -> bool {
-    bounded_pattern(value)
-        && !value.starts_with('-')
-        && !value.starts_with('/')
+    !value.is_empty()
+        && value.len() <= 4096
+        && !value.starts_with(['-', '/', '\\'])
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-/".contains(&byte))
         && value
             .split('/')
             .all(|part| !matches!(part, "" | "." | ".."))
@@ -156,6 +171,14 @@ mod tests {
             "--check ../../outside.patch",
             "--check ~/secret.patch",
             "--check -- patches/../../outside.patch",
+            // Named with no patch, Git reads the standard input it was handed.
+            "--check",
+            "--check -p1",
+            "--check --",
+            // The shell hands Git whatever the pattern matched.
+            "--check *.patch",
+            "--check patches/*",
+            "--check -- patches/?.diff",
         ] {
             assert!(!check(command), "{command}");
         }

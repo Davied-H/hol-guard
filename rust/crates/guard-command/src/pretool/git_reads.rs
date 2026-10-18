@@ -139,8 +139,20 @@ pub(super) fn safe_git_arguments(
     if subcommand == "apply" {
         // `--check` reports whether the patch would apply and writes nothing,
         // but reading the files it names can start a configured
-        // `core.fsmonitor`, so the configuration probe clears it first.
-        return allow_helper_context && super::git_apply_check::is_check_only(&arguments[1..]);
+        // `core.fsmonitor`, so the configuration probe clears it first. Git
+        // quotes the line it could not read, so each named patch goes through
+        // the ordinary read screen: a workspace name that is a link to a
+        // private file is not a patch this proof read.
+        return allow_helper_context
+            && super::git_apply_check::patch_targets(&arguments[1..]).is_some_and(|patches| {
+                patches.iter().all(|patch| {
+                    super::read_paths::bounded_file_read_target(
+                        patch,
+                        context.home_dir,
+                        context.cwd,
+                    )
+                })
+            });
     }
     if !matches!(
         subcommand,
