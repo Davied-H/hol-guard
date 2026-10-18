@@ -132,3 +132,22 @@ def test_a_free_owner_lock_is_not_reported(tmp_path: Path, monkeypatch: pytest.M
 
     assert result["reason_code"] == "native_ready"
     assert "message" not in result
+
+
+def test_the_default_doctor_explains_a_busy_owner_without_running_the_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codex_plugin_scanner.guard.adapters.diagnostic_probes import without_command_probes
+    from codex_plugin_scanner.guard.cli import doctor_native_runtime
+
+    def _must_not_run() -> NativeRuntimeStatus:
+        raise AssertionError("the runtime must not run while command probes are off")
+
+    monkeypatch.setattr(native_runtime, "native_runtime_status", _must_not_run)
+    monkeypatch.setattr(doctor_native_runtime, "_passive_runtime_sha256", lambda: "a" * 64)
+    with _hold_owner_lock(tmp_path / "native-runtime"), without_command_probes():
+        result = doctor_native_availability(tmp_path)
+
+    assert result["reason_code"] == "native_resident_owner_busy"
+    assert result["available"] is None
+    assert "Another Guard install" in result["message"]
