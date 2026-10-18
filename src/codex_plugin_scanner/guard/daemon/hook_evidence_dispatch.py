@@ -51,12 +51,12 @@ class HookEvidenceDispatch:
     """A single ordered worker for evidence a finished hook left behind."""
 
     def __init__(self, *, max_pending: int = _MAX_PENDING) -> None:
-        self._queue: queue.Queue[Callable[[], None] | None] = queue.Queue(maxsize=max(1, max_pending))
+        self._queue: queue.Queue[Callable[[], object] | None] = queue.Queue(maxsize=max(1, max_pending))
         self._stopping = threading.Event()
         self._thread = threading.Thread(target=self._run, name="hol-guard-hook-evidence-dispatch", daemon=True)
         self._thread.start()
 
-    def run(self, work: Callable[[], None]) -> None:
+    def run(self, work: Callable[[], object]) -> None:
         """Take `work` for the dispatch thread, or run it here if it cannot."""
 
         if not self._stopping.is_set() and self._thread.is_alive():
@@ -111,7 +111,7 @@ class HookEvidenceDispatch:
                 _run_quietly(work)
 
 
-def _run_quietly(work: Callable[[], None]) -> None:
+def _run_quietly(work: Callable[[], object]) -> None:
     """Record what a hook decided without letting the recording raise.
 
     Every caller already wrapped its own submission this way: a hook that has
@@ -124,7 +124,7 @@ def _run_quietly(work: Callable[[], None]) -> None:
         _LOGGER.debug("Hook evidence was not recorded.", exc_info=True)
 
 
-def run_hook_evidence(host: object, work: Callable[[], None]) -> None:
+def run_hook_evidence(host: object, work: Callable[[], object]) -> None:
     """Hand `work` to `host`'s dispatch, or run it here when it has none."""
 
     dispatch = getattr(host, "evidence_dispatch", None)
