@@ -146,8 +146,25 @@ static PACKAGE_COMMAND_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(||
 // package_intent_parser.py :98-103  `_LOCAL_EXECUTION_FLAGS_BY_COMMAND`
 fn local_execution_flags(command: &str) -> &'static [&'static str] {
     match command {
-        "bunx" => &["--bun", "--no-install"],
-        "npx" => &["--no", "--no-install"],
+        "bunx" => &["--bun", "--no-install", "--"],
+        // The options past the first two name no package: they answer the
+        // install prompt, choose between the cache and the registry, or set
+        // how much the runner prints. The executable they precede is still
+        // the one this reads.
+        "npx" => &[
+            "--no",
+            "--no-install",
+            "--",
+            "--yes",
+            "-y",
+            "--offline",
+            "--prefer-offline",
+            "--prefer-online",
+            "--quiet",
+            "-q",
+            "--silent",
+            "-s",
+        ],
         _ => &[],
     }
 }
