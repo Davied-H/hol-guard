@@ -430,8 +430,50 @@ def test_daemon_startup_falls_back_to_a_shared_read_when_the_lease_is_busy() -> 
     # Both attempts queue behind the same exclusive entry gate, so the fallback
     # waits out what the first attempt left rather than a second full budget.
     first, second = (budget for _, budget in store.reads)
-    assert first == AUTHORITY_LOCK_TIMEOUT_SECONDS
+    assert first == AUTHORITY_LOCK_TIMEOUT_SECONDS / 2
     assert second is not None and 0.0 < second <= AUTHORITY_LOCK_TIMEOUT_SECONDS
+
+
+def test_daemon_startup_leaves_the_shared_fallback_a_span_to_run_in(monkeypatch: object) -> None:
+    """An exclusive attempt that waits out its whole budget must not starve the fallback."""
+
+    import time as time_module
+
+    from codex_plugin_scanner.guard.native_command_control_authority_io import (
+        AUTHORITY_LOCK_TIMEOUT_SECONDS,
+        NativeCommandControlAuthorityUnavailableError,
+    )
+    from codex_plugin_scanner.guard.runtime.extension_control_authority import (
+        AuthorityHealth,
+        ExtensionControlAuthorityView,
+    )
+
+    protected = ExtensionControlAuthorityView(AuthorityHealth.PROTECTED, 7, "digest", ())
+    clock = [1000.0]
+    monkeypatch.setattr(time_module, "monotonic", lambda: clock[0])  # type: ignore[attr-defined]
+
+    class _Store:
+        def __init__(self) -> None:
+            self.reads: list[tuple[bool, float | None]] = []
+
+        def read_extension_control_authority_for_registry(
+            self, registry: object, *, read_only: bool = False, lock_timeout_seconds: float | None = None
+        ) -> ExtensionControlAuthorityView:
+            self.reads.append((read_only, lock_timeout_seconds))
+            if not read_only:
+                # A busy lease spends the whole budget it was handed before it
+                # reports that it read nothing.
+                clock[0] += lock_timeout_seconds or 0.0
+                raise NativeCommandControlAuthorityUnavailableError(shared=False)
+            return protected
+
+        def extension_control_authority_unreadable_view(self, catalog_digest: str) -> ExtensionControlAuthorityView:
+            raise AssertionError("the fallback had budget left, so it must have been tried")
+
+    store = _Store()
+    assert _startup_view_with_store(store) is protected
+    assert [read_only for read_only, _ in store.reads] == [False, True]
+    assert store.reads[1][1] == AUTHORITY_LOCK_TIMEOUT_SECONDS / 2
 
 
 def test_daemon_startup_reports_no_layers_when_no_lease_is_obtainable() -> None:

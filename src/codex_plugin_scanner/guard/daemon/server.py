@@ -594,8 +594,8 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
 
         Both attempts take the same exclusive entry gate, so they share one
         acquisition budget rather than waiting it twice in sequence. The
-        fallback gets whatever the first attempt left; if that is nothing, it
-        is skipped and startup goes straight to the unread view.
+        exclusive attempt gets half of it, which leaves the shared fallback a
+        span to run in instead of arriving after the budget is already spent.
         """
 
         from ..native_command_control_authority_io import (
@@ -607,7 +607,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
         deadline = time.monotonic() + AUTHORITY_LOCK_TIMEOUT_SECONDS
         with suppress(NativeCommandControlAuthorityUnavailableError):
             return self.store.read_extension_control_authority_for_registry(
-                BUILT_IN_COMMAND_EXTENSION_REGISTRY, lock_timeout_seconds=AUTHORITY_LOCK_TIMEOUT_SECONDS
+                BUILT_IN_COMMAND_EXTENSION_REGISTRY, lock_timeout_seconds=AUTHORITY_LOCK_TIMEOUT_SECONDS / 2
             )
         remaining = deadline - time.monotonic()
         if remaining > 0.0:
