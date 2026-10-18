@@ -192,9 +192,11 @@ pub(in crate::pretool) fn safe_glob_operand(
 /// and hands `rg` the word as typed, so what is searched is the path spelled
 /// out, and it is screened exactly as the same path without brackets would
 /// be: the whole tree below it is walked, and an Oh My Pi agent-state tree is
-/// refused as for a literal search root. The class has to match nothing with
-/// case folded too, since under `nocaseglob` `app/[slug]` would expand to a
-/// directory named `S` rather than reach the literal route directory.
+/// refused as for a literal search root. The class has to match nothing under
+/// both matchers: the default one, where `[Z-a]` covers the bytes between the
+/// two cases, and the folded one, since under `nocaseglob` `app/[slug]` would
+/// expand to a directory named `S` rather than reach the literal route
+/// directory.
 pub(in crate::pretool) fn safe_literal_bracket_search_target(
     value: &str,
     context: ReadContext<'_>,
@@ -202,6 +204,7 @@ pub(in crate::pretool) fn safe_literal_bracket_search_target(
     value.contains('[')
         && !value.contains(['*', '?', '!'])
         && !super::glob_class::bracket_fallback_unsafe(value)
+        && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
         && glob_expand::expand_glob_matches_folded(value, context)
             .is_some_and(|matches| matches.is_empty())
         && literal_bracket_walk(value, context)
@@ -255,6 +258,7 @@ pub(in crate::pretool) fn safe_unmatched_glob_operand(
     }
     !value.contains(['*', '?', '!'])
         && !super::glob_class::bracket_fallback_unsafe(value)
+        && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
         && glob_expand::expand_glob_matches_folded(value, context)
             .is_some_and(|matches| matches.is_empty())
         && safe_literal_bracket_tree(value, context, recursive)
