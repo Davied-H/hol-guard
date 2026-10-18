@@ -142,7 +142,7 @@ fn a_drain_budget_too_large_for_a_duration_is_clamped() {
         json!({
             "action": "submit_command_activity",
             "harness": "claude-code",
-            "event": "PreToolUse",
+            "event": "PostToolUse",
             "payload": {"tool_name": "Bash", "tool_input": {"command": "pwd"}},
             "succeeded": true,
         }),
