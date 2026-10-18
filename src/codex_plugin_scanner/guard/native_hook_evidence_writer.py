@@ -219,6 +219,24 @@ class NativeHookEvidenceWriter:
     def submit_native_decision_receipt(self, receipt: Mapping[str, object]) -> bool:
         return self._queued({"action": "submit_native_decision_receipt", "receipt": dict(receipt)})
 
+    def start(self) -> bool:
+        """Build the resident's writer for this home before any hook needs it.
+
+        Construction replays the journal, and the writer this replaces paid
+        that cost when the daemon built it at startup. Warming it here keeps
+        the replay off the first hook's decision path. Best-effort like every
+        other call: a resident that cannot build the writer now builds it on
+        the first submission instead.
+        """
+
+        try:
+            payload = self._call({"action": "start"}, timeout_seconds=_TIMEOUT_SECONDS)
+        except Exception as error:
+            self._record_submit_failure(error)
+            return False
+        self._consume_signals(payload)
+        return payload.get("running") is True
+
     def stats(self) -> dict[str, Any]:
         """The writer's counters, with the two signals the resident hands back.
 

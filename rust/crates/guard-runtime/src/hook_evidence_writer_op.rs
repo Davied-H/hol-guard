@@ -55,12 +55,17 @@ use crate::hook_evidence_activity::NativeCorrelation;
 use crate::hook_evidence_composio::NativeComposio;
 use crate::hook_evidence_store::{NativeEvidenceStore, PolicyBarrierApi, StoreFatalSignal};
 use crate::hook_evidence_store_timeout::NativeSqliteTimeout;
+use crate::package_authority_op::request_digest_with_limit;
 
 pub(crate) const HOOK_EVIDENCE_WRITER_REQUEST_SCHEMA: &str =
     "guard-hook-evidence-writer-request.v1";
 pub(crate) const HOOK_EVIDENCE_WRITER_RESULT_SCHEMA: &str = "guard-hook-evidence-writer-result.v1";
 /// The feature advertised to callers that route evidence here.
 pub(crate) const HOOK_EVIDENCE_WRITER_FEATURE: &str = "hook-evidence-writer-v1";
+/// The widest request the digest will serialize, matching the transport bound
+/// the client sends under: the writer's own submission bound plus envelope
+/// slack.
+const HOOK_EVIDENCE_WRITER_MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024 + 4096;
 
 /// `RuntimeHookEvidenceWriter.__init__` defaults (:88-92).
 const MAX_RECORDS: usize = 2_000;
@@ -70,7 +75,7 @@ const BATCH_WAIT_SECONDS: f64 = 0.025;
 /// `submit_command_activity(approval_reuse_status=)` default (:153).
 const APPROVAL_REUSE_NOT_APPLICABLE: &str = "not-applicable";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct HookEvidenceWriterRequestV1 {
     pub(crate) schema: String,
     pub(crate) request_id: String,
@@ -81,7 +86,7 @@ pub(crate) struct HookEvidenceWriterRequestV1 {
     pub(crate) action: HookEvidenceWriterActionV1,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub(crate) enum HookEvidenceWriterActionV1 {
     /// `submit_command_activity` (:143-154).
@@ -109,11 +114,17 @@ pub(crate) enum HookEvidenceWriterActionV1 {
     },
     /// `submit_native_decision_receipt` (:243).
     SubmitNativeDecisionReceipt { receipt: Map<String, Value> },
+    /// Build this home's writer without queueing anything. Construction
+    /// recovers the journal, which the daemon used to pay at startup when it
+    /// built the writer itself; a daemon that warms the writer this way keeps
+    /// that replay off the first hook's decision path.
+    Start,
     /// `stats` (:396), plus the policy mutations observed since the last read.
     Stats,
-    /// `stop` (:432). The writer is dropped from the registry either way, so
-    /// a later submit builds a fresh one rather than queueing onto a drained
-    /// writer.
+    /// `stop` (:432). A writer that drained within its budget is dropped from
+    /// the registry, so a later submit builds a fresh one rather than queueing
+    /// onto a drained writer. One still inside a write keeps the journal it
+    /// owns until its worker leaves.
     Stop {
         #[serde(default = "stop_timeout_default")]
         timeout_seconds: f64,
@@ -132,6 +143,7 @@ fn stop_timeout_default() -> f64 {
 struct HookEvidenceWriterResultV1 {
     schema: String,
     request_id: String,
+    request_sha256: String,
     status: String,
     code: String,
     payload: Value,
@@ -240,15 +252,26 @@ fn with_writer<T>(
     let mut held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
     // A stop that ran out of drain budget leaves its writer here: its worker
     // still owned the journal, so only once that worker is gone may a fresh
-    // writer take the ownership over and replay what it left pending.
+    // writer take the ownership over and replay what it left pending. That
+    // worker finished its write after the stop gave up, and a write is where
+    // a policy mutation or a fatal store failure is recorded, so whatever it
+    // reported moves to the replacement rather than being dropped with it.
+    let mut carried = (0_u64, None);
     if held
         .as_ref()
         .is_some_and(|resident| resident.writer.has_exited())
     {
-        *held = None;
+        if let Some(gone) = held.take() {
+            carried = (gone.mutations.swap(0, Ordering::SeqCst), gone.fatal.take());
+        }
     }
     if held.is_none() {
-        *held = Some(build(guard_home, source)?);
+        let fresh = build(guard_home, source)?;
+        let _ = fresh.mutations.fetch_add(carried.0, Ordering::SeqCst);
+        if let Some(code) = carried.1 {
+            fresh.fatal.record(code);
+        }
+        *held = Some(fresh);
     }
     Ok(act(held.as_ref().expect("the writer was just built")))
 }
@@ -283,7 +306,7 @@ fn stop_timeout(value: f64) -> f64 {
 fn signals(resident: &ResidentWriter) -> (u64, Value) {
     (
         resident.mutations.swap(0, Ordering::SeqCst),
-        resident.fatal.take(),
+        resident.fatal.take().into(),
     )
 }
 
@@ -354,6 +377,8 @@ fn idle_stats() -> Value {
 pub(crate) fn evaluate_hook_evidence_writer_request(
     request: &HookEvidenceWriterRequestV1,
 ) -> Result<Vec<u8>, String> {
+    let request_sha256 = request_digest_with_limit(request, HOOK_EVIDENCE_WRITER_MAX_REQUEST_BYTES)
+        .map_err(|_| "native_hook_evidence_writer_request_too_large".to_owned())?;
     let (status, code, payload) = match evaluate(request) {
         Ok(payload) => ("ok".to_owned(), "ok".to_owned(), payload),
         Err(error) => (
@@ -365,6 +390,7 @@ pub(crate) fn evaluate_hook_evidence_writer_request(
     crate::encode_response(&HookEvidenceWriterResultV1 {
         schema: HOOK_EVIDENCE_WRITER_RESULT_SCHEMA.to_owned(),
         request_id: request.request_id.clone(),
+        request_sha256,
         status,
         code,
         payload,
@@ -463,6 +489,11 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             })
             .map_err(started)?;
             Ok(queued_payload(queued))
+        }
+        HookEvidenceWriterActionV1::Start => {
+            let payload =
+                with_writer(&guard_home, &request.source, stats_payload).map_err(started)?;
+            Ok(payload)
         }
         HookEvidenceWriterActionV1::Stats => {
             Ok(with_running(&guard_home, stats_payload).unwrap_or_else(idle_stats))

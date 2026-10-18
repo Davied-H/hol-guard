@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 
 use super::{
-    evaluate_hook_evidence_writer_request, HookEvidenceWriterRequestV1,
+    evaluate_hook_evidence_writer_request, slot, HookEvidenceWriterRequestV1,
     HOOK_EVIDENCE_WRITER_REQUEST_SCHEMA,
 };
 use crate::guard_store_cmd_vectors_tests::{build_database, dump, temp_home};
@@ -43,9 +43,27 @@ fn call(home: &Path, action: Value) -> Value {
         unreachable!("object literal");
     };
     wire.extend(action);
-    let request: HookEvidenceWriterRequestV1 = serde_json::from_value(Value::Object(wire)).unwrap();
+    let sent = Value::Object(wire);
+    let request: HookEvidenceWriterRequestV1 = serde_json::from_value(sent.clone()).unwrap();
     let bytes = evaluate_hook_evidence_writer_request(&request).unwrap();
-    serde_json::from_slice(&bytes).unwrap()
+    let response: Value = serde_json::from_slice(&bytes).unwrap();
+    // The client refuses a reply that is not bound to the bytes it sent, so
+    // the op has to digest the request the way the client did: the digest of
+    // the wire object, not of some shape the parse invented.
+    assert_eq!(
+        response["request_sha256"],
+        json!(digest_of(&sent)),
+        "the reply must bind to the request the caller canonicalised"
+    );
+    response
+}
+
+/// The digest the client computes over the request it sent.
+fn digest_of(request: &Value) -> String {
+    let mut bytes = Vec::new();
+    crate::context_digest_json::write_canonical_json_with_limit(request, &mut bytes, usize::MAX)
+        .unwrap();
+    format!("sha256:{}", guard_policy_snapshot::digest_bytes(&bytes))
 }
 
 fn activity_rows(home: &Path) -> Value {
@@ -289,4 +307,71 @@ fn a_request_without_a_guard_home_is_refused() {
     let answer: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(answer["status"], json!("error"));
     assert_eq!(answer["code"], json!("invalid_guard_home"));
+}
+
+#[test]
+fn a_start_pays_the_journal_replay_before_the_first_hook() {
+    let home = store_home("writer-op-start", "record_basic");
+    let started = call(&home, json!({"action": "start"}));
+    assert_eq!(started["status"], json!("ok"));
+    // The daemon warms the writer where it used to build one, so the hook
+    // that follows queues onto a writer whose journal is already recovered.
+    assert_eq!(started["payload"]["running"], json!(true));
+    assert_eq!(started["payload"]["started"], json!(true));
+
+    let stats = call(&home, json!({"action": "stats"}));
+    assert_eq!(stats["payload"]["started"], json!(true));
+
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 5.0}));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
+}
+
+#[test]
+fn a_replaced_writer_hands_its_pending_signals_to_the_next_one() {
+    let home = store_home("writer-op-carry", "record_basic");
+    let started = call(&home, json!({"action": "start"}));
+    assert_eq!(started["payload"]["running"], json!(true));
+
+    // A worker that outlasts its drain budget leaves its writer in the slot
+    // and then finishes the write it was blocked in. That write is where a
+    // mutation or a fatal store failure is recorded, so the signals it leaves
+    // behind must reach the caller that asks next rather than being dropped
+    // with the writer. Recording them directly stands in for that write.
+    {
+        let slot = slot(&std::fs::canonicalize(&home).unwrap());
+        let held = slot.writer.lock().unwrap();
+        let resident = held.as_ref().expect("the start built a writer");
+        let _ = resident
+            .mutations
+            .fetch_add(3, std::sync::atomic::Ordering::SeqCst);
+        resident.fatal.record("native_guard_store_sqlite_corrupt");
+        assert!(resident.writer.stop(5.0), "the idle writer drains at once");
+    }
+
+    let queued = call(
+        &home,
+        json!({
+            "action": "submit_command_activity",
+            "harness": "claude-code",
+            "event": "PreToolUse",
+            "payload": {"toolUseId": "call_carry_01234567890abc", "toolInput": {"command": "echo hi"}},
+            "succeeded": true,
+            "policy_action": "allow",
+        }),
+    );
+    assert_eq!(queued["payload"]["queued"], json!(true));
+    assert_eq!(queued["payload"]["policy_mutations"], json!(3));
+    assert_eq!(
+        queued["payload"]["store_fatal"],
+        json!("native_guard_store_sqlite_corrupt")
+    );
+
+    // Read and cleared: a second caller must not repeat the publisher wake or
+    // the store recovery the first one owns.
+    let stats = call(&home, json!({"action": "stats"}));
+    assert_eq!(stats["payload"]["policy_mutations"], json!(0));
+    assert_eq!(stats["payload"]["store_fatal"], Value::Null);
+
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 5.0}));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
 }

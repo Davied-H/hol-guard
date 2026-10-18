@@ -91,7 +91,10 @@ impl Drop for PolicyBarrier<'_> {
 pub(crate) struct StoreFatalSignal(Arc<Mutex<Option<&'static str>>>);
 
 impl StoreFatalSignal {
-    fn record(&self, code: &'static str) {
+    /// Record a failure for whoever reports it onward. A writer replaced
+    /// before its failure was read hands the code to its replacement, so the
+    /// reply that reaches a caller still carries it.
+    pub(crate) fn record(&self, code: &'static str) {
         *self
             .0
             .lock()

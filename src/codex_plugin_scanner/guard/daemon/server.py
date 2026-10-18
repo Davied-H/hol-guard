@@ -508,6 +508,10 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
         )
         self.store.set_policy_integrity_state_listener(self.publish_trust_state)
         self.runtime_hook_evidence_writer = NativeHookEvidenceWriter(store=store)
+        # Building the writer replays its journal. The daemon pays that here,
+        # where it used to build the writer itself, rather than leaving it on
+        # the first hook that records what it decided.
+        _ = self.runtime_hook_evidence_writer.start()
         self.codex_binding_capture_writer = start_codex_binding_capture_writer()
         self._initialize_request_services()
         self.request_executors_stopped = False

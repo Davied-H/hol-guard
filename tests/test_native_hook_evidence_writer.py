@@ -267,3 +267,24 @@ def test_stopping_sends_its_own_drain_budget_rather_than_either_default(
     assert writer.stop(timeout_seconds=0.5) is True
     assert respond.sent[0]["timeout_seconds"] == 0.5
     assert writer.take_policy_mutations() == 1
+
+
+def test_a_start_builds_the_writer_before_any_hook_submits(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    respond = _answer({"running": True, "started": True, "policy_mutations": 0, "store_fatal": None})
+    monkeypatch.setattr(native_hook_evidence_writer, "_resident_request", respond)
+
+    assert writer.start() is True
+    assert respond.sent[0]["action"] == "start"
+
+
+def test_a_start_the_resident_refuses_is_counted_rather_than_raised(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(native_hook_evidence_writer, "_resident_request", lambda **_kwargs: None)
+
+    # The daemon warms the writer on a path that must not fail to start a
+    # daemon; the first submission builds the writer instead.
+    assert writer.start() is False
+    assert writer.stats()["submit_failures"] == 1
