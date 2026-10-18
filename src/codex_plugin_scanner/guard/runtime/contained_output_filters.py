@@ -106,6 +106,13 @@ def rg_arguments(values: list[str]) -> bool:
     return stdin_arguments(values, _RG_SWITCHES)
 
 
+def matcher_stage(program: str, values: list[str]) -> bool:
+    """Whether `program <values>` is a matcher reading only standard input."""
+    if program in _GREP_PROGRAMS:
+        return grep_arguments(values)
+    return program == "rg" and rg_arguments(values)
+
+
 def filter_chain(tokens: list[tuple[str, bool]]) -> tuple[Stage, ...]:
     """The stages after a core's first `|`, or ValueError for any other shape."""
     stages: list[list[str]] = [[]]
@@ -122,9 +129,7 @@ def filter_chain(tokens: list[tuple[str, bool]]) -> tuple[Stage, ...]:
     for program, *arguments in (stage or [""] for stage in stages):
         if program in {"head", "tail"} and (count := bounded_count(arguments)) is not None:
             chain.append((program, str(count)))
-        elif program in _GREP_PROGRAMS and grep_arguments(arguments):
-            chain.append((program, *arguments))
-        elif program == "rg" and rg_arguments(arguments):
+        elif matcher_stage(program, arguments):
             chain.append((program, *arguments))
         else:
             raise ValueError("unsupported output filter")
@@ -178,11 +183,11 @@ def _trusted_grep() -> str:
 
 def _matcher_command(program: str, arguments: list[str]) -> list[str]:
     """The screened binary and argument list one matcher stage runs."""
-    if program in _GREP_PROGRAMS and grep_arguments(arguments):
-        return [_trusted_grep(), *_GREP_PROGRAMS[program], *arguments]
-    if program == "rg" and rg_arguments(arguments):
+    if not matcher_stage(program, arguments):
+        raise ValueError("unsupported output filter")
+    if program == "rg":
         return [_trusted_ripgrep(), *arguments]
-    raise ValueError("unsupported output filter")
+    return [_trusted_grep(), *_GREP_PROGRAMS[program], *arguments]
 
 
 def _match_lines(text: str, stage: Stage) -> tuple[str, str, int]:
