@@ -183,12 +183,15 @@ fn corepack_cache_is_granted_only_when_sealed_and_inside_home() {
 #[test]
 fn shim_siblings_grant_the_machinery_a_shim_dispatches_to() {
     let tree = Tree::new();
+    let home = tree.dir("home", 0o755);
+    let homes = std::slice::from_ref(&home);
+    let workspace = tree.dir("repo", 0o755);
     let shims = tree.dir("home/.pyenv/shims", 0o755);
     let versions = tree.dir("home/.pyenv/versions/3.12.1/bin", 0o755);
     let libexec = tree.dir("home/.pyenv/libexec", 0o755);
     let loose = tree.dir("home/.pyenv/plugins", 0o777);
     fs::write(tree.root.join("home/.pyenv/version"), "3.12.1\n").unwrap();
-    let granted = shim_siblings(&shims);
+    let granted = shim_siblings(&shims, homes, &workspace);
     if !tree.sealed {
         assert!(granted.is_empty());
         return;
@@ -202,5 +205,31 @@ fn shim_siblings_grant_the_machinery_a_shim_dispatches_to() {
     // Only a directory named `shims` brings its siblings along.
     let bin = tree.dir("home/.local/bin", 0o755);
     tree.dir("home/.local/share", 0o755);
-    assert!(shim_siblings(&bin).is_empty());
+    assert!(shim_siblings(&bin, homes, &workspace).is_empty());
+    // A sibling that holds the workspace would expose it whole.
+    let nested = tree.dir("home/.pyenv/projects/checkout", 0o755);
+    let held = nested.parent().unwrap().to_path_buf();
+    assert!(!shim_siblings(&shims, homes, &nested).contains(&held));
+}
+
+#[test]
+fn shims_in_a_shared_directory_grant_no_siblings() {
+    let tree = Tree::new();
+    let home = tree.dir("home", 0o755);
+    let homes = std::slice::from_ref(&home);
+    let workspace = tree.dir("repo", 0o755);
+    // HOME itself, a shared area and agent state each hold directories that
+    // have nothing to do with the manager whose shims sit among them.
+    for parent in ["home", "home/.local", "home/.cache", "home/.codex"] {
+        let shims = tree.dir(&format!("{parent}/shims"), 0o755);
+        tree.dir(&format!("{parent}/machinery"), 0o755);
+        assert!(
+            shim_siblings(&shims, homes, &workspace).is_empty(),
+            "{parent}"
+        );
+    }
+    // Without a known HOME the manager root cannot be identified.
+    let shims = tree.dir("home/.pyenv/shims", 0o755);
+    tree.dir("home/.pyenv/libexec", 0o755);
+    assert!(shim_siblings(&shims, &[], &workspace).is_empty());
 }

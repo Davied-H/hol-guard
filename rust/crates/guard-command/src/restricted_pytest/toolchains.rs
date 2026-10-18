@@ -99,15 +99,10 @@ fn accept_entry(entry: &Path, home: Option<&Path>, workspace: &Path) -> Option<V
     let canonical = entry.canonicalize().ok()?;
     // Any other directory must be one of the caller's sealed tool directories.
     let user_tool = || {
-        user_tools::tool_root(&canonical, &homes(home), workspace).map(|root| {
+        let homes = homes(home);
+        user_tools::tool_root(&canonical, &homes, workspace).map(|root| {
             let mut roots = vec![root.clone()];
-            roots.extend(
-                user_tools::shim_siblings(&root)
-                    .into_iter()
-                    .filter(|sibling| {
-                        !forbidden(sibling, home) && !path_is_within(sibling, workspace)
-                    }),
-            );
+            roots.extend(user_tools::shim_siblings(&root, &homes, workspace));
             roots
         })
     };
