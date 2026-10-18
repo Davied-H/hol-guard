@@ -22,6 +22,14 @@ const GATE_POLL: Duration = Duration::from_millis(10);
 #[derive(Debug)]
 pub(crate) struct StorageGateHold(File);
 
+impl StorageGateHold {
+    /// A shared hold on an already opened gate, taken once without waiting.
+    pub(crate) fn try_shared(gate: File) -> Result<Self, io::Error> {
+        FileExt::try_lock_shared(&gate)?;
+        Ok(Self(gate))
+    }
+}
+
 impl Drop for StorageGateHold {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.0);

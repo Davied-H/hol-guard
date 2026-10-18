@@ -14,8 +14,8 @@
 
 use super::query::{self, pre_tool_command, pre_tool_input, strip};
 use super::{render, Context, HookDirectDefer};
+use crate::hook_evidence_store_gate::StorageGateHold;
 use crate::local_store_read::STORE_FILE_NAME;
-use fs2::FileExt;
 use guard_command::hook_responses::Object;
 use guard_contracts::{GuardStoreRequestV1, NativeExactActionQueryV1, GUARD_STORE_REQUEST_SCHEMA};
 use serde_json::{json, Map, Value};
@@ -141,11 +141,10 @@ fn launch_target(payload: &Map<String, Value>) -> Result<String, HookDirectDefer
 
 /// The daemon's storage gate, held shared until the spend commits. A gate
 /// the daemon has not created yet, or one held exclusively, defers.
-pub(crate) fn storage_gate(guard_home: &Path) -> Result<File, HookDirectDefer> {
+pub(crate) fn storage_gate(guard_home: &Path) -> Result<StorageGateHold, HookDirectDefer> {
     let gate = open_no_follow(&guard_home.join(STORAGE_GATE_FILE_NAME))
         .ok_or(HookDirectDefer::SavedDecision)?;
-    FileExt::try_lock_shared(&gate).map_err(|_| HookDirectDefer::SavedDecision)?;
-    Ok(gate)
+    StorageGateHold::try_shared(gate).map_err(|_| HookDirectDefer::SavedDecision)
 }
 
 #[cfg(unix)]
