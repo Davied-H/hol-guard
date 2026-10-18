@@ -71,6 +71,7 @@ from ..native_daemon_route import (
     native_strict_loopback_origin,
 )
 from ..native_guard_store import NativeGuardStoreUnavailable
+from ..native_hook_evidence_writer import NativeHookEvidenceWriter
 from ..native_resident_revival import native_route_unavailable_body
 from ..native_resident_watchdog import start_native_resident_watchdog
 from ..native_runtime_request_scope import scoped_hook_post
@@ -158,7 +159,6 @@ from .manager import (
 from .request_executor import BoundedRequestExecutor as _BoundedRequestExecutor
 from .runtime_heartbeat import RuntimeHeartbeatWriter
 from .runtime_hook_deadline import PROMPT_ADMISSION_SECONDS, RuntimeHookDeadline, remaining_hint_from_payload
-from .runtime_hook_evidence_writer import RuntimeHookEvidenceWriter
 from .runtime_hook_scheduler import RuntimeHookAdmissionReason, RuntimeHookLane, RuntimeHookScheduler
 from .server_common import (
     _LOGGER,
@@ -341,7 +341,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
     hook_harness_rejected: dict[str, int]
     hook_capacity_lock: threading.Lock
     runtime_hook_scheduler: RuntimeHookScheduler
-    runtime_hook_evidence_writer: RuntimeHookEvidenceWriter
+    runtime_hook_evidence_writer: NativeHookEvidenceWriter
     request_capacity: threading.BoundedSemaphore
     request_capacity_limit: int
     connection_capacity: threading.BoundedSemaphore
@@ -507,7 +507,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
             retry_interval_seconds=0.05,
         )
         self.store.set_policy_integrity_state_listener(self.publish_trust_state)
-        self.runtime_hook_evidence_writer = RuntimeHookEvidenceWriter(store=store)
+        self.runtime_hook_evidence_writer = NativeHookEvidenceWriter(store=store)
         self.codex_binding_capture_writer = start_codex_binding_capture_writer()
         self._initialize_request_services()
         self.request_executors_stopped = False

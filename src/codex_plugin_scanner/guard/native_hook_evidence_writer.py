@@ -1,11 +1,10 @@
 """The hook evidence writer owned by the native resident.
 
-``daemon.runtime_hook_evidence_writer.RuntimeHookEvidenceWriter`` keeps a
-queue, a journal and a draining thread per Guard home. All of that now lives in
-the resident, which builds one writer per Guard home from its own store,
-correlation, receipt, Composio and journal seams. This module is the client:
-it shapes the same calls Python made on the writer object, sends them to the
-resident, and keeps the two concerns the resident has no handle on.
+The writer keeps a queue, a journal and a draining thread per Guard home, and
+all of that lives in the resident, which builds one writer per Guard home from
+its own store, correlation, receipt, Composio and journal seams. This module is
+the client: it shapes the calls a caller makes on the writer object, sends them
+to the resident, and keeps the two concerns the resident has no handle on.
 
 The first is waking the in-process snapshot publishers after a write that moved
 provider policy. The resident counts those mutations and reports them; the
@@ -49,8 +48,8 @@ _MAX_REQUEST_BYTES: Final = 4 * 1024 * 1024 + 4096
 # One round trip queues a record onto an in-process queue. A wait longer than
 # this means the resident is not answering, not that the writer is busy.
 _TIMEOUT_SECONDS: Final = 5.0
-# `RuntimeHookEvidenceWriter.stop` waited for its own thread; the resident
-# waits for the writer it owns and this bounds the transport around that wait.
+# A stop waits for the writer's own drain; the resident performs that wait and
+# this bounds the transport around it.
 _STOP_TRANSPORT_SLACK_SECONDS: Final = 5.0
 
 _FATAL_STORE_CODES: Final = frozenset({"native_guard_store_sqlite_corrupt", "native_guard_store_sqlite_io"})
