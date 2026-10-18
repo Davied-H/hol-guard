@@ -39,7 +39,7 @@ impl NativeCommandProgram {
         Self::from_bytes_observed(bytes, &mut observe_phase, None)
     }
 
-    fn from_bytes_observed(
+    pub(in crate::native_command_program) fn from_bytes_observed(
         bytes: &[u8],
         observe_phase: &mut impl FnMut(&'static str),
         interfaces: Option<(&BTreeSet<String>, &BTreeSet<String>)>,
@@ -249,6 +249,14 @@ impl NativeCommandProgram {
             .enumerate()
             .map(|(index, id)| (id.clone(), index))
             .collect();
+        // Only independently admitted packs need content IDs for collection
+        // interning. The existing aggregate resident does not retain another
+        // copy of every matcher ID while activation consumers migrate.
+        let node_ids = if interfaces.is_some() {
+            raw.nodes.keys().cloned().collect()
+        } else {
+            Vec::new()
+        };
         let mut nodes = Vec::with_capacity(raw.nodes.len());
         observe_phase("catalog_validation");
         for (id, node) in raw.nodes {
@@ -386,6 +394,7 @@ impl NativeCommandProgram {
             extensions: raw.extensions,
             rules,
             nodes,
+            node_ids,
             executable_index,
             keyword_index,
             unindexed,

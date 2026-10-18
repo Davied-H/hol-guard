@@ -58,6 +58,14 @@ impl<F: FnMut(&str) -> Result<Vec<u8>, &'static str>> PackReleaseReuse<F> {
         id: &str,
         key: &str,
     ) -> Result<Option<catalog::CompiledSourceCatalog>, &'static str> {
+        self.read(id, Some(key))
+    }
+
+    pub(in crate::native_command_program) fn read(
+        &mut self,
+        id: &str,
+        key: Option<&str>,
+    ) -> Result<Option<catalog::CompiledSourceCatalog>, &'static str> {
         let Some(reference) = objects::lookup(&self.index, self.count, id, &mut self.fetch)? else {
             return Ok(None);
         };
@@ -71,7 +79,7 @@ impl<F: FnMut(&str) -> Result<Vec<u8>, &'static str>> PackReleaseReuse<F> {
         }
         // This key is recomputed from current strictly decoded sources, trust,
         // related interfaces, engine and semantic profile before lookup.
-        if manifest["cache_key"] != key {
+        if key.is_some_and(|key| manifest["cache_key"] != key) {
             return Ok(None);
         }
         let mut program = self.value(&manifest["program"])?;

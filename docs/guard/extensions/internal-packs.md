@@ -19,8 +19,8 @@ Each pack owns one extension. Its bounded program is checked by the existing
 native admission logic with the globally validated extension/permission interface.
 Other extensions' matcher payloads are not copied into dependency packs. Global
 relationships do not relax the per-source, per-program or matcher budgets.
-Partial compatibility inventory validation is available only inside the offline
-compiler; ordinary runtime program admission still requires the complete inventory.
+Partial compatibility inventory validation is internal to per-pack admission;
+an executable collection still requires the complete compatibility inventory.
 
 Output is newline-delimited object records followed by one release root record.
 Object records contain SHA-256, exact byte length and base64 data. Stored objects
@@ -98,3 +98,22 @@ release before runtime use; an arbitrary directory or a matching hash alone is
 insufficient. This offline format does not add a downloader or activation path.
 The legacy aggregate compiler, release packaging and contribution commands remain
 available while their consumers migrate.
+
+Native collection construction can read a selected dependency closure through
+`NativeCommandProgram::from_integrity_bound_packs`. The caller supplies exact root
+bytes, a separately authenticated digest, selected IDs and a bounded object
+fetcher. Only selected pack manifests and their referenced payloads are read.
+Missing selected data, corrupt proofs, incompatible engines, duplicate owners,
+incomplete dependencies and incomplete compatibility inventory return errors.
+The collection also rechecks MCP executable ownership across selected packs.
+
+`combine_admitted_packs` composes the admitted native indexes directly and interns
+shared matcher nodes by their verified content identity. Each pack keeps the
+existing program bounds; the collection needs no aggregate program JSON. Its
+identity binds the engine and ordered selected pack identities. Discovery roots
+and unselected packs do not enter that identity. Fetching completes before the
+collection can evaluate commands.
+
+These constructors do not authenticate a publisher, authorize an extension,
+persist controls or activate policy. The resident continues to use its packaged
+program until the authenticated transactional activation path is implemented.

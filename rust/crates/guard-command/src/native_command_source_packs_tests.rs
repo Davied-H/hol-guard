@@ -2,6 +2,9 @@ use super::*;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::{fs, path::PathBuf};
 
+#[path = "native_command_program_collection_reader_tests.rs"]
+mod collection_reader_tests;
+
 fn frame(stream: &mut Vec<u8>, bytes: &[u8]) {
     stream.extend((bytes.len() as u32).to_be_bytes());
     stream.extend(bytes);
