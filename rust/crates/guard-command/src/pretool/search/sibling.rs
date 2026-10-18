@@ -367,6 +367,15 @@ fn walk(root: &Path, operand: &Path, ignored: &mut Ignored, whitelisting: &[&str
 /// same path does, and agents spell one whenever they guess at a file name.
 /// It is admitted under the same component screen, so anything that turns up
 /// there before the command runs is a file this rule would have read anyway.
+///
+/// A parent step is read the same way. `cat ../service-api/package.json` from
+/// the checkout beside it names the file the absolute spelling already names,
+/// and nothing here is decided on the spelling: the existing part of the path
+/// is resolved by the kernel, which is what the command itself would cross,
+/// and every screen below reads that resolved location. A relative step that
+/// climbs out of the sibling set lands somewhere with no repository root
+/// below home above it, where the rule declines as it does for the same place
+/// spelled in full.
 pub(in crate::pretool) fn named_path(
     value: &str,
     context: ReadContext<'_>,
@@ -378,10 +387,6 @@ pub(in crate::pretool) fn named_path(
         || value.contains(['*', '?', '{', '}'])
         || !literal_brackets(value, context)
         || (value.starts_with('~') && value != "~" && !value.starts_with("~/"))
-        // A parent step resolves somewhere this screen cannot read off the
-        // spelling, and the directory rule already covers the roots agents
-        // reach that way.
-        || value.split(['/', '\\']).any(|part| part == "..")
         || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
     {
         return false;

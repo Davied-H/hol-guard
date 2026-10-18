@@ -13,6 +13,7 @@ use crate::pretool_home_layout_reads::{assert_decision, layout, write};
 fn absent_names_inside_a_sibling_repository_are_read_without_review() {
     let layout = layout("sibling-absent-reads");
     let cwd = layout.org.join("app-portal");
+    write(layout.org.join("service-api/README.md"), "# fixture\n");
     let sibling = layout.org.join("service-api").display().to_string();
     for command in [
         format!("cat {sibling}/package.json"),
@@ -21,9 +22,16 @@ fn absent_names_inside_a_sibling_repository_are_read_without_review() {
         format!("wc -l {sibling}/src/server.ts"),
         format!("sed -n '1,40p' {sibling}/docs/setup.md"),
         "cat ~/Code/org/service-api/package.json".to_owned(),
+        // The same files named with a parent step, the spelling an agent
+        // working in the checkout beside them reaches for first.
+        "cat ../service-api/package.json".to_owned(),
+        "head -20 ../service-api/src/server.ts".to_owned(),
+        "sed -n '1,40p' ../service-api/docs/setup.md".to_owned(),
+        "cat ./../service-api/package.json".to_owned(),
         // The names that are there read as they already did.
         format!("cat {sibling}/README.md"),
         format!("head -20 {sibling}/src/main.rs"),
+        "cat ../service-api/README.md".to_owned(),
     ] {
         assert_decision(&cwd, &layout.home, &command, true);
     }
@@ -46,6 +54,15 @@ fn hidden_credential_and_git_names_stay_reviewed() {
         format!("cat {sibling}/config/credentials.txt"),
         format!("wc -l {sibling}/config/credentials.json"),
         "cat ~/.ssh/id_rsa".to_owned(),
+        // A parent step keeps every screen the full spelling has.
+        "cat ../service-api/.env".to_owned(),
+        "cat ../service-api/.env.local".to_owned(),
+        "head -5 ../service-api/.git/config".to_owned(),
+        "cat ../service-api/config/credentials.txt".to_owned(),
+        // A parent step that climbs out of the sibling set reaches no
+        // repository root below home, so it is reviewed as before.
+        "cat ../../../.ssh/id_rsa".to_owned(),
+        "cat ../../../.ssh/id_ed25519".to_owned(),
     ] {
         assert_decision(&cwd, &layout.home, &command, false);
     }
