@@ -182,6 +182,28 @@ fn developer_root(resolved: &Path) -> Option<PathBuf> {
     (bundle.extension() == Some(OsStr::new("app"))).then_some(bundle)
 }
 
+/// A workspace venv's `bin` and the install its launchers link to. The
+/// directory keeps its place on the sandbox PATH, because a bare `python` has
+/// to find the same launcher inside the sandbox as the session found outside
+/// it, and the install becomes an executable root, because that launcher is a
+/// symlink to a file the workspace does not hold.
+fn workspace_venv(entry: &Path, workspace: &Path) -> Option<(PathBuf, PathBuf)> {
+    let canonical = entry.canonicalize().ok()?;
+    if !path_is_within(&canonical, workspace) {
+        return None;
+    }
+    let prefix = super::venv::workspace_base_prefix(&canonical, workspace)?;
+    owned_and_sealed(&prefix).then_some((canonical, prefix))
+}
+
+/// Keep `canonical` on the sandbox PATH, in the place the session gave it.
+fn keep_entry(entries: &mut Vec<String>, canonical: &Path) {
+    let text = canonical.to_string_lossy().into_owned();
+    if !text.contains(':') && !entries.contains(&text) {
+        entries.push(text);
+    }
+}
+
 /// Executable roots and the sandbox PATH for `search_path`, plus the developer
 /// directory and Corepack's cache. Entries that fail any check are dropped,
 /// so their tools are simply unavailable.
@@ -194,17 +216,23 @@ pub(super) fn workspace_exec_roots(
     let mut entries: Vec<String> = Vec::new();
     for entry in search_path.split(':').take(64) {
         let path = Path::new(entry);
-        if !path.is_absolute() || path_is_within(path, workspace) {
+        if !path.is_absolute() {
+            continue;
+        }
+        if path_is_within(path, workspace) {
+            if let Some((bin, prefix)) = workspace_venv(path, workspace) {
+                keep_entry(&mut entries, &bin);
+                if !roots.contains(&prefix) {
+                    roots.push(prefix);
+                }
+            }
             continue;
         }
         let Some(accepted) = accept_entry(path, home, workspace) else {
             continue;
         };
         if let Ok(canonical) = path.canonicalize() {
-            let text = canonical.to_string_lossy().into_owned();
-            if !text.contains(':') && !entries.contains(&text) {
-                entries.push(text);
-            }
+            keep_entry(&mut entries, &canonical);
         }
         for root in accepted {
             if !roots.contains(&root) {

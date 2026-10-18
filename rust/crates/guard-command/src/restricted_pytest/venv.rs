@@ -1,10 +1,12 @@
-//! External Python virtual environments whose interpreter is an approved runtime.
+//! Python virtual environments whose interpreter is an approved runtime.
 //!
 //! A venv launcher is a symlink in `<venv>/bin`; the image it runs is the base
-//! interpreter its symlink chain ends in. The venv itself is granted read-only,
-//! so it must look like a venv and nothing broader: a fixed set of top-level
-//! entries, a single `pyvenv.cfg` whose `home` is a trusted or approved
-//! runtime, and no ancestor relation to HOME or the workspace.
+//! interpreter its symlink chain ends in. An external venv is granted
+//! read-only, so it must look like a venv and nothing broader: a fixed set of
+//! top-level entries, a single `pyvenv.cfg` whose `home` is a trusted or
+//! approved runtime, and no ancestor relation to HOME or the workspace. A venv
+//! inside the workspace needs no grant of its own; what it needs is the
+//! interpreter install its launchers point out of the workspace to.
 use super::*;
 
 const VENV_ENTRIES: &[&str] = &[
@@ -143,6 +145,29 @@ pub(super) fn external_root(launch: &Path, executable: &Path, workspace: &Path) 
         return None;
     }
     Some(root)
+}
+
+/// The install a workspace venv's launchers run, as the directory that holds
+/// both the interpreter and its standard library.
+///
+/// The sandbox reads and runs the workspace, so a project's `.venv` is already
+/// there, but `bin/python` is a symlink to an interpreter installed elsewhere.
+/// Unless that install is an executable root the sandbox cannot start it, and
+/// ordinary Python work in a project venv would be contained and then fail.
+/// The venv must have a venv's shape and name a trusted or managed runtime,
+/// and only that runtime's own prefix is granted.
+pub(super) fn workspace_base_prefix(bin: &Path, workspace: &Path) -> Option<PathBuf> {
+    if bin.file_name() != Some(OsStr::new("bin")) {
+        return None;
+    }
+    let root = bin.parent()?;
+    if !path_is_within(root, workspace) || !venv_shape(root) {
+        return None;
+    }
+    let prefix = configured_home(root)?.parent()?.to_path_buf();
+    // The prefix is approved in its own right, so the grant stays inside the
+    // managed install and never widens to the directory that holds it.
+    (approved_runtime(&prefix) && !path_is_within(&prefix, workspace)).then_some(prefix)
 }
 
 #[cfg(test)]

@@ -36,6 +36,15 @@ fn trusted_python() -> Option<PathBuf> {
     base
 }
 
+/// A prefix inside the trusted roots whose `bin` a venv can name as its home.
+fn trusted_prefix() -> Option<(PathBuf, PathBuf)> {
+    let bin = ["/usr/local/bin", "/opt/homebrew/bin"]
+        .iter()
+        .find_map(|bin| Path::new(bin).canonicalize().ok())?;
+    let prefix = bin.parent()?.to_path_buf();
+    path_is_within_any(&prefix, &TRUSTED_EXECUTABLE_ROOTS).then_some((prefix, bin))
+}
+
 fn executable(path: &Path) {
     fs::write(path, b"#!/bin/sh\n").unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
@@ -214,4 +223,41 @@ fn venv_admission_keeps_interpreter_environment_filtering() {
         filter(&source).unwrap_err().reason_code,
         PYTEST_EXTERNAL_PYTHONPATH_REASON_CODE
     );
+}
+
+#[test]
+fn a_workspace_venv_grants_the_install_its_launchers_run() {
+    let Some(base) = trusted_python() else { return };
+    let Some((prefix, bin)) = trusted_prefix() else {
+        eprintln!("skipping workspace venv test: no trusted prefix");
+        return;
+    };
+    let fixture = fixture();
+    let (workspace, outside) = layout(&fixture.0, &base, &bin.to_string_lossy());
+    let venv = workspace.join(".venv");
+    fs::rename(&outside, &venv).unwrap();
+    let venv_bin = venv.join("bin");
+    assert_eq!(workspace_base_prefix(&venv_bin, &workspace), Some(prefix));
+    // Only a venv's `bin`, and only a venv the workspace holds.
+    assert!(workspace_base_prefix(&venv, &workspace).is_none());
+    assert!(workspace_base_prefix(&venv_bin, &fixture.0.join("elsewhere")).is_none());
+    // A home that is not an approved runtime grants nothing.
+    let plain = fixture.0.join("base/bin");
+    fs::create_dir_all(&plain).unwrap();
+    let home = |home: &Path| {
+        fs::write(
+            venv.join("pyvenv.cfg"),
+            format!("home = {}\n", home.display()),
+        )
+        .unwrap();
+    };
+    home(&plain);
+    assert!(workspace_base_prefix(&venv_bin, &workspace).is_none());
+    // A system interpreter needs no grant: the sandbox runs `/usr/bin` itself.
+    home(Path::new("/usr/bin"));
+    assert!(workspace_base_prefix(&venv_bin, &workspace).is_none());
+    // Nor does a venv that is no longer shaped like one.
+    home(&bin);
+    fs::write(venv.join("notes.txt"), "").unwrap();
+    assert!(workspace_base_prefix(&venv_bin, &workspace).is_none());
 }
