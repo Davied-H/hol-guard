@@ -353,12 +353,12 @@ fn extensions_contain(
     };
     extensions.binding.uncertainty_count == removal::accepted_uncertainty(extensions, model)
         && extensions.evaluation_error.is_none()
-        // The Node package-firewall permission marks package-manager use (or a
-        // Bun image evaluating code), not a proven risk; a disabled one blocked.
+        // A package-firewall permission marks package-manager use (or a Bun
+        // image evaluating code), not a proven risk; a disabled one blocked.
         && extensions.permission_observations.iter().all(|observation| {
             (package || super::restricted_tests::bun_inline_eval(model))
                 && observation.mcp_tool.is_none()
-                && observation.extension_id == package::NODE_PACKAGE_EXTENSION
+                && package::PACKAGE_EXTENSIONS.contains(&observation.extension_id.as_str())
                 && observation.uncertainty_reasons.is_empty()
         })
         && extensions.observations.iter().all(|observation| {
@@ -492,8 +492,12 @@ pub(super) fn convert(
     // held to every package check below whichever way it arrived.
     let runners = runner::installed_tools(shaped, &workspace);
     let package = package || runners.is_some();
-    if !extensions_contain(result, controls, issued, package)
-        || (package && !package::local_package_work(model, runners.is_some()))
+    // A package-firewall permission records which manager ran. It is evidence
+    // the command is a manager's, not that the work it does leaves the
+    // workspace, so the local-verb check answers for the observation too.
+    let local_work = package::local_package_work(model, runners.is_some(), &workspace);
+    if !extensions_contain(result, controls, issued, package || local_work)
+        || (package && !local_work)
     {
         return;
     }
