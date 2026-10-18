@@ -71,7 +71,7 @@ from ..native_daemon_route import (
     native_strict_loopback_origin,
 )
 from ..native_guard_store import NativeGuardStoreUnavailable
-from ..native_hook_evidence_writer import NativeHookEvidenceWriter
+from ..native_hook_evidence_writer import NativeHookEvidenceWriter, unreachable_writer_stats
 from ..native_resident_revival import native_route_unavailable_body
 from ..native_resident_watchdog import start_native_resident_watchdog
 from ..native_runtime_request_scope import scoped_hook_post
@@ -400,7 +400,11 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
                 hook_worker.close()
         writer = getattr(self, "runtime_hook_evidence_writer", None)
         if writer is not None:
-            _ = writer.stop(timeout_seconds=1.0)
+            # The writer now lives in the resident, which can refuse the call.
+            # Shutdown drops it either way; what it had queued is on its own
+            # journal, and the next writer for this home recovers that.
+            with suppress(Exception):
+                _ = writer.stop(timeout_seconds=1.0)
         capture_writer = getattr(self, "codex_binding_capture_writer", None)
         if capture_writer is not None:
             capture_writer.stop_capture()
@@ -563,7 +567,8 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
                 executor = getattr(self, executor_name, None)
                 if executor is not None:
                     _ = executor.shutdown(timeout_seconds=1.0)
-            _ = self.runtime_hook_evidence_writer.stop(timeout_seconds=1.0)
+            with suppress(Exception):
+                _ = self.runtime_hook_evidence_writer.stop(timeout_seconds=1.0)
             if self.codex_binding_capture_writer is not None:
                 self.codex_binding_capture_writer.stop_capture()
             raise
@@ -2626,7 +2631,10 @@ class _GuardDaemonHandler(
         pending_approvals = store.count_approval_requests()
         activity_health = store.get_command_activity_persistence_health()
         scheduler_stats = daemon_server.runtime_hook_scheduler.stats()
-        evidence_writer_stats = daemon_server.runtime_hook_evidence_writer.stats()
+        try:
+            evidence_writer_stats = daemon_server.runtime_hook_evidence_writer.stats()
+        except Exception:
+            evidence_writer_stats = unreachable_writer_stats()
         sqlite_profile = store.sqlite_profile()
         sqlite_migration_gate = store.sqlite_migration_gate_report()
         with daemon_server.hook_capacity_lock:

@@ -361,12 +361,18 @@ class HookWorker(HookWorkerNativeMixin):
             if callable(discovery_writer):
                 with suppress(Exception):
                     discovery_writer(harness=harness, payload=payload, succeeded=succeeded)
-            _ = self.activity_writer.submit_command_activity(
-                harness=harness,
-                event="PostToolUse",
-                payload=payload,
-                succeeded=succeeded,
-            )
+            # Recording what a hook decided must not change what it
+            # decided. The writer reaches the resident now, so this call can
+            # fail where the in-process writer could not; the record is lost
+            # the same way a dropped queue entry was, and the response the
+            # caller is waiting on still goes out.
+            with suppress(Exception):
+                _ = self.activity_writer.submit_command_activity(
+                    harness=harness,
+                    event="PostToolUse",
+                    payload=payload,
+                    succeeded=succeeded,
+                )
             return
         _ = record_post_hook_command_activity_best_effort(
             store=self.store,

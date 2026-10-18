@@ -128,6 +128,13 @@ pub(crate) enum HookEvidenceWriterActionV1 {
     },
     /// `submit_native_decision_receipt` (:243).
     SubmitNativeDecisionReceipt { receipt: Map<String, Value> },
+    /// Build this home's writer without queueing anything.
+    ///
+    /// Construction recovers the journal, which the Python writer paid for at
+    /// daemon startup because the daemon built the writer itself. A daemon
+    /// that warms the writer this way keeps that replay off the first hook's
+    /// decision path.
+    Start,
     /// `stats` (:396), plus the policy mutations observed since the last read.
     Stats,
     /// `stop` (:432). The writer is dropped from the registry either way, so
@@ -241,6 +248,17 @@ fn slot(guard_home: &Path) -> Arc<HomeSlot> {
     }))
 }
 
+/// The home as the filesystem names it.
+///
+/// One home can be spelled more than one way — through a symlink, with a
+/// component that resolves away — and each spelling would otherwise take its
+/// own slot and its own writer, two writers appending to the one journal that
+/// home owns. A home that cannot be resolved keeps the spelling it arrived
+/// with; the store seam refuses it the same way either way.
+fn canonical_home(guard_home: &Path) -> PathBuf {
+    std::fs::canonicalize(guard_home).unwrap_or_else(|_| guard_home.to_path_buf())
+}
+
 /// Run `act` against this Guard home's writer, started on first use.
 fn with_writer<T>(
     guard_home: &Path,
@@ -249,8 +267,26 @@ fn with_writer<T>(
 ) -> Result<T, io::Error> {
     let slot = slot(guard_home);
     let mut held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
+    // A writer whose thread has exited drains nothing more, so anything
+    // queued onto it would sit there. It is replaced — but what it still
+    // holds is the two signals it exists to deliver, and dropping it would
+    // drop them silently. The replacement carries them instead.
+    let mut carried = None;
+    if held
+        .as_ref()
+        .is_some_and(|resident| resident.writer.has_exited())
+    {
+        carried = held.take();
+    }
     if held.is_none() {
-        *held = Some(build(guard_home, source)?);
+        let fresh = build(guard_home, source)?;
+        if let Some(gone) = carried {
+            fresh
+                .mutations
+                .fetch_add(gone.mutations.swap(0, Ordering::SeqCst), Ordering::SeqCst);
+            fresh.fatal.adopt(&gone.fatal);
+        }
+        *held = Some(fresh);
     }
     Ok(act(held.as_ref().expect("the writer was just built")))
 }
@@ -335,6 +371,7 @@ fn stats_payload(resident: &ResidentWriter) -> Value {
         "receipt_durable_pending": stats.receipt_durable_pending,
         "policy_mutations": mutations,
         "store_fatal": fatal,
+        "started": true,
     })
 }
 
@@ -359,6 +396,10 @@ fn idle_stats() -> Value {
         "receipt_durable_pending": 0,
         "policy_mutations": 0,
         "store_fatal": Value::Null,
+        // Nothing has asked this home for a writer yet. A reader that treats
+        // `running: false` as a fault needs to tell that apart from a writer
+        // that was started and then stopped running.
+        "started": false,
     })
 }
 
@@ -402,7 +443,7 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             "guard home is required".to_owned(),
         ));
     }
-    let guard_home = PathBuf::from(&request.guard_home);
+    let guard_home = canonical_home(Path::new(&request.guard_home));
     // Before anything this request reports: a failure recorded after the
     // acknowledgement is a new one and must still be reported.
     if let Some(acknowledged) = &request.store_fatal_ack {
@@ -465,6 +506,9 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             })
             .map_err(started)?;
             Ok(queued_payload(queued, reported))
+        }
+        HookEvidenceWriterActionV1::Start => {
+            with_writer(&guard_home, &request.source, stats_payload).map_err(started)
         }
         HookEvidenceWriterActionV1::Stats => {
             Ok(with_running(&guard_home, stats_payload).unwrap_or_else(idle_stats))
