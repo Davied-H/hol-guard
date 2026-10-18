@@ -77,7 +77,7 @@ impl Launch<'_> {
                 "The workspace sandbox directory is unavailable.",
             )
         })?;
-        link_private_caches(&format!("{private_root}/tmp"))?;
+        link_private_caches(&format!("{private_root}/tmp"), self.exec_roots)?;
         environment.insert("PATH".into(), self.plan.sandbox_path.clone());
         environment.insert("GIT_CONFIG_NOSYSTEM".into(), "1".into());
         environment.insert(
@@ -283,9 +283,14 @@ const MAX_SAFETY_GUIDE_BYTES: u64 = 64 * 1024;
 /// keeps them, linked in under the names cargo looks for. A link may name an
 /// entry below a cache rather than the cache itself, which leaves the
 /// directory holding it one the run owns and can add to. Nothing is linked
-/// when the native side grants no cache.
-fn link_private_caches(private_tmp: &str) -> Outcome<()> {
-    let Value::Array(links) = native("private_links", json!({ "private_tmp": private_tmp }))?
+/// when the native side grants no cache, and the plan's own executable roots
+/// decide that: a run the plan gave no cache to is not handed a link naming
+/// one either.
+fn link_private_caches(private_tmp: &str, exec_roots: &[String]) -> Outcome<()> {
+    let Value::Array(links) = native(
+        "private_links",
+        json!({ "private_tmp": private_tmp, "roots": exec_roots }),
+    )?
     else {
         return Err(unavailable("invalid_reply"));
     };

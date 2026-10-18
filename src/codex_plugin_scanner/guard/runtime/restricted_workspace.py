@@ -276,7 +276,7 @@ def run_workspace_contained(
         private_home.mkdir(mode=0o700)
         private_tmp.mkdir(mode=0o700)
         link_state_dir(private_home, plan, expected)
-        link_private_caches(private_tmp)
+        link_private_caches(private_tmp, exec_roots)
 
         def contained(argv_to_run: list[str]) -> int:
             launch_env = _restricted_environment(

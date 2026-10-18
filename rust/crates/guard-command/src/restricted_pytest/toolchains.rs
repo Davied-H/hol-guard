@@ -237,6 +237,7 @@ pub(super) fn workspace_exec_roots(
     home: Option<&Path>,
     workspace: &Path,
     go: bool,
+    cargo: bool,
 ) -> (Vec<PathBuf>, String) {
     let mut roots: Vec<PathBuf> = Vec::new();
     let mut entries: Vec<String> = Vec::new();
@@ -297,15 +298,20 @@ pub(super) fn workspace_exec_roots(
     }
     // A Cargo build compiles the crate sources in the registry and runs the
     // rustup toolchain that resolves beside them. The launch environment
-    // links both into the private `CARGO_HOME` the run writes.
-    for (_, cache) in host_cargo_caches() {
-        if !roots.contains(&cache) {
-            roots.push(cache);
+    // links both into the private `CARGO_HOME` the run writes. Only a run
+    // that reaches the toolchain gets them: the registry holds whatever the
+    // host has fetched, a private registry or a git dependency included, and
+    // a workspace that compiles no crate has nothing to read there.
+    if cargo {
+        for (_, cache) in host_cargo_caches() {
+            if !roots.contains(&cache) {
+                roots.push(cache);
+            }
         }
-    }
-    if let Some(rustup) = host_rustup_home() {
-        if !roots.contains(&rustup) {
-            roots.push(rustup);
+        if let Some(rustup) = host_rustup_home() {
+            if !roots.contains(&rustup) {
+                roots.push(rustup);
+            }
         }
     }
     (roots, entries.join(":"))
@@ -327,10 +333,15 @@ const CARGO_WRITTEN_CHILDREN: &[(&str, &str)] = &[("registry", "src"), ("git", "
 /// links to what the host has already fetched, which the plan grants
 /// read-only; nothing else in `~/.cargo`, `credentials.toml` above all, comes
 /// with them.
-pub(super) fn private_links(private_tmp: &Path) -> Vec<(PathBuf, PathBuf)> {
+///
+/// `granted` is the plan's own executable roots, so a cache the plan did not
+/// grant is not linked either: a run that compiles no crate reaches neither
+/// the registry nor the link that would name it.
+pub(super) fn private_links(private_tmp: &Path, granted: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
     let home = super::environment::cargo_home(private_tmp);
     host_cargo_caches()
         .into_iter()
+        .filter(|(_, cache)| granted.iter().any(|root| cache.starts_with(root)))
         .flat_map(|(name, cache)| {
             let written = CARGO_WRITTEN_CHILDREN
                 .iter()
@@ -503,6 +514,7 @@ mod tests {
             Some(&home.0),
             Path::new("/nonexistent-workspace"),
             false,
+            false,
         );
         assert!(!roots.contains(&outside.0) && !roots.contains(&link));
         assert_eq!(path, "/usr/bin:/bin");
@@ -515,9 +527,28 @@ mod tests {
         let Some(cache) = host_go_module_cache() else {
             return;
         };
-        let (without, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), false);
-        let (with, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), true);
+        let (without, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), false, false);
+        let (with, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), true, false);
         assert!(!without.contains(&cache));
         assert!(with.contains(&cache));
+    }
+
+    #[test]
+    fn the_cargo_caches_are_executable_roots_only_for_a_cargo_run() {
+        // The registry holds whatever the host fetched, a private registry or
+        // a git dependency included, so a workspace that compiles no crate
+        // neither executes there nor gets a link that names it.
+        let caches = host_cargo_caches();
+        if caches.is_empty() {
+            return;
+        }
+        let (without, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), false, false);
+        let (with, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), false, true);
+        for (_, cache) in &caches {
+            assert!(!without.contains(cache));
+            assert!(with.contains(cache));
+        }
+        assert!(private_links(Path::new("/sandbox"), &without).is_empty());
+        assert!(!private_links(Path::new("/sandbox"), &with).is_empty());
     }
 }

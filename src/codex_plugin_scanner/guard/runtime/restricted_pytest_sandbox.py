@@ -65,15 +65,18 @@ def _restricted_environment(
     return result
 
 
-def link_private_caches(private_tmp: Path) -> None:
+def link_private_caches(private_tmp: Path, exec_roots: Sequence[Path] = ()) -> None:
     """Link the host caches a contained run reads into the tree it owns.
 
     Cargo takes its locks inside `CARGO_HOME`, so a contained run needs one it
     can write; the fetched crate sources it only reads stay where the host
     keeps them, linked in under the names cargo looks for. Nothing is linked
-    when the native side grants no cache.
+    when the native side grants no cache, and the plan's own executable roots
+    decide that: a run the plan gave no cache to is not handed a link naming
+    one either.
     """
-    for entry in restricted_native("private_links", {"private_tmp": private_tmp}, list):
+    fields = {"private_tmp": private_tmp, "roots": list(exec_roots)}
+    for entry in restricted_native("private_links", fields, list):
         link = Path(str(entry["link"]))
         link.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with contextlib.suppress(OSError):
