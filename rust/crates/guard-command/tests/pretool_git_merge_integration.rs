@@ -150,6 +150,37 @@ fn merge_stays_reviewed_when_configuration_or_hooks_can_start_a_program() {
     }
 }
 
+/// A start replays onto the upstream and checks it out first, so the hooks
+/// that run and the configuration that moves more than the branch keep it
+/// under review.
+#[test]
+fn a_rebase_start_stays_reviewed_when_configuration_or_hooks_change_the_replay() {
+    let (session, service) = sibling("rebase-config");
+    let cwd = session.primary.clone();
+    let sib = service.display();
+    let rebase = format!("git -C {sib} rebase origin/main");
+    assert_allowed(&session, &rebase, &cwd, LOCAL_WRITE);
+    for (key, value) in [
+        ("rebase.backend", "apply"),
+        ("rebase.autoStash", "true"),
+        ("rebase.updateRefs", "true"),
+    ] {
+        configured(&session, &service, key, Some(value));
+        assert_reviewed(&session, &rebase, &cwd);
+        configured(&session, &service, key, None);
+    }
+    assert_allowed(&session, &rebase, &cwd, LOCAL_WRITE);
+    for hook in ["pre-rebase", "post-checkout"] {
+        let path = service.join(".git/hooks").join(hook);
+        executable_hook(&path);
+        assert_reviewed(&session, &rebase, &cwd);
+        std::fs::remove_file(path).unwrap();
+    }
+    // The rebase writes `ORIG_HEAD` as it starts, so replaying onto it could
+    // leave the commit it named with no ref of its own.
+    assert_reviewed(&session, &format!("git -C {sib} rebase ORIG_HEAD"), &cwd);
+}
+
 #[test]
 fn merge_pull_from_origin_is_a_proven_refresh_without_commit_programs() {
     let session = session("merge-pull");

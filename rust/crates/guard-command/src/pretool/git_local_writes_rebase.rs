@@ -7,16 +7,22 @@
 //! `exec` line, a merge strategy or signing program, and the hooks a merge
 //! runs: a resume's saved state must name none of them, a start must name no
 //! option at all, and either way the configuration must pass the merge proof
-//! and leave the merge backend in place. `--skip` and `--abort` stay
-//! reviewed: both reset the working tree and discard the work in progress.
+//! and leave the merge backend in place. A start also checks the upstream
+//! out, which can replace an ignored file the way a new branch at a start
+//! point can, and `rebase.autoStash` and `rebase.updateRefs` turn a plain
+//! start into the forms that stay reviewed as options, so the start carries
+//! the branch proof's path check and refuses both settings. `--skip` and
+//! `--abort` stay reviewed: both reset the working tree and discard the work
+//! in progress.
 
 use super::super::git_remote_config::GitConfig;
 use super::super::git_session_probe::Probe;
 use crate::CommandSegmentV1;
 use std::fs;
 
-/// The hooks the replayed commits run, plus `post-checkout`.
+/// The hooks the replayed commits run, plus `pre-rebase` and `post-checkout`.
 pub(super) const HOOKS: &[&str] = &[
+    "pre-rebase",
     "pre-commit",
     "pre-merge-commit",
     "prepare-commit-msg",
@@ -105,19 +111,38 @@ pub(super) fn resume(rest: &[&str]) -> bool {
 /// only `-q` stands beside the upstream. A second operand would check that
 /// branch out first, which this form does not prove.
 pub(super) fn start(rest: &[&str]) -> bool {
+    upstream(rest).is_some()
+}
+
+/// The ref a start replays onto, or `None` when the words are not a start.
+/// A pseudo-ref is not one: the rebase writes `ORIG_HEAD` as it begins, so
+/// replaying onto it would leave the commit it named with no ref of its own,
+/// and `HEAD` and the other operation heads are written the same way.
+fn upstream<'words>(rest: &[&'words str]) -> Option<&'words str> {
     let mut upstream = None;
     for word in rest {
         match *word {
             "-q" | "--quiet" => {}
-            value if super::start::reference(value) => {
+            value if super::start::reference(value) && durable(value) => {
                 if upstream.replace(value).is_some() {
-                    return false;
+                    return None;
                 }
             }
-            _ => return false,
+            _ => return None,
         }
     }
-    upstream.is_some()
+    upstream
+}
+
+/// Whether the name is a ref of the repository's own rather than one of the
+/// heads Git's operations write.
+fn durable(value: &str) -> bool {
+    let name = value.rsplit('/').next().unwrap_or(value);
+    !(name == "HEAD"
+        || (name.ends_with("_HEAD")
+            && name
+                .chars()
+                .all(|letter| letter.is_ascii_uppercase() || letter == '_')))
 }
 
 /// Whether the repository holds what the rebase form in `original` needs: a
@@ -134,7 +159,28 @@ pub(super) fn proven(probe: &Probe, original: &CommandSegmentV1, effective: &Git
     if resume(rest) {
         return resumable(probe);
     }
-    start(rest) && idle(probe) && merge_backend(effective)
+    let Some(upstream) = upstream(rest) else {
+        return false;
+    };
+    idle(probe)
+        && merge_backend(effective)
+        && !worktree_configured(effective)
+        && super::start::replaces_nothing(probe, upstream)
+}
+
+/// Whether the configuration turns a plain start into one of the forms that
+/// stay reviewed as options. `rebase.autoStash` stashes the working tree and
+/// reapplies it over the rebased commits, which is what `--autostash` does,
+/// and `rebase.updateRefs` moves the other branches pointing into the
+/// replayed range, which the operand does not name.
+fn worktree_configured(effective: &GitConfig) -> bool {
+    ["rebase.autostash", "rebase.updaterefs"].iter().any(|key| {
+        effective.get(*key).is_some_and(|values| {
+            values
+                .iter()
+                .any(|value| !super::super::git_remote_ops::pull::disabled(value))
+        })
+    })
 }
 
 /// Whether no rebase is in progress.
@@ -230,7 +276,7 @@ fn step(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{author_script, merge_backend, resume, start, step};
+    use super::{author_script, durable, merge_backend, resume, start, step, worktree_configured};
 
     #[test]
     fn only_continue_with_replay_steps_is_a_resumable_form() {
@@ -308,6 +354,12 @@ mod tests {
             &["-X", "theirs", "main"],
             &["-S", "main"],
             &["--autostash", "main"],
+            // The rebase writes these itself, so replaying onto one can drop
+            // the only name the commit it pointed at still had.
+            &["ORIG_HEAD"],
+            &["HEAD"],
+            &["FETCH_HEAD"],
+            &["CHERRY_PICK_HEAD"],
             &["--continue"],
             &["--abort"],
             &["main@{1}"],
@@ -331,5 +383,44 @@ mod tests {
         assert!(merge_backend(&backend(" Merge ")));
         assert!(!merge_backend(&backend("apply")));
         assert!(!merge_backend(&backend("am")));
+    }
+
+    #[test]
+    fn configured_autostash_or_ref_updates_keep_a_start_reviewed() {
+        let configured = |key: &str, value: &str| {
+            std::collections::BTreeMap::from([(key.to_owned(), vec![value.to_owned()])])
+        };
+        assert!(!worktree_configured(&std::collections::BTreeMap::new()));
+        for key in ["rebase.autostash", "rebase.updaterefs"] {
+            for value in ["true", "yes", "on", "1", ""] {
+                assert!(
+                    worktree_configured(&configured(key, value)),
+                    "{key} {value}"
+                );
+            }
+            for value in ["false", "no", "off", "0"] {
+                assert!(
+                    !worktree_configured(&configured(key, value)),
+                    "{key} {value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_operation_head_is_not_an_upstream_a_start_may_name() {
+        for value in ["main", "origin/main", "release/HEADS", "head", "my_head"] {
+            assert!(durable(value), "{value}");
+        }
+        for value in [
+            "HEAD",
+            "ORIG_HEAD",
+            "FETCH_HEAD",
+            "MERGE_HEAD",
+            "REBASE_HEAD",
+            "refs/ORIG_HEAD",
+        ] {
+            assert!(!durable(value), "{value}");
+        }
     }
 }
