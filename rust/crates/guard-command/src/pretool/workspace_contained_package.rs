@@ -22,13 +22,15 @@
 //! `-u` and `-versions`, reach that proxy even inside a module, so each
 //! keeps the admission it has.
 //!
-//! Cargo stays out even with a committed `Cargo.lock` and `--locked`. Its
-//! `build.rs` scripts and proc macros run dependency code like npm scripts,
-//! but a Node project keeps its tools and dependencies in `node_modules`
-//! inside the workspace. A rustup toolchain lives in `~/.rustup` and crate
-//! sources in `~/.cargo/registry`, beside `~/.cargo/credentials.toml`, all
-//! outside what the sandbox may read, so a contained `cargo check` cannot
-//! start. Admitting it needs read grants for those trees first.
+//! Cargo joins them for the verbs that compile what the workspace already
+//! has. Its `build.rs` scripts and proc macros run dependency code like npm
+//! scripts, which is what the sandbox bounds. The crate sources it reads live
+//! in `~/.cargo/registry` and `~/.cargo/git` and its toolchain in `~/.rustup`,
+//! each granted read-only; the run gets its own `CARGO_HOME`, with those two
+//! caches linked in, so cargo takes its locks and writes its own state inside
+//! the private tree. `~/.cargo/config.toml` and `~/.cargo/credentials.toml`
+//! stay out, which keeps registry tokens out of the run, and the fetching
+//! verbs keep the admission they have today.
 use crate::CanonicalCommandV1;
 use std::path::{Path, PathBuf};
 
@@ -41,6 +43,7 @@ const PACKAGE_RUNNERS: &[&str] = &["npx", "bunx", "pnpx"];
 pub(super) const NODE_PACKAGE_EXTENSION: &str = "command.package.node";
 const PYTHON_PACKAGE_EXTENSION: &str = "command.package.python";
 const GO_PACKAGE_EXTENSION: &str = "command.package.go";
+const RUST_PACKAGE_EXTENSION: &str = "command.package.rust";
 // The package-firewall permissions that mark a manager's use. They record
 // which ecosystem ran, not a risk the run carries, so a local verb below one
 // of them is still ordinary workspace work.
@@ -48,6 +51,7 @@ pub(crate) const PACKAGE_EXTENSIONS: &[&str] = &[
     NODE_PACKAGE_EXTENSION,
     PYTHON_PACKAGE_EXTENSION,
     GO_PACKAGE_EXTENSION,
+    RUST_PACKAGE_EXTENSION,
 ];
 // The Python managers the package firewall watches. Each installs what it
 // runs, so none of their verbs is local work; `uv` is the exception below.
@@ -61,6 +65,14 @@ const UV_LOCAL_VERBS: &[&str] = &["run", "tree", "export", "version"];
 // `clean` are neither a build nor a read.
 const GO_LOCAL_VERBS: &[&str] = &[
     "build", "test", "vet", "fmt", "list", "doc", "env", "version", "run", "generate",
+];
+// A cargo build compiles the crate sources the registry cache already holds
+// into a target directory the workspace owns. Only the verbs that stay there
+// are local: `install`, `add`, `update`, `publish` and the rest reach a
+// registry, and `vendor` and `fetch` exist to populate a cache.
+const CARGO_LOCAL_VERBS: &[&str] = &[
+    "build", "b", "test", "t", "check", "c", "clippy", "fmt", "doc", "d", "run", "r", "bench",
+    "tree", "metadata", "version", "nextest",
 ];
 // uv options a local verb may carry: each changes what the verb reads, never
 // what it has to fetch. The list is an allowlist because uv's installing
@@ -215,6 +227,19 @@ fn local_go_work(arguments: &[&str], directory: &Path) -> bool {
             .iter()
             .any(|argument| names_a_go_fetch(argument) || argument.contains('@'))
         && directory.join("go.mod").is_file()
+}
+
+/// Whether `cargo` runs a local verb against a package that `directory`
+/// holds. A leading `+toolchain` selects a rustup toolchain, which the run
+/// may read. Outside a package cargo has nothing to compile and would search
+/// upward out of the workspace, so those commands keep the admission they
+/// have.
+fn local_cargo_work(arguments: &[&str], directory: &Path) -> bool {
+    arguments
+        .iter()
+        .find(|argument| !argument.starts_with('+'))
+        .is_some_and(|verb| CARGO_LOCAL_VERBS.contains(&verb.to_ascii_lowercase().as_str()))
+        && directory.join("Cargo.toml").is_file()
 }
 
 /// Whether an argument names one of the flags that send a Go verb to a module
@@ -380,7 +405,7 @@ pub(super) fn names_a_manager(model: &CanonicalCommandV1) -> bool {
             let name = super::super::executable_basename(executable).to_ascii_lowercase();
             NODE_MANAGERS.contains(&name.as_str())
                 || PYTHON_MANAGERS.contains(&name.as_str())
-                || matches!(name.as_str(), "uv" | "go")
+                || matches!(name.as_str(), "uv" | "go" | "cargo")
         })
     })
 }
@@ -425,6 +450,18 @@ pub(super) fn local_package_work(
                 .take_while(|argument| *argument != "--")
                 .collect();
             return local_go_work(&arguments, directory);
+        }
+        if name == "cargo" {
+            let Some(directory) = directory.as_deref() else {
+                return false;
+            };
+            let arguments: Vec<&str> = segment
+                .arguments
+                .iter()
+                .map(String::as_str)
+                .take_while(|argument| *argument != "--")
+                .collect();
+            return local_cargo_work(&arguments, directory);
         }
         if PYTHON_MANAGERS.contains(&name.as_str()) {
             // Every other Python manager installs what it runs, and `uvx`
