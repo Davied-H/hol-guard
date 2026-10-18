@@ -72,11 +72,24 @@ fn view_arguments(arguments: &[String]) -> bool {
         && operands.all(|field| field_path(field))
 }
 
+/// `-g` reads the globally installed tree instead of the project one. It is
+/// the same offline read of installed package metadata, at npm's own prefix:
+/// a `prefix`, `global` or `location` line in any `.npmrc` this proof reads
+/// already keeps its review, so the tree it prints is the installed one.
 fn list_arguments(arguments: &[String]) -> bool {
     arguments.iter().all(|argument| {
         matches!(
             argument.as_str(),
-            "--all" | "-a" | "--json" | "--parseable" | "-p" | "--long" | "-l"
+            "--all"
+                | "-a"
+                | "--json"
+                | "--parseable"
+                | "-p"
+                | "--long"
+                | "-l"
+                | "-g"
+                | "--global"
+                | "--location=global"
         ) || argument.strip_prefix("--depth=").is_some_and(|depth| {
             (1..=2).contains(&depth.len()) && depth.bytes().all(|byte| byte.is_ascii_digit())
         }) || matches!(
