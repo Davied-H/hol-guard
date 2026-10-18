@@ -62,7 +62,7 @@ def _file_signature(path: Path) -> FileSignature:
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        return (-1,)
+        return (-1, -1, -1, -1, -1, -1)
     return (
         metadata.st_mode,
         metadata.st_ino,
@@ -81,7 +81,7 @@ def _directory_signature(path: Path) -> FileSignature:
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        return (-1,)
+        return (-1, -1, -1, -1)
     return (metadata.st_mode, metadata.st_ino, metadata.st_dev, metadata.st_uid)
 
 
