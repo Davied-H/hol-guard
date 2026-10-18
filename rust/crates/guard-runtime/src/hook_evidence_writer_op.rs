@@ -278,6 +278,18 @@ fn with_writer<T>(
     {
         carried = held.take();
     }
+    // A writer whose drain ran out of time has not left the journal yet. A
+    // second writer for the same home would append to the file the first one
+    // still owns, so this request is refused until that worker leaves.
+    if held
+        .as_ref()
+        .is_some_and(|resident| resident.writer.is_stopping())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "the hook evidence writer for this Guard home is still draining",
+        ));
+    }
     if held.is_none() {
         let fresh = match build(guard_home, source) {
             Ok(fresh) => fresh,
@@ -542,6 +554,15 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             // appending to the journal the draining writer still owns.
             let drained = resident.writer.stop(stop_timeout(*timeout_seconds));
             let (mutations, fatal) = signals(&resident);
+            if !drained && !resident.writer.has_exited() {
+                // The deadline passed with the worker still inside journal or
+                // store I/O. It owns the journal until it leaves, and it may
+                // still raise a mutation or a store failure. Dropping the
+                // resident here would let the next submission build a second
+                // writer for the same file and would lose those signals, so
+                // it goes back into the slot and requests wait for its exit.
+                *held = Some(resident);
+            }
             Ok(json!({
                 "drained": drained,
                 "policy_mutations": mutations,

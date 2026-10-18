@@ -1315,6 +1315,16 @@ impl RuntimeHookEvidenceWriter {
         self.lock_state().exited
     }
 
+    /// Whether a stop has been asked of this writer and its worker has not
+    /// left the loop yet.
+    ///
+    /// A worker in this state still owns the journal it is draining, so a
+    /// second writer must not be built for the same home until it leaves.
+    pub fn is_stopping(&self) -> bool {
+        let state = self.lock_state();
+        state.stopping && !state.exited
+    }
+
     /// Wait for the worker to leave its loop, and no longer than `deadline`.
     /// The worker honours its drain deadline between records; one blocked in
     /// journal or store I/O cannot, and joining it there would hold the stop
@@ -1429,6 +1439,19 @@ impl RuntimeHookEvidenceWriter {
             .name("hol-guard-hook-evidence".to_string())
             .spawn(move || worker.run())
             .ok();
+        if handle.is_none() {
+            // Only the worker's exit marks the state, and this one never
+            // started. Left alone, the writer would look live for the rest of
+            // the process: submissions would queue onto a deque nothing
+            // drains, and the slot would never replace it. It is marked
+            // stopping so submissions are refused rather than lost, and
+            // exited so the next request builds a writer that runs.
+            let mut state = self.lock_state();
+            state.stopping = true;
+            state.exited = true;
+            state.degraded = true;
+            self.condition.1.notify_all();
+        }
         *self.thread.lock().unwrap_or_else(|e| e.into_inner()) = handle;
     }
 

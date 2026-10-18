@@ -862,6 +862,32 @@ fn a_stop_gives_up_on_a_worker_that_outlasts_its_drain_budget() {
     assert_eq!(writer.stats().receipt_processed, 1);
 }
 
+/// A writer whose drain ran out of time still owns the journal it was
+/// draining. The slot that holds it has to be able to tell that apart from a
+/// writer that has left, or it would build a second writer for the same home
+/// and let two workers append to one file.
+#[test]
+fn a_writer_that_outlasts_its_drain_reports_that_it_is_still_stopping() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::new();
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    gate.wait_for_entry();
+    assert!(!writer.is_stopping(), "no stop has been asked for yet");
+
+    assert!(!writer.stop(0.0));
+    assert!(writer.is_stopping(), "the worker has not left the loop");
+
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+    assert!(
+        !writer.is_stopping(),
+        "the worker has left, so the journal is free"
+    );
+}
+
 #[test]
 fn a_repeated_receipt_is_deduplicated_rather_than_queued_twice() {
     let gate = Gate::new();
