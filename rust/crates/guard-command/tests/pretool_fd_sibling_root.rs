@@ -1,8 +1,12 @@
-//! `fd` rooted in a neighbouring repository: `fd -e tsx . ~/Code/org/service-api`.
+//! `fd` rooted in a neighbouring repository: `fd -e tsx . ../service-api`.
 //! `fd` prints names, skips hidden entries and honours the repository's ignore
 //! rules, which is the walk an `rg` root already proves, so the two roots get
 //! the same decision. A tree that could name a credential, or one reached
 //! through a link out of the repository, keeps its review.
+//!
+//! A root spelled from home or from the filesystem root is already a names-only
+//! listing root when it is a real non-hidden directory below home, so the review
+//! cases here are spelled through `..`, the shape only this proof answers for.
 #![cfg(unix)]
 
 use crate::pretool_home_layout_reads::{assert_decision, layout, write};
@@ -35,7 +39,7 @@ fn a_sibling_tree_that_could_name_a_secret_is_reviewed() {
     std::os::unix::fs::symlink(layout.home.join(".ssh"), sibling.join("keys")).unwrap();
     let cwd = layout.org.join("app-portal");
     for command in [
-        "fd . ~/Code/org/service-api/config",
+        "fd . ../service-api/config",
         "fd . ~/Code/org/service-api/keys",
         // A hidden directory of the home directory is no repository's tree.
         "fd . ~/.ssh",
@@ -77,9 +81,7 @@ fn an_fd_ignore_file_that_could_re_include_an_entry_keeps_its_review() {
     write(sibling.join(".fdignore"), "!.secrets/\n");
     write(sibling.join(".secrets/deploy.key"), "fixture\n");
     let cwd = layout.org.join("app-portal");
-    for command in ["fd . ~/Code/org/service-api", "fd . ../service-api"] {
-        assert_decision(&cwd, &layout.home, command, false);
-    }
+    assert_decision(&cwd, &layout.home, "fd . ../service-api", false);
     // `rg` reads none of those files, so the same tree keeps its allow.
     assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
 }
@@ -87,7 +89,7 @@ fn an_fd_ignore_file_that_could_re_include_an_entry_keeps_its_review() {
 /// The global ignore file applies to every `fd` run on the machine, so no
 /// walk of one repository can answer for what it re-includes.
 #[test]
-fn a_global_fd_ignore_file_keeps_every_sibling_listing_reviewed() {
+fn a_global_fd_ignore_file_withdraws_the_sibling_proof() {
     let layout = layout("fd-sibling-global-fdignore");
     write(
         layout.org.join("service-api/app/badge/page.tsx"),
@@ -95,5 +97,5 @@ fn a_global_fd_ignore_file_keeps_every_sibling_listing_reviewed() {
     );
     write(layout.home.join(".config/fd/ignore"), "!.env\n");
     let cwd = layout.org.join("app-portal");
-    assert_decision(&cwd, &layout.home, "fd . ~/Code/org/service-api", false);
+    assert_decision(&cwd, &layout.home, "fd . ../service-api", false);
 }
