@@ -24,6 +24,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use guard_command::hook_evidence_writer::{
@@ -38,8 +39,8 @@ use crate::hook_direct::saved_decision::consume::repair_store_permissions;
 use crate::hook_evidence_store_gate::hold_storage_gate;
 use crate::hook_evidence_store_timeout::sqlite_timeout_ms;
 use crate::hook_evidence_store_wire::{
-    evidence_args, handle_wire, needs_barrier, python_title, python_truthy, request_correlation,
-    store_failure, validated_invocation_preview,
+    evidence_args, fatal_store_code, handle_wire, needs_barrier, python_title, python_truthy,
+    request_correlation, store_failure, validated_invocation_preview,
 };
 use crate::local_store_read::STORE_FILE_NAME;
 
@@ -78,12 +79,41 @@ impl Drop for PolicyBarrier<'_> {
     }
 }
 
+/// The last fatal store failure this seam saw, held for the client that owns
+/// recovery.
+///
+/// `_native_store_call` recovers in place because the caller there holds the
+/// `GuardStore` that knows how to quarantine and rebuild one. The resident
+/// holds no such object, so it reports the failure instead and the client runs
+/// `GuardStore._recover_fatal_sqlite_store`. Reads clear the slot, the way the
+/// policy-mutation count is read and cleared, so one failure is recovered once.
+#[derive(Clone, Default)]
+pub(crate) struct StoreFatalSignal(Arc<Mutex<Option<&'static str>>>);
+
+impl StoreFatalSignal {
+    fn record(&self, code: &'static str) {
+        *self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(code);
+    }
+
+    /// The pending failure code, cleared by this read.
+    pub(crate) fn take(&self) -> Option<&'static str> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+    }
+}
+
 /// The writer's store seam, bound to one installation's Guard home.
 pub(crate) struct NativeEvidenceStore {
     guard_home: PathBuf,
     /// `GuardStore.guard_source`, echoed into every request.
     source: String,
     barrier: Box<dyn PolicyBarrierApi + Send + Sync>,
+    fatal: StoreFatalSignal,
 }
 
 impl NativeEvidenceStore {
@@ -96,18 +126,21 @@ impl NativeEvidenceStore {
             guard_home,
             source: crate::guard_store_approval_write::oauth_source(source),
             barrier,
+            fatal: StoreFatalSignal::default(),
         }
+    }
+
+    /// The seam's fatal-failure slot, shared with whoever reports it onward.
+    pub(crate) fn fatal(&self) -> StoreFatalSignal {
+        self.fatal.clone()
     }
 
     /// One store call under the shared storage gate, with the store files put
     /// back into private mode afterwards.
     ///
-    /// TODO(deps): `_native_store_call` also hands a failure to
-    /// `_recover_fatal_sqlite_store`, which quarantines a store a probe has
-    /// proven unusable and writes the forensics beside it. That recovery has
-    /// no Rust counterpart yet, so a corrupt store would fail every call here
-    /// instead of being replaced once. Nothing routes through this seam until
-    /// the writer itself runs natively, and the recovery lands with that flip.
+    /// A corrupt or failing store is recorded in [`StoreFatalSignal`] on the
+    /// way out, so the client that owns the `GuardStore` can quarantine and
+    /// rebuild it once rather than letting every later call fail the same way.
     fn call(
         &self,
         request_id: &str,
@@ -135,7 +168,12 @@ impl NativeEvidenceStore {
             args,
         })
         .map(|(payload, _)| payload)
-        .map_err(|error| store_failure(method, &error));
+        .map_err(|error| {
+            if let Some(code) = fatal_store_code(&error) {
+                self.fatal.record(code);
+            }
+            store_failure(method, &error)
+        });
         repair_store_permissions(&self.guard_home);
         payload
     }

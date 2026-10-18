@@ -22,6 +22,7 @@ use crate::hook_evidence_store_timeout::{
     internal_hook_timeout_ms, sqlite_timeout_ms, NativeSqliteTimeout,
 };
 use crate::hook_evidence_store_wire::{python_title, python_truthy, validated_invocation_preview};
+use crate::local_store_read::STORE_FILE_NAME;
 
 const VECTORS: &str = include_str!("../testdata/guard_store/command_activity_vectors.json");
 
@@ -270,4 +271,44 @@ fn a_null_answer_is_false_the_way_python_reads_it() {
     assert!(!python_truthy(&json!({})));
     assert!(python_truthy(&json!(true)));
     assert!(python_truthy(&json!({ "activity_id": "a" })));
+}
+
+/// A store whose file is not a database fails every call the same way, so the
+/// seam records it once for the client that owns `GuardStore` recovery.
+#[test]
+fn an_unreadable_store_reports_one_fatal_failure() {
+    let home = temp_home("evidence-store-fatal");
+    std::fs::write(home.join(STORE_FILE_NAME), b"this is not a database").unwrap();
+    let (store, _) = new_store(&home, "oauth");
+    let correlation = CorrelationHandle {
+        kind: "command".to_owned(),
+        harness: "claude-code".to_owned(),
+        key_id: "key".to_owned(),
+        digest: "digest".to_owned(),
+    };
+
+    assert!(store.fatal().take().is_none());
+    assert!(store
+        .command_activity_by_request_correlation(&correlation)
+        .is_err());
+    assert_eq!(
+        store.fatal().take(),
+        Some("native_guard_store_sqlite_corrupt")
+    );
+    // The read cleared it: the recovery it asks for runs once, not on every
+    // later report.
+    assert!(store.fatal().take().is_none());
+}
+
+/// An ordinary failed call is not a reason to quarantine the store.
+#[test]
+fn a_refused_argument_is_not_a_fatal_failure() {
+    let home = temp_home("evidence-store-not-fatal");
+    let vectors: Value = serde_json::from_str(VECTORS).unwrap();
+    let scenario = &vectors["scenarios"][0];
+    build_database(&home.join(STORE_FILE_NAME), &vectors, scenario);
+    let (store, _) = new_store(&home, "oauth");
+
+    assert!(store.transition_command_activity(&Map::new()).is_err());
+    assert!(store.fatal().take().is_none());
 }

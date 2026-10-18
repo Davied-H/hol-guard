@@ -30,6 +30,13 @@
 //! counts those mutations instead, and `stats` hands the count back so the
 //! caller can wake its own publishers. Rust still owns the write; Python only
 //! refreshes what it pushes.
+//!
+//! A fatal store failure is reported the same way. `_native_store_call`
+//! quarantines and rebuilds a store a probe has proven unusable, which the
+//! `GuardStore` object owns and this process has no handle on. The store seam
+//! records the failure instead, `stats` and `stop` hand the code back, and the
+//! caller runs `GuardStore._recover_fatal_sqlite_store` for it. Both reads
+//! clear the slot, so one failure is recovered once.
 
 use std::collections::HashMap;
 use std::io;
@@ -46,7 +53,7 @@ use serde_json::{json, Map, Value};
 
 use crate::hook_evidence_activity::NativeCorrelation;
 use crate::hook_evidence_composio::NativeComposio;
-use crate::hook_evidence_store::{NativeEvidenceStore, PolicyBarrierApi};
+use crate::hook_evidence_store::{NativeEvidenceStore, PolicyBarrierApi, StoreFatalSignal};
 use crate::hook_evidence_store_timeout::NativeSqliteTimeout;
 
 pub(crate) const HOOK_EVIDENCE_WRITER_REQUEST_SCHEMA: &str =
@@ -141,10 +148,13 @@ impl PolicyBarrierApi for MutationCounter {
     }
 }
 
-/// One Guard home's writer and the mutations its store seam has recorded.
+/// One Guard home's writer, the mutations its store seam has recorded, and
+/// the fatal store failure it is waiting to report.
+#[derive(Clone)]
 struct ResidentWriter {
     writer: Arc<RuntimeHookEvidenceWriter>,
     mutations: Arc<AtomicU64>,
+    fatal: StoreFatalSignal,
 }
 
 fn registry() -> &'static Mutex<HashMap<PathBuf, ResidentWriter>> {
@@ -159,6 +169,7 @@ fn build(guard_home: &Path, source: &str) -> Result<ResidentWriter, io::Error> {
         source,
         Box::new(MutationCounter(Arc::clone(&mutations))),
     );
+    let fatal = store.fatal();
     // The journal validates the records it rewrites with the same pair the
     // writer validates submissions with, so both share one instance each.
     let receipts: Arc<dyn ReceiptValidationApi + Send + Sync> = Arc::new(NativeReceiptValidation);
@@ -185,35 +196,24 @@ fn build(guard_home: &Path, source: &str) -> Result<ResidentWriter, io::Error> {
     Ok(ResidentWriter {
         writer: Arc::new(writer),
         mutations,
+        fatal,
     })
 }
 
 /// The writer for this Guard home, started on first use.
-fn writer(
-    guard_home: &Path,
-    source: &str,
-) -> Result<(Arc<RuntimeHookEvidenceWriter>, Arc<AtomicU64>), io::Error> {
+fn writer(guard_home: &Path, source: &str) -> Result<ResidentWriter, io::Error> {
     let mut registry = registry().lock().unwrap_or_else(|e| e.into_inner());
     if !registry.contains_key(guard_home) {
         registry.insert(guard_home.to_path_buf(), build(guard_home, source)?);
     }
-    let resident = &registry[guard_home];
-    Ok((
-        Arc::clone(&resident.writer),
-        Arc::clone(&resident.mutations),
-    ))
+    Ok(registry[guard_home].clone())
 }
 
 /// The writer for this Guard home only if one is already running. `stats` and
 /// `stop` must not start a writer that no submission has asked for.
-fn running(guard_home: &Path) -> Option<(Arc<RuntimeHookEvidenceWriter>, Arc<AtomicU64>)> {
+fn running(guard_home: &Path) -> Option<ResidentWriter> {
     let registry = registry().lock().unwrap_or_else(|e| e.into_inner());
-    registry.get(guard_home).map(|resident| {
-        (
-            Arc::clone(&resident.writer),
-            Arc::clone(&resident.mutations),
-        )
-    })
+    registry.get(guard_home).cloned()
 }
 
 fn forget(guard_home: &Path) {
@@ -223,8 +223,8 @@ fn forget(guard_home: &Path) {
         .remove(guard_home);
 }
 
-fn stats_payload(writer: &RuntimeHookEvidenceWriter, mutations: &AtomicU64) -> Value {
-    let stats = writer.stats();
+fn stats_payload(resident: &ResidentWriter) -> Value {
+    let stats = resident.writer.stats();
     json!({
         "queued": stats.queued,
         "queued_bytes": stats.queued_bytes,
@@ -244,7 +244,10 @@ fn stats_payload(writer: &RuntimeHookEvidenceWriter, mutations: &AtomicU64) -> V
         "receipt_durable_pending": stats.receipt_durable_pending,
         // Read-and-clear: the caller that reads a mutation owns waking its
         // own publishers for it, and a second reader must not repeat the wake.
-        "policy_mutations": mutations.swap(0, Ordering::SeqCst),
+        "policy_mutations": resident.mutations.swap(0, Ordering::SeqCst),
+        // Read-and-clear for the same reason: the caller that reads a fatal
+        // store failure owns recovering from it, and recovery runs once.
+        "store_fatal": resident.fatal.take(),
     })
 }
 
@@ -268,6 +271,7 @@ fn idle_stats() -> Value {
         "receipt_failures": 0,
         "receipt_durable_pending": 0,
         "policy_mutations": 0,
+        "store_fatal": Value::Null,
     })
 }
 
@@ -320,7 +324,9 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             prompted,
             approval_reuse_status,
         } => {
-            let (writer, _) = writer(&guard_home, &request.source).map_err(started)?;
+            let writer = writer(&guard_home, &request.source)
+                .map_err(started)?
+                .writer;
             let queued = writer.submit_command_activity(
                 harness,
                 event,
@@ -344,30 +350,39 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             if !succeeded {
                 return Ok(json!({ "queued": false }));
             }
-            let (writer, _) = writer(&guard_home, &request.source).map_err(started)?;
+            let writer = writer(&guard_home, &request.source)
+                .map_err(started)?
+                .writer;
             let queued = writer.submit_composio_discovery(harness, tool_name, payload);
             Ok(json!({ "queued": queued }))
         }
         HookEvidenceWriterActionV1::SubmitNativeDecisionReceipt { receipt } => {
-            let (writer, _) = writer(&guard_home, &request.source).map_err(started)?;
+            let writer = writer(&guard_home, &request.source)
+                .map_err(started)?
+                .writer;
             Ok(json!({ "queued": writer.submit_native_decision_receipt(receipt) }))
         }
         HookEvidenceWriterActionV1::Stats => Ok(match running(&guard_home) {
-            Some((writer, mutations)) => stats_payload(&writer, &mutations),
+            Some(resident) => stats_payload(&resident),
             None => idle_stats(),
         }),
         HookEvidenceWriterActionV1::Stop { timeout_seconds } => {
-            let Some((writer, mutations)) = running(&guard_home) else {
-                return Ok(json!({ "drained": true, "policy_mutations": 0 }));
+            let Some(resident) = running(&guard_home) else {
+                return Ok(json!({
+                    "drained": true,
+                    "policy_mutations": 0,
+                    "store_fatal": Value::Null,
+                }));
             };
             // Drop the registry entry first: a submission racing this stop
             // then builds its own writer rather than queueing onto one that
             // is draining and will never run its thread again.
             forget(&guard_home);
-            let drained = writer.stop(*timeout_seconds);
+            let drained = resident.writer.stop(*timeout_seconds);
             Ok(json!({
                 "drained": drained,
-                "policy_mutations": mutations.swap(0, Ordering::SeqCst),
+                "policy_mutations": resident.mutations.swap(0, Ordering::SeqCst),
+                "store_fatal": resident.fatal.take(),
             }))
         }
     }

@@ -21,6 +21,17 @@ pub(crate) fn store_failure(method: &str, error: &StoreError) -> io::Error {
     io::Error::other(format!("{method}: {} ({})", error.code(), error.message()))
 }
 
+/// The failure codes `_recover_fatal_sqlite_store` acts on: a store whose
+/// image is unreadable, and one whose device is failing. Python routes both
+/// through `sqlite_failure_kind` and recovers either; every other code is an
+/// ordinary failed call.
+pub(crate) fn fatal_store_code(error: &StoreError) -> Option<&'static str> {
+    match error.code() {
+        code @ ("native_guard_store_sqlite_corrupt" | "native_guard_store_sqlite_io") => Some(code),
+        _ => None,
+    }
+}
+
 pub(crate) fn evidence_args(evidence: &Map<String, Value>) -> Map<String, Value> {
     let mut args = Map::new();
     args.insert("evidence".to_owned(), Value::Object(evidence.clone()));
