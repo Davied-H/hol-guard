@@ -131,6 +131,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         features.push(crate::binding_capture_op::BINDING_CAPTURE_FEATURE.into());
     }
     features.push(crate::mcp_relay::RELAY_FEATURE.into());
+    features.push(crate::hook_evidence_writer_op::HOOK_EVIDENCE_WRITER_FEATURE.into());
     features.push(crate::claude_session_start::SESSION_START_FEATURE.into());
     features.push(crate::claude_hook_bridge::BRIDGE_FEATURE.into());
     features.push(crate::codex_hook_bridge::BRIDGE_FEATURE.into());
@@ -196,6 +197,7 @@ pub(crate) enum ResidentOperationV1 {
     ApprovalScope(ApprovalScopeRequestV1),
     HookRender(guard_contracts::HookRenderRequestV1),
     GuardStore(GuardStoreRequestV1),
+    HookEvidenceWriter(crate::hook_evidence_writer_op::HookEvidenceWriterRequestV1),
     ApprovalGate(ApprovalGateRequestV1),
     PackageIntentParse(PackageIntentParseRequestV1),
     SupplyChainEval(SupplyChainEvalRequestV1),

@@ -422,8 +422,8 @@ mod hook_direct;
 mod hook_direct_counters;
 mod hook_direct_evidence;
 mod hook_env_stamp;
-// Wired into the evidence writer when the Python seams retire; the
-// readers are already exercised by their own tests.
+// The seams the evidence writer runs on. Each is reached through
+// hook_evidence_writer_op; the readers also have their own tests.
 #[allow(dead_code)]
 mod hook_evidence_activity;
 #[allow(dead_code)]
@@ -438,6 +438,7 @@ mod hook_evidence_store_gate;
 mod hook_evidence_store_timeout;
 #[allow(dead_code)]
 mod hook_evidence_store_wire;
+mod hook_evidence_writer_op;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;

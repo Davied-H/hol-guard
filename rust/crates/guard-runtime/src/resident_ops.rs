@@ -308,6 +308,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::GuardStore(request) => {
                 crate::guard_store_op::evaluate_guard_store_request(&request)
             }
+            ResidentOperationV1::HookEvidenceWriter(request) => {
+                crate::hook_evidence_writer_op::evaluate_hook_evidence_writer_request(&request)
+            }
             ResidentOperationV1::ApprovalGate(request) => {
                 crate::approval_gate_op::evaluate_approval_gate_request(&request)
             }
@@ -599,6 +602,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::ApprovalReuseDiagnostic(request) => Some(&request.guard_home),
         ResidentOperationV1::ClaimApprovalReuseDecisions(request) => Some(&request.guard_home),
         ResidentOperationV1::GuardStore(request) => Some(&request.guard_home),
+        ResidentOperationV1::HookEvidenceWriter(request) => Some(&request.guard_home),
         ResidentOperationV1::ApprovalGate(request) => Some(&request.guard_home),
         ResidentOperationV1::SupplyChainEval(request) => Some(&request.guard_home),
         ResidentOperationV1::ApplyStoredPackagePolicy(request) => Some(&request.guard_home),
