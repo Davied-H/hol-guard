@@ -33,8 +33,10 @@ pub(crate) const NON_RECOGNITION_REASON_CODES: [&str; 2] = [
 pub(crate) const GRANT_LIFTABLE_REASON_CODE: &str = NON_RECOGNITION_REASON_CODES[0];
 
 /// Whether an allowed grant may lift a review with `reason_code` to `allow`.
+/// The CLI hook names no reason: it settles the grant against the native
+/// floor afterwards, so its review keeps lifting as before.
 pub(crate) fn grant_lifts(reason_code: Option<&str>) -> bool {
-    reason_code == Some(GRANT_LIFTABLE_REASON_CODE)
+    reason_code.is_none_or(|code| code == GRANT_LIFTABLE_REASON_CODE)
 }
 
 /// Hex digits of the action digest in a connector group id.
