@@ -17,8 +17,11 @@ use crate::context_digest::{build_context_token, parse_context_token};
 use guard_contracts::ContextDigestComponentsV1;
 
 const POLICY_VERSION: &str = "native-exact-action-v1";
+/// The policy version of a token that hashes only the command itself.
+const COMMAND_HASH_VERSION: &str = "native-command-hash-v1";
 /// A review raised for one of these signals is a risk finding, not a first-seen
-/// prompt: it never carries a persistent allow, whatever the command looks like.
+/// prompt: it never gets the proven token, so an approval of it binds only the
+/// exact command (`command_hash`).
 const RISK_REASON_MARKERS: [&str; 11] = [
     "secret",
     "sensitive",
@@ -72,6 +75,73 @@ pub(super) fn exact_action(
     engines: &dyn Engines,
 ) -> Proof<String> {
     let components = exact_action_components(query, deadline, engines)?;
+    let token = build_context_token(&components).map_err(|_| UNPROVEN_LAUNCH)?;
+    parse_context_token(&Value::String(token.clone())).ok_or(UNPROVEN_LAUNCH)?;
+    Ok(token)
+}
+
+/// The token an approval of `query` is saved and matched under: the proven
+/// exact-action token when Guard can prove what the command runs, else the
+/// hash of the command itself (`command_hash`). Every review the user can
+/// answer gets one, so every review offers Always allow
+/// (`docs/guard/approval-invariant.md`).
+pub(super) fn approval_token(
+    query: &NativeExactActionQueryV1,
+    deadline: Instant,
+    engines: &dyn Engines,
+) -> Proof<String> {
+    exact_action(query, deadline, engines).or_else(|reason| command_hash(query).map_err(|_| reason))
+}
+
+/// The hash of the command a review paused: harness, tool, command text (or
+/// tool input), working directory and workspace. Nothing else enters it, so an
+/// approval saved under it holds until the command changes or the user
+/// revokes it. Only a review the user can answer has one.
+pub(super) fn command_hash(query: &NativeExactActionQueryV1) -> Proof<String> {
+    let NativeExactActionQueryV1::ExactAction {
+        harness,
+        tool_name,
+        command,
+        tool_input,
+        payload_cwd,
+        workspace,
+        facts,
+        ..
+    } = query
+    else {
+        return Err(UNPROVEN_LAUNCH);
+    };
+    if !is_review_action(facts.policy_action.as_deref())
+        || !is_review_action(facts.minimum_action.as_deref())
+    {
+        return Err(NON_OVERRIDABLE);
+    }
+    let content = match command.as_deref().filter(|text| !text.trim().is_empty()) {
+        Some(text) => json!({"command": text}),
+        None => {
+            let pairs = tool_input.as_ref().ok_or(NO_COMMAND_IDENTITY)?;
+            let fields: serde_json::Map<String, Value> = pairs.iter().cloned().collect();
+            json!({"tool_input": fields})
+        }
+    };
+    let cwd = payload_cwd
+        .as_deref()
+        .filter(|raw| !raw.trim().is_empty())
+        .or(workspace.as_deref());
+    let components = ContextDigestComponentsV1 {
+        identity: json!({
+            "kind": COMMAND_HASH_VERSION,
+            "harness": harness,
+            "tool_name": tool_name,
+            "workspace": workspace,
+            "cwd": cwd,
+        }),
+        content,
+        capabilities: json!({}),
+        policy: json!({"version": COMMAND_HASH_VERSION}),
+        sandbox: json!({"required": false}),
+        extension_control_digest: String::new(),
+    };
     let token = build_context_token(&components).map_err(|_| UNPROVEN_LAUNCH)?;
     parse_context_token(&Value::String(token.clone())).ok_or(UNPROVEN_LAUNCH)?;
     Ok(token)

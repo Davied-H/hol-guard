@@ -16,7 +16,7 @@ use guard_contracts::{NativeExactActionPayloadV1, NativeExactActionRequestV1};
 use serde_json::{json, Value};
 
 use super::context::{Engines, EvidenceFile, LocalExecution};
-use super::{decide, token};
+use super::{decide, decide_with, token, Fallback};
 
 const VECTORS: &[u8] = include_bytes!("../tests/fixtures/native_exact_action_vectors.json.gz");
 
@@ -227,7 +227,8 @@ fn run_case(case: &Value) -> Result<(), String> {
         intent: concrete["intent"].clone(),
     };
     let expected = &concrete["expected"];
-    let payload = decide(&request, &engines).map_err(|code| format!("error {code}"))?;
+    let payload = decide_with(&request, &engines, Fallback::Strict)
+        .map_err(|code| format!("error {code}"))?;
     match payload {
         NativeExactActionPayloadV1::BashSubject { .. } => {
             Err("legacy identity vector unexpectedly returned a Bash subject".into())
@@ -277,10 +278,10 @@ fn run_case(case: &Value) -> Result<(), String> {
 
 /// The recorded trees and requests are POSIX: `:`-separated `PATH`s, `/`-rooted
 /// paths and symlinks. The proofs model POSIX path semantics, so on Windows
-/// every launch stays one-time (`a_windows_launch_stays_a_one_time_decision`).
+/// no launch is proven (`a_windows_launch_falls_back_to_the_command_hash`).
 #[cfg_attr(
     not(unix),
-    ignore = "POSIX-recorded vectors; Windows launches fail closed to one-time decisions"
+    ignore = "POSIX-recorded vectors; Windows launches are never proven"
 )]
 #[test]
 fn matches_vectors_recorded_from_python() {
@@ -308,11 +309,11 @@ fn matches_vectors_recorded_from_python() {
     );
 }
 
-/// A review on Windows never mints a persistent token: the identity proofs
-/// bind `/`-rooted spellings, so the action stays a one-time decision.
+/// The identity proofs bind `/`-rooted spellings, so on Windows a launch is
+/// never proven. The approval still persists under the command hash.
 #[cfg(windows)]
 #[test]
-fn a_windows_launch_stays_a_one_time_decision() {
+fn a_windows_launch_falls_back_to_the_command_hash() {
     let case = load()
         .into_iter()
         .find(|case| case["name"] == "gate_baseline")
@@ -336,12 +337,21 @@ fn a_windows_launch_stays_a_one_time_decision() {
     let NativeExactActionPayloadV1::ExactAction {
         token,
         once_only_reason,
-    } = decide(&request, &engines).unwrap()
+    } = decide_with(&request, &engines, Fallback::Strict).unwrap()
     else {
         panic!("an exact-action query answers with an exact action");
     };
     assert!(token.is_none());
     assert_eq!(once_only_reason.as_deref(), Some("unproven_launch"));
+    let NativeExactActionPayloadV1::ExactAction {
+        token,
+        once_only_reason,
+    } = decide(&request, &engines).unwrap()
+    else {
+        panic!("an exact-action query answers with an exact action");
+    };
+    assert!(token.is_some());
+    assert!(once_only_reason.is_none());
 }
 
 fn resident(request: &Value) -> Value {
@@ -540,6 +550,7 @@ fn wire_exact_action_with_real_engines_answers_a_domain_outcome() {
     let reply = resident(&request);
     assert_eq!(reply["status"], "ok");
     assert_eq!(reply["payload"]["kind"], "exact_action");
-    assert_eq!(reply["payload"]["once_only_reason"], "unproven_launch");
-    assert!(reply["payload"]["token"].is_null());
+    // Whether or not the launch is proven, the review can always be approved.
+    assert!(reply["payload"]["once_only_reason"].is_null());
+    assert!(reply["payload"]["token"].as_str().is_some());
 }

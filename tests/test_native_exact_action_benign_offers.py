@@ -91,12 +91,15 @@ def test_state_only_tools_are_eligible(
 
 
 @pytest.mark.parametrize("tool", ["eval", "write", "edit", "bash_background"])
-def test_code_and_write_tools_stay_once_only(
+def test_code_and_write_tools_bind_the_exact_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_context_digest: Path, tool: str
 ) -> None:
     workspace = _workspace(tmp_path, monkeypatch)
     token, reason = _decide(tool, {"path": "a.txt", "code": "1+1"}, workspace)
-    assert token is None and reason == "no_command_identity"
+    assert token is not None and reason is None
+    other, _ = _decide(tool, {"path": "a.txt", "code": "1+2"}, workspace)
+    # Without a proven identity the approval covers this call's input only.
+    assert other != token
 
 
 @pytest.mark.parametrize(
@@ -114,7 +117,7 @@ def test_code_and_write_tools_stay_once_only(
 @pytest.mark.parametrize(
     ("tool", "tool_input"), [("Bash", {"command": "cat README.md"}), ("todo", {"ops": []}), ("read", {"path": "a"})]
 )
-def test_risk_signal_reviews_never_offer_always(
+def test_risk_signal_reviews_bind_only_the_exact_call(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     native_context_digest: Path,
@@ -122,9 +125,14 @@ def test_risk_signal_reviews_never_offer_always(
     tool: str,
     tool_input: dict[str, object],
 ) -> None:
+    # A risky review still offers Always allow (docs/guard/approval-invariant.md),
+    # but only for this exact call: any other input is a new command.
     workspace = _workspace(tmp_path, monkeypatch)
     token, reason = _decide(tool, tool_input, workspace, reason_code=reason_code)
-    assert token is None and reason == "non_overridable"
+    assert token is not None and reason is None
+    changed = {"command": "cat README.md -n"} if "command" in tool_input else {**tool_input, "extra": "x"}
+    other, _ = _decide(tool, changed, workspace, reason_code=reason_code)
+    assert other != token
 
 
 def test_first_seen_review_of_a_benign_command_keeps_its_offer(
