@@ -28,7 +28,7 @@ _MAX_RECENT = 512
 _lock = threading.Lock()
 _pending: queue.Queue[tuple[object, str, Path, Path | None, str | None]] = queue.Queue(maxsize=_MAX_PENDING)
 _worker: threading.Thread | None = None
-_recent: OrderedDict[tuple[str, str], float] = OrderedDict()
+_recent: OrderedDict[tuple[str, str, str | None], float] = OrderedDict()
 
 
 def observe_native_pre_tool_cli(
@@ -46,11 +46,13 @@ def observe_native_pre_tool_cli(
     cwd = _launch_cwd(payload, workspace)
     if cwd is None:
         return False
-    key = (command, str(cwd))
+    # The PATH picks which program the command name finds, so it is part of the key.
+    path = _launch_path(payload)
+    key = (command, str(cwd), path)
     if _seen_recently(key):
         return False
     try:
-        _pending.put_nowait((store, command, cwd, home_dir, _launch_path(payload)))
+        _pending.put_nowait((store, command, cwd, home_dir, path))
     except queue.Full:
         return False
     _remember(key)
@@ -58,13 +60,13 @@ def observe_native_pre_tool_cli(
     return True
 
 
-def _seen_recently(key: tuple[str, str]) -> bool:
+def _seen_recently(key: tuple[str, str, str | None]) -> bool:
     with _lock:
         seen_at = _recent.get(key)
         return seen_at is not None and time.monotonic() - seen_at < _RECENT_TTL_SECONDS
 
 
-def _remember(key: tuple[str, str]) -> None:
+def _remember(key: tuple[str, str, str | None]) -> None:
     """Mark a queued observation; dropped ones stay eligible for the next call."""
 
     with _lock:
