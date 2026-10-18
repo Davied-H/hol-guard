@@ -177,6 +177,7 @@ pub mod pretool_rust_version_probe;
 pub mod pretool_scratch_checkout_copies;
 pub mod pretool_script_content;
 pub mod pretool_search_data;
+pub mod pretool_sibling_absent_reads;
 pub mod pretool_sibling_glob_reads;
 pub mod pretool_sibling_glob_search;
 pub mod pretool_sibling_ignore_negations;
