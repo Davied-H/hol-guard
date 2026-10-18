@@ -237,8 +237,14 @@ def extension_authority_is_protected(store: GuardStore) -> bool:
 
 
 def _read_protected_authority(store: GuardStore) -> ExtensionControlAuthorityView | None:
+    from ..native_command_control_authority_io import NativeCommandControlAuthorityUnavailableError
+
     try:
         authority = store.read_extension_control_authority_for_registry(BUILT_IN_COMMAND_EXTENSION_REGISTRY)
+    except NativeCommandControlAuthorityUnavailableError:
+        # The lease was busy. This call answers whether managed controls can be
+        # enforced right now, and an authority nobody read cannot enforce them.
+        return None
     except (RuntimeError, TypeError, ValueError):
         return None
     return authority if authority.health is AuthorityHealth.PROTECTED else None

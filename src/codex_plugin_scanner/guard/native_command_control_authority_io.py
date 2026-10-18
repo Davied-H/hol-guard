@@ -16,6 +16,9 @@ from .native_policy_snapshot_constants import NativePolicySnapshotError
 
 _LOCKS = threading.local()
 _LEASE_POLL_SECONDS = 0.01
+# The first retries are short so an acquirer that only missed a turnstile
+# held for microseconds does not pay a full poll interval for it.
+_LEASE_POLL_MIN_SECONDS = 0.0002
 
 
 class NativeCommandControlMutationRequiredError(NativePolicySnapshotError):
@@ -207,6 +210,7 @@ def _release_lease(descriptor: int) -> None:
 def _await_lease(descriptor: int, *, shared: bool, deadline: float) -> None:
     """Poll for one lease until the deadline, then report it as unavailable."""
 
+    interval = _LEASE_POLL_MIN_SECONDS
     while True:
         try:
             _try_lease(descriptor, shared=shared)
@@ -215,7 +219,8 @@ def _await_lease(descriptor: int, *, shared: bool, deadline: float) -> None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise NativeCommandControlAuthorityUnavailableError(shared=shared) from error
-            time.sleep(min(_LEASE_POLL_SECONDS, remaining))
+            time.sleep(min(interval, remaining))
+            interval = min(_LEASE_POLL_SECONDS, interval * 2)
 
 
 def _open_authority_file(guard_home: Path, name: str, resources: ExitStack) -> tuple[int, int | None, os.stat_result]:
@@ -244,22 +249,24 @@ def _open_authority_file(guard_home: Path, name: str, resources: ExitStack) -> t
 
 
 @contextmanager
-def _authority_entry_gate(guard_home: Path, *, shared: bool, deadline: float) -> Iterator[None]:
+def _authority_entry_gate(guard_home: Path, *, deadline: float) -> Iterator[None]:
     """Order entry so a stream of overlapping readers cannot starve a writer.
 
     A nonblocking exclusive request never joins the kernel's wait queue, so a
     publisher that keeps re-taking the shared lease can hold a mutation out
-    until its deadline. Every acquirer therefore passes this turnstile first.
-    A writer holds it exclusively while it waits for the authority lease, so
-    readers arriving after it queue here and the readers already inside drain.
-    Readers release it as soon as they hold their own shared lease, and nobody
-    holds it across the critical section, so it cannot deadlock against the
-    lease itself.
+    until its deadline. Every acquirer therefore passes this turnstile first,
+    and every one of them takes it exclusively: a shared turnstile would let
+    overlapping readers hold it continuously and reproduce the same starvation
+    one level down. A reader holds it only for the moment it needs to take its
+    own shared lease, so it is free again within microseconds, while a writer
+    holds it for its whole wait. Readers that arrive after the writer therefore
+    queue here while the readers already inside drain. Nobody holds it across
+    the critical section, so it cannot deadlock against the lease itself.
     """
 
     with ExitStack() as resources:
         descriptor, _, _ = _open_authority_file(guard_home, AUTHORITY_GATE_NAME, resources)
-        _await_lease(descriptor, shared=shared, deadline=deadline)
+        _await_lease(descriptor, shared=False, deadline=deadline)
         resources.callback(_release_lease, descriptor)
         yield
 
@@ -291,7 +298,7 @@ def hold_command_control_authority_lock(
     with ExitStack() as resources:
         descriptor, directory, metadata = _open_authority_file(guard_home, AUTHORITY_LOCK_NAME, resources)
         deadline = time.monotonic() + max(0.0, timeout_seconds)
-        with _authority_entry_gate(guard_home, shared=shared, deadline=deadline):
+        with _authority_entry_gate(guard_home, deadline=deadline):
             _await_lease(descriptor, shared=shared, deadline=deadline)
         if directory is not None and not _same_file(
             metadata, os.stat(AUTHORITY_LOCK_NAME, dir_fd=directory, follow_symlinks=False)

@@ -307,6 +307,16 @@ class _ExtensionControlAuthoritySupportMixin:
         )
         return ExtensionControlAuthorityView(health, 0, catalog_digest, ())
 
+    def extension_control_authority_unreadable_view(self, catalog_digest: str) -> ExtensionControlAuthorityView:
+        """The view for a caller that could not read the authority and cannot fail.
+
+        It carries no layers, so nothing taken from it widens what Guard
+        allows. A caller that can wait retries instead: an unread authority is
+        not a reading, and only the one caller that must still start uses this.
+        """
+
+        return self._degraded_view(catalog_digest)
+
     @staticmethod
     def _tampered_view(catalog_digest: str) -> ExtensionControlAuthorityView:
         return ExtensionControlAuthorityView(AuthorityHealth.TAMPERED, 0, catalog_digest, ())

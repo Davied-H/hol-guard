@@ -385,3 +385,71 @@ def test_lease_timeout_reports_unavailability_rather_than_a_verdict(tmp_path: Pa
     failing = _Store(RuntimeError("database is locked"))
     assert failing.read_extension_control_authority(catalog_digest="0" * 64) == "degraded"
     assert failing.verdicts == 1
+
+
+def _startup_view_with_store(store: object) -> object:
+    from codex_plugin_scanner.guard.daemon.server import _GuardDaemonHTTPServer
+
+    server = object.__new__(_GuardDaemonHTTPServer)
+    server.store = store  # type: ignore[attr-defined]
+    return _GuardDaemonHTTPServer._startup_extension_control_view(server)
+
+
+def test_daemon_startup_falls_back_to_a_shared_read_when_the_lease_is_busy() -> None:
+    """A busy lease must not stop the daemon: it would take the hook worker with it."""
+
+    from codex_plugin_scanner.guard.native_command_control_authority_io import (
+        NativeCommandControlAuthorityUnavailableError,
+    )
+    from codex_plugin_scanner.guard.runtime.extension_control_authority import (
+        AuthorityHealth,
+        ExtensionControlAuthorityView,
+    )
+
+    protected = ExtensionControlAuthorityView(AuthorityHealth.PROTECTED, 7, "digest", ())
+
+    class _Store:
+        def __init__(self) -> None:
+            self.reads: list[bool] = []
+
+        def read_extension_control_authority_for_registry(
+            self, registry: object, *, read_only: bool = False
+        ) -> ExtensionControlAuthorityView:
+            self.reads.append(read_only)
+            if not read_only:
+                raise NativeCommandControlAuthorityUnavailableError(shared=False)
+            return protected
+
+        def extension_control_authority_unreadable_view(self, catalog_digest: str) -> ExtensionControlAuthorityView:
+            raise AssertionError("the shared read answered, so no fallback view is warranted")
+
+    store = _Store()
+    assert _startup_view_with_store(store) is protected
+    assert store.reads == [False, True]
+
+
+def test_daemon_startup_reports_no_layers_when_no_lease_is_obtainable() -> None:
+    """An unread authority grants nothing; the next refresh replaces this view."""
+
+    from codex_plugin_scanner.guard.native_command_control_authority_io import (
+        NativeCommandControlAuthorityUnavailableError,
+    )
+    from codex_plugin_scanner.guard.runtime.extension_control_authority import (
+        AuthorityHealth,
+        ExtensionControlAuthorityView,
+    )
+
+    unreadable = ExtensionControlAuthorityView(AuthorityHealth.DEGRADED_UNACKNOWLEDGED, 0, "digest", ())
+
+    class _Store:
+        def read_extension_control_authority_for_registry(
+            self, registry: object, *, read_only: bool = False
+        ) -> ExtensionControlAuthorityView:
+            raise NativeCommandControlAuthorityUnavailableError(shared=read_only)
+
+        def extension_control_authority_unreadable_view(self, catalog_digest: str) -> ExtensionControlAuthorityView:
+            return unreadable
+
+    view = _startup_view_with_store(_Store())
+    assert view is unreadable
+    assert not view.layers
