@@ -211,6 +211,36 @@ fn a_cli_presence_probe_lists_every_candidate_bin_directory() {
     }
 }
 
+/// The prefixes a probe names are the ones a tool could be installed into,
+/// not the ones this machine has, and a bin directory reached through a link
+/// is still the directory it resolves to.
+#[test]
+fn a_probe_takes_the_prefixes_this_machine_does_not_have() {
+    let root = fixture("bin-probe-absent");
+    let home = root.join("home");
+    let cwd = home.join("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    std::fs::create_dir_all(home.join(".local/bin")).unwrap();
+    write(home.join(".local/bin/alohajet"), "binary");
+    // A tool root this home does not hold, named beside one it does.
+    for allowed in [
+        "ls ~/.local/bin/alohajet ~/.npm-global/bin/alohajet ~/go/bin/alohajet",
+        "ls ~/.cargo/bin",
+        "ls ~/.deno/bin/deno",
+        // A merged-`/usr` system reaches `/usr/bin` through `/bin`, which is
+        // the same system bin directory under either spelling.
+        "ls /bin/alohajet",
+    ] {
+        assert_eq!(shell(allowed, &home, &cwd), "allow", "{allowed}");
+    }
+    // A link at a tool root that redirects the listing into a key directory.
+    write(home.join(".ssh/bin/alohajet"), "binary");
+    std::os::unix::fs::symlink(home.join(".ssh"), home.join(".deno")).unwrap();
+    for denied in ["ls ~/.deno/bin", "ls ~/.deno/bin/alohajet"] {
+        assert_ne!(shell(denied, &home, &cwd), "allow", "{denied}");
+    }
+}
+
 #[test]
 fn a_directory_named_like_the_launcher_does_not_shadow_it() {
     let root = fixture("launcher");

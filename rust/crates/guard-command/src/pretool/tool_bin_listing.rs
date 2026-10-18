@@ -65,6 +65,35 @@ fn split_bin_target(expanded: &str, home_dir: &str) -> Option<(PathBuf, Option<S
     Some((PathBuf::from(directory), Some(child.to_owned())))
 }
 
+/// Whether the bin directory an operand names is one a listing may print.
+///
+/// A prefix this machine does not have holds nothing to list, and naming the
+/// prefixes a tool could be installed into is how a presence probe asks which
+/// one has it, so an absent directory qualifies. A present one is judged by
+/// where it resolves rather than by its spelling: on a merged-`/usr` system
+/// `/bin` is a link to `/usr/bin`, which is a bin directory of this list all
+/// the same, while a link planted at a recognized prefix, or at one of its
+/// parents, resolves outside the list and cannot present a guarded tree as a
+/// bin directory. A dangling link resolves nowhere and gives no proof.
+fn listable_bin_directory(bin_dir: &Path, home_dir: &str) -> bool {
+    if let Err(error) = std::fs::symlink_metadata(bin_dir) {
+        return error.kind() == std::io::ErrorKind::NotFound;
+    }
+    let Ok(canonical) = std::fs::canonicalize(bin_dir) else {
+        return false;
+    };
+    if !canonical.is_dir() {
+        return false;
+    }
+    // Home itself is often reached through a link, so both spellings are
+    // resolved before they are compared.
+    let home = std::fs::canonicalize(home_dir).unwrap_or_else(|_| PathBuf::from(home_dir));
+    let (Some(home), Some(resolved)) = (home.to_str(), canonical.to_str()) else {
+        return false;
+    };
+    matches!(split_bin_target(resolved, home), Some((_, None)))
+}
+
 pub(super) fn tool_bin_listing_operand(value: &str, context: super::PathContext<'_>) -> bool {
     if value.is_empty()
         || value.len() > 4096
@@ -86,7 +115,7 @@ pub(super) fn tool_bin_listing_operand(value: &str, context: super::PathContext<
     let Some((bin_dir, child)) = split_bin_target(&expanded, home_dir) else {
         return false;
     };
-    if !std::fs::symlink_metadata(&bin_dir).is_ok_and(|metadata| metadata.is_dir()) {
+    if !listable_bin_directory(&bin_dir, home_dir) {
         return false;
     }
     let Some(child) = child else {
