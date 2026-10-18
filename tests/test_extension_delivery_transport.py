@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-from types import SimpleNamespace
+import urllib.error
 
 import pytest
 
@@ -43,12 +43,64 @@ class Response(io.BytesIO):
 )
 def test_transport_bounds_declared_and_actual_bodies(monkeypatch, data, headers):
     monkeypatch.setattr(
-        transport.urllib.request,
-        "build_opener",
-        lambda *args: SimpleNamespace(open=lambda *args, **kwargs: Response(data, headers)),
+        transport,
+        "managed_urlopen",
+        lambda *args, **kwargs: Response(data, headers),
     )
     with pytest.raises(ValueError):
         transport.download("https://github.com/hashgraph-online/hol-guard/releases/download/data/asset", 100)
+
+
+@pytest.mark.parametrize(
+    "target", ["https://evil.invalid/asset", "http://github.com/asset", "https://user:pass@github.com/asset"]
+)
+def test_redirect_destination_is_checked_before_managed_egress(monkeypatch, target):
+    calls = []
+
+    def open_managed(request, **kwargs):
+        calls.append(request)
+        assert kwargs == {"timeout": 20, "allow_redirects": False}
+        raise urllib.error.HTTPError(request.full_url, 302, "redirect", {"Location": target}, io.BytesIO())
+
+    monkeypatch.setattr(transport, "managed_urlopen", open_managed)
+    with pytest.raises(ValueError, match="destination"):
+        transport.download("https://github.com/asset", 100)
+    assert len(calls) == 1
+
+
+def test_approved_redirect_reenters_managed_transport_without_credentials(monkeypatch):
+    calls = []
+
+    def open_managed(request, **kwargs):
+        calls.append(request)
+        assert kwargs["allow_redirects"] is False
+        assert request.get_header("Authorization") is None
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                request.full_url,
+                302,
+                "redirect",
+                {"Location": "https://release-assets.githubusercontent.com/asset"},
+                io.BytesIO(),
+            )
+        return Response(b"ok", {"Content-Length": "2"})
+
+    monkeypatch.setattr(transport, "managed_urlopen", open_managed)
+    assert transport.download("https://github.com/asset", 100) == b"ok"
+    assert len(calls) == 2
+
+
+def test_redirect_loop_is_bounded(monkeypatch):
+    calls = []
+
+    def open_managed(request, **kwargs):
+        calls.append(request)
+        raise urllib.error.HTTPError(request.full_url, 302, "redirect", {"Location": "/asset"}, io.BytesIO())
+
+    monkeypatch.setattr(transport, "managed_urlopen", open_managed)
+    with pytest.raises(ValueError, match="redirect limit"):
+        transport.download("https://github.com/asset", 100)
+    assert len(calls) == 5
 
 
 def test_pointer_digest_and_publication_are_bound_before_returning_a_root(monkeypatch):

@@ -61,6 +61,11 @@ def projection_builder(tmp_path, monkeypatch):
             content = public_blobs.get(command[-1])
             return subprocess.CompletedProcess(command, int(content is None), content or b"", b"")
         response = {
+            "compiler-info": {
+                "schema": "guard.source-compiler-capabilities.v1",
+                "implementation_digest": "d" * 64,
+                "embedded_catalog": True,
+            },
             "compile-stream": compiled,
             "export-built": compiled,
             "export-trust": trust,

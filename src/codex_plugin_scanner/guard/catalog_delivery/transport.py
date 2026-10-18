@@ -18,6 +18,7 @@ from contextlib import suppress
 
 from codex_plugin_scanner.guard.extension_builder.errors import BuilderError
 from codex_plugin_scanner.guard.extension_builder.io import checked_path, read_bytes
+from codex_plugin_scanner.guard.mdm.network import managed_urlopen
 
 from .authority import MAX_PROVENANCE_BYTES, decode, verify_distribution
 from .containers import location, member
@@ -56,25 +57,30 @@ def _check_url(url):
         raise ValueError("release transport destination is not permitted")
 
 
-class _Redirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        _check_url(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-
 def download(url, maximum):
     if type(maximum) is not int or not 0 < maximum <= 32 * 1024 * 1024:
         raise ValueError("release transport byte limit invalid")
-    _check_url(url)
-    request = urllib.request.Request(
-        url, headers={"User-Agent": "HOL-Guard-extension-delivery", "Accept-Encoding": "identity"}
-    )
-    try:
-        response = urllib.request.build_opener(_Redirects()).open(request, timeout=20)
-    except urllib.error.HTTPError as error:
-        if error.code == 404:
-            raise MissingReleaseError("extension release is unavailable") from error
-        raise
+    for redirects in range(5):
+        _check_url(url)
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "HOL-Guard-extension-delivery", "Accept-Encoding": "identity"}
+        )
+        try:
+            response = managed_urlopen(request, timeout=20, allow_redirects=False)
+            break
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                error.close()
+                raise MissingReleaseError("extension release is unavailable") from error
+            if error.code not in {301, 302, 303, 307, 308}:
+                raise
+            target = error.headers.get("Location")
+            error.close()
+            if not target or redirects == 4:
+                raise ValueError("release transport redirect limit or destination invalid") from error
+            url = urllib.parse.urljoin(url, target)
+    else:
+        raise ValueError("release transport redirect limit exceeded")
     with response:
         if response.headers.get("Content-Encoding", "identity") != "identity":
             raise ValueError("compressed release transport is not permitted")
