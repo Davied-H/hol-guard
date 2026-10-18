@@ -279,7 +279,17 @@ fn with_writer<T>(
         carried = held.take();
     }
     if held.is_none() {
-        let fresh = build(guard_home, source)?;
+        let fresh = match build(guard_home, source) {
+            Ok(fresh) => fresh,
+            Err(error) => {
+                // The replacement failed, so the exited writer goes back into
+                // the slot. It still holds the mutation count and the store
+                // failure this request exists to report, and an empty slot
+                // would answer `stats` with an idle home instead of the fault.
+                *held = carried;
+                return Err(error);
+            }
+        };
         if let Some(gone) = carried {
             fresh
                 .mutations
