@@ -33,6 +33,11 @@ pub struct ProtectRequestRequestV1 {
     pub store_path: Option<String>,
     /// The wrapped command, executable first.
     pub command: Vec<String>,
+    /// The working directory the command runs in. A custom command that
+    /// launches a relative script needs it to read that script; `None` reads
+    /// only an absolute one.
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
