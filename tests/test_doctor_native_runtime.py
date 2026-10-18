@@ -78,3 +78,19 @@ def test_invalid_reason_is_not_disclosed(monkeypatch: pytest.MonkeyPatch) -> Non
     status = NativeRuntimeStatus(mode="auto", available=False, compatible=False, reason="/private/user/native-secret")
     monkeypatch.setattr(native_runtime, "native_runtime_status", lambda: status)
     assert doctor_native_availability()["reason_code"] == "native_status_reason_unavailable"
+
+
+def test_a_resident_owned_by_another_install_is_explained(monkeypatch: pytest.MonkeyPatch) -> None:
+    status = NativeRuntimeStatus(
+        mode="auto",
+        available=False,
+        compatible=False,
+        reason="native_resident_owner_busy",
+        identity=None,
+    )
+    monkeypatch.setattr(native_runtime, "native_runtime_status", lambda: status)
+
+    result = doctor_native_availability()
+
+    assert result["reason_code"] == "native_resident_owner_busy"
+    assert "Another Guard install" in result["message"]

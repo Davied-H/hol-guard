@@ -250,6 +250,13 @@ fn client_request_with_deadline_inner(
         return Ok(response);
     }
     let (generation, token, mut spawned) = observe(Phase::ClientSpawn, || -> Result<_, String> {
+        // A resident from another Guard install holds the home-wide owner
+        // lock. A spawn here could only fail on that lock, so name the owner
+        // instead of spending the restart budget on it.
+        match super::acquire_managed_owner_lock(state_base) {
+            Err(error) if error == "native_resident_owner_busy" => return Err(error),
+            probe => drop(probe),
+        }
         restart_budget::consume_for_spawn(state_base, &scope)?;
         let generation = next_generation(&scope, &digest)?;
         let mut token = [0u8; crate::AUTH_TOKEN_BYTES];
