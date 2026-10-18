@@ -98,6 +98,9 @@ fn digests_that_reach_further_keep_their_review() {
         "sha256sum $(cat checksums.txt)",
         // Nothing stands in for the operands the proof needs.
         "sha256sum",
+        // BSD `md5 -p` copies standard input through, so a screened operand
+        // does not cover everything the command prints.
+        "md5 -p README.md",
     ] {
         assert_eq!(shell(&home, command), "review", "{command}");
     }

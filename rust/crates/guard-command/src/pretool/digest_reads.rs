@@ -101,6 +101,8 @@ fn safe_digest_with_targets(
 
 /// Options that only choose how the digest is printed. `-c`, and the options
 /// that qualify it, name a list of files to open instead, so they are absent.
+/// So is BSD `md5 -p`, which copies standard input to standard output before
+/// the digest: that is a second stream the operand proof says nothing about.
 fn printing_option(argument: &str, algorithm: &mut bool) -> bool {
     if let Some(value) = argument.strip_prefix("--algorithm=") {
         return algorithm_name(value);
@@ -122,6 +124,6 @@ fn printing_option(argument: &str, algorithm: &mut bool) -> bool {
         !flags.is_empty()
             && flags
                 .bytes()
-                .all(|flag| matches!(flag, b'b' | b't' | b'U' | b'p' | b'q' | b'r' | b'z' | b'0'))
+                .all(|flag| matches!(flag, b'b' | b't' | b'U' | b'q' | b'r' | b'z' | b'0'))
     })
 }
