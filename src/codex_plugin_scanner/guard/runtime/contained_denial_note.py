@@ -98,6 +98,23 @@ def _holds(line: bytes, marker: bytes) -> bool:
     return False
 
 
+def _holds_address(line: bytes, marker: bytes) -> bool:
+    """Like `_holds`, but `::1` may not continue another IPv6 address such as `fe80::1`."""
+    ipv6 = marker.startswith(b":")
+    start = line.find(marker)
+    while start >= 0:
+        end = start + len(marker)
+        before = line[start - 1] if start else None
+        clear_start = before is None or not (
+            _word_byte(before) or (ipv6 and (before == ord(":") or chr(before) in "0123456789abcdef"))
+        )
+        clear_end = end == len(line) or not _word_byte(line[end])
+        if clear_start and clear_end:
+            return True
+        start = line.find(marker, start + 1)
+    return False
+
+
 def _line_note(line: bytes) -> str | None:
     denial = any(_holds(line, word) for word in DENIAL_WORDS)
     for note, alone, with_denial in CAUSES:
@@ -123,7 +140,7 @@ def denial_note(outputs: Iterable[bytes]) -> str | None:
 def loopback_denied(outputs: Iterable[bytes]) -> bool:
     """Whether a line of `outputs` names a blocked connection to this machine."""
     return any(
-        _line_note(line) == CONNECT_NOTE and any(_holds(line, marker) for marker in LOOPBACK_MARKERS)
+        _line_note(line) == CONNECT_NOTE and any(_holds_address(line, marker) for marker in LOOPBACK_MARKERS)
         for output in outputs
         for line in output.lower().split(b"\n")
     )
