@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -283,6 +283,21 @@ class StoreLocalMcpMixin:
         if not isinstance(cli_id, str):
             raise sqlite3.DatabaseError("native_local_mcp_observation_invalid")
         return cli_id
+
+    def reconcile_remote_mcp_declarations(self, *, harnesses: Sequence[str], declared_cli_ids: Sequence[str]) -> int:
+        """Forget remote declarations a config scan of ``harnesses`` no longer finds.
+
+        Records stay, so permission history and decisions are kept; only the
+        ``<harness>:remote`` source goes, and the stored origin once no harness
+        declares the connector as remote.
+        """
+
+        result = self._native_store_call(
+            "reconcile_remote_mcp_declarations",
+            {"harnesses": sorted(set(harnesses)), "declared_cli_ids": sorted(set(declared_cli_ids))},
+        )
+        reconciled = result.get("reconciled") if isinstance(result, dict) else None
+        return reconciled if isinstance(reconciled, int) else 0
 
 
 @contextmanager

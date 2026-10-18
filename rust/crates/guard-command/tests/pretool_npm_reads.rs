@@ -259,3 +259,42 @@ fn a_global_configuration_file_is_read_wherever_node_was_installed() {
         }
     }
 }
+
+// Finder leaves a `.DS_Store` file beside the version directories a Node
+// version manager keeps. The configuration path built from that entry lands
+// below a regular file, which reports `ENOTDIR` rather than "no such file";
+// reading that as an unproven config file held every npm read for review on
+// any machine where Finder had opened the directory.
+#[test]
+fn a_stray_file_in_a_version_root_leaves_reads_alone() {
+    let root = std::env::temp_dir().join(format!("guard-npm-stray-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let _cleanup = FixtureCleanup(root.clone());
+    let home = root.join("home");
+    let project = root.join("project");
+    for directory in [&home, &project] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    std::fs::write(project.join("package.json"), "{}\n").unwrap();
+    let versions = home.join(".nvm/versions/node");
+    std::fs::create_dir_all(versions.join("v24.3.0/etc")).unwrap();
+    std::fs::write(versions.join("v24.3.0/etc/npmrc"), "save-exact=true\n").unwrap();
+    std::fs::write(versions.join(".DS_Store"), [0u8, 1, 2, 3]).unwrap();
+
+    for command in ["npm ls", "npm view zod version", "npm cache ls"] {
+        assert_eq!(
+            decide(&[], Some(&home), command, &home, &project),
+            "allow",
+            "{command}"
+        );
+    }
+
+    // A configuration file that really is there still decides the read.
+    std::fs::write(
+        versions.join("v24.3.0/etc/npmrc"),
+        "registry=https://registry.example.test/\n",
+    )
+    .unwrap();
+    assert_ne!(decide(&[], Some(&home), "npm ls", &home, &project), "allow");
+}
