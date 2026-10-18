@@ -864,6 +864,25 @@ mod tests {
     }
 
     #[test]
+    fn strict_json_carries_strings_up_to_the_operation_request_bound() {
+        let catalog_capacity_overflow =
+            format!("{{\"description\":\"{}\"}}", "x".repeat(2_000_001));
+        let parsed = strict_json_value(catalog_capacity_overflow.as_bytes()).unwrap();
+        assert_eq!(
+            parsed["description"].as_str().map(str::len),
+            Some(2_000_001)
+        );
+        let over_cap = format!(
+            "{{\"description\":\"{}\"}}",
+            "x".repeat(strict_json::TEST_MAX_JSON_STRING_BYTES + 1)
+        );
+        assert_eq!(
+            strict_json_value(over_cap.as_bytes()).unwrap_err(),
+            "native_json_string_too_large"
+        );
+    }
+
+    #[test]
     fn overload_response_is_constant_and_retryable() {
         assert_eq!(
             resident_protocol::error_response("native_overloaded", true),
