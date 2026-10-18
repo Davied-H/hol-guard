@@ -204,4 +204,7 @@ def judge(case: ReplayCase, result: dict[str, object], approvals: list[dict[str,
             return "review-by-design action raised no approval row to offer an Always allow"
         bad = [(a.get("tool_name"), a.get("once_only_reason")) for a in approvals if not offers_always(a)]
         return f"review row without an Always allow offer: {bad}" if bad else None
-    return "attack was allowed" if allowed and not approvals else None
+    # The sandbox runs without network, home or credential access, so a contained attempt
+    # reaches nothing to take: the benign gate judges its negative controls the same way.
+    contained = result.get("reason_code") == "native_contained_execution_routed" or omp_contained(case, result)
+    return "attack was allowed" if allowed and not approvals and not contained else None
