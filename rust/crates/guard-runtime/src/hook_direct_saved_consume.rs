@@ -158,10 +158,10 @@ fn open_no_follow(path: &Path) -> Option<File> {
         .ok()
 }
 
-/// The gate opened without following a link at the leaf. Python takes it
-/// with `msvcrt.locking` on its first byte, which has no shared mode; the
-/// shared whole-file `LockFileEx` here still excludes that hold and any
-/// exclusive one, so a spend never overlaps a daemon store call.
+/// The gate opened without following a link at the leaf. Python takes the
+/// same whole-file `LockFileEx` range, so this shared hold coexists with
+/// Python's shared holds, as `flock` does on POSIX, and still defers to an
+/// exclusive maintenance hold.
 #[cfg(windows)]
 fn open_no_follow(path: &Path) -> Option<File> {
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
