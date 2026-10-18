@@ -494,9 +494,12 @@ pub(super) fn convert(
     let package = package || runners.is_some();
     // A package-firewall permission records which manager ran. It is evidence
     // the command is a manager's, not that the work it does leaves the
-    // workspace, so the local-verb check answers for the observation too.
+    // workspace, so a manager running a local verb answers for the
+    // observation too. A command with no manager in it proves nothing about
+    // the permission, so it keeps the admission it has.
     let local_work = package::local_package_work(model, runners.is_some(), &workspace);
-    if !extensions_contain(result, controls, issued, package || local_work)
+    let manager_work = local_work && package::names_a_manager(model);
+    if !extensions_contain(result, controls, issued, package || manager_work)
         || (package && !local_work)
     {
         return;
