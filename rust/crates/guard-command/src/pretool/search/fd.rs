@@ -3,7 +3,7 @@
 //! listing is proven when no option widens that scope or runs a command per
 //! match, and every search root clears the same screens as an `rg` root.
 use super::options::unsafe_search_value;
-use super::{tree, ReadContext, SearchValueRole};
+use super::{sibling, tree, ReadContext, SearchValueRole};
 
 /// Options that take no value and only change matching or output format.
 const FLAGS: &[&str] = &[
@@ -51,7 +51,12 @@ fn unsafe_root(value: &str, context: ReadContext<'_>) -> bool {
         || (unsafe_search_value(SearchValueRole::Path, value, context)
             && !tree::rg_root_inside_cwd(value, context)
             && !tree::listing_root_below_home(value, context)
-            && !tree::safe_recursive_search_target(value, context))
+            && !tree::safe_recursive_search_target(value, context)
+            // An agent in one repository names a neighbour to find a file by
+            // name. `fd` skips the same hidden and ignored entries `rg` skips,
+            // and prints names rather than contents, so the walk that proves an
+            // `rg` root proves this listing too.
+            && !sibling::rg_sibling_repository_root(value, context))
 }
 
 fn unsafe_value(role: SearchValueRole, value: &str, context: ReadContext<'_>) -> bool {

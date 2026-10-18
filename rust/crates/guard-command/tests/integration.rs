@@ -53,6 +53,7 @@ pub mod pretool_doctl_reads;
 pub mod pretool_du_sibling_reads;
 pub mod pretool_env_prefix_controls;
 pub mod pretool_fd_hidden_home_root;
+pub mod pretool_fd_sibling_root;
 pub mod pretool_file_copies;
 pub mod pretool_file_mutations;
 pub mod pretool_file_reads;
