@@ -73,7 +73,11 @@ pub(super) fn evaluate_signals(
             "HOL Guard blocked a PreToolUse action that combines sensitive data with network transfer.",
         );
     }
-    if signals.guard_bypass_intent && action_type == PreToolActionTypeV1::Prompt {
+    // These five gates read the prompt text itself, so they follow the text
+    // rather than the action type. A tool argument that carries the same
+    // instruction is the same risk, and typing it as a prompt is no longer
+    // what proves it.
+    if signals.guard_bypass_intent && signals.prompt_present {
         return generic_result(
             action,
             "block",
@@ -81,7 +85,7 @@ pub(super) fn evaluate_signals(
             "HOL Guard blocked this prompt because it asks to disable Guard protection.",
         );
     }
-    if signals.exfil_intent && action_type == PreToolActionTypeV1::Prompt {
+    if signals.exfil_intent && signals.prompt_present {
         let (floor, code) = if action.sensitive_target {
             ("block", "native_prompt_exfiltration_block")
         } else {
@@ -94,7 +98,7 @@ pub(super) fn evaluate_signals(
             "HOL Guard did not send this prompt because it asks to send data to an external place. Nothing is waiting for approval; rephrase that part of the request.",
         );
     }
-    if signals.destructive_intent && action_type == PreToolActionTypeV1::Prompt {
+    if signals.destructive_intent && signals.prompt_present {
         let (floor, code) = if action.sensitive_target {
             ("block", "native_prompt_destructive_block")
         } else {
@@ -118,7 +122,7 @@ pub(super) fn evaluate_signals(
             "HOL Guard did not send this prompt because it asks to read credentials or other sensitive local data. Nothing is waiting for approval; rephrase that part of the request.",
         );
     }
-    if signals.prompt_injection_intent && action_type == PreToolActionTypeV1::Prompt {
+    if signals.prompt_injection_intent && signals.prompt_present {
         return generic_result(
             action,
             "require-reapproval",
@@ -126,7 +130,7 @@ pub(super) fn evaluate_signals(
             "HOL Guard did not send this prompt because it asks to override trusted instructions. Nothing is waiting for approval; rephrase that part of the request.",
         );
     }
-    if signals.subprocess_intent && action_type == PreToolActionTypeV1::Prompt {
+    if signals.subprocess_intent && signals.prompt_present {
         return generic_result(
             action,
             "review",

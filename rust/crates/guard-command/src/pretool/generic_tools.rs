@@ -306,7 +306,11 @@ pub(super) fn infer_action_type(
     if is_network_tool(tool) {
         return (PreToolActionTypeV1::Network, PreToolOperationV1::Request);
     }
-    if signals.prompt_present {
+    // A named tool's `query` or `message` argument is that tool's input, not a
+    // model prompt. Tools that really carry a prompt are matched by name above,
+    // and an inline prompt arrives with no tool name at all. Typing every other
+    // tool call as a prompt made an ordinary search read as a prompt risk.
+    if signals.prompt_present && tool.is_empty() {
         return (PreToolActionTypeV1::Prompt, PreToolOperationV1::Submit);
     }
     if is_network_tool(tool) || !signals.url_values.is_empty() {
@@ -338,3 +342,7 @@ pub(super) fn infer_action_type(
     }
     (PreToolActionTypeV1::Unknown, PreToolOperationV1::Unknown)
 }
+
+#[cfg(test)]
+#[path = "generic_tools_tests.rs"]
+mod tests;
