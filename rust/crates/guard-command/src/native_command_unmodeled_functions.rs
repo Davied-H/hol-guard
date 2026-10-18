@@ -91,6 +91,16 @@ pub(super) fn without_comments(text: &str) -> Option<String> {
                     ')' => {
                         open.pop();
                     }
+                    // A subshell inside the substitution opens parens of its
+                    // own, and its `)` closes the subshell rather than the
+                    // substitution. Without this the scan leaves the
+                    // substitution early and reads the quote after it as the
+                    // close of the string holding it.
+                    '(' => open.push('('),
+                    // A `case` pattern ends in a `)` that closes nothing,
+                    // which this scan cannot tell from the substitution's own.
+                    // The text is not plain enough to take apart.
+                    'c' if opens_case(&characters, index - 1) => return None,
                     '\'' | '"' | '`' => open.push(character),
                     '$' if characters.get(index) == Some(&'(') => {
                         out.push('(');
@@ -122,6 +132,17 @@ pub(super) fn without_comments(text: &str) -> Option<String> {
         out.push(character);
     }
     (open.is_empty() && !escaped).then_some(out)
+}
+
+/// Whether `case` starts a shell word at `start`: nothing a name could carry
+/// on stands on either side of it, so `case x in` counts and `lowercase` and
+/// `case_of` do not.
+fn opens_case(characters: &[char], start: usize) -> bool {
+    characters[start..].starts_with(&['c', 'a', 's', 'e'])
+        && (start == 0 || !name_character(characters[start - 1]))
+        && characters
+            .get(start + 4)
+            .is_none_or(|next| !name_character(*next))
 }
 
 /// The literal with the definition of every function nothing calls removed.
@@ -272,9 +293,17 @@ fn invoked(masked: &[char], lines: &[(usize, usize)], body: (usize, usize), name
 
 /// Whether one simple command could run `name`.
 fn runs(piece: &str, name: &str) -> bool {
+    // The shell joins quoted and escaped pieces into one word before it looks
+    // the command up, so `f""oo`, `'f'oo` and `f\oo` all call `foo`. Taking
+    // that splicing out first keeps such a call visible to the tests below.
     let mut words = piece
         .split_whitespace()
-        .skip_while(|word| super::SHELL_PREFIXES.contains(word));
+        .map(|word| {
+            word.chars()
+                .filter(|character| !matches!(character, '\'' | '"' | '\\'))
+                .collect::<String>()
+        })
+        .skip_while(|word| super::SHELL_PREFIXES.contains(&word.as_str()));
     let Some(first) = words.next() else {
         return false;
     };
@@ -285,7 +314,7 @@ fn runs(piece: &str, name: &str) -> bool {
         return true;
     }
     let looks_up = matches!(
-        first,
+        first.as_str(),
         "unset" | "unalias" | "alias" | "type" | "declare" | "typeset"
     );
     words.any(|word| word.contains(name) && !(looks_up && word == name))
