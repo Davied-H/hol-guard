@@ -2,8 +2,8 @@
 //! `git rm`, `git commit -m`, a new branch at `HEAD` or at a start point that
 //! replaces no untracked file, a non-forced branch rename, a plain stash push,
 //! `git stash apply` or `pop` of one entry, `git stash list`, a `git merge`
-//! or `git cherry-pick` (`git_local_writes_merge`) and `git rebase
-//! --continue` (`git_local_writes_rebase`), with Git reads the configuration
+//! or `git cherry-pick` (`git_local_writes_merge`) and a `git rebase` onto a
+//! local ref or `--continue` (`git_local_writes_rebase`), with Git reads the configuration
 //! probe proves helper-free around them.
 //! The workspace sandbox runs them in a main checkout, but a linked worktree
 //! keeps its index, refs and objects in the shared Git directory the sandbox
@@ -335,7 +335,12 @@ fn proven(
             .keys()
             .any(|key| key.to_ascii_lowercase().starts_with("includeif.onbranch"));
     let merging = writes.iter().any(|(_, hooks)| *hooks == merge::HOOKS);
-    let rebasing = writes.iter().any(|(_, hooks)| *hooks == rebase::HOOKS);
+    let rebases: Vec<usize> = writes
+        .iter()
+        .filter(|(_, hooks)| *hooks == rebase::HOOKS)
+        .map(|(index, _)| *index)
+        .collect();
+    let rebasing = !rebases.is_empty();
     // `commit.gpgsign` signs every commit Git creates, so a commit then runs
     // the signing program as if it had asked with `-S`. Merges and rebases
     // already refuse it through `merge::inert`.
@@ -348,7 +353,9 @@ fn proven(
     if branch_scoped
         || !inert_with(&effective, &repository, external_off, textconv_off)
         || ((merging || rebasing) && !merge::inert(&effective, &repository))
-        || (rebasing && !rebase::resumable(&probe))
+        || !rebases
+            .iter()
+            .all(|index| rebase::proven(&probe, &model.segments[*index].arguments, &effective))
         || (signs
             && !signing::trusted(
                 &effective,

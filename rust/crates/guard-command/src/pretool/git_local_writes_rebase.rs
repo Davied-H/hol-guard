@@ -1,16 +1,18 @@
-//! `git rebase --continue` after the agent resolved a conflict. The rebase
-//! already chose its commits; continuing commits the resolved index and
-//! replays the rest of the todo list, and `ORIG_HEAD` and the reflog still
-//! reach the branch it started from, so like the other local writes it keeps
-//! every change reachable. Beyond those commits the sequencer can start an
-//! `exec` line, a merge strategy or signing program saved in its state, and
-//! the hooks a merge runs, so the state must name none of them and the
-//! configuration must pass the merge proof. `--skip` and `--abort` stay
+//! `git rebase <upstream>` and `git rebase --continue`: starting a rebase
+//! onto a ref the repository already holds, and continuing one after the
+//! agent resolved a conflict. Both replay commits and leave `ORIG_HEAD` and
+//! the reflog reaching the branch they moved from, so like the other local
+//! writes they keep every change reachable, and a rebase refuses to start
+//! over uncommitted work. Beyond those commits the sequencer can start an
+//! `exec` line, a merge strategy or signing program, and the hooks a merge
+//! runs: a resume's saved state must name none of them, a start must name no
+//! option at all, and either way the configuration must pass the merge proof
+//! and leave the merge backend in place. `--skip` and `--abort` stay
 //! reviewed: both reset the working tree and discard the work in progress.
 
+use super::super::git_remote_config::GitConfig;
 use super::super::git_session_probe::Probe;
 use std::fs;
-use std::path::Path;
 
 /// The hooks the replayed commits run, plus `post-checkout`.
 pub(super) const HOOKS: &[&str] = &[
@@ -90,25 +92,90 @@ const STEPS: &[&str] = &[
     "noop",
 ];
 
-/// `git rebase --continue`, the only rebase form proven here.
+/// `git rebase --continue`, the form that carries a stopped rebase on.
 pub(super) fn resume(rest: &[&str]) -> bool {
     matches!(rest, ["--continue"])
+}
+
+/// `git rebase <upstream>`, the form that starts one. Every option a rebase
+/// takes either names a program (`-x`, `-s`, `-X`, `-S`, and `-i` with the
+/// editor it opens), moves the replay somewhere the operand does not say
+/// (`--onto`, `--root`) or writes over the working tree (`--autostash`), so
+/// only `-q` stands beside the upstream. A second operand would check that
+/// branch out first, which this form does not prove.
+pub(super) fn start(rest: &[&str]) -> bool {
+    let mut upstream = None;
+    for word in rest {
+        match *word {
+            "-q" | "--quiet" => {}
+            value if super::start::reference(value) => {
+                if upstream.replace(value).is_some() {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    upstream.is_some()
+}
+
+/// Whether the repository holds what the rebase form in `arguments` needs: a
+/// resume needs a merge-backend rebase in progress carrying only the state
+/// files above, and a start needs no rebase in progress at all, so no saved
+/// todo list or strategy reaches it.
+pub(super) fn proven(probe: &Probe, arguments: &[String], effective: &GitConfig) -> bool {
+    let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
+    let Some((&"rebase", rest)) = words.split_first() else {
+        return false;
+    };
+    if resume(rest) {
+        return resumable(probe);
+    }
+    start(rest) && idle(probe) && merge_backend(effective)
+}
+
+/// Whether no rebase is in progress.
+fn idle(probe: &Probe) -> bool {
+    let Some((merge, apply)) = state_paths(probe) else {
+        return false;
+    };
+    fs::symlink_metadata(merge).is_err() && fs::symlink_metadata(apply).is_err()
+}
+
+/// `rebase.backend = apply` replays with `git am`, which runs the
+/// `applypatch-msg`, `pre-applypatch` and `post-applypatch` hooks no proof
+/// here holds, so only the merge backend stays quiet.
+fn merge_backend(effective: &GitConfig) -> bool {
+    effective.get("rebase.backend").is_none_or(|values| {
+        values
+            .iter()
+            .all(|value| value.trim().eq_ignore_ascii_case("merge"))
+    })
+}
+
+/// The `rebase-merge` and `rebase-apply` directories of this repository.
+fn state_paths(probe: &Probe) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let path =
+        |name: &str| probe.text(&["rev-parse", "--path-format=absolute", "--git-path", name]);
+    let (merge, apply) = (path("rebase-merge")?, path("rebase-apply")?);
+    let (merge, apply) = (
+        std::path::PathBuf::from(merge),
+        std::path::PathBuf::from(apply),
+    );
+    merge.is_absolute().then_some((merge, apply))
 }
 
 /// Whether the rebase in progress uses the merge backend with only the state
 /// files and todo steps above. The apply backend runs `git am` and its
 /// hooks, so a `rebase-apply` directory keeps the review.
 pub(super) fn resumable(probe: &Probe) -> bool {
-    let path =
-        |name: &str| probe.text(&["rev-parse", "--path-format=absolute", "--git-path", name]);
-    let (Some(merge), Some(apply)) = (path("rebase-merge"), path("rebase-apply")) else {
+    let Some((merge, apply)) = state_paths(probe) else {
         return false;
     };
-    let (merge, apply) = (Path::new(&merge), Path::new(&apply));
-    if !merge.is_absolute() || fs::symlink_metadata(apply).is_ok() {
+    if fs::symlink_metadata(apply).is_ok() {
         return false;
     }
-    let Ok(mut entries) = fs::read_dir(merge) else {
+    let Ok(mut entries) = fs::read_dir(&merge) else {
         return false;
     };
     let known = entries.all(|entry| {
@@ -160,7 +227,7 @@ fn step(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{author_script, resume, step};
+    use super::{author_script, merge_backend, resume, start, step};
 
     #[test]
     fn only_continue_with_replay_steps_is_a_resumable_form() {
@@ -211,5 +278,55 @@ mod tests {
         ] {
             assert!(!step(line), "{line}");
         }
+    }
+
+    #[test]
+    fn a_start_names_one_upstream_and_no_option_that_runs_a_program() {
+        let allowed: &[&[&str]] = &[
+            &["main"],
+            &["origin/main"],
+            &["-q", "origin/main"],
+            &["upstream/release-1.2", "--quiet"],
+        ];
+        for rest in allowed {
+            assert!(start(rest), "{rest:?}");
+        }
+        let reviewed: &[&[&str]] = &[
+            &[],
+            &["-q"],
+            &["main", "feat/x"],
+            &["-i", "main"],
+            &["--interactive", "main"],
+            &["-x", "id", "main"],
+            &["--exec=id", "main"],
+            &["--onto", "main", "topic"],
+            &["--root"],
+            &["-s", "ort", "main"],
+            &["-X", "theirs", "main"],
+            &["-S", "main"],
+            &["--autostash", "main"],
+            &["--continue"],
+            &["--abort"],
+            &["main@{1}"],
+            &["$(id)"],
+        ];
+        for rest in reviewed {
+            assert!(!start(rest), "{rest:?}");
+        }
+    }
+
+    #[test]
+    fn only_the_merge_backend_replays_without_the_apply_hooks() {
+        let backend = |value: &str| {
+            std::collections::BTreeMap::from([(
+                "rebase.backend".to_owned(),
+                vec![value.to_owned()],
+            )])
+        };
+        assert!(merge_backend(&std::collections::BTreeMap::new()));
+        assert!(merge_backend(&backend("merge")));
+        assert!(merge_backend(&backend(" Merge ")));
+        assert!(!merge_backend(&backend("apply")));
+        assert!(!merge_backend(&backend("am")));
     }
 }
