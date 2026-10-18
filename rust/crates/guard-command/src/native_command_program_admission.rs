@@ -78,7 +78,7 @@ impl NativeCommandProgram {
         let raw: RawProgram =
             serde_json::from_value(value).map_err(|_| "native_command_program_contract_invalid")?;
         observe_phase("typed_program_decode");
-        Self::from_raw(raw, true, observe_phase)
+        Self::from_raw(raw, true, observe_phase, interfaces)
     }
 
     // The executable's own artifact already passed `from_packaged_bytes` when
@@ -97,13 +97,14 @@ impl NativeCommandProgram {
                 "native_command_program_contract_invalid"
             }
         })?;
-        Self::from_raw(raw, false, |_| {})
+        Self::from_raw(raw, false, |_| {}, None)
     }
 
     fn from_raw(
         raw: RawProgram,
         verify_matcher_digests: bool,
         mut observe_phase: impl FnMut(&'static str),
+        interfaces: Option<(&BTreeSet<String>, &BTreeSet<String>)>,
     ) -> Result<Self, &'static str> {
         if raw.schema != PROGRAM_SCHEMA
             || raw.compiler_version != 1
