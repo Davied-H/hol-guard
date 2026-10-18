@@ -148,3 +148,20 @@ assert.equal(
 
 
 console.log("custom-extension-commands.test.ts: all assertions passed");
+
+{
+  const remote = (origin: unknown) => normalizeLocalCliItem({
+    cli_id: "local-cli.mcp-remote", name: "echo-mcp", kind: "executable",
+    identity_hash: "b".repeat(64), example_label: "mcp__echo-mcp__", observed_count: 1,
+    state: "unset", grant_revision: 0, authority_revision: 1, surface: "mcp", commands: [],
+    permission_scope: "host-namespace", remote_origin: origin,
+  });
+  const item = remote("https://mcp.example.test/mcp");
+  assert.equal(item.remote_origin, "https://mcp.example.test/mcp");
+  assert.equal(mcpCatalogCopy(item)?.title, "Remote connector");
+  assert.match(mcpCatalogCopy(item)?.description ?? "", /does not connect to remote servers/);
+  for (const invalid of ["mcp.example.test", "https://user@mcp.example.test", "https://mcp.example.test/?k=1", 7]) {
+    assert.equal(remote(invalid).remote_origin, undefined);
+    assert.equal(mcpCatalogCopy(remote(invalid))?.title, "Inventory not checked");
+  }
+}

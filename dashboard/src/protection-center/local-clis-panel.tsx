@@ -282,6 +282,7 @@ export function LocalCliDetail(props: {
         <section className="mt-6 border-b border-slate-200 pb-5" aria-labelledby="mcp-inventory-heading" aria-busy={catalogBusy}>
           <h2 id="mcp-inventory-heading" className="text-sm font-semibold text-brand-dark">{catalog.title}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-brand-dark/75">{catalog.description}</p>
+          {props.item.remote_origin ? null : <>
           <p className="mt-2 text-xs leading-5 text-brand-dark/75">Refresh starts this connection’s configured server to list tools. It does not grant execution permission.</p>
           <button
             type="button"
@@ -293,6 +294,7 @@ export function LocalCliDetail(props: {
           </button>
           {catalogBusy ? <button type="button" onClick={() => catalogController.current?.abort()}
             className="ml-3 min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark">Cancel refresh</button> : null}
+          </>}
           {catalogError ? <p role="alert" className="mt-3 max-w-2xl text-sm leading-6 text-red-700">{catalogError}</p> : null}
           {props.item.mcp_catalog ? (
             <p className="mt-2 text-xs leading-5 text-brand-dark/75">
@@ -329,6 +331,8 @@ export function LocalCliDetail(props: {
           <details className="mt-3 text-sm text-brand-dark/75">
             <summary className="min-h-11 cursor-pointer py-3 font-semibold">Connection details</summary>
             <p className="break-all font-mono text-xs leading-6">{props.item.example_label}</p>
+            {props.item.remote_origin
+              ? <p className="mt-2 break-all">Remote server: <span className="font-mono text-xs">{props.item.remote_origin}</span></p> : null}
             <p className="mt-2">Protocol: {props.item.mcp_catalog?.protocol_version ?? "Not verified"}</p>
             <p className="mt-2">Permission scope: {props.item.permission_scope === "configured-connection"
               ? "This configured host connection. Provider account and native host-hook binding are not verified."
