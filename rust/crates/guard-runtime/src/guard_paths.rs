@@ -28,12 +28,22 @@ pub(crate) fn python_strip(value: &str) -> Result<Option<&str>, PathError> {
     Ok((!stripped.is_empty()).then_some(stripped))
 }
 /// `os.path.expanduser` for the daemon's own home; another user's home defers.
+/// `ntpath` accepts a backslash after `~` as well, so Windows is told both.
 pub(crate) fn expanduser(value: &str, home_dir: &str) -> Result<String, PathError> {
     if value == "~" {
         return Ok(home_dir.to_owned());
     }
-    if let Some(rest) = value.strip_prefix("~/") {
-        return Ok(format!("{}/{rest}", home_dir.trim_end_matches('/')));
+    let separators: &[&str] = if cfg!(windows) {
+        &["~/", "~\\"]
+    } else {
+        &["~/"]
+    };
+    for prefix in separators {
+        if let Some(rest) = value.strip_prefix(prefix) {
+            let home = home_dir
+                .trim_end_matches(|character| character == '/' || is_windows_separator(character));
+            return Ok(format!("{home}{}{rest}", &prefix[1..]));
+        }
     }
     if value.starts_with('~') {
         return Err(PathError::Unusable);
@@ -41,8 +51,22 @@ pub(crate) fn expanduser(value: &str, home_dir: &str) -> Result<String, PathErro
     Ok(value.to_owned())
 }
 
-/// Lexical `os.path.normpath` for absolute POSIX paths. Relative paths and the
-/// implementation-defined `//` prefix defer.
+/// Whether this target treats `character` as a path separator.
+fn is_windows_separator(character: char) -> bool {
+    cfg!(windows) && character == '\\'
+}
+
+/// Lexical `os.path.normpath` for an absolute path. Relative paths and the
+/// implementation-defined POSIX `//` prefix defer. On Windows the path keeps
+/// the drive or UNC prefix it came with: a path with none is not one this
+/// resolver can settle, and defers rather than being read against whatever
+/// drive the process happens to be on.
+#[cfg(windows)]
+pub(crate) fn normpath(value: &str) -> Result<String, PathError> {
+    windows_normpath(value)
+}
+
+#[cfg(not(windows))]
 pub(crate) fn normpath(value: &str) -> Result<String, PathError> {
     if !value.starts_with('/') || (value.starts_with("//") && !value.starts_with("///")) {
         return Err(PathError::Unusable);
@@ -58,6 +82,52 @@ pub(crate) fn normpath(value: &str) -> Result<String, PathError> {
         }
     }
     Ok(format!("/{}", parts.join("/")))
+}
+
+/// `ntpath.normpath` for a path carrying its own prefix and root, which is
+/// what `os.path.normpath` is on Windows. Both separators are read, `..` is
+/// collapsed lexically as `ntpath` does, and the result is spelled with the
+/// platform separator.
+#[cfg(windows)]
+fn windows_normpath(value: &str) -> Result<String, PathError> {
+    let path = Path::new(value);
+    let root = path_root(path)?;
+    let mut parts: Vec<&std::ffi::OsStr> = Vec::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir | Component::CurDir => {}
+            Component::ParentDir => {
+                let _ = parts.pop();
+            }
+            Component::Normal(part) => parts.push(part),
+        }
+    }
+    let mut resolved = root;
+    for part in parts {
+        resolved.push(part);
+    }
+    resolved
+        .to_str()
+        .map(str::to_owned)
+        .ok_or(PathError::Unusable)
+}
+
+/// The prefix and root `path` starts with — `/` on POSIX, the drive or UNC
+/// share on Windows. A path with neither cannot be resolved against anything
+/// this process can observe, so it defers.
+fn path_root(path: &Path) -> Result<PathBuf, PathError> {
+    let mut root = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => root.push(prefix.as_os_str()),
+            Component::RootDir => root.push(std::path::MAIN_SEPARATOR_STR),
+            _ => break,
+        }
+    }
+    if root.as_os_str().is_empty() || !root.as_path().is_absolute() {
+        return Err(PathError::Unusable);
+    }
+    Ok(root)
 }
 
 /// Symlinks followed before a resolution defers: a cycle, which Python
@@ -144,7 +214,8 @@ pub(crate) fn python_realpath(path: &Path) -> Result<Option<PathBuf>, PathError>
     if !path.is_absolute() {
         return Err(PathError::Unusable);
     }
-    let mut resolved = PathBuf::from("/");
+    let root = path_root(path)?;
+    let mut resolved = root.clone();
     let mut pending = Vec::new();
     push_components(&mut pending, path);
     let mut links = 0;
@@ -169,7 +240,7 @@ pub(crate) fn python_realpath(path: &Path) -> Result<Option<PathBuf>, PathError>
             return Ok(None);
         };
         if target.is_absolute() {
-            resolved = PathBuf::from("/");
+            resolved = path_root(&target)?;
         }
         push_components(&mut pending, &target);
     }
@@ -249,7 +320,7 @@ pub(crate) fn python_realpath_lax(path: &Path) -> Result<PathBuf, PathError> {
     if path.as_os_str().as_encoded_bytes().contains(&0) {
         return Err(PathError::Unusable);
     }
-    let mut resolved = PathBuf::from("/");
+    let mut resolved = path_root(path)?;
     let mut pending = Vec::new();
     push_components(&mut pending, path);
     let mut links = 0;
@@ -278,7 +349,7 @@ pub(crate) fn python_realpath_lax(path: &Path) -> Result<PathBuf, PathError> {
         }
         let target = target.expect("checked above");
         if target.is_absolute() {
-            resolved = PathBuf::from("/");
+            resolved = path_root(&target)?;
         }
         push_components(&mut pending, &target);
     }
@@ -314,3 +385,7 @@ pub(crate) fn trusted_temporary_root_for_path(
     };
     Ok(owned_by_current_user(&root).then_some(root))
 }
+
+#[cfg(all(test, windows))]
+#[path = "guard_paths_windows_tests.rs"]
+mod guard_paths_windows_tests;

@@ -111,7 +111,14 @@ class ApprovalAttentionCoordinator:
         )
         if not request_ids:
             return
-        config = self._config_for_requests(requests)
+        try:
+            config = self._config_for_requests(requests)
+        except ValueError:
+            # A workspace this process may not name, or that the runtime
+            # cannot settle, is one it must not open a browser for. The
+            # operation this attention would have followed is already queued
+            # and still gets its own answer, so the failure stops here.
+            return
         if config.approval_surface_policy != "attention-aware":
             return
         urgent = should_open_immediately(requests, config.approval_browser_immediate_severity)

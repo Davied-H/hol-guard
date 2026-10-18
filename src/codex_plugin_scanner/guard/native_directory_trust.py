@@ -80,6 +80,7 @@ def native_directory_trust(
     *,
     guard_home: Path | str,
     home_dir: Path | str | None = None,
+    deadline_monotonic: float | None = None,
 ) -> list[DirectoryTrustVerdict]:
     """Settle every ``(parameter, value)`` candidate in one resident call.
 
@@ -87,6 +88,11 @@ def native_directory_trust(
     this process is serving, ``workspace`` may also name a scratch directory
     the caller owns under a temporary root, and anything else has to sit under
     a trusted root. The verdicts come back in the order they were asked for.
+
+    ``deadline_monotonic`` caps the wait. A caller working to a deadline of
+    its own — a hook with a host budget to keep — passes it so a slow resident
+    cannot spend the whole budget settling paths; without one the call waits
+    the module's own timeout.
     """
 
     if not candidates:
@@ -102,7 +108,11 @@ def native_directory_trust(
         "temp_dir": tempfile.gettempdir(),
         "candidates": [{"parameter": parameter, "value": value} for parameter, value in candidates],
     }
-    result = _round_trip(request, _resolve_digest_home(Path(guard_home)))
+    result = _round_trip(
+        request,
+        _resolve_digest_home(Path(guard_home)),
+        deadline_monotonic=deadline_monotonic,
+    )
     verdicts = result.get("results")
     if not isinstance(verdicts, list) or len(verdicts) != len(candidates):
         raise NativeDirectoryTrustError(_INVALID_RESULT)
@@ -123,7 +133,12 @@ def native_directory_trust(
     return answers
 
 
-def _round_trip(request: dict[str, Any], guard_home: Path) -> dict[str, object]:
+def _round_trip(
+    request: dict[str, Any],
+    guard_home: Path,
+    *,
+    deadline_monotonic: float | None = None,
+) -> dict[str, object]:
     """One bound resident round trip; returns the verified result document."""
 
     status = _native_runtime_status_memo()
@@ -144,10 +159,14 @@ def _round_trip(request: dict[str, Any], guard_home: Path) -> dict[str, object]:
         raise NativeDirectoryTrustError(
             prerequisite_unavailable_code("native_directory_trust_prerequisite_unavailable", guard_home)
         )
+    deadline = time.monotonic() + _TIMEOUT_SECONDS
+    if deadline_monotonic is not None:
+        deadline = min(deadline, deadline_monotonic)
+    budget_ms = max(1, int((deadline - time.monotonic()) * 1000))
     try:
         request_sha256 = "sha256:" + _canonical_request_sha256(request)
         envelope = json.dumps(
-            {"operation": "directory_trust", "deadline_budget_ms": 5_000, "request": request},
+            {"operation": "directory_trust", "deadline_budget_ms": budget_ms, "request": request},
             separators=(",", ":"),
             ensure_ascii=False,
             allow_nan=False,
@@ -164,7 +183,7 @@ def _round_trip(request: dict[str, Any], guard_home: Path) -> dict[str, object]:
             guard_home=guard_home,
             environment=_isolated_environment(),
             payload=envelope,
-            deadline_monotonic=time.monotonic() + _TIMEOUT_SECONDS,
+            deadline_monotonic=deadline,
         )
     except Exception:
         output = None

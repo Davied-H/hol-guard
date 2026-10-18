@@ -277,7 +277,6 @@ def test_attention_settings_round_trip_and_validate(tmp_path: Path) -> None:
 def test_attention_rejects_unauthorized_workspace_before_config_read_without_rewriting_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_workspace: bool
 ) -> None:
-    from codex_plugin_scanner.guard.native_directory_trust import NativeDirectoryTrustError
     from codex_plugin_scanner.guard.runtime import approval_attention as attention_module
 
     outside = Path(tmp_path.anchor) / "outside-authorized-guard-roots"
@@ -299,8 +298,9 @@ def test_attention_rejects_unauthorized_workspace_before_config_read_without_rew
 
     monkeypatch.setattr(attention_module, "load_guard_config", forbidden_config_read)
     opened_urls: list[str] = []
-    with pytest.raises(NativeDirectoryTrustError, match="unexpected_root"):
-        _schedule(store, runtime, result, now=[0.0], opened_urls=opened_urls)
+    # Scheduling stops at the workspace: no browser, no configuration read,
+    # and the queued operation keeps the answer it was about to be given.
+    _ = _schedule(store, runtime, result, now=[0.0], opened_urls=opened_urls)
     assert opened_urls == []
     persisted = store.get_approval_request(str(request["request_id"]))
     assert persisted is not None
