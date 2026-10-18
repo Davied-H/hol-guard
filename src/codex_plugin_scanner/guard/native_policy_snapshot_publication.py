@@ -12,6 +12,8 @@ from .native_policy_snapshot_codec import _strict_json_loads_v3
 from .native_policy_snapshot_constants import (
     _PUBLISH_RETRY_MAX_SECONDS,
     _REQUIRED_PUBLISH_FEATURES,
+    _TRANSIENT_PUBLISH_RETRY_MAX_SECONDS,
+    TRANSIENT_PUBLICATION_ERRORS,
     NativePolicySnapshotError,
 )
 from .native_policy_snapshot_direct_lane import (
@@ -211,7 +213,9 @@ class NativePolicySnapshotPublicationMixin:
                 publisher._acked = False
             publisher._failure_count += 1
             delay = min(
-                _PUBLISH_RETRY_MAX_SECONDS,
+                _TRANSIENT_PUBLISH_RETRY_MAX_SECONDS
+                if safe in TRANSIENT_PUBLICATION_ERRORS
+                else _PUBLISH_RETRY_MAX_SECONDS,
                 publisher._poll_interval_seconds * (2 ** min(publisher._failure_count - 1, 5)),
             )
             retry_seed = hashlib.sha256(f"{publisher._failure_count}:{safe}".encode("ascii")).digest()
