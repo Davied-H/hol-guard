@@ -22,3 +22,48 @@ fn another_program_in_the_same_shell_names_no_sole_program() {
         assert_eq!(sole_program(text), None, "{text}");
     }
 }
+
+/// A multi-module repository keeps every `go.mod` in a subdirectory and only
+/// `go.work` at its root, and `make test` there drives `go` without naming
+/// it. Reading `go.mod` alone would leave that build without its
+/// dependencies.
+#[test]
+fn a_go_work_root_reaches_the_module_cache_without_naming_the_toolchain() {
+    let root = std::env::temp_dir().join(format!("go-work-root-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("services/api")).unwrap();
+    assert!(!reaches_go_modules("make test", &root));
+    std::fs::write(root.join("go.work"), "go 1.23\n\nuse ./services/api\n").unwrap();
+    assert!(reaches_go_modules("make test", &root));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn only_a_text_that_names_the_toolchain_reaches_the_go_module_cache() {
+    // The cache below the real HOME holds whatever `go mod download` fetched,
+    // a private module included, and the plan grants it as an executable
+    // root. A workspace run that never names `go` has no reason to reach it.
+    for text in [
+        "go build ./...",
+        "go test ./... && go vet ./...",
+        "/usr/local/go/bin/go build ./...",
+        "cd services/api && go test ./...",
+        "GOFLAGS=-mod=mod go build ./...",
+        "sudo go install ./cmd/api",
+    ] {
+        assert!(runs_go(text), "{text}");
+    }
+    // The name as an argument compiles nothing, and the grant is read and
+    // executable access to whatever `go mod download` has fetched.
+    for text in [
+        "pnpm test",
+        "cargo build",
+        "pytest -q",
+        "pytest -k go",
+        "rg -n go",
+        "npm run golden",
+        "./scripts/gogo.sh",
+    ] {
+        assert!(!runs_go(text), "{text}");
+    }
+}
