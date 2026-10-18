@@ -9,7 +9,8 @@ use tempfile::TempDir;
 use super::{
     canonical_guard_home_path, evaluate_directory_trust_request, trusted_guard_directory_roots,
     validate_guard_directory_path, validated_hook_guard_home, validated_owned_temporary_workspace,
-    DirectoryTrustRejection, DirectoryTrustRequestV1, DIRECTORY_TRUST_RESULT_SCHEMA,
+    DirectoryTrustRejection, DirectoryTrustRequestV1, DIRECTORY_TRUST_REQUEST_SCHEMA,
+    DIRECTORY_TRUST_RESULT_SCHEMA,
 };
 use crate::guard_paths::python_realpath_lax;
 

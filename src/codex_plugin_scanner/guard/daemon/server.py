@@ -17,7 +17,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
@@ -69,6 +69,7 @@ from ..native_directory_trust import (
     UNAVAILABLE_REASON as _DIRECTORY_TRUST_UNAVAILABLE,
 )
 from ..native_directory_trust import (
+    DirectoryTrustVerdict,
     NativeDirectoryTrustError,
     native_directory_trust,
 )
@@ -233,8 +234,8 @@ class _HookDirectories:
     and reads as `None`, which is what an absent directory meant before.
     """
 
-    def __init__(self, verdicts: object) -> None:
-        self._verdicts = {verdict.parameter: verdict for verdict in verdicts}  # type: ignore[union-attr]
+    def __init__(self, verdicts: Sequence[DirectoryTrustVerdict]) -> None:
+        self._verdicts = {verdict.parameter: verdict for verdict in verdicts}
 
     def require(self, parameter: str) -> str | None:
         verdict = self._verdicts.get(parameter)

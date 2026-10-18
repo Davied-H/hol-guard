@@ -5,6 +5,7 @@
 use super::HookDirectDefer;
 use crate::guard_paths::{self, PathError};
 use serde_json::{Map, Value};
+use std::path::Path;
 
 /// The daemon's workspace choice: an `exec_command` workdir, then the payload
 /// `cwd`, then the `workspace` query parameter. A `cwd` or query naming a
