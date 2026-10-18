@@ -275,7 +275,7 @@ impl PolicySnapshotStore {
         if !known {
             return Err(DirectLaneDefer::WorkspaceUnknown);
         }
-        let snapshot = self.admit_binding_lease(&binding)?;
+        let snapshot = self.admit_binding_lease(&binding, deadline)?;
         if binding
             .inputs
             .iter()
@@ -295,7 +295,7 @@ impl PolicySnapshotStore {
             .ok()
             .and_then(|binding| binding.clone())
             .ok_or(DirectLaneDefer::Unbound)?;
-        self.admit_binding_lease(&binding)?;
+        self.admit_binding_lease(&binding, None)?;
         Ok(binding)
     }
 
@@ -304,6 +304,7 @@ impl PolicySnapshotStore {
     fn admit_binding_lease(
         &self,
         binding: &DirectLaneBinding,
+        deadline: Option<Instant>,
     ) -> Result<Arc<AdmittedPolicySnapshot>, DirectLaneDefer> {
         let snapshot = self
             .current_admitted_snapshot()
