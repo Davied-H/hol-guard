@@ -7,7 +7,9 @@ use std::os::unix::fs::MetadataExt;
 
 #[path = "user_tools.rs"]
 mod user_tools;
-pub(super) use user_tools::{host_corepack_home, host_go_module_cache};
+pub(super) use user_tools::{
+    host_cargo_caches, host_corepack_home, host_go_module_cache, host_rustup_home,
+};
 
 /// Where `xcode-select -s` records the developer directory: the current
 /// location first, then the one older macOS releases used.
@@ -239,7 +241,41 @@ pub(super) fn workspace_exec_roots(
             roots.push(cache);
         }
     }
+    // A Cargo build compiles the crate sources in the registry and runs the
+    // rustup toolchain that resolves beside them. The launch environment
+    // links both into the private `CARGO_HOME` the run writes.
+    for (_, cache) in host_cargo_caches() {
+        if !roots.contains(&cache) {
+            roots.push(cache);
+        }
+    }
+    if let Some(rustup) = host_rustup_home() {
+        if !roots.contains(&rustup) {
+            roots.push(rustup);
+        }
+    }
     (roots, entries.join(":"))
+}
+
+/// Where a contained run reaches a host cache through its own directory
+/// instead of the real HOME, as `(link, target)` pairs the launcher creates
+/// before the command starts.
+///
+/// Cargo takes its locks at the top of `CARGO_HOME` and so needs one it can
+/// write, but it reads fetched crates from `registry` and `git` below the
+/// same directory. The run therefore gets a private `CARGO_HOME` holding
+/// links to the host's two caches, which the plan grants read-only; nothing
+/// else in `~/.cargo`, `credentials.toml` above all, comes with them.
+pub(super) fn private_links(private_tmp: &Path) -> Vec<(PathBuf, PathBuf)> {
+    host_cargo_caches()
+        .into_iter()
+        .map(|(name, cache)| {
+            (
+                super::environment::cargo_home(private_tmp).join(name),
+                cache,
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]

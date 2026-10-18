@@ -23,7 +23,7 @@ from .restricted_pytest_model import (
     PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE,
     RestrictedPytestError,
 )
-from .restricted_pytest_sandbox import _restricted_environment, _run_backend_process
+from .restricted_pytest_sandbox import _restricted_environment, _run_backend_process, link_private_caches
 from .restricted_workspace_grant_lookup import decided_grant, expected_grant, link_state_dir, require_unchanged
 from .restricted_workspace_grants import PLAN_FIELDS, ExpectedGrant, grant_script_roots, read_grants_valid
 
@@ -266,6 +266,7 @@ def run_workspace_contained(
         private_home.mkdir(mode=0o700)
         private_tmp.mkdir(mode=0o700)
         link_state_dir(private_home, plan, expected)
+        link_private_caches(private_tmp)
 
         def contained(argv_to_run: list[str]) -> int:
             launch_env = _restricted_environment(

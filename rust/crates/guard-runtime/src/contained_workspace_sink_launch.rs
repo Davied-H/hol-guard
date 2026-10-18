@@ -75,6 +75,7 @@ impl Launch<'_> {
                 "The workspace sandbox directory is unavailable.",
             )
         })?;
+        link_private_caches(&format!("{private_root}/tmp"))?;
         environment.insert("PATH".into(), self.plan.sandbox_path.clone());
         environment.insert("GIT_CONFIG_NOSYSTEM".into(), "1".into());
         environment.insert(
@@ -279,6 +280,41 @@ const MAX_SAFETY_GUIDE_BYTES: u64 = 64 * 1024;
 /// is copied: a link or directory swapped in at either step would otherwise
 /// put another file in reach of the sandboxed command. A guide that cannot be
 /// copied is left out and the read fails in the sandbox.
+/// Link the host caches a contained run reads into the tree it owns.
+///
+/// Cargo takes its locks inside `CARGO_HOME`, so a contained run needs one it
+/// can write; the fetched crate sources it only reads stay where the host
+/// keeps them, linked in under the names cargo looks for. Nothing is linked
+/// when the native side grants no cache.
+fn link_private_caches(private_tmp: &str) -> Outcome<()> {
+    let Value::Array(links) = native("private_links", json!({ "private_tmp": private_tmp }))?
+    else {
+        return Err(unavailable("invalid_reply"));
+    };
+    for entry in links {
+        let (Some(Value::String(link)), Some(Value::String(target))) =
+            (entry.get("link"), entry.get("target"))
+        else {
+            return Err(unavailable("invalid_reply"));
+        };
+        let link = Path::new(link);
+        if let Some(parent) = link.parent() {
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .recursive(true)
+                .create(parent)
+                .map_err(|_| {
+                    Failure::new(
+                        SANDBOX_UNAVAILABLE,
+                        "The workspace sandbox directory is unavailable.",
+                    )
+                })?;
+        }
+        let _ = std::os::unix::fs::symlink(target, link);
+    }
+    Ok(())
+}
+
 pub(super) fn seed_safety_guide(home: &Path, private_home: &Path) {
     use nix::fcntl::{open, openat, OFlag};
     use nix::sys::stat::Mode;
