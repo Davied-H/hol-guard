@@ -1979,6 +1979,9 @@ class TestGuardSurfaceServer:
         monkeypatch.setattr(daemon_manager_module, "_guard_daemon_process_inventory_for_guard_home", lambda _home: [])
         daemon = GuardDaemonServer(GuardStore(tmp_path / "guard-home"), host="127.0.0.1", port=0)
         writer = daemon._server.runtime_hook_evidence_writer
+        # The daemon no longer builds the writer while it starts, so the
+        # shutdown path is exercised against a writer this test warms itself.
+        assert writer.start() is True
         assert writer.stats()["running"] is True
 
         daemon._server.server_close()

@@ -409,9 +409,11 @@ impl EvidenceStoreApi for NativeEvidenceStore {
         })?;
         let mut args = Map::new();
         args.insert("receipt".to_owned(), Value::String(wire));
-        // Python stamps `datetime.now(timezone.utc).isoformat()`, which keeps
-        // microseconds; the stored column only orders receipts, and the
-        // resident already carries its own second-precision clock helper.
+        // Python stamps `datetime.now(timezone.utc).isoformat()`; so does
+        // `utc_now_iso`, down to the microsecond. Callers open their recent
+        // windows with a Python clock and compare this column as text, so a
+        // coarser stamp here would read as older than the window it belongs
+        // to.
         args.insert("now".to_owned(), Value::String(utc_now_iso()));
         self.call(
             "hook-evidence-receipt",
