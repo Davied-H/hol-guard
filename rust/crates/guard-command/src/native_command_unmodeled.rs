@@ -223,7 +223,12 @@ impl CompiledNativeCommandControls {
         }
         let mut named = named_words(text);
         for source in sourced.iter().flatten() {
-            named.extend(named_words(source));
+            // The owners come from the same reading that bounded them. A
+            // program named only in a comment or in a wrapper nothing calls
+            // runs no more here than it did there, and counting it blocked
+            // commands the file could never run: every virtualenv's `pydoc`
+            // wrapper names `python`.
+            named.extend(named_words(&running_text(source, shell)));
         }
         let xargs_programs = xargs_programs(shell);
         // An `xargs` is read only when the text also says where it reads its
@@ -797,18 +802,35 @@ fn bounds_its_owners(text: &str, command: &str) -> bool {
     // A comment runs nothing, and a script's prose is full of words that read
     // as commands: a sentence ending in a full stop put `.` in a command
     // position, which is the shell's other name for `source`.
-    let text = functions::without_comments(text).unwrap_or_else(|| text.to_owned());
-    // `$(command -v cygpath)` prints a path and runs nothing, the same way it
-    // does in the command itself, so the file keeps the name and loses the
-    // substitution that otherwise read as a program built at run time.
-    let text = without_lookups(&text);
-    let literal = mask_parameter_expansions(&unquoted_literal(&text));
-    let literal = functions::without_uncalled_definitions(&literal, command).unwrap_or(literal);
+    let literal = running_text(text, command);
     !synthesizes_program(&literal, false)
         && !command_words(&mask_double_quoted_separators(&literal)).any(|word| {
             let base = command_basename(&joined_quotes(word));
             INTERPRETERS.contains(&base.as_str())
         })
+}
+
+/// The parts of a sourced file that run, as one literal: its comments and the
+/// definitions nothing calls taken out, its lookups read as the names they
+/// print, and its `${NAME}` expansions read as the words they stand for.
+fn running_text(text: &str, command: &str) -> String {
+    let text = functions::without_comments(text).unwrap_or_else(|| text.to_owned());
+    // `$(command -v cygpath)` prints a path and runs nothing, the same way it
+    // does in the command itself, so the file keeps the name and loses the
+    // substitution that otherwise read as a program built at run time.
+    let text = without_lookups(&text);
+    let plain = unquoted_literal(&text);
+    // A parameter expansion in command position names the program it runs
+    // only once the shell has expanded it, so a definition this scan would
+    // read as dead may be exactly what `${f}` calls. Masking that expansion
+    // into a plain word hides the call, so the definitions stay.
+    let expands_a_command =
+        command_words(&mask_double_quoted_separators(&plain)).any(|word| word.starts_with('$'));
+    let literal = mask_parameter_expansions(&plain);
+    if expands_a_command {
+        return literal;
+    }
+    functions::without_uncalled_definitions(&literal, command).unwrap_or(literal)
 }
 
 /// The text with `${NAME}` parameter expansions replaced by a plain word.

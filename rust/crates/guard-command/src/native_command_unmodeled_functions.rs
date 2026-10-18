@@ -27,35 +27,91 @@
 /// cannot say which `#` the shell would read as a comment, and dropping the
 /// wrong one would drop a command with it.
 pub(super) fn without_comments(text: &str) -> Option<String> {
+    let characters: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
-    let mut quote: Option<char> = None;
+    // What is still open, innermost last: `'`, `"`, a `$(` substitution as
+    // `(`, or a backtick. A substitution inside a double-quoted string holds
+    // quotes of its own, so `"$(echo " # ")"` closes nothing at its second
+    // `"` and the `#` between them is data rather than a comment.
+    let mut open: Vec<char> = Vec::new();
     let mut escaped = false;
     let mut fresh = true;
     let mut comment = false;
-    for character in text.chars() {
+    let mut index = 0;
+    while index < characters.len() {
+        let character = characters[index];
+        index += 1;
         if comment {
             if character != '\n' {
                 continue;
             }
             comment = false;
         }
-        if let Some(open) = quote {
+        if escaped {
+            escaped = false;
             out.push(character);
-            if escaped {
-                escaped = false;
-            } else if character == '\\' && open == '"' {
-                escaped = true;
-            } else if character == open {
-                quote = None;
+            // An escaped space joins the word it follows, as in `echo a\ #b`,
+            // so no new word starts after it and no comment can either.
+            fresh = false;
+            continue;
+        }
+        if open.last() == Some(&'\'') {
+            out.push(character);
+            if character == '\'' {
+                open.pop();
             }
             continue;
         }
-        if escaped {
-            escaped = false;
-        } else if character == '\\' {
+        if character == '\\' {
             escaped = true;
-        } else if character == '\'' || character == '"' {
-            quote = Some(character);
+            out.push(character);
+            fresh = false;
+            continue;
+        }
+        match open.last() {
+            Some('"') => {
+                out.push(character);
+                match character {
+                    '"' => {
+                        open.pop();
+                    }
+                    '`' => open.push('`'),
+                    '$' if characters.get(index) == Some(&'(') => {
+                        out.push('(');
+                        index += 1;
+                        open.push('(');
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            Some('(') => {
+                out.push(character);
+                match character {
+                    ')' => {
+                        open.pop();
+                    }
+                    '\'' | '"' | '`' => open.push(character),
+                    '$' if characters.get(index) == Some(&'(') => {
+                        out.push('(');
+                        index += 1;
+                        open.push('(');
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            Some('`') => {
+                out.push(character);
+                if character == '`' {
+                    open.pop();
+                }
+                continue;
+            }
+            _ => {}
+        }
+        if character == '\'' || character == '"' {
+            open.push(character);
         } else if character == '#' && fresh {
             comment = true;
             continue;
@@ -65,7 +121,7 @@ pub(super) fn without_comments(text: &str) -> Option<String> {
         fresh = character.is_whitespace() || matches!(character, ';' | '&' | '|' | '(');
         out.push(character);
     }
-    (quote.is_none() && !escaped).then_some(out)
+    (open.is_empty() && !escaped).then_some(out)
 }
 
 /// The literal with the definition of every function nothing calls removed.
@@ -76,6 +132,12 @@ pub(super) fn without_comments(text: &str) -> Option<String> {
 /// later line closes it with nothing else on it, so the span removed is the
 /// definition and never a neighbour.
 pub(super) fn without_uncalled_definitions(literal: &str, command: &str) -> Option<String> {
+    // A heredoc's body is data the shell never reads as a definition, and
+    // `unquoted_literal` hands this scan the whole text unchanged when it
+    // finds one, so `name () {` could sit inside that data.
+    if literal.contains("<<") || quoted_substitution_spans_lines(literal) {
+        return None;
+    }
     let masked = super::mask_double_quoted_separators(literal);
     // Bash's `${ cmd; }` runs what it holds, and its braces are not a body.
     // A text still carrying one is left for the rest of the scan to judge.
@@ -95,6 +157,13 @@ pub(super) fn without_uncalled_definitions(literal: &str, command: &str) -> Opti
             at += 1;
             continue;
         };
+        // A file defining its own `which` or `command` redefines what a
+        // lookup means, and the lookup rewriting that runs before this scan
+        // has already turned those calls into plain words, so nothing here
+        // can tell a call to the function from a lookup of a program.
+        if matches!(name.as_str(), "which" | "command") {
+            return None;
+        }
         let close = body_end(&masked, &lines, at)?;
         if !invoked(&masked, &lines, (at, close), &name) && !names(command, &name) {
             dead.push((lines[at].0, lines[close].1));
@@ -115,6 +184,33 @@ pub(super) fn without_uncalled_definitions(literal: &str, command: &str) -> Opti
         .map(|(_, character)| *character)
         .collect();
     Some(kept)
+}
+
+/// Whether a double-quoted span holding a substitution runs past its line.
+///
+/// `mask_double_quoted_separators` leaves such a span alone, so a `name () {`
+/// written inside it would read as a definition this scan could take out
+/// while the shell reads it as data.
+fn quoted_substitution_spans_lines(literal: &str) -> bool {
+    let mut inside = false;
+    let mut substitutes = false;
+    let mut lines = false;
+    let mut previous = ' ';
+    for character in literal.chars() {
+        if character == '"' && previous != '\\' {
+            if inside && substitutes && lines {
+                return true;
+            }
+            inside = !inside;
+            substitutes = false;
+            lines = false;
+        } else if inside {
+            lines |= character == '\n';
+            substitutes |= character == '`' || (character == '(' && previous == '$');
+        }
+        previous = character;
+    }
+    inside && substitutes && lines
 }
 
 /// The function a line defines, for the two shapes a script is written in:
@@ -182,7 +278,10 @@ fn runs(piece: &str, name: &str) -> bool {
     let Some(first) = words.next() else {
         return false;
     };
-    if first == name {
+    // The shell calls `foo` for `"foo"`, `\foo` and `foo>/dev/null` too, and
+    // none of those is the bare name, so the first word takes the same
+    // conservative substring test as the words after it.
+    if first.contains(name) {
         return true;
     }
     let looks_up = matches!(
@@ -197,7 +296,11 @@ fn runs(piece: &str, name: &str) -> bool {
 /// call: `source .venv/bin/activate && pydoc json` runs that body.
 fn names(command: &str, name: &str) -> bool {
     command
-        .split(|character: char| !name_character(character))
+        .split_whitespace()
+        // The file being read is not a call to anything: `source ./pydoc`
+        // names the path it reads, and a wrapper inside it stays dead.
+        .filter(|word| !word.contains('/'))
+        .flat_map(|word| word.split(|character: char| !name_character(character)))
         .any(|word| word == name)
 }
 
