@@ -36,13 +36,20 @@ fn trusted_python() -> Option<PathBuf> {
     base
 }
 
-/// A prefix inside the trusted roots whose `bin` a venv can name as its home.
+/// A trusted `bin` a venv can name as its home, with the prefix holding it.
+/// The grant names the launcher directory and the standard library beside it,
+/// so the directory has to be one an install really starts Python from: a
+/// trusted path that happens to hold no interpreter is not a runtime, and a
+/// host where none of these does is skipped.
 fn trusted_prefix() -> Option<(PathBuf, PathBuf)> {
-    let bin = ["/usr/local/bin", "/opt/homebrew/bin"]
+    ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]
         .iter()
-        .find_map(|bin| Path::new(bin).canonicalize().ok())?;
-    let prefix = bin.parent()?.to_path_buf();
-    path_is_within_any(&prefix, &TRUSTED_EXECUTABLE_ROOTS).then_some((prefix, bin))
+        .filter_map(|bin| Path::new(bin).canonicalize().ok())
+        .filter(|bin| path_is_within_any(bin, &TRUSTED_EXECUTABLE_ROOTS) && interpreter_home(bin))
+        .find_map(|bin| {
+            let prefix = bin.parent()?.to_path_buf();
+            (!managed_prefix(&prefix)).then_some((prefix, bin))
+        })
 }
 
 /// An install of one runtime's own below a trusted root, such as a
