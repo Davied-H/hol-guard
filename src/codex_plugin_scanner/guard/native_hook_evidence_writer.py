@@ -17,14 +17,18 @@ process owns, so the resident reports the failure code instead and the recovery
 runs here, once per reported failure.
 
 A resident that is unavailable, replies unbound, or violates the contract never
-yields a silent default: the call raises ``NativeHookEvidenceWriterUnavailableError``
-rather than reporting evidence as queued when nothing was.
+reports evidence as queued when nothing was. Submitting is best-effort, as it
+was in the writer this replaces: a hook has already decided by the time it
+records what it did, and a resident that cannot take the record must not turn
+that decision into an exception. The failure is counted instead, and ``stats``
+reports it.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 from uuid import uuid4
@@ -79,6 +83,9 @@ class NativeHookEvidenceWriter:
         self._guard_home = Path(store.guard_home)
         self._source = store.guard_source
         self._policy_mutations = 0
+        self._submit_failures = 0
+        self._last_submit_failure: str | None = None
+        self._final_stats: dict[str, Any] | None = None
 
     @property
     def guard_home(self) -> Path:
@@ -131,11 +138,41 @@ class NativeHookEvidenceWriter:
         return payload
 
     def _queued(self, action: Mapping[str, object]) -> bool:
-        payload = self._call(action, timeout_seconds=_TIMEOUT_SECONDS)
+        """Submit one record, and report rather than raise when that fails.
+
+        The writer this replaces returned ``False`` for every failure and
+        counted a drop. Its callers were written for that: ``HookWorker``
+        records a command's activity after the native edge has already decided
+        and before it shapes the harness response, so an evidence transport
+        that raised here would replace a finished decision with an error.
+        """
+
+        try:
+            payload = self._call(action, timeout_seconds=_TIMEOUT_SECONDS)
+        except Exception as error:
+            self._record_submit_failure(error)
+            return False
+        self._consume_signals(payload)
         queued = payload.get("queued")
         if not isinstance(queued, bool):
-            raise _unavailable("native_hook_evidence_writer_response_invalid")
+            self._record_submit_failure(_unavailable("native_hook_evidence_writer_response_invalid"))
+            return False
         return queued
+
+    def _record_submit_failure(self, error: BaseException) -> None:
+        """Count a submission the resident did not take, and name it once.
+
+        A dropped record stays observable: ``stats`` reports the count and the
+        last reason, which is what a caller that no longer sees an exception
+        has to go on. A failure that names a fatal store runs the recovery the
+        reported signal would have run.
+        """
+
+        self._submit_failures += 1
+        self._last_submit_failure = getattr(error, "reason", None) or type(error).__name__
+        if isinstance(error, sqlite3.DatabaseError):
+            with suppress(Exception):
+                self._store._recover_fatal_sqlite_store(error)
 
     def submit_command_activity(
         self,
@@ -191,9 +228,52 @@ class NativeHookEvidenceWriter:
         counter.
         """
 
-        payload = self._call({"action": "stats"}, timeout_seconds=_TIMEOUT_SECONDS)
+        try:
+            payload = self._call({"action": "stats"}, timeout_seconds=_TIMEOUT_SECONDS)
+        except Exception as error:
+            return self._unavailable_stats(error)
         self._consume_signals(payload)
+        # A writer this process stopped is gone from the resident, which
+        # answers for it with the counters of a writer that never ran. The
+        # drain is where a store failure surfaces, so the counters the stop
+        # reported are the ones a reader asking afterwards wants.
+        if payload.get("started") is False and self._final_stats is not None:
+            payload = dict(self._final_stats)
+        payload["submit_failures"] = self._submit_failures
+        payload["last_submit_failure"] = self._last_submit_failure
         return payload
+
+    def _unavailable_stats(self, error: BaseException) -> dict[str, Any]:
+        """What the counters look like when the resident did not answer.
+
+        The detailed health page and the operator dashboard both read these
+        counters, and both are opened precisely when something is wrong. A
+        resident outage has to show as a degraded writer there, not as a page
+        that fails to render.
+        """
+
+        return {
+            "queued": 0,
+            "queued_bytes": 0,
+            "accepted": 0,
+            "processed": 0,
+            "dropped": 0,
+            "failures": self._submit_failures,
+            "recovered": 0,
+            "durable_pending": 0,
+            "degraded": True,
+            "running": False,
+            "started": True,
+            "receipt_accepted": 0,
+            "receipt_processed": 0,
+            "receipt_deduped": 0,
+            "receipt_dropped": 0,
+            "receipt_failures": 0,
+            "receipt_durable_pending": 0,
+            "submit_failures": self._submit_failures,
+            "last_submit_failure": self._last_submit_failure,
+            "unavailable_reason": getattr(error, "reason", None) or type(error).__name__,
+        }
 
     def stop(self, *, timeout_seconds: float = 1.0) -> bool:
         """Drain the resident's writer for this home and drop it.
@@ -202,15 +282,25 @@ class NativeHookEvidenceWriter:
         to two, so the value is always sent rather than left to either default.
         """
 
-        payload = self._call(
-            {"action": "stop", "timeout_seconds": max(0.0, timeout_seconds)},
-            timeout_seconds=max(0.0, timeout_seconds) + _STOP_TRANSPORT_SLACK_SECONDS,
-        )
+        # The resident re-serializes the request to check the digest it binds
+        # its reply to, and it holds the budget as a float. An int sent here
+        # would canonicalise as `2` on this side and `2.0` on that one, so the
+        # reply would arrive unbound after the writer has already been drained.
+        budget = float(max(0.0, timeout_seconds))
+        try:
+            payload = self._call(
+                {"action": "stop", "timeout_seconds": budget},
+                timeout_seconds=budget + _STOP_TRANSPORT_SLACK_SECONDS,
+            )
+        except Exception as error:
+            self._record_submit_failure(error)
+            return False
         self._consume_signals(payload)
+        final = payload.get("final_stats")
+        if isinstance(final, dict):
+            self._final_stats = dict(final)
         drained = payload.get("drained")
-        if not isinstance(drained, bool):
-            raise _unavailable("native_hook_evidence_writer_response_invalid")
-        return drained
+        return drained if isinstance(drained, bool) else False
 
     def take_policy_mutations(self) -> int:
         """The mutations observed since the last read, for the caller's publishers."""
@@ -222,16 +312,36 @@ class NativeHookEvidenceWriter:
         mutations = payload.pop("policy_mutations", 0) if isinstance(payload, dict) else 0
         if isinstance(mutations, int) and not isinstance(mutations, bool) and mutations > 0:
             self._policy_mutations += mutations
+            self._wake_policy_publishers()
         fatal = payload.pop("store_fatal", None) if isinstance(payload, dict) else None
         if isinstance(fatal, str):
             self._recover_store(fatal)
+
+    def _wake_policy_publishers(self) -> None:
+        """Republish the policy snapshot a resident write moved.
+
+        A Composio discovery used to reach provider policy through
+        ``GuardStore.record_composio_discovery``, which woke the in-process
+        publishers itself. The resident counts the write instead, so the wake
+        happens here, on the reply that reports it. Without it a hook keeps
+        evaluating the snapshot the discovery invalidated until some unrelated
+        mutation republishes it.
+        """
+
+        from .native_policy_snapshot import notify_native_policy_mutation
+
+        with suppress(Exception):
+            notify_native_policy_mutation(self._guard_home)
 
     def _recover_store(self, code: str) -> None:
         """Run the store's own recovery for a failure the resident reported.
 
         The resident names the failure in the ``native_guard_store_*`` codes the
         store client already maps, so the exception the recovery inspects is
-        built by that same mapping rather than a second classifier here.
+        built by that same mapping rather than a second classifier here. The
+        signal rides every reply, so a one-shot hook that submits once and
+        exits repairs the store it broke rather than leaving it for whoever
+        opens a health page next.
         """
 
         if code not in _FATAL_STORE_CODES:
@@ -239,7 +349,8 @@ class NativeHookEvidenceWriter:
         try:
             _raise_for_code(code, None)
         except sqlite3.DatabaseError as error:
-            self._store._recover_fatal_sqlite_store(error)
+            with suppress(Exception):
+                self._store._recover_fatal_sqlite_store(error)
 
 
 __all__ = [

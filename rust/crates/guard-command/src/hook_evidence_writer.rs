@@ -41,6 +41,11 @@ const JOURNAL_FILE_MODE: u32 = 0o600;
 /// Journal records are bounded to `_max_bytes`; serialized payload size is
 /// capped at this parity bound before canonicalization can reject it.
 const MAX_SERIALIZED_RECORD_BYTES: usize = 16 * 1024 * 1024;
+/// A drain deadline bounds the records a stop waits for the worker to persist.
+/// Leaving the loop afterwards costs one wakeup, and this is the slack that
+/// wakeup gets, so a stop asking for no drain at all still collects a worker
+/// that had nothing to do.
+const WORKER_EXIT_GRACE: Duration = Duration::from_millis(250);
 
 // ---------------------------------------------------------------------------
 // Dependency seams — traits replacing unported modules (see TODO(deps)).
@@ -930,6 +935,9 @@ struct EvidenceState {
     degraded: bool,
     /// `_drain_deadline` (monotonic).
     drain_deadline: Option<Instant>,
+    /// Set once the worker has left its loop, so a stop can wait for the
+    /// thread to finish without joining it past its own drain deadline.
+    exited: bool,
     accepted: u64,
     processed: u64,
     dropped: u64,
@@ -1279,26 +1287,55 @@ impl RuntimeHookEvidenceWriter {
 
     /// `stop` (:313-322) — bounded drain deadline then thread join.
     pub fn stop(&self, timeout_seconds: f64) -> bool {
+        let deadline = Instant::now() + Duration::from_secs_f64(timeout_seconds.max(0.0));
         {
             let mut state = self.lock_state();
             state.stopping = true;
-            state.drain_deadline =
-                Some(Instant::now() + Duration::from_secs_f64(timeout_seconds.max(0.0)));
+            state.drain_deadline = Some(deadline);
             self.condition.1.notify_all();
         }
-        let thread = self.thread.lock().unwrap_or_else(|e| e.into_inner()).take();
-        let joined = match thread {
-            Some(handle) => {
+        let exited = self.wait_for_exit(deadline + WORKER_EXIT_GRACE);
+        if exited {
+            let thread = self.thread.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(handle) = thread {
                 let _ = handle.join();
-                true
             }
-            None => true,
-        };
+        }
         let mut state = self.lock_state();
         if !state.durable.is_empty() {
             state.degraded = true;
         }
-        joined
+        exited
+    }
+
+    /// Whether the worker has left its loop. A writer whose worker is gone
+    /// queues records nothing will drain, so a caller holding one after an
+    /// unfinished stop asks this before using it again.
+    pub fn has_exited(&self) -> bool {
+        self.lock_state().exited
+    }
+
+    /// Wait for the worker to leave its loop, and no longer than `deadline`.
+    /// The worker honours its drain deadline between records; one blocked in
+    /// journal or store I/O cannot, and joining it there would hold the stop
+    /// and everything serialised behind it for as long as that write takes.
+    fn wait_for_exit(&self, deadline: Instant) -> bool {
+        let mut state = self.lock_state();
+        loop {
+            if state.exited {
+                return true;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
+            let (guard, _) = self
+                .condition
+                .1
+                .wait_timeout(state, remaining)
+                .unwrap_or_else(|e| e.into_inner());
+            state = guard;
+        }
     }
 
     /// `_recover_journal` (:468-490) — replay durable records after restart.
@@ -1453,9 +1490,25 @@ struct EvidenceWorker {
     correlation_key: Mutex<Option<InstallationCorrelationKey>>,
 }
 
+/// Reports the worker's exit to a stop waiting on it, however the loop ends.
+struct WorkerExit {
+    condition: Arc<(Mutex<EvidenceState>, Condvar)>,
+}
+
+impl Drop for WorkerExit {
+    fn drop(&mut self) {
+        let mut state = self.condition.0.lock().unwrap_or_else(|e| e.into_inner());
+        state.exited = true;
+        self.condition.1.notify_all();
+    }
+}
+
 impl EvidenceWorker {
     /// `_run` (:324-453).
     fn run(&self) {
+        let _exit = WorkerExit {
+            condition: Arc::clone(&self.condition),
+        };
         loop {
             let batch = self.next_batch();
             if batch.is_empty() {

@@ -11,7 +11,6 @@ import pytest
 from codex_plugin_scanner.guard import native_hook_evidence_writer
 from codex_plugin_scanner.guard.native_hook_evidence_writer import (
     NativeHookEvidenceWriter,
-    NativeHookEvidenceWriterUnavailableError,
 )
 
 # pyright: reportAny=false, reportPrivateUsage=false, reportUnknownMemberType=false
@@ -113,11 +112,12 @@ def test_a_reply_bound_to_another_request_is_never_read_as_queued(
 
     _install(monkeypatch, respond)
 
-    with pytest.raises(NativeHookEvidenceWriterUnavailableError):
-        writer.submit_native_decision_receipt({"receipt": "shaped"})
+    # The record was not queued, and the writer says so rather than raising:
+    # a hook records what it did after it has already decided.
+    assert writer.submit_native_decision_receipt({"receipt": "shaped"}) is False
 
 
-def test_a_resident_error_raises_the_store_exception_its_code_names(
+def test_a_refused_submission_is_counted_rather_than_raised(
     writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _install(
@@ -125,17 +125,83 @@ def test_a_resident_error_raises_the_store_exception_its_code_names(
         _answer({"message": "bad evidence"}, status="error", code="native_guard_store_value_error"),
     )
 
-    with pytest.raises(ValueError, match="bad evidence"):
+    queued = writer.submit_composio_discovery(
+        harness="claude-code",
+        payload={"tool_name": "mcp__composio__composio_search_tools"},
+        succeeded=True,
+    )
+
+    assert queued is False
+    # A dropped record stays visible to whoever reads the counters.
+    _install(monkeypatch, _answer({"running": True}))
+    stats = writer.stats()
+    assert stats["submit_failures"] == 1
+    assert stats["last_submit_failure"] == "ValueError"
+
+
+def test_a_submission_that_reports_a_mutation_wakes_the_publishers(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    woken: list[Path] = []
+    monkeypatch.setattr(
+        "codex_plugin_scanner.guard.native_policy_snapshot.notify_native_policy_mutation",
+        lambda guard_home: woken.append(guard_home),
+    )
+    _install(monkeypatch, _answer({"queued": True, "policy_mutations": 1, "store_fatal": None}))
+
+    assert (
         writer.submit_composio_discovery(
             harness="claude-code",
             payload={"tool_name": "mcp__composio__composio_search_tools"},
             succeeded=True,
         )
+        is True
+    )
+
+    # A discovery that moved provider policy republishes the snapshot on the
+    # reply that reports it, not whenever someone next opens a health page.
+    assert woken == [writer.guard_home]
+
+
+def test_a_submission_that_reports_a_fatal_store_recovers_it(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install(
+        monkeypatch,
+        _answer({"queued": False, "policy_mutations": 0, "store_fatal": "native_guard_store_sqlite_corrupt"}),
+    )
+
+    assert writer.submit_native_decision_receipt({"receipt": "shaped"}) is False
+
+    # A one-shot hook submits once and exits; it never reads the counters, so
+    # a store only a counter read repairs would stay broken.
+    assert len(writer._store.recovered) == 1
+
+
+def test_counters_stay_readable_when_the_resident_is_gone(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(**_kwargs: Any) -> dict[str, Any] | None:
+        return None
+
+    _install(monkeypatch, refuse)
+
+    stats = writer.stats()
+
+    # The health page and the dashboard read these, and both are opened when
+    # something is wrong. A degraded writer has to render.
+    assert stats["running"] is False
+    assert stats["degraded"] is True
+    assert stats["unavailable_reason"] == "native_hook_evidence_writer_unavailable"
 
 
 def test_reading_counters_consumes_the_mutation_count_once(
     writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(
+        "codex_plugin_scanner.guard.native_policy_snapshot.notify_native_policy_mutation",
+        lambda guard_home: None,
+    )
     _install(monkeypatch, _answer({"running": True, "policy_mutations": 2, "store_fatal": None}))
 
     stats = writer.stats()
@@ -173,6 +239,23 @@ def test_an_ordinary_counter_read_never_recovers_the_store(
     writer.stats()
 
     assert writer._store.recovered == []
+
+
+def test_counters_read_after_a_stop_are_the_ones_the_drain_reported(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install(
+        monkeypatch,
+        _answer({"drained": True, "final_stats": {"failures": 2, "running": False, "started": True}}),
+    )
+    assert writer.stop(timeout_seconds=0.5) is True
+
+    _install(monkeypatch, _answer({"started": False, "running": False, "failures": 0}))
+    stats = writer.stats()
+
+    # The resident answers for a writer it no longer holds with the counters of
+    # one that never ran. A failure the drain hit must not read as none.
+    assert stats["failures"] == 2
 
 
 def test_stopping_sends_its_own_drain_budget_rather_than_either_default(

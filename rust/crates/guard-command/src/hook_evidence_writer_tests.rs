@@ -836,6 +836,32 @@ fn a_receipt_handoff_returns_before_the_store_has_written_it() {
     assert!(journal.records().is_empty());
 }
 
+/// A worker inside a store write cannot see its drain deadline pass, and a
+/// stop that joined it unconditionally would wait for that write however long
+/// it took — past the budget it was given and past the caller's transport
+/// timeout, with every request serialised behind it still waiting.
+#[test]
+fn a_stop_gives_up_on_a_worker_that_outlasts_its_drain_budget() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::new();
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    gate.wait_for_entry();
+
+    // The worker is parked in the store write and never reads the deadline.
+    assert!(!writer.stop(0.0));
+    assert!(!writer.has_exited());
+
+    // It is still the journal's owner until it leaves, and it finishes the
+    // write it was in the middle of.
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+    assert!(writer.has_exited());
+    assert_eq!(writer.stats().receipt_processed, 1);
+}
+
 #[test]
 fn a_repeated_receipt_is_deduplicated_rather_than_queued_twice() {
     let gate = Gate::new();

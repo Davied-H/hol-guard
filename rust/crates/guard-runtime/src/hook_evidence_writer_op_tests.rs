@@ -162,11 +162,70 @@ fn reading_counters_never_starts_a_writer() {
         let stats = call(&home, json!({"action": "stats"}));
         assert_eq!(stats["status"], json!("ok"));
         assert_eq!(stats["payload"]["running"], json!(false));
+        // A daemon that has admitted no hook yet is idle, not a component
+        // that stopped and needs repair.
+        assert_eq!(stats["payload"]["started"], json!(false));
         assert_eq!(stats["payload"]["policy_mutations"], json!(0));
     }
     // Stopping a home no writer ever ran for is not an error either.
     let stopped = call(&home, json!({"action": "stop"}));
     assert_eq!(stopped["payload"]["drained"], json!(true));
+}
+
+#[test]
+fn two_spellings_of_one_home_share_a_writer() {
+    let home = store_home("writer-op-spelling", "record_basic");
+    let queued = call(
+        &home,
+        json!({
+            "action": "submit_command_activity",
+            "harness": "claude-code",
+            "event": "PreToolUse",
+            "payload": {"toolUseId": "call_spelling_0123456789ab", "toolInput": {"command": "echo hi"}},
+            "succeeded": true,
+            "policy_action": "allow",
+        }),
+    );
+    assert_eq!(queued["payload"]["queued"], json!(true));
+
+    // Both spellings name one `runtime-hook-evidence.jsonl`. A second writer
+    // for it would recover and replay the records this one still has pending.
+    let trailing = PathBuf::from(format!("{}/", home.display()));
+    let stats = call(&trailing, json!({"action": "stats"}));
+    assert_eq!(stats["payload"]["started"], json!(true));
+
+    let stopped = call(&trailing, json!({"action": "stop", "timeout_seconds": 5.0}));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
+    assert_eq!(
+        call(&home, json!({"action": "stats"}))["payload"]["started"],
+        json!(false),
+        "the stop under one spelling dropped the writer the other built"
+    );
+}
+
+#[test]
+fn a_submission_carries_the_signals_the_writer_reported() {
+    let home = store_home("writer-op-signals", "record_basic");
+    let queued = call(
+        &home,
+        json!({
+            "action": "submit_command_activity",
+            "harness": "claude-code",
+            "event": "PreToolUse",
+            "payload": {"toolUseId": "call_signals_01234567890a", "toolInput": {"command": "echo hi"}},
+            "succeeded": true,
+            "policy_action": "allow",
+        }),
+    );
+
+    // A one-shot hook submits once and exits. A signal it could only collect
+    // by reading the counters afterwards is a signal nobody collects.
+    assert_eq!(queued["payload"]["policy_mutations"], json!(0));
+    assert_eq!(queued["payload"]["store_fatal"], Value::Null);
+
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 5.0}));
+    assert_eq!(stopped["payload"]["final_stats"]["started"], json!(true));
+    assert_eq!(stopped["payload"]["final_stats"]["failures"], json!(0));
 }
 
 #[test]

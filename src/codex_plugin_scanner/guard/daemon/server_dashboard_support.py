@@ -122,7 +122,9 @@ class _DashboardSupportRoutes:
         scheduler = daemon_server.runtime_hook_scheduler.stats()
         evidence_writer = daemon_server.runtime_hook_evidence_writer.stats()
         activity_health = daemon_server.store.get_command_activity_persistence_health()
-        evidence_fault = not evidence_writer["running"]
+        # A writer the resident has not built yet is idle, not broken: a daemon
+        # that has admitted no hook since it started has nothing to repair.
+        evidence_fault = bool(evidence_writer.get("started", True)) and not evidence_writer["running"]
         store_busy = (
             activity_health.persistence_error_count > 0
             and activity_health.last_error_code is not None
