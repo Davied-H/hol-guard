@@ -141,6 +141,7 @@ from .extension_discovery_read import (
     discovery_rollout_enabled,
     relay_discovery_measurement,
 )
+from .hook_evidence_dispatch import HookEvidenceDispatch
 from .hook_managed_install_state import _hook_harness_is_unmanaged
 from .hook_policy_admission import prepare_native_hook_policy
 from .hook_request_auth import CHALLENGE_HOOK_PATHS, challenge_auth, request_auth
@@ -342,6 +343,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
     hook_capacity_lock: threading.Lock
     runtime_hook_scheduler: RuntimeHookScheduler
     runtime_hook_evidence_writer: NativeHookEvidenceWriter
+    runtime_hook_evidence_dispatch: HookEvidenceDispatch
     request_capacity: threading.BoundedSemaphore
     request_capacity_limit: int
     connection_capacity: threading.BoundedSemaphore
@@ -398,6 +400,12 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
         if hook_worker is not None:
             with suppress(Exception):
                 hook_worker.close()
+        dispatch = getattr(self, "runtime_hook_evidence_dispatch", None)
+        if dispatch is not None:
+            # What a finished hook left behind is submitted before the writer
+            # it submits to is dropped.
+            with suppress(Exception):
+                _ = dispatch.stop(1.0)
         writer = getattr(self, "runtime_hook_evidence_writer", None)
         if writer is not None:
             # The writer now lives in the resident, which can refuse the call.
@@ -512,6 +520,9 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
         )
         self.store.set_policy_integrity_state_listener(self.publish_trust_state)
         self.runtime_hook_evidence_writer = NativeHookEvidenceWriter(store=store)
+        # Evidence for a hook that has already answered is submitted here
+        # rather than on the thread the harness is waiting on.
+        self.runtime_hook_evidence_dispatch = HookEvidenceDispatch()
         self.codex_binding_capture_writer = start_codex_binding_capture_writer()
         self._initialize_request_services()
         self.request_executors_stopped = False
@@ -527,6 +538,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
                 workspace=self.workspace_dir,
                 home_dir=self.home_dir,
                 activity_writer=self.runtime_hook_evidence_writer,
+                evidence_dispatch=self.runtime_hook_evidence_dispatch,
                 capture_writer=self.codex_binding_capture_writer,
             )
             bind_hook_counter_sink(self.hook_worker, getattr(self, "diagnostics", None))
@@ -563,6 +575,8 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
                 executor = getattr(self, executor_name, None)
                 if executor is not None:
                     _ = executor.shutdown(timeout_seconds=1.0)
+            with suppress(Exception):
+                _ = self.runtime_hook_evidence_dispatch.stop(1.0)
             with suppress(Exception):
                 _ = self.runtime_hook_evidence_writer.stop(timeout_seconds=1.0)
             if self.codex_binding_capture_writer is not None:
@@ -3650,6 +3664,10 @@ class GuardDaemonServer:
                 contained = runtime_heartbeat.stop(timeout_seconds=1.0) is not False and contained
             except Exception:
                 contained = False
+        runtime_hook_evidence_dispatch = getattr(self._server, "runtime_hook_evidence_dispatch", None)
+        if runtime_hook_evidence_dispatch is not None:
+            with suppress(Exception):
+                contained = runtime_hook_evidence_dispatch.stop(1.0) and contained
         runtime_hook_evidence_writer = getattr(self._server, "runtime_hook_evidence_writer", None)
         if runtime_hook_evidence_writer is not None:
             try:
