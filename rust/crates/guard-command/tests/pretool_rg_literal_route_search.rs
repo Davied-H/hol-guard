@@ -110,7 +110,7 @@ fn bracketed_searches_that_could_reach_more_keep_their_review() {
         // ordinary and the walk gives no proof.
         "rg -n TOKEN ~/portal/app/admin/[id]",
         // A negated class is this matcher's own refusal, not a literal name.
-        "rg -n export ~/portal/app/[!x]",
+        "rg -n export ~/portal/src/[!x]",
         // Nothing is there to screen, so there is no proof to give.
         "rg -n export ~/portal/app/blog/[missing]/page.tsx",
         // A class that can match a leading dot would name a hidden entry
