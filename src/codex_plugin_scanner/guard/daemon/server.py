@@ -2927,7 +2927,12 @@ class _GuardDaemonHandler(
                 deadline_monotonic=deadline_monotonic,
             )
         except NativeDirectoryTrustError as error:
-            raise _HookPathValidationError(asked[0][0], _DIRECTORY_TRUST_UNAVAILABLE) from error
+            # Internal spellings are distinct only within the resident batch.
+            # Audit and HTTP errors retain the public workspace parameter.
+            parameter = asked[0][0]
+            if parameter in {"exec-workdir", "workspace-payload", "workspace-query"}:
+                parameter = "workspace"
+            raise _HookPathValidationError(parameter, _DIRECTORY_TRUST_UNAVAILABLE) from error
         return _HookDirectories(verdicts)
 
     def _write_json(

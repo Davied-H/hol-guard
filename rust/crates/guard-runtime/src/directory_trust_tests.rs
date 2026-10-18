@@ -346,6 +346,29 @@ fn a_rule_tells_two_spellings_of_the_same_workspace_apart() {
 }
 
 #[test]
+fn relative_hook_workspace_spellings_report_relative_path_not_resolution_failure() {
+    let install = Install::new();
+    let body = evaluate(json!({
+        "schema": DIRECTORY_TRUST_REQUEST_SCHEMA,
+        "request_id": "req-relative-hook-spellings",
+        "guard_home": install.guard_home(),
+        "home_dir": install.home_dir(),
+        "temp_dir": text(&std::env::temp_dir()),
+        "candidates": [
+            {"parameter": "workspace-payload", "rule": "hook-workspace", "value": "project/src"},
+            {"parameter": "workspace-query", "rule": "hook-workspace", "value": "project/None"},
+            {"parameter": "exec-workdir", "rule": "exec-workdir", "value": "project/src"},
+        ],
+    }));
+    let rows = body["results"].as_array().expect("one verdict per candidate");
+    assert_eq!(rows.len(), 3);
+    for verdict in rows {
+        assert_eq!(verdict["trusted"], json!(false));
+        assert_eq!(verdict["reason"], json!("relative_path"));
+    }
+}
+
+#[test]
 fn a_payload_reference_is_read_only_where_guards_writer_put_it() {
     let install = Install::new();
     let holder = TempDir::new().expect("a temporary holder");

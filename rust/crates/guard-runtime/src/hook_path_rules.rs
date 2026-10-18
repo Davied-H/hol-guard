@@ -70,6 +70,11 @@ pub(crate) fn normalized_hook_workspace(
     } else {
         expanded.as_str()
     };
+    // Keep relative spellings for the directory admission rule to report
+    // RelativePath, not the normalization layer's PathResolveFailed.
+    if !Path::new(candidate).is_absolute() {
+        return Ok(Some(candidate.to_owned()));
+    }
     let normalized = guard_paths::normpath(candidate)?;
     Ok(without_bare_temporary_root(&normalized, temp_dir))
 }
@@ -89,6 +94,11 @@ pub(crate) fn normalized_exec_workdir(
         return Ok(None);
     }
     let expanded = guard_paths::expanduser(stripped, home_dir)?;
+    // A relative workdir must reach validation unchanged to retain the
+    // caller-visible relative_path rejection reason.
+    if !Path::new(&expanded).is_absolute() {
+        return Ok(Some(expanded));
+    }
     let normalized = guard_paths::normpath(&expanded)?;
     Ok(without_bare_temporary_root(&normalized, temp_dir))
 }
