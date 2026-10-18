@@ -48,8 +48,16 @@ const NO_FLAGS: [&str; 0] = [];
 /// Options whose value only filters, bounds or formats the printed summary.
 const CONTAINER_VALUES: [&str; 5] = ["-n", "--last", "-f", "--filter", "--format"];
 const IMAGE_VALUES: [&str; 3] = ["-f", "--filter", "--format"];
-const BUILDER_VALUES: [&str; 1] = ["--format"];
-const PROJECT_VALUES: [&str; 3] = ["-f", "--filter", "--format"];
+/// A builder listing's `--format` is not a summary option: `--format json`
+/// serializes each builder's nodes, and a node carries the proxy
+/// configuration it was created with, which the default table omits. A proxy
+/// URL is written with its credentials in it, so the printed summary stays
+/// the fixed one.
+const BUILDER_VALUES: [&str; 0] = [];
+/// `docker compose ls` gives `--filter` no short form, so Cobra reads `-f` as
+/// the root `--file` and the value names a compose file to resolve. Only the
+/// long spelling filters.
+const PROJECT_VALUES: [&str; 2] = ["--filter", "--format"];
 
 /// Single-letter flags that may be clustered (`-aq`).
 const CONTAINER_SHORT: &str = "aqsl";

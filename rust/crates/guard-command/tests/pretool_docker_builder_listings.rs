@@ -63,6 +63,8 @@ fn builder_changes_and_resolved_projects_stay_reviewed() {
             "docker buildx build .",
             "docker compose ps",
             "docker compose -f compose.yaml ls",
+            "docker compose ls -f name=portal",
+            "docker buildx ls --format json",
             "docker compose ls --project-directory /srv/app",
             "docker -H tcp://build.example.com:2376 buildx ls",
             "DOCKER_HOST=tcp://build.example.com:2376 docker buildx ls",

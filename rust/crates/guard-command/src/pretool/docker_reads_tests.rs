@@ -30,7 +30,6 @@ fn container_and_image_listings_are_admitted() {
         vec!["buildx", "version"],
         vec!["buildx", "ls"],
         vec!["buildx", "ls", "--no-trunc"],
-        vec!["buildx", "ls", "--format", "{{.Name}}\t{{.Status}}"],
         vec!["compose", "ls"],
         vec!["compose", "list"],
         vec!["compose", "ls", "-a", "-q"],
@@ -88,6 +87,12 @@ fn remote_daemons_secrets_and_other_subcommands_stay_reviewed() {
         // does not, and neither does a project the listing has to resolve.
         vec!["buildx", "inspect"],
         vec!["buildx", "inspect", "--bootstrap", "default"],
+        // `--format json` prints each builder's nodes, proxy configuration
+        // included, and `-f` on a project listing names a compose file.
+        vec!["buildx", "ls", "--format", "json"],
+        vec!["buildx", "ls", "--format", "{{.Name}}"],
+        vec!["compose", "ls", "-f", "name=portal"],
+        vec!["compose", "ls", "-f", "/srv/other=1/compose.yaml"],
         vec!["buildx", "ls", "default"],
         vec!["buildx", "ls", "--builder", "remote"],
         vec!["buildx", "create", "--use"],
