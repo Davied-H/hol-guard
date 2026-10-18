@@ -359,7 +359,7 @@ def test_lease_timeout_reports_unavailability_rather_than_a_verdict(tmp_path: Pa
             self.error = error
             self.verdicts = 0
 
-        def _extension_control_authority_lock(self, *, shared: bool = False):
+        def _extension_control_authority_lock(self, *, shared: bool = False, timeout_seconds: float | None = None):
             raise self.error
 
         def _catalog_target_manifest(self, registry: object) -> dict[str, str]:
@@ -399,6 +399,7 @@ def test_daemon_startup_falls_back_to_a_shared_read_when_the_lease_is_busy() -> 
     """A busy lease must not stop the daemon: it would take the hook worker with it."""
 
     from codex_plugin_scanner.guard.native_command_control_authority_io import (
+        AUTHORITY_LOCK_TIMEOUT_SECONDS,
         NativeCommandControlAuthorityUnavailableError,
     )
     from codex_plugin_scanner.guard.runtime.extension_control_authority import (
@@ -410,12 +411,12 @@ def test_daemon_startup_falls_back_to_a_shared_read_when_the_lease_is_busy() -> 
 
     class _Store:
         def __init__(self) -> None:
-            self.reads: list[bool] = []
+            self.reads: list[tuple[bool, float | None]] = []
 
         def read_extension_control_authority_for_registry(
-            self, registry: object, *, read_only: bool = False
+            self, registry: object, *, read_only: bool = False, lock_timeout_seconds: float | None = None
         ) -> ExtensionControlAuthorityView:
-            self.reads.append(read_only)
+            self.reads.append((read_only, lock_timeout_seconds))
             if not read_only:
                 raise NativeCommandControlAuthorityUnavailableError(shared=False)
             return protected
@@ -425,7 +426,12 @@ def test_daemon_startup_falls_back_to_a_shared_read_when_the_lease_is_busy() -> 
 
     store = _Store()
     assert _startup_view_with_store(store) is protected
-    assert store.reads == [False, True]
+    assert [read_only for read_only, _ in store.reads] == [False, True]
+    # Both attempts queue behind the same exclusive entry gate, so the fallback
+    # waits out what the first attempt left rather than a second full budget.
+    first, second = (budget for _, budget in store.reads)
+    assert first == AUTHORITY_LOCK_TIMEOUT_SECONDS
+    assert second is not None and 0.0 < second <= AUTHORITY_LOCK_TIMEOUT_SECONDS
 
 
 def test_daemon_startup_reports_no_layers_when_no_lease_is_obtainable() -> None:
@@ -443,7 +449,7 @@ def test_daemon_startup_reports_no_layers_when_no_lease_is_obtainable() -> None:
 
     class _Store:
         def read_extension_control_authority_for_registry(
-            self, registry: object, *, read_only: bool = False
+            self, registry: object, *, read_only: bool = False, lock_timeout_seconds: float | None = None
         ) -> ExtensionControlAuthorityView:
             raise NativeCommandControlAuthorityUnavailableError(shared=read_only)
 

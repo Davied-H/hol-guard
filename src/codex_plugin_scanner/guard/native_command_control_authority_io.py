@@ -14,6 +14,10 @@ from pathlib import Path
 from .native_command_control_authority import AUTHORITY_GATE_NAME, AUTHORITY_LOCK_NAME
 from .native_policy_snapshot_constants import NativePolicySnapshotError
 
+# One acquisition budget covers the entry gate and the lease behind it, so a
+# caller that chains reads can divide this span instead of paying it twice.
+AUTHORITY_LOCK_TIMEOUT_SECONDS = 30.0
+
 _LOCKS = threading.local()
 _LEASE_POLL_SECONDS = 0.01
 # The first retries are short so an acquirer that only missed a turnstile
@@ -273,7 +277,7 @@ def _authority_entry_gate(guard_home: Path, *, deadline: float) -> Iterator[None
 
 @contextmanager
 def hold_command_control_authority_lock(
-    guard_home: Path, *, timeout_seconds: float = 30.0, shared: bool = False
+    guard_home: Path, *, timeout_seconds: float = AUTHORITY_LOCK_TIMEOUT_SECONDS, shared: bool = False
 ) -> Iterator[None]:
     """Retain one exclusive inode; native readers take an overlapping shared lease.
 

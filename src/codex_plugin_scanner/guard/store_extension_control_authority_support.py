@@ -230,10 +230,16 @@ class _ExtensionControlAuthoritySupportMixin:
         return self._authority_ref_prefix() + _ANCHOR_REF_SUFFIX
 
     @contextmanager
-    def _extension_control_authority_lock(self, *, shared: bool = False) -> Generator[None, None, None]:
-        from .native_command_control_authority_io import hold_command_control_authority_lock
+    def _extension_control_authority_lock(
+        self, *, shared: bool = False, timeout_seconds: float | None = None
+    ) -> Generator[None, None, None]:
+        from .native_command_control_authority_io import (
+            AUTHORITY_LOCK_TIMEOUT_SECONDS,
+            hold_command_control_authority_lock,
+        )
 
-        with hold_command_control_authority_lock(cast(Path, self.guard_home), shared=shared):
+        budget = AUTHORITY_LOCK_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        with hold_command_control_authority_lock(cast(Path, self.guard_home), shared=shared, timeout_seconds=budget):
             yield
 
     @staticmethod

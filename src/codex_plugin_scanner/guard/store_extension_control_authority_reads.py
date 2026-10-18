@@ -70,6 +70,7 @@ class ExtensionControlAuthorityReadsMixin:
         *,
         include_managed_controls: bool = True,
         read_only: bool = False,
+        lock_timeout_seconds: float | None = None,
     ) -> ExtensionControlAuthorityView:
         from .native_command_control_authority_io import (
             NativeCommandControlAuthorityUnavailableError,
@@ -85,7 +86,7 @@ class ExtensionControlAuthorityReadsMixin:
         may_migrate = not read_only
         try:
             self._catalog_target_manifest(registry)
-            with self._extension_control_authority_lock(shared=read_only):
+            with self._extension_control_authority_lock(shared=read_only, timeout_seconds=lock_timeout_seconds):
                 self._require_compatible_extension_control_schema()
                 view = self._read_extension_control_authority_locked(
                     catalog_digest,
