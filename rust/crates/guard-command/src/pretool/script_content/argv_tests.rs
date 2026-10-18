@@ -98,6 +98,32 @@ fn a_secret_file_passed_to_a_script_is_reviewed() {
 }
 
 #[test]
+fn a_secret_file_in_an_option_value_or_under_home_is_reviewed() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let tool = script(directory.path(), "tool.js", CLEAN);
+    let ssh = directory.path().join(".ssh");
+    std::fs::create_dir(&ssh).expect("ssh dir");
+    let key = script(&ssh, "id_rsa", "not a real key\n");
+    for argument in [
+        format!("--key={key}"),
+        format!("-i={key}"),
+        "~/.ssh/id_rsa".to_owned(),
+        "--creds=~/.aws/credentials".to_owned(),
+    ] {
+        let result = verdict(&["bun", &tool, &argument], None);
+        assert_eq!(result.action, "review", "{argument}");
+        assert_eq!(
+            result.risk_signals,
+            vec!["passes a secret file to a script".to_owned()],
+            "{argument}"
+        );
+    }
+    // Prose that merely names a key file is still the script's data.
+    let result = verdict(&["bun", &tool, "--note=rotate id_rsa keys"], None);
+    assert_eq!(result.action, "allow", "{:?}", result.risk_signals);
+}
+
+#[test]
 fn anything_the_scan_cannot_read_keeps_the_command_line_scan() {
     let directory = tempfile::tempdir().expect("tempdir");
     let secrets = "references local environment secrets".to_owned();
