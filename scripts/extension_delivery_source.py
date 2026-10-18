@@ -21,7 +21,7 @@ DIRECTORIES = (
 )
 
 
-def verify_sources(root: Path, expected_sha: str) -> None:
+def verify_sources(root: Path, expected_sha: str, *, generated=False) -> None:
     expected_sha = source_sha(expected_sha)
     actual = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True, timeout=15).strip()
     if actual != expected_sha:
@@ -41,12 +41,24 @@ def verify_sources(root: Path, expected_sha: str) -> None:
             "contributions",
             "pyproject.toml",
             "uv.lock",
+            *([] if generated else ["docs/guard/extensions"]),
         ],
         cwd=root,
         timeout=15,
     )
     if dirty:
         raise ValueError("delivery code or contribution inputs differ from reviewed source")
+    readme = root / "docs/guard/extensions/README.md"
+    if not generated and readme.exists():
+        original = subprocess.run(
+            ["git", "show", expected_sha + ":docs/guard/extensions/README.md"],
+            cwd=root,
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+        if original.returncode or original.stdout != read_bytes(readme, limit=MAX_SOURCE_BYTES):
+            raise ValueError("delivery directory template differs from reviewed source")
     inventory = subprocess.check_output(
         ["git", "ls-tree", "-r", "-z", "HEAD", "--", *DIRECTORIES], cwd=root, timeout=30
     )

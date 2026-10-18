@@ -164,7 +164,14 @@ def build_from_packs(root, pack_directory, native_root, plan, store, commit, *, 
 
 
 def create_distribution(
-    compiler, output, commit, *, resolve_claimants=False, existing_locations=None, publication_id="0.0"
+    compiler,
+    output,
+    commit,
+    *,
+    resolve_claimants=False,
+    existing_locations=None,
+    publication_id="0.0",
+    reuse_published_legacy=False,
 ):
     verify_sources(ROOT, commit)
     packs.safe_directory(output)
@@ -178,11 +185,18 @@ def create_distribution(
     finally:
         plan.finish()
     root["legacy"] = prepare_legacy(
-        ROOT, output, policy, native_root, compiler, commit, resolve_claimants=resolve_claimants
+        ROOT,
+        output,
+        policy,
+        native_root,
+        compiler,
+        commit,
+        resolve_claimants=resolve_claimants,
+        reuse_published=reuse_published_legacy,
     )
     issued = int(time.time())
     root.update(publication_id=publication_id, issued_at=issued, expires_at=issued + 7 * 24 * 60 * 60)
-    verify_sources(ROOT, commit)
+    verify_sources(ROOT, commit, generated=True)
     data = encoded(root)
     if len(data) > MAX_OBJECT_BYTES:
         raise ValueError("delivery root exceeds byte limit")
@@ -226,8 +240,8 @@ def main():
         if selection is not None:
             try:
                 previous = fetch_root(now=int(time.time()), selection=selection)
-            except ExpiredDistributionError:
-                # Expired data cannot grant authority or seed location reuse.
+            except (ExpiredDistributionError, MissingReleaseError):
+                # Unavailable or expired data cannot seed location reuse.
                 # Current sources are compiled independently for this release.
                 previous = None
             if previous is not None:
@@ -239,6 +253,7 @@ def main():
         resolve_claimants=args.resolve_claimants,
         publication_id=args.publication_id,
         existing_locations=existing,
+        reuse_published_legacy=args.reuse_current,
     )
     print(json.dumps({"schema": SCHEMA, "source_sha": root["source_sha"], "extensions": root["directory"]["count"]}))
 

@@ -148,3 +148,15 @@ def test_retries_use_separate_data_releases_without_overwriting_prior_attempt(pu
     second = AssetPlan(tmp_path / "second", "1" * 40, publication_id="12.2")
     one, two = first.asset(b"public", "object"), second.asset(b"public", "object")
     assert one["tag"] != two["tag"] and one["asset"] == two["asset"]
+
+
+def test_publication_cli_reports_a_root_that_was_not_selected(publisher, monkeypatch, capsys, tmp_path):
+    import publish_extension_delivery as command
+
+    result = {"selected": False, "source_sha": "1" * 40, "publication_id": "12.1", "root_sha256": "2" * 64}
+    monkeypatch.setattr(command, "publish", lambda *args: result)
+    monkeypatch.setattr(
+        "sys.argv", ["publisher", "--directory", str(tmp_path), "--source-sha", "1" * 40, "--publication-id", "12.1"]
+    )
+    command.main()
+    assert json.loads(capsys.readouterr().out) == result

@@ -30,7 +30,7 @@ def modules(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("failure", [None, "data", "root"])
+@pytest.mark.parametrize("failure", [None, "data", "legacy", "root"])
 def test_only_complete_publication_advances_pointer(modules, monkeypatch, tmp_path, failure):
     publisher = modules.publish_extension_delivery
     from extension_delivery_assets import AssetPlan
@@ -45,6 +45,11 @@ def test_only_complete_publication_advances_pointer(modules, monkeypatch, tmp_pa
     (tmp_path / "extension-distribution.v2.json").write_bytes(data)
     (tmp_path / "extension-distribution.intoto.jsonl").write_bytes(b"unit proof")
     root = {"publication_id": publication, "legacy": {"status": "unsupported-oversize", "code": "program-bytes"}}
+    legacy_directory = tmp_path / "legacy"
+    legacy_directory.mkdir()
+    marker = modules.extension_delivery_legacy.unavailable_marker(source, "program-bytes")
+    (legacy_directory / "extension-artifacts.unavailable.v1.json").write_text(json.dumps(marker))
+    (legacy_directory / "extension-artifacts.intoto.jsonl").write_bytes(b"unit legacy proof")
     verified = SimpleNamespace(manifest=lambda: root, digest=hashlib.sha256(data).hexdigest())
     events = []
 
@@ -54,13 +59,20 @@ def test_only_complete_publication_advances_pointer(modules, monkeypatch, tmp_pa
         return verified
 
     def upload(tag, *args, **kwargs):
-        kind = "root" if tag.startswith("extension-distribution-") else "data"
+        kind = (
+            "root"
+            if tag.startswith("extension-distribution-")
+            else "legacy"
+            if tag.startswith("extension-artifacts-")
+            else "data"
+        )
         events.append(kind)
         if failure == kind:
             raise ValueError("interrupted " + kind)
 
     monkeypatch.setattr(publisher, "verify_distribution", verify)
-    monkeypatch.setattr(publisher, "verify_sources", lambda *args: events.append("source"))
+    monkeypatch.setattr(publisher, "_verify_attested_digest", lambda *args: events.append("legacy_auth"))
+    monkeypatch.setattr(publisher, "verify_sources", lambda *args, **kwargs: events.append("source"))
     monkeypatch.setattr(
         publisher,
         "publication_inventory",
@@ -82,8 +94,14 @@ def test_only_complete_publication_advances_pointer(modules, monkeypatch, tmp_pa
             publisher.publish(tmp_path, source, publication)
         assert "selected" not in events
     else:
-        assert publisher.publish(tmp_path, source, publication) is True
-        assert events == ["authenticate", "source", "repository", "data", "root", "selected"]
+        result = publisher.publish(tmp_path, source, publication)
+        assert result == {
+            "selected": True,
+            "source_sha": source,
+            "publication_id": publication,
+            "root_sha256": hashlib.sha256(data).hexdigest(),
+        }
+        assert events == ["authenticate", "source", "repository", "data", "legacy_auth", "legacy", "root", "selected"]
 
 
 def test_bad_provenance_causes_no_public_mutation(modules, monkeypatch, tmp_path):
@@ -161,3 +179,27 @@ def test_legacy_oversize_is_explicit_and_other_admission_failures_remain_fatal(m
     monkeypatch.setattr(compiler, "main", reject)
     with pytest.raises(compiler.NativeCompilationError, match="invalid admission"):
         legacy.prepare(tmp_path, tmp_path, tmp_path, {}, Path("compiler"), "1" * 40, resolve_claimants=False)
+
+
+def test_oversized_legacy_catalog_publishes_an_explicit_source_bound_marker(modules, tmp_path):
+    legacy = modules.extension_delivery_legacy
+    source = "1" * 40
+    result = legacy.prepare(
+        tmp_path, tmp_path, tmp_path, {"extensions": 513}, Path("compiler"), source, resolve_claimants=False
+    )
+    marker = json.loads((tmp_path / "legacy" / legacy.UNAVAILABLE).read_bytes())
+    assert result == {"status": "unsupported-oversize", "code": "extension-count"}
+    assert marker == legacy.unavailable_marker(source, "extension-count")
+    assert not (tmp_path / "legacy/extension-artifacts.zip").exists()
+
+
+def test_changed_staging_file_cannot_upload_unbound_bytes(modules, monkeypatch, tmp_path):
+    from publish_extension_snapshot import upload_asset
+
+    monkeypatch.setenv("GH_TOKEN", "unit-test-token")
+    path = tmp_path / "reviewed.json"
+    expected = {"sha256": hashlib.sha256(b"reviewed").hexdigest(), "length": len(b"reviewed")}
+    path.write_bytes(b"modified")
+    monkeypatch.setattr(modules.extension_delivery_github, "pace_write", lambda: None)
+    with pytest.raises(ValueError, match="changed before upload"):
+        upload_asset(1, path, expected=expected)

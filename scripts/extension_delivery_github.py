@@ -193,7 +193,7 @@ def publish_assets(tag, source, paths, expected, *, verify_existing_provenance=N
             verify_asset(asset, spec)
             continue
         pace_write()
-        asset = upload_asset(identity, paths[name])
+        asset = upload_asset(identity, paths[name], expected={key: spec[key] for key in ("sha256", "length")})
         if asset.get("name") != name:
             raise ValueError("uploaded delivery asset identity differs")
         verify_asset(asset, spec)

@@ -56,7 +56,13 @@ def test_hidden_worktree_change_still_fails_byte_binding(checkout):
 
 
 @pytest.mark.parametrize(
-    "name", ["scripts/unreviewed.py", "pyproject.toml", "contributions/command-sources/command.new.json"]
+    "name",
+    [
+        "scripts/unreviewed.py",
+        "pyproject.toml",
+        "contributions/command-sources/command.new.json",
+        "docs/guard/extensions/README.md",
+    ],
 )
 def test_unreviewed_code_dependency_or_contribution_prevents_publication(checkout, name):
     module, root, _, _, sha = checkout

@@ -1306,7 +1306,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32,<3" },
     { name = "rich", specifier = ">=14.0,<15" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.15" },
-    { name = "sigstore", specifier = "==4.5.0" },
+    { name = "sigstore", specifier = ">=4.5,<5" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
     { name = "tomlkit", specifier = ">=0.13.3,<1" },
     { name = "twine", marker = "extra == 'publish'", specifier = ">=6.2.0" },

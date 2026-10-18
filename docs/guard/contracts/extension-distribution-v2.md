@@ -49,8 +49,14 @@ overwritten. Separate publication attempts use separate immutable locations.
 The original v1 budgets remain unchanged. Where the complete legacy
 representation fits, publication continues to produce the existing archive
 and claim metadata. A specifically identified representation limit produces
-an authenticated `unsupported-oversize` status. Other compiler, ownership,
+an authenticated `unsupported-oversize` status and a source-bound, attested
+unavailability marker on the corresponding legacy release. That release
+contains no partial catalog or fabricated legacy archive. Other compiler, ownership,
 trust and integrity failures abort publication.
+
+Renewals reuse the authenticated immutable legacy snapshot for the same source
+commit. Mutable account display names can update in v2 metadata without
+rewriting that snapshot. The publisher reports whether its root was selected.
 
 The data-free maintainer compiler can also generate bounded legacy outputs.
 Its native receipt binds the exact original source/trust stream hash and

@@ -113,9 +113,11 @@ jobs:
           {
             echo 'paths<<SUBJECTS'
             echo extension-distribution/extension-distribution.v2.json
-            if [ -d extension-distribution/legacy ]; then
+            if [ -f extension-distribution/legacy/extension-artifacts.v1.json ]; then
               echo extension-distribution/legacy/extension-artifacts.v1.json
               echo extension-distribution/legacy/extension-artifacts.zip
+            elif [ -f extension-distribution/legacy/extension-artifacts.unavailable.v1.json ]; then
+              echo extension-distribution/legacy/extension-artifacts.unavailable.v1.json
             fi
             echo SUBJECTS
           } >> "$GITHUB_OUTPUT"

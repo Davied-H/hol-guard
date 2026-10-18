@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -11,12 +12,14 @@ from pathlib import Path
 import extension_artifact_bundle as legacy
 import extension_delivery_github as provider
 from extension_delivery_inventory import publication_inventory, read_plan
+from extension_delivery_legacy import UNAVAILABLE, unavailable_marker
 from extension_delivery_selector import select
 from extension_delivery_source import verify_sources
 
 from codex_plugin_scanner.guard.catalog_delivery.authority import (
     MAX_PROVENANCE_BYTES,
     _verify_attested_digest,
+    decode,
     verify_distribution,
 )
 from codex_plugin_scanner.guard.catalog_delivery.containers import maximum
@@ -32,28 +35,34 @@ def spec(path, maximum):
 
 def publish_legacy(directory, root, source):
     state = root["legacy"]
-    if state["status"] != "available":
-        return
     directory = directory / "legacy"
-    legacy.verify_bundle(directory, source)
+    available = state["status"] == "available"
+    if available:
+        legacy.verify_bundle(directory, source)
+        names = (legacy.MANIFEST, legacy.ARCHIVE)
+    else:
+        marker = decode(read_bytes(directory / UNAVAILABLE, limit=16384))
+        if marker != unavailable_marker(source, state["code"]):
+            raise ValueError("legacy unavailability marker differs from authenticated status")
+        names = (UNAVAILABLE,)
     provenance = read_bytes(directory / "extension-artifacts.intoto.jsonl", limit=MAX_PROVENANCE_BYTES)
-    paths = {name: directory / name for name in (legacy.MANIFEST, legacy.ARCHIVE, "extension-artifacts.intoto.jsonl")}
+    paths = {name: directory / name for name in (*names, "extension-artifacts.intoto.jsonl")}
     expected = {
         name: spec(path, MAX_PROVENANCE_BYTES if name.endswith(".intoto.jsonl") else legacy.MAX_BYTES)
         for name, path in paths.items()
     }
-    if (
+    if available and (
         expected[legacy.MANIFEST]["sha256"] != state["manifest_sha256"]
         or expected[legacy.ARCHIVE]["sha256"] != state["archive_sha256"]
     ):
         raise ValueError("legacy compatibility artifacts differ from authenticated root")
 
     def verify(bundle):
-        for name in (legacy.MANIFEST, legacy.ARCHIVE):
+        for name in names:
             _verify_attested_digest(expected[name]["sha256"], bundle, name, source)
 
     verify(provenance)
-    provider.publish_assets(state["tag"], source, paths, expected, verify_existing_provenance=verify)
+    provider.publish_assets("extension-artifacts-" + source, source, paths, expected, verify_existing_provenance=verify)
 
 
 def publish(directory, source, publication):
@@ -63,7 +72,7 @@ def publish(directory, source, publication):
     root = verified.manifest()
     if root["publication_id"] != publication or tuple(map(int, publication.split("."))) == (0, 0):
         raise ValueError("publication identity differs or is local-only")
-    verify_sources(Path(__file__).resolve().parents[1], source)
+    verify_sources(Path(__file__).resolve().parents[1], source, generated=True)
     assets = publication_inventory(directory, verified, Path(__file__).resolve().parents[1])
     rows = read_plan(directory, assets, source, publication)
     provider.verify_repository()
@@ -106,7 +115,7 @@ def publish(directory, source, publication):
         verify_distribution(data, bundle, expected_source_sha=source, now=int(time.time()))
 
     provider.publish_assets(root_tag(source, publication), source, paths, expected, verify_existing_provenance=verify)
-    return select(
+    selected = select(
         {
             "schema": "guard.extension-distribution-selector.v2",
             "source_sha": source,
@@ -114,6 +123,7 @@ def publish(directory, source, publication):
             "root_sha256": verified.digest,
         }
     )
+    return {"selected": selected, "source_sha": source, "publication_id": publication, "root_sha256": verified.digest}
 
 
 def main():
@@ -122,7 +132,7 @@ def main():
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--publication-id", required=True)
     args = parser.parse_args()
-    publish(args.directory, args.source_sha, args.publication_id)
+    print(json.dumps(publish(args.directory, args.source_sha, args.publication_id), sort_keys=True))
 
 
 if __name__ == "__main__":

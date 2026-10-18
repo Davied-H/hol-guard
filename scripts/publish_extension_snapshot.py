@@ -27,7 +27,7 @@ def github_id(value: object) -> int:
     return value
 
 
-def upload_asset(release_id: int, path: Path) -> dict:
+def upload_asset(release_id: int, path: Path, *, expected: dict | None = None) -> dict:
     token = os.environ.get("GH_TOKEN")
     if not token:
         raise RuntimeError("GH_TOKEN is required to upload snapshot assets")
@@ -35,9 +35,25 @@ def upload_asset(release_id: int, path: Path) -> dict:
         f"https://uploads.github.com/repos/{REPOSITORY}/releases/{github_id(release_id)}/assets"
         f"?name={urllib.parse.quote(path.name, safe='')}"
     )
+    if expected is None:
+        data = path.read_bytes()
+    else:
+        length = expected.get("length")
+        digest = expected.get("sha256")
+        if (
+            type(length) is not int
+            or not 0 < length <= 32 * 1024 * 1024
+            or not isinstance(digest, str)
+            or len(digest) != 64
+        ):
+            raise ValueError("snapshot upload identity invalid")
+        with path.open("rb") as stream:
+            data = stream.read(length + 1)
+        if len(data) != length or hashlib.sha256(data).hexdigest() != digest:
+            raise ValueError("snapshot asset changed before upload")
     request = urllib.request.Request(
         endpoint,
-        data=path.read_bytes(),
+        data=data,
         method="POST",
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/octet-stream"},
     )
