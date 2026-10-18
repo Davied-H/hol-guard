@@ -57,11 +57,18 @@ impl Drop for Tree {
 }
 
 #[test]
-fn a_sealed_user_bin_directory_is_granted() {
+fn a_sealed_user_tool_directory_is_granted() {
     let tree = Tree::new();
     let home = tree.dir("home", 0o755);
     let workspace = tree.dir("repo", 0o755);
-    for tool in [".local/bin", "sdk/google-cloud-sdk/bin", "bin"] {
+    for tool in [
+        ".local/bin",
+        "sdk/google-cloud-sdk/bin",
+        "bin",
+        ".pyenv/shims",
+        ".rye/shims",
+        ".asdf/shims",
+    ] {
         let entry = tree.dir(&format!("home/{tool}"), 0o755);
         let granted = tool_root(&entry, std::slice::from_ref(&home), &workspace);
         assert_eq!(granted, tree.sealed.then(|| entry.clone()), "{tool}");
@@ -109,6 +116,9 @@ fn workspace_agent_state_and_credential_directories_are_refused() {
         "home/.hol-guard/bin",
         "home/.claude/plugins/cache/tool/bin",
         "home/.codex/bin",
+        "home/.codex/shims",
+        "home/.hol-guard/shims",
+        "home/.ssh/shims",
         "home/.omp/bin",
         "home/.ssh/bin",
         "home/.config/tool/bin",
