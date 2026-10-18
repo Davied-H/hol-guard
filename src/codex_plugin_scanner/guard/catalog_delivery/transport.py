@@ -13,8 +13,10 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from contextlib import suppress
 
+from codex_plugin_scanner.guard.extension_builder.errors import BuilderError
 from codex_plugin_scanner.guard.extension_builder.io import checked_path, read_bytes
 
 from .authority import MAX_PROVENANCE_BYTES, decode, verify_distribution
@@ -133,9 +135,15 @@ def _fetch(target, maximum, cache=None):
         return download(url, maximum)
     bound = container_maximum(target["asset"])
     path = None if cache is None else checked_path(cache / (hashlib.sha256(url.encode()).hexdigest() + ".zip"))
-    data = read_bytes(path, limit=bound) if path is not None and path.exists() else download(url, bound)
+    repair = False
+    if path is not None and path.exists():
+        try:
+            return member(read_bytes(path, limit=bound), target["asset"], name, maximum)
+        except (ValueError, OSError, zipfile.BadZipFile, BuilderError):
+            repair = True
+    data = download(url, bound)
     result = member(data, target["asset"], name, maximum)
-    if path is not None and not path.exists():
+    if path is not None and (repair or not path.exists()):
         with tempfile.NamedTemporaryFile(dir=cache, prefix=".transfer-", delete=False) as stream:
             temporary = stream.name
             try:
@@ -143,9 +151,13 @@ def _fetch(target, maximum, cache=None):
                 stream.flush()
                 os.fsync(stream.fileno())
                 stream.close()
-                # A competing untrusted cache entry is checked on read.
-                with suppress(FileExistsError):
-                    os.link(temporary, path)
+                if repair:
+                    os.replace(temporary, path)
+                else:
+                    # A competing untrusted cache entry is checked on read.
+                    with suppress(FileExistsError):
+                        os.link(temporary, path)
             finally:
-                os.unlink(temporary)
+                with suppress(FileNotFoundError):
+                    os.unlink(temporary)
     return result

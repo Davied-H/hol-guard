@@ -72,6 +72,9 @@ def verify_sources(root: Path, expected_sha: str, *, generated=False) -> None:
             raise ValueError("delivery source is not a regular committed file")
         committed[path.decode()] = identity
     paths = sorted(path for directory in DIRECTORIES for path in (root / directory).glob("*.json"))
+    expected = {name for name in committed if name.endswith(".json") and name.rsplit("/", 1)[0] in DIRECTORIES}
+    if expected != {path.relative_to(root).as_posix() for path in paths}:
+        raise ValueError("delivery source inventory differs from reviewed commit")
     with subprocess.Popen(
         ["git", "cat-file", "--batch"], cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     ) as process:

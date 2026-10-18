@@ -434,24 +434,25 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 1
-        embedded = subprocess.run(
-            [*command[:-1], "evaluate-batch"],
-            input=canonical_bytes(
-                {
-                    "schema": "guard.command-extension-evaluation-batch.v1",
-                    "cases": [{"id": "embedded-identity", "command": "pwd"}],
-                }
-            ),
-            stdout=subprocess.PIPE,
-            cwd=ROOT,
-            timeout=60,
-            check=False,
-        )
-        if embedded.returncode:
-            raise ValueError("native compiler embedded-program verification failed")
-        identity = json.loads(embedded.stdout)
-        if any(identity.get(key) != program[key] for key in ("program_digest", "catalog_digest")):
-            raise ValueError("native compiler embeds a stale program; rebuild it after generating the artifacts")
+        if not bootstrap:
+            embedded = subprocess.run(
+                [*command[:-1], "evaluate-batch"],
+                input=canonical_bytes(
+                    {
+                        "schema": "guard.command-extension-evaluation-batch.v1",
+                        "cases": [{"id": "embedded-identity", "command": "pwd"}],
+                    }
+                ),
+                stdout=subprocess.PIPE,
+                cwd=ROOT,
+                timeout=60,
+                check=False,
+            )
+            if embedded.returncode:
+                raise ValueError("native compiler embedded-program verification failed")
+            identity = json.loads(embedded.stdout)
+            if any(identity.get(key) != program[key] for key in ("program_digest", "catalog_digest")):
+                raise ValueError("native compiler embeds a stale program; rebuild it after generating the artifacts")
     else:
         if not args.projections_only:
             descriptor_directory.mkdir(parents=True, exist_ok=True)

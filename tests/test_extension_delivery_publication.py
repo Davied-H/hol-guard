@@ -63,7 +63,7 @@ def test_selector_race_retains_a_newer_publication(selector, monkeypatch):
         if "PATCH" in args:
             assert "force=false" in args
             failed = True
-            raise RuntimeError("HTTP 422")
+            raise RuntimeError("Update is not a fast forward (HTTP 422)")
         if "/compare/" in args[1]:
             return json.dumps({"status": "ahead"})
         return json.dumps({"object": {"type": "commit", "sha": newer if failed else old}})
@@ -86,6 +86,20 @@ def test_same_source_renewal_and_stale_attempt_ordering(selector, monkeypatch):
     assert selector.can_advance(old, old) is False
     with pytest.raises(ValueError, match="reused"):
         selector.can_advance(old, {**old, "root_sha256": "4" * 64})
+
+
+def test_selector_does_not_hide_unrelated_validation_errors(selector, monkeypatch):
+    monkeypatch.setattr(selector, "current", lambda: ("1" * 40, selection("1" * 40, "11.1")))
+    commits = []
+    monkeypatch.setattr(selector, "pointer_commit", lambda *args: commits.append(args) or "2" * 40)
+    def github(*args):
+        if "PATCH" in args:
+            raise RuntimeError("Invalid sha (HTTP 422)")
+        return json.dumps({"status": "ahead"})
+    monkeypatch.setattr(selector, "github", github)
+    with pytest.raises(RuntimeError, match="Invalid sha"):
+        selector.select(selection())
+    assert len(commits) == 1
 
 
 def test_draft_lookup_does_not_scan_release_history(publisher, monkeypatch):

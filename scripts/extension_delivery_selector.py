@@ -135,7 +135,9 @@ def select(candidate):
                     )
                 )
         except RuntimeError as error:
-            if "HTTP 422" not in str(error):
+            message = str(error)
+            expected = "reference already exists" if parent is None else "not a fast forward"
+            if "HTTP 422" not in message or expected not in message.lower():
                 raise
             continue
         if result.get("object", {}).get("sha") != commit:

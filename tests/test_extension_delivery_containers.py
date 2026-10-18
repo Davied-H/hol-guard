@@ -36,7 +36,13 @@ def test_batched_metadata_uses_one_download_and_checks_each_selected_member(plan
     assert len(reads) == 1 and reads[0][1] == containers.METADATA_BYTES
     with pytest.raises(ValueError, match="length"):
         fetch(first, len(one) + 1)
-    assert len(reads) == 1
+    assert len(reads) == 2
+
+    cached = next((tmp_path / "cache").glob("*.zip"))
+    cached.write_bytes(b"truncated untrusted cache")
+    assert fetch(first, len(one)) == one
+    assert len(reads) == 3
+    assert fetch(second, len(two)) == two and len(reads) == 3
 
 
 def test_containers_split_without_changing_member_or_byte_bounds(plan_type, tmp_path):

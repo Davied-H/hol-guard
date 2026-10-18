@@ -55,6 +55,15 @@ def test_hidden_worktree_change_still_fails_byte_binding(checkout):
         module.verify_sources(root, sha)
 
 
+def test_hidden_deletion_cannot_remove_reviewed_policy_or_revocations(checkout):
+    module, root, path, git, sha = checkout
+    git("update-index", "--assume-unchanged", str(path.relative_to(root)))
+    path.unlink()
+    assert git("status", "--porcelain") == ""
+    with pytest.raises(ValueError, match="inventory differs"):
+        module.verify_sources(root, sha)
+
+
 @pytest.mark.parametrize(
     "name",
     [
