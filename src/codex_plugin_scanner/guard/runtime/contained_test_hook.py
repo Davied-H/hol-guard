@@ -420,15 +420,21 @@ def run_authorized_contained_test(
         )
         inline_plan = node_tool_plan = git_plan = vitest_plan = node_test_plan = None
         if inline_eval:
-            inline_plan = prepare_restricted_inline_eval(command, workspace=workspace, cwd=cwd)
+            inline_plan = prepare_restricted_inline_eval(command, workspace=workspace, cwd=cwd, home_dir=home_dir)
         elif node_tool:
-            node_tool_plan = restricted_node_tool.prepare_restricted_node_tool(command, workspace=workspace, cwd=cwd)
+            node_tool_plan = restricted_node_tool.prepare_restricted_node_tool(
+                command, workspace=workspace, cwd=cwd, home_dir=home_dir
+            )
         elif git:
-            git_plan = restricted_git.prepare_restricted_git(command, workspace=workspace, cwd=cwd)
+            git_plan = restricted_git.prepare_restricted_git(command, workspace=workspace, cwd=cwd, home_dir=home_dir)
         elif vitest:
-            vitest_plan = restricted_vitest.prepare_restricted_vitest(command, workspace=workspace, cwd=cwd)
+            vitest_plan = restricted_vitest.prepare_restricted_vitest(
+                command, workspace=workspace, cwd=cwd, home_dir=home_dir
+            )
         elif node_test:
-            node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
+            node_test_plan = restricted_node_test.prepare_restricted_node_test(
+                command, workspace=workspace, cwd=cwd, home_dir=home_dir
+            )
         else:
             prepare_restricted_pytest(
                 command,

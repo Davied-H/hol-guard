@@ -49,7 +49,9 @@ def restricted_native(operation: str, fields: Mapping[str, Any], expected: type 
     # Lexical anchoring preserves the caller's cwd/home; the resident owns
     # existence, symlink, workspace and executable admission.
     inputs = dict(fields)
-    if operation in {"prepare_node", "prepare_vitest", "prepare_inline", "approved_node"}:
+    if operation == "approved_node" or (
+        operation in {"prepare_node", "prepare_vitest", "prepare_inline"} and inputs.get("home") is None
+    ):
         inputs["home"] = Path.home()
     if operation.startswith("prepare") and inputs.get("command") and inputs["command"][0].startswith("~"):
         inputs["command"] = [str(Path(inputs["command"][0]).expanduser()), *inputs["command"][1:]]
@@ -157,6 +159,7 @@ def native_launch_plan(
     *,
     workspace: Path,
     cwd: Path,
+    home_dir: Path | None = None,
     platform: str,
     backend_executable: Path | None,
     profile: str | tuple[str, ...],
@@ -168,6 +171,7 @@ def native_launch_plan(
             "command": [str(item) for item in command],
             "workspace": workspace,
             "cwd": cwd,
+            "home": home_dir,
             "platform": platform,
             "backend_executable": backend_executable,
         },

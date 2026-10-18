@@ -53,7 +53,10 @@ fn evaluate_inner(operation: &str, input: &Input) -> Result<Value, RestrictedPyt
     let value = match operation {
         "normalized_command" => json!(normalized_command(&input.command)?),
         "python_args_target_pytest" => json!(python_args_target_pytest(&input.command)),
-        "resolve_workspace" => json!(resolve_workspace(&input.path)?),
+        "resolve_workspace" => json!(resolve_workspace_with_home(
+            &input.path,
+            input.home.as_deref()
+        )?),
         "resolve_cwd" => json!(resolve_cwd(&input.path, &input.workspace)?),
         "resolve_executable" => json!(resolve_executable(
             &input.value,

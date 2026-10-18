@@ -362,7 +362,7 @@ def _prepare_windows_build(
 
 
 def prepare_restricted_node_tool(
-    command: Sequence[str], *, workspace: Path, cwd: Path | None = None
+    command: Sequence[str], *, workspace: Path, cwd: Path | None = None, home_dir: Path | None = None
 ) -> RestrictedPytestPlan:
     argv = _normalized_command(command)
     name, args = _program_name(argv[0]), argv[1:]
@@ -463,7 +463,7 @@ def prepare_restricted_node_tool(
         return _prepare_windows_build(
             name, args, runtime_args, expected_entry, workspace=workspace, cwd=cwd or workspace
         )
-    base = prepare_restricted_node_test(["node", "--test"], workspace=workspace, cwd=cwd)
+    base = prepare_restricted_node_test(["node", "--test"], workspace=workspace, cwd=cwd, home_dir=home_dir)
     output_roots = ()
     if name == "vite":
         output_roots = (_vite_output(args, workspace=base.workspace, cwd=base.cwd),)
