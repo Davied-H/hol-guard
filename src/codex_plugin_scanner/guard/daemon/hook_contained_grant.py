@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .hook_fail_closed import render_pre_tool
-from .hook_native_exact_action import launch_cwd
+from .hook_native_exact_action import launch_cwd, launch_path
 from .hook_native_saved_approval import _native_review_is_overridable
 from .hook_request_parsing import pre_tool_command
 
@@ -68,6 +68,7 @@ def granted_containment_result(
             home_dir=home_dir,
             current_action="review",
             reason_code=OUTSIDE_ROOTS_REASON,
+            path=launch_path(payload),
         )
     except Exception:
         _LOGGER.warning("local CLI grant lookup failed", exc_info=True)

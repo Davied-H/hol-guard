@@ -2,6 +2,7 @@
 //! Input is explicit bounded source records; output has no activation authority.
 
 use std::io::{Read, Write};
+mod reuse;
 
 fn session() -> Result<(), &'static str> {
     let mut input = std::io::stdin().lock();
@@ -46,6 +47,15 @@ fn session() -> Result<(), &'static str> {
 
 fn main() {
     let arguments: Vec<_> = std::env::args().skip(1).collect();
+    if let [operation, directory, digest] = arguments.as_slice() {
+        if operation == "compile-packs-reuse" {
+            if let Err(code) = reuse::run(std::path::Path::new(directory), digest) {
+                println!("{}", serde_json::json!({"ok":false,"code":code}));
+                std::process::exit(2);
+            }
+            return;
+        }
+    }
     if arguments == ["compile-packs-session"] {
         if let Err(code) = session() {
             println!("{}", serde_json::json!({"ok":false,"code":code}));
@@ -53,7 +63,7 @@ fn main() {
         }
         return;
     }
-    if !matches!(arguments.as_slice(), [operation] if matches!(operation.as_str(), "compile-packs" | "schema" | "descriptor-schema"))
+    if !matches!(arguments.as_slice(), [operation] if matches!(operation.as_str(), "compiler-info" | "compile-bootstrap-stream" | "compile-packs" | "schema" | "descriptor-schema"))
     {
         println!(
             "{}",

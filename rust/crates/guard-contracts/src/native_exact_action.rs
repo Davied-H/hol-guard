@@ -78,6 +78,10 @@ pub enum NativeExactActionQueryV1 {
         /// The tool input as `[key, value]` pairs in payload order.
         #[serde(default)]
         tool_input: Option<Vec<(String, Value)>>,
+        /// The tool input as sent, when the payload carried one that is not
+        /// an object, so that input still binds the command hash.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        raw_tool_input: Option<Value>,
         /// The payload's own `cwd`, when it was non-blank text.
         #[serde(default)]
         payload_cwd: Option<String>,

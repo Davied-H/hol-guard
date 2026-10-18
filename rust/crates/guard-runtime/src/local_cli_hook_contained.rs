@@ -1,7 +1,9 @@
 //! How a local CLI grant refines the hook action.
 //!
-//! A generic review, `warn` or `require-reapproval` follows the grant as
-//! before: allowed to `allow`, blocked to `block`. A command the workspace
+//! `warn` and the generic review due to non-recognition follow the grant:
+//! allowed to `allow`, blocked to `block`. Any other review or
+//! `require-reapproval` carries a risk signal of its own, so a block still
+//! applies but an allow leaves it standing. A command the workspace
 //! sandbox bounds (`sandbox-required`), or a review left only because the
 //! program lives outside the sandbox's executable roots, never leaves the
 //! sandbox on a grant: an allowed CLI widens the sandbox by the grant's
@@ -58,6 +60,15 @@ pub(crate) fn sandbox_bound(request: &LocalCliHookRequestV1) -> bool {
     }
 }
 
+/// Whether an allowed grant lifts this unbounded action to `allow`: `allow`
+/// and `warn` already run, and a review must be due to non-recognition alone.
+fn lifts(request: &LocalCliHookRequestV1) -> bool {
+    match request.current_action.as_str() {
+        "allow" | "warn" => true,
+        _ => crate::connector_setup::grant_lifts(request.current_reason_code.as_deref()),
+    }
+}
+
 /// Whether a grant may refine the action at all.
 pub(crate) fn refinable(request: &LocalCliHookRequestV1) -> bool {
     request.grant_allowed
@@ -78,10 +89,12 @@ pub(crate) fn refine(
             action: "block".to_owned(),
             ..Refined::default()
         },
-        Ok((Some("allowed"), _, _)) if !bound => Refined {
+        Ok((Some("allowed"), _, _)) if !bound && lifts(request) => Refined {
             action: "allow".to_owned(),
             ..Refined::default()
         },
+        // A review with its own risk signal outlives the grant.
+        Ok((Some("allowed"), _, _)) if !bound => Refined::keep(request),
         Ok((Some("allowed"), Some(launch), capabilities)) => {
             match grant_capabilities(&capabilities) {
                 Ok(capabilities) => Refined {

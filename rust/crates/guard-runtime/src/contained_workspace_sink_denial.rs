@@ -133,6 +133,47 @@ pub(super) fn denial_note(outputs: &[&[u8]]) -> Option<&'static str> {
     denied.then_some(GENERIC_NOTE)
 }
 
+/// Addresses that make a blocked connection one to this machine.
+const LOOPBACK_MARKERS: [&[u8]; 3] = [b"127.0.0.1", b"localhost", b"::1"];
+
+/// Whether a line of `outputs` names a blocked connection to this machine.
+pub(super) fn loopback_denied(outputs: &[&[u8]]) -> bool {
+    outputs.iter().any(|output| {
+        output
+            .to_ascii_lowercase()
+            .split(|byte| *byte == b'\n')
+            .any(|line| {
+                line_note(line) == Some(CONNECT_NOTE)
+                    && LOOPBACK_MARKERS
+                        .iter()
+                        .any(|marker| holds_address(line, marker))
+            })
+    })
+}
+
+/// Like `holds`, but `::1` may not continue another IPv6 address: inside
+/// `fe80::1` or `2001:db8::1:443` it names a remote host.
+fn holds_address(line: &[u8], marker: &[u8]) -> bool {
+    let ipv6 = marker.first() == Some(&b':');
+    line.windows(marker.len())
+        .enumerate()
+        .any(|(start, window)| {
+            let end = start + marker.len();
+            let before = start.checked_sub(1).map(|index| line[index]);
+            let after = line.get(end).copied();
+            window == marker
+                && before.is_none_or(|byte| {
+                    !word_byte(byte) && !(ipv6 && (byte == b':' || byte.is_ascii_hexdigit()))
+                })
+                && if ipv6 && before == Some(b'[') {
+                    // A bracketed address must close right after the marker.
+                    after == Some(b']')
+                } else {
+                    after.is_none_or(|byte| !word_byte(byte))
+                }
+        })
+}
+
 #[cfg(test)]
 #[path = "contained_workspace_sink_denial_tests.rs"]
 mod tests;

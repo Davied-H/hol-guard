@@ -43,7 +43,7 @@ def input_stream(root: Path, output, identities: set[str] | None = None) -> int:
     frame(legacy.canonical_bytes({"schema": "guard.command-pack-source-stream.v1", "count": len(rows)}))
     for path, kind in rows:
         # Native strict decoding still sees the original bytes, including duplicate keys.
-        data = legacy.read_source_bytes(path)
+        data = legacy.read_source_bytes(path, root=root)
         value = legacy.source_object(data, path)
         extension_id = value.get("extension", {}).get("extension_id") if kind == "command" else value.get("id")
         if not isinstance(extension_id, str) or path.stem != extension_id:
@@ -55,7 +55,7 @@ def input_stream(root: Path, output, identities: set[str] | None = None) -> int:
         if identities is not None:
             identities.add(extension_id)
         binding_path = root / "contracts/extensions/trust" / f"{extension_id}.v1.json"
-        binding = legacy.read_object(binding_path)
+        binding = legacy.read_object(binding_path, root=root)
         if (
             binding.get("schemaVersion") != "guard.extension-trust-binding.v1"
             or binding.get("extension") != extension_id
@@ -95,14 +95,33 @@ def safe_directory(path: Path) -> None:
         raise ValueError("pack output must be a directory")
 
 
-def stage(compiler: Path, destination: Path, *, session: PackCompilerSession | None = None) -> dict:
+def stage(
+    compiler: Path,
+    destination: Path,
+    *,
+    session: PackCompilerSession | None = None,
+    source_root: Path | None = None,
+    reuse=None,
+) -> dict:
+    if reuse is not None:
+        from extension_delivery_compiler_reuse import VerifiedCompilerReuse
+
+        if not isinstance(reuse, VerifiedCompilerReuse) or session is not None:
+            raise ValueError("compiler reuse requires a verified publication and a fresh process")
     if session:
         with session.request():
-            return _stage(compiler, destination, session=session)
-    return _stage(compiler, destination)
+            return _stage(compiler, destination, session=session, source_root=source_root)
+    return _stage(compiler, destination, source_root=source_root, reuse=reuse)
 
 
-def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | None = None) -> dict:
+def _stage(
+    compiler: Path,
+    destination: Path,
+    *,
+    session: PackCompilerSession | None = None,
+    source_root: Path | None = None,
+    reuse=None,
+) -> dict:
     safe_directory(destination)
     objects = destination / "objects"
     safe_directory(objects)
@@ -112,11 +131,16 @@ def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | 
     reused = created = changed_bytes = 0
     compilation = None
     with tempfile.TemporaryFile() as source, tempfile.TemporaryFile() as errors:
-        count = input_stream(legacy.ROOT, source, identities)
+        count = input_stream(source_root or legacy.ROOT, source, identities)
         process = (
             session.submit(compiler, source)
             if session
-            else subprocess.Popen([str(compiler), "compile-packs"], stdin=source, stdout=subprocess.PIPE, stderr=errors)
+            else subprocess.Popen(
+                [str(compiler), *(reuse.arguments() if reuse is not None else ["compile-packs"])],
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=errors,
+            )
         )
         try:
             assert process.stdout is not None
@@ -124,7 +148,7 @@ def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | 
                 if len(line) > MAX_OUTPUT_LINE or not line.endswith(b"\n"):
                     raise ValueError("native pack output exceeds record budget")
                 row = json.loads(line)
-                if session and row.get("kind") == "compilation":
+                if (session or reuse is not None) and row.get("kind") == "compilation":
                     stats = row.get("stats")
                     if (
                         compilation is not None
@@ -172,6 +196,8 @@ def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | 
                 raise ValueError(
                     f"native pack compiler failed ({status}): {errors.read(2048).decode(errors='replace')}"
                 )
+            if reuse is not None and compilation is None:
+                raise ValueError("native compiler reuse report is missing")
         finally:
             if not session and process.poll() is None:
                 process.terminate()
@@ -208,7 +234,7 @@ def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | 
         "created_objects": created,
         "reused_objects": reused,
         "changed_object_bytes": changed_bytes,
-        "compilation": compilation or "all sources revalidated; immutable objects reused",
+        "compilation": compilation or {"compiled": count, "reused": 0, "retained_encoded_bytes": 0},
     }
 
 

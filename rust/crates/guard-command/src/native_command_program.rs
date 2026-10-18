@@ -74,6 +74,11 @@ pub fn packaged_command_program_bytes() -> &'static [u8] {
 #[path = "native_command_program_admission.rs"]
 mod admission;
 pub(crate) use admission::{public_ipv4, public_ipv6};
+#[path = "native_command_program_collection.rs"]
+mod collection;
+#[path = "native_command_program_collection_reader.rs"]
+mod collection_reader;
+pub use collection_reader::PackAdmissionBudget;
 #[path = "native_command_program_compile.rs"]
 mod compile;
 #[path = "native_command_program_dispatch.rs"]
@@ -271,6 +276,7 @@ pub struct NativeCommandProgram {
     pub extensions: Vec<ProgramExtension>,
     pub rules: Vec<ProgramRule>,
     nodes: Vec<Node>,
+    node_ids: Vec<String>,
     executable_index: BTreeMap<String, Vec<usize>>,
     keyword_index: BTreeMap<String, Vec<usize>>,
     unindexed: Vec<usize>,
@@ -283,7 +289,7 @@ pub fn packaged_command_program() -> Result<Arc<NativeCommandProgram>, &'static 
     static PROGRAM: OnceLock<Result<Arc<NativeCommandProgram>, &'static str>> = OnceLock::new();
     PROGRAM
         .get_or_init(|| {
-            NativeCommandProgram::from_packaged_bytes(packaged_command_program_bytes())
+            NativeCommandProgram::from_embedded_artifact(packaged_command_program_bytes())
                 .map(Arc::new)
         })
         .clone()

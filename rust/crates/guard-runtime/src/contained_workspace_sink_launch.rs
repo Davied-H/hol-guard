@@ -17,6 +17,8 @@ pub(super) struct Launch<'a> {
     pub(super) exec_roots: &'a [String],
     pub(super) write_denials: &'a [String],
     pub(super) signals: &'a process::Signals,
+    /// Kept when the run failed on a blocked connection to this machine.
+    pub(super) loopback: grant::LoopbackNote<'a>,
 }
 
 impl Launch<'_> {
@@ -121,6 +123,7 @@ impl Launch<'_> {
             &self.private.path,
             self.signals,
             RUN_TIMEOUT_SECONDS,
+            &|| self.loopback.keep(),
         )
     }
 }

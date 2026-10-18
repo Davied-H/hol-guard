@@ -220,18 +220,20 @@ def persist_discovered_harness_mcp_servers(
     return labels
 
 
-def observe_configured_mcp_servers(store: object, *, context: HarnessContext, seen_at: str) -> int:
+def observe_configured_mcp_servers(store: object, *, context: HarnessContext, seen_at: str, stdio: bool = True) -> int:
     """Record every configured MCP server so Protect lists it before first use.
 
     Best effort: setup commands must not fail because a harness config is
-    unreadable. Returns the number of connectors recorded.
+    unreadable. Returns the number of connectors recorded. With ``stdio=False``
+    only remote servers are recorded: a stdio observation may carry a legacy
+    denial into a new grant, which a read-only caller must not do.
     """
 
     try:
         detections = _safe_detections(context.home_dir, context.guard_home, context.workspace_dir)
         labels = persist_discovered_harness_mcp_servers(
             store,
-            _stdio_servers(detections),
+            _stdio_servers(detections) if stdio else (),
             seen_at=seen_at,
             remote=_remote_servers(detections),
         )

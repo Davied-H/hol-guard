@@ -34,6 +34,12 @@ CONTEXT_COLUMNS: Final = (
 MAX_SUMMARY_CHARS: Final = 240
 MAX_LABEL_CHARS: Final = 80
 ConnectorResolutionState = Literal["unset", "allowed", "blocked"]
+# The causes a grant capability resolves, and the capability each implies.
+CAPABILITY_BY_CAUSE: Final = {
+    "connect_loopback": "loopback-network",
+    "read_home_state": "state-dir-read",
+    "write_home_state": "state-dir-write",
+}
 
 
 def ensure_local_cli_context_columns(connection: sqlite3.Connection) -> None:
@@ -75,6 +81,38 @@ def connector_resolution_state(
     return "blocked" if row[1] == "blocked" else "unset"
 
 
+def note_capability_cause(connection: sqlite3.Connection, *, cli_id: str, identity_hash: str, cause: str) -> int:
+    """Keep that an allowed CLI's contained run was denied what ``cause`` names.
+
+    The newest denial wins, so the connector points at the capability the last
+    run lacked. Nothing here turns a capability on. Returns how many rows
+    changed.
+    """
+
+    if cause not in CAPABILITY_BY_CAUSE:
+        raise ValueError("invalid_first_blocked_cause")
+    cursor = connection.execute(
+        """update local_cli_observation set first_blocked_cause = ?
+            where cli_id = ? and identity_hash = ? and surface = 'cli'
+              and first_blocked_cause is not ?""",
+        (cause, cli_id, identity_hash, cause),
+    )
+    return cursor.rowcount
+
+
+def implied_capabilities(connection: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+    """``{cli_id: (identity_hash, capability)}`` for each CLI whose cause implies one."""
+
+    capability_causes = tuple(CAPABILITY_BY_CAUSE)
+    marks = ", ".join("?" for _ in capability_causes)
+    rows = connection.execute(
+        f"""select cli_id, identity_hash, first_blocked_cause from local_cli_observation
+            where surface = 'cli' and first_blocked_cause in ({marks})""",
+        capability_causes,
+    ).fetchall()
+    return {str(row[0]): (str(row[1]), CAPABILITY_BY_CAUSE[str(row[2])]) for row in rows}
+
+
 def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
     names: set[str] = set()
     for row in connection.execute(f"pragma table_info({table})").fetchall():
@@ -83,6 +121,7 @@ def _column_names(connection: sqlite3.Connection, table: str) -> set[str]:
 
 
 __all__ = [
+    "CAPABILITY_BY_CAUSE",
     "CONTEXT_COLUMNS",
     "FIRST_BLOCKED_CAUSES",
     "MAX_LABEL_CHARS",
@@ -90,5 +129,7 @@ __all__ = [
     "ConnectorResolutionState",
     "connector_resolution_state",
     "ensure_local_cli_context_columns",
+    "implied_capabilities",
+    "note_capability_cause",
     "validated_first_blocked_cause",
 ]

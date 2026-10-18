@@ -256,3 +256,40 @@ def test_mcp_list_json_keeps_the_configs_that_declare_a_server(
     assert rc == 0
     (item,) = json.loads(out)["items"]
     assert item["declared_sources"] == ["codex:remote"]
+
+
+def test_mcp_list_names_the_endpoint_of_a_remote_server_first_seen_through_its_calls(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    store = GuardStore(home)
+    _observe(store, "zcode", "echo-mcp")
+    config = home / ".zcode" / "cli" / "config.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        json.dumps({"mcp": {"servers": {"echo-mcp": {"type": "http", "url": "https://mcp.example.test/mcp"}}}}),
+        encoding="utf-8",
+    )
+
+    rc, out = _run(capsys, "mcp", "list", "--home", str(home), "--json")
+
+    assert rc == 0
+    (item,) = json.loads(out)["items"]
+    assert item["remote_origin"] == "https://mcp.example.test/mcp"
+    assert item["declared_sources"] == ["zcode:remote"]
+
+
+def test_mcp_list_records_no_stdio_server(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A stdio observation can carry a legacy denial into a new grant; listing must not.
+    from codex_plugin_scanner.guard.adapters import harness_mcp_discovery
+
+    def no_stdio(_detections: object) -> list[object]:
+        raise AssertionError("mcp list recorded a stdio server")
+
+    monkeypatch.setattr(harness_mcp_discovery, "_stdio_servers", no_stdio)
+
+    rc, _out = _run(capsys, "mcp", "list", "--home", str(tmp_path / "home"), "--json")
+
+    assert rc == 0

@@ -475,20 +475,22 @@ mod tests {
     }
 
     #[test]
-    fn a_powershell_host_keeps_a_posix_shell_wrapped() {
-        // PowerShell reads `''` inside a single-quoted string as one literal
-        // quote, so unwrapping there would model a script the host's own
-        // shell never runs.
+    fn a_powershell_host_models_only_quoting_both_shells_read_alike() {
+        let first = |model: &crate::CanonicalCommandV1| {
+            model
+                .segments
+                .first()
+                .and_then(|segment| segment.executable.clone())
+        };
         crate::powershell_reads::with_windows_powershell_reads(|| {
             let model = parse("sh -c 'npm run build'");
-            assert_ne!(
-                model
-                    .segments
-                    .first()
-                    .and_then(|segment| segment.executable.as_deref()),
-                Some("npm"),
-                "{model:?}"
-            );
+            assert_eq!(first(&model).as_deref(), Some("npm"), "{model:?}");
+            assert!(model.wrapper_chain.is_empty());
+            // PowerShell reads `''` inside a single-quoted string as one
+            // literal quote, so unwrapping there would model a script the
+            // host's own shell never runs.
+            let model = parse("sh -c 'npm run it''s'");
+            assert_ne!(first(&model).as_deref(), Some("npm"), "{model:?}");
         });
     }
 

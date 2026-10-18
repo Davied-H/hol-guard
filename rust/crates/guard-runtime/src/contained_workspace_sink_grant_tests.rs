@@ -189,3 +189,52 @@ fn no_state_link_without_a_state_capability_or_directory() {
     link_state(&private, Some(&expected), &capabilities).unwrap();
     assert!(std::fs::symlink_metadata(&linked).is_err());
 }
+
+#[test]
+fn the_newest_loopback_denial_replaces_an_older_cause() {
+    let connection = rusqlite::Connection::open_in_memory().unwrap();
+    connection
+        .execute_batch(
+            "create table local_cli_observation (cli_id text, identity_hash text, \
+             surface text, first_blocked_cause text); \
+             insert into local_cli_observation values \
+             ('lanectl', 'h1', 'cli', null), \
+             ('lanectl', 'h2', 'cli', 'exec_outside_roots'), \
+             ('lanectl', 'h3', 'cli', 'write_home_state'), \
+             ('lanectl', 'h4', 'mcp', null);",
+        )
+        .unwrap();
+    for hash in ["h1", "h2", "h3", "h4"] {
+        keep_loopback_cause(&connection, "lanectl", hash).unwrap();
+    }
+    let causes: Vec<Option<String>> = connection
+        .prepare("select first_blocked_cause from local_cli_observation order by identity_hash")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        causes,
+        [
+            Some("connect_loopback".to_owned()),
+            Some("connect_loopback".to_owned()),
+            Some("connect_loopback".to_owned()),
+            None,
+        ]
+    );
+}
+
+#[test]
+fn a_grant_with_local_network_access_records_nothing() {
+    let fixture = Fixture::new("sink-grant-loopback");
+    let request = sandboxed(&fixture);
+    let with = json!({"cli_id": "c", "identity_hash": "h", "capabilities": ["loopback-network"]});
+    assert!(LoopbackNote::new(&request, Some(&with)).grant.is_none());
+    let without = json!({"cli_id": "c", "identity_hash": "h", "capabilities": []});
+    assert_eq!(
+        LoopbackNote::new(&request, Some(&without)).grant,
+        Some(("c", "h"))
+    );
+    assert!(LoopbackNote::new(&request, None).grant.is_none());
+}

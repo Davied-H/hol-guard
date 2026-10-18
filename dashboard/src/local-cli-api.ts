@@ -6,11 +6,9 @@ export { isLocalCliId } from "./local-cli-fields";
 export { normalizeLocalCliItem, normalizeLocalCliCommand, normalizeLocalCliList } from "./local-cli-normalize";
 import { startCancelableDiscoveryJob } from "./discovery-job-start";
 import type { LocalCliContinuity } from "./custom-extension-continuity-api";
+import type { LocalCliCapabilityChoices, LocalCliCapabilityFields } from "./local-cli-capability";
 
-export type {
-  LocalCliContinuity,
-  LocalCliContinuityStatus,
-} from "./custom-extension-continuity-api";
+export type { LocalCliContinuity, LocalCliContinuityStatus } from "./custom-extension-continuity-api";
 
 export type LocalCliKind = "executable" | "script";
 export type LocalCliState = "unset" | "allowed" | "blocked";
@@ -86,7 +84,7 @@ export type LocalCliItem = {
   display_name?: string;
   seeded?: boolean;
   installed?: boolean;
-};
+} & LocalCliCapabilityFields;
 
 export type LocalCliListResponse = {
   host_inventory?: import("./codex-host-inventory").CodexHostInventory;
@@ -121,6 +119,7 @@ export type LocalCliMutationPayload = {
   provider_actions?: Array<{ tool_slug: string; state: "review" | "block"; revision: number }>;
   approval_password?: string;
   approval_totp_code?: string;
+  capabilities?: LocalCliCapabilityChoices;
 };
 
 export class LocalCliApiError extends Error {

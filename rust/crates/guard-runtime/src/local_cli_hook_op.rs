@@ -117,6 +117,7 @@ pub(crate) fn run_refined(request: &LocalCliHookRequestV1) -> Result<Refined, &'
 
 /// The grant refinement alone, recording nothing: what the workspace sink
 /// asks again right before it widens a sandbox by a grant.
+#[cfg(unix)]
 pub(crate) fn decide_refined(request: &LocalCliHookRequestV1) -> Result<Refined, &'static str> {
     let package = checked_package(request)?;
     Ok(refined(request, &package))

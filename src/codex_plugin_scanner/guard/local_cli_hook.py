@@ -78,6 +78,7 @@ def local_cli_grant_action(
     current_action: GuardAction,
     grant_allowed: bool,
     reason_code: str | None = None,
+    path: str | None = None,
 ) -> GuardAction:
     """Record the CLI the command launches and refine the action with its grant."""
 
@@ -91,17 +92,20 @@ def local_cli_grant_action(
         current_action=current_action,
         grant_allowed=grant_allowed,
         reason_code=reason_code,
+        path=path,
     )
     if action is not None:
         return action
     return unverified_local_cli_action(store, current_action) if grant_allowed else current_action
 
 
-def observe_unlisted_cli(*, store: GuardStore, command: str, cwd: Path, home_dir: Path | None) -> None:
+def observe_unlisted_cli(
+    *, store: GuardStore, command: str, cwd: Path, home_dir: Path | None, path: str | None = None
+) -> None:
     """Record the CLIs a command launches without consulting any grant."""
 
     native_local_cli_hook(
-        store, command=command, cwd=cwd, home_dir=home_dir, current_action="allow", grant_allowed=False
+        store, command=command, cwd=cwd, home_dir=home_dir, current_action="allow", grant_allowed=False, path=path
     )
 
 
@@ -114,6 +118,7 @@ def native_local_cli_hook(
     current_action: GuardAction,
     grant_allowed: bool,
     reason_code: str | None = None,
+    path: str | None = None,
 ) -> GuardAction | None:
     """Return the resident's action, or ``None`` without a bound answer; a store failure raises.
 
@@ -129,6 +134,7 @@ def native_local_cli_hook(
         current_action=current_action,
         grant_allowed=grant_allowed,
         reason_code=reason_code,
+        path=path,
     )
     if reply is None:
         return None
@@ -143,6 +149,7 @@ def local_cli_contained_grant(
     home_dir: Path | None,
     current_action: GuardAction,
     reason_code: str | None,
+    path: str | None = None,
 ) -> tuple[str, ContainedGrant | None] | None:
     """The refined action of a sandbox-bound command and the grant that widens it.
 
@@ -157,17 +164,18 @@ def local_cli_contained_grant(
         current_action=current_action,
         grant_allowed=True,
         reason_code=reason_code,
+        path=path,
     )
     return None if reply is None else (reply.action, reply.contained_grant)
 
 
 def local_cli_setup_connector(
-    *, store: GuardStore, command: str, cwd: Path, home_dir: Path | None
+    *, store: GuardStore, command: str, cwd: Path, home_dir: Path | None, path: str | None = None
 ) -> SetupConnector | None:
     """The connector a command review waits on, when Guard was never set up for it on this device."""
 
     reply = _native_local_cli_hook_reply(
-        store, command=command, cwd=cwd, home_dir=home_dir, current_action="review", grant_allowed=True
+        store, command=command, cwd=cwd, home_dir=home_dir, current_action="review", grant_allowed=True, path=path
     )
     if reply is None or reply.action != "review":
         return None
@@ -183,7 +191,14 @@ def _native_local_cli_hook_reply(
     current_action: GuardAction,
     grant_allowed: bool,
     reason_code: str | None = None,
+    path: str | None = None,
 ) -> _Reply | None:
+    """Ask the resident about the CLI ``command`` launches.
+
+    ``path`` is the ``PATH`` the agent runs the command with. A daemon started by
+    the OS has its own short ``PATH``, so without it a CLI the agent finds in
+    ``~/.local/bin`` would resolve to nothing here and miss its grant.
+    """
 
     # A caller operation clock bounds the call, as it bounds a store call.
     operation_deadline = sqlite_operation_deadline_monotonic()
@@ -203,7 +218,7 @@ def _native_local_cli_hook_reply(
         "cwd": str(cwd),
         "home_dir": None if home_dir is None else str(home_dir),
         "user_home": str(Path.home()),
-        "env": dict(os.environ),
+        "env": _launch_env(path),
         "current_action": current_action,
         "grant_allowed": grant_allowed,
     }
@@ -253,6 +268,13 @@ def _native_local_cli_hook_reply(
         return None
     connector = _setup_connector(payload.get("connector")) if action == "review" else None
     return _Reply(action, connector, None)
+
+
+def _launch_env(path: str | None) -> dict[str, str]:
+    env = dict(os.environ)
+    if path is not None:
+        env["PATH"] = path
+    return env
 
 
 def _contained_grant(value: object) -> ContainedGrant | None:

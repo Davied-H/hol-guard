@@ -35,6 +35,7 @@
 
 use super::local_cli::block::ReviewVerdict;
 use super::{reviewed_edge, HookDirectDefer, PRE_TOOL_USE};
+use crate::connector_setup::grant_lifts;
 use crate::local_store_read::{
     open_read_only, schema_version, table_exists, STORE_FILE_NAME, SUPPORTED_SCHEMA_VERSION,
 };
@@ -51,7 +52,7 @@ use std::path::Path;
 use zeroize::Zeroizing;
 
 const REVIEW_ACTIONS: [&str; 2] = ["review", "require-reapproval"];
-/// `GUARD_CONTROL_ACTION_TYPES` and `package`: never overridden by an allow.
+/// `GUARD_CONTROL_ACTION_TYPES` and `package`: never lifted by a broad grant.
 const NON_OVERRIDABLE_ACTION_TYPES: [&str; 5] = [
     "guard_control",
     "guard-control",
@@ -120,7 +121,7 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
     if encoded.len() * ESCAPE_FACTOR + ENVELOPE_BYTES > NATIVE_EXACT_ACTION_MAX_BYTES {
         return Err(HookDirectDefer::SavedDecision);
     }
-    let token = crate::native_exact_action_op::exact_action_token(&exact);
+    let token = crate::native_exact_action_op::approval_token(&exact);
 
     let custom;
     let store_path = Path::new(context.guard_home).join(STORE_FILE_NAME);
@@ -171,9 +172,10 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
             Err(_) => {}
         }
     }
-    // The custom allow lifts only a review the saved decision left standing
-    // and the daemon may override, so it never weakens a block or a floor.
-    if custom == Some(ReviewVerdict::Allowed) && overridable(&result) {
+    // The custom allow lifts only an overridable review due to non-recognition,
+    // so it never weakens a block, a floor or a risk signal on the operands.
+    let reason = result.get("reason_code").and_then(Value::as_str);
+    if custom == Some(ReviewVerdict::Allowed) && overridable(&result) && grant_lifts(reason) {
         let mut allowed = result.clone();
         for key in ["decision", "minimum_action", "policy_action"] {
             allowed.insert(key.to_owned(), json!("allow"));
@@ -339,7 +341,7 @@ fn saved_verdict(
         Some("allow")
             if decision.get("source").and_then(Value::as_str) == Some("approval-gate")
                 && !truthy(decision.get("expires_at"))
-                && overridable(result) =>
+                && approvable(result) =>
         {
             let mut allowed = result.clone();
             for key in ["decision", "minimum_action", "policy_action"] {
@@ -363,15 +365,22 @@ fn render(harness: &str, verdict: &Object, status: &str) -> Option<Value> {
     Some(Value::Object(response))
 }
 
-/// `_native_review_is_overridable`. An unhashable action type, which raises
-/// there, is never overridable here.
-fn overridable(result: &Object) -> bool {
+/// `_native_review_is_approvable`: a review the user answers. The user's own
+/// exact-action allow holds for every such review, whatever its action type
+/// (`docs/guard/approval-invariant.md`).
+fn approvable(result: &Object) -> bool {
     let review = |key: &str| {
         result
             .get(key)
             .and_then(Value::as_str)
             .is_some_and(|action| REVIEW_ACTIONS.contains(&action))
     };
+    review("policy_action") && review("minimum_action")
+}
+
+/// `_native_review_is_overridable`: a review a broad local-CLI grant may lift.
+/// An unhashable action type, which raises there, is never overridable here.
+fn overridable(result: &Object) -> bool {
     let action_type = result
         .get("action")
         .and_then(Value::as_object)
@@ -381,7 +390,7 @@ fn overridable(result: &Object) -> bool {
         Some(Value::Array(_) | Value::Object(_)) => false,
         _ => true,
     };
-    review("policy_action") && review("minimum_action") && overridable_type
+    approvable(result) && overridable_type
 }
 
 /// A review due only to non-recognition of a command that launches a local
