@@ -11,6 +11,8 @@ pub(crate) mod contained_publish;
 #[path = "env_prefix_projection.rs"]
 mod env_prefix_projection;
 pub use env_prefix_projection::bindable_setting;
+#[path = "generic_cline_view.rs"]
+mod cline_view;
 #[path = "generic_extract.rs"]
 mod extract;
 #[path = "generic_omp.rs"]
@@ -169,6 +171,13 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
     let projected_payload;
     let mut payload = payload;
     let within;
+    let cline_payload;
+    if harness == "cline" {
+        if let Some(view) = cline_view::evaluated_view(payload) {
+            cline_payload = view;
+            payload = &cline_payload;
+        }
+    }
     if harness == "omp"
         && event == "PreToolUse"
         && payload.get("tool_name").and_then(Value::as_str) == Some("bash")

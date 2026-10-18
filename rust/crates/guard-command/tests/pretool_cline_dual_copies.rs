@@ -1,6 +1,7 @@
 //! Cline 4.1 sends each tool call twice: a typed `tool_call` and a
 //! compatibility `preToolUse` whose parameters are JSON strings, under the
-//! event label `tool_call`. Prepared payloads must read as one call.
+//! event label `tool_call`. Prepare keeps both copies for the receipt, and
+//! evaluation must still read them as one call.
 
 use guard_command::hook_adapter_prepare::prepare_payload;
 use guard_command::hook_adapter_value::{parse_python_json, OValue};
@@ -38,9 +39,13 @@ fn prepared(payload: &Value) -> Result<Value, String> {
 }
 
 fn verdict(payload: &Value) -> (Value, Value) {
+    verdict_for("PreToolUse", payload)
+}
+
+fn verdict_for(event: &str, payload: &Value) -> (Value, Value) {
     let result = evaluate_pre_tool_envelope_with_context(
         "cline",
-        "PreToolUse",
+        event,
         payload,
         None,
         None,
@@ -60,10 +65,11 @@ fn dual_copy_read_is_one_unambiguous_call() {
         &json!({"files": "[{\"path\":\"README.md\"}]"}),
     );
     let prepared = prepared(&payload).expect("copies agree");
-    assert_eq!(prepared["hookName"], json!("PreToolUse"));
     assert_eq!(prepared["tool_name"], json!("read_file"));
-    assert!(prepared.get("tool_call").is_none());
-    assert!(prepared.get("preToolUse").is_none());
+    assert!(
+        prepared.get("tool_call").is_some(),
+        "the receipt keeps the copy"
+    );
     let (_, reason_code) = verdict(&prepared);
     assert_ne!(reason_code, json!("native_pre_tool_ambiguous_payload"));
 }
@@ -119,12 +125,28 @@ fn disagreeing_copies_are_still_refused() {
 }
 
 #[test]
-fn prompt_event_label_is_canonical() {
+fn a_copy_naming_another_tool_is_still_refused() {
+    let payload = cline_payload(
+        "tool_call",
+        "run_commands",
+        &json!({"commands": ["git status"]}),
+        &json!({"commands": "[\"git status\"]"}),
+    );
+    let mut prepared = prepared(&payload).expect("copies agree");
+    prepared["tool_call"]["name"] = json!("write_to_file");
+    let (decision, reason_code) = verdict(&prepared);
+    assert_ne!(decision, json!("allow"));
+    assert_eq!(reason_code, json!("native_pre_tool_ambiguous_payload"));
+}
+
+#[test]
+fn prompt_event_label_reads_as_one_event() {
     let payload = json!({
         "hookName": "prompt_submit",
         "userPromptSubmit": {"prompt": "summarize the readme"},
     });
     let prepared = prepared(&payload).expect("prompt prepares");
-    assert_eq!(prepared["hookName"], json!("UserPromptSubmit"));
     assert_eq!(prepared["hook_event_name"], json!("UserPromptSubmit"));
+    let (_, reason_code) = verdict_for("UserPromptSubmit", &prepared);
+    assert_ne!(reason_code, json!("native_pre_tool_ambiguous_payload"));
 }
