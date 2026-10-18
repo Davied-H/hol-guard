@@ -1438,11 +1438,6 @@ class TestGuardSurfaceServer:
         home_dir.mkdir()
         workspace_dir.mkdir()
         store = GuardStore(tmp_path / "guard-home")
-        monkeypatch.setattr(
-            daemon_server_module._GuardDaemonHandler,
-            "_hook_safe_roots",
-            lambda _self: (home_dir.resolve(),),
-        )
         daemon = GuardDaemonServer(store, host="127.0.0.1", port=0)
 
         captured: dict[str, object] = {}
@@ -1503,11 +1498,6 @@ class TestGuardSurfaceServer:
         home_dir = tmp_path / "home"
         home_dir.mkdir()
         store = GuardStore(tmp_path / "guard-home")
-        monkeypatch.setattr(
-            daemon_server_module._GuardDaemonHandler,
-            "_hook_safe_roots",
-            lambda _self: (home_dir.resolve(),),
-        )
         daemon = GuardDaemonServer(store, host="127.0.0.1", port=0)
 
         captured: dict[str, object] = {}
@@ -1565,11 +1555,6 @@ class TestGuardSurfaceServer:
         home_dir.mkdir()
         workspace_dir.mkdir()
         store = GuardStore(tmp_path / "guard-home")
-        monkeypatch.setattr(
-            daemon_server_module._GuardDaemonHandler,
-            "_hook_safe_roots",
-            lambda _self: (home_dir.resolve(),),
-        )
         monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_PROCESS_TIMEOUT_SECONDS", 0.03)
         monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_ADMISSION_TIMEOUT_SECONDS", 0.03)
         daemon = GuardDaemonServer(store, host="127.0.0.1", port=0)

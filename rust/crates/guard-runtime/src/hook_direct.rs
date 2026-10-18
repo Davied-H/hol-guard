@@ -297,7 +297,17 @@ fn answer(
     };
 
     let request_home = match request.home_dir {
-        Some(home_dir) => home_dir,
+        // The daemon sends the `home` query as the caller spelled it. The
+        // lane settles it here rather than letting the daemon spend a round
+        // trip settling a directory only this operation reads; a spelling
+        // that cannot be settled defers, and the daemon path refuses and
+        // audits it there.
+        Some(home_dir) => {
+            let bound = policy_store
+                .direct_lane_home_dir()
+                .ok_or(HookDirectDefer::BindingIncomplete)?;
+            settled_directory(&normpath(&expanduser(&home_dir, &bound)?)?)?
+        }
         None => policy_store
             .direct_lane_home_dir()
             .ok_or(HookDirectDefer::BindingIncomplete)?,

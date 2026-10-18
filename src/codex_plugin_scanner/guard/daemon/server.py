@@ -1855,7 +1855,24 @@ class _GuardDaemonHandler(
         )
         payload = {key: value for key, value in payload.items() if key != "hook_env"}
         daemon_server = self._daemon_server()
-        paths_validated = False
+        # Oh My Pi has no bridge to ask the resident first, so ask it here.
+        # The raw `home` query goes with the raw workspace: the resident
+        # settles both against the lane it bound, and a home it cannot settle
+        # defers to the daemon path below, which refuses and audits it. Asking
+        # the runtime to settle directories first would spend a round trip per
+        # hook on the answer path, where nothing here reads the result.
+        direct_response = pi_direct_answer(
+            getattr(daemon_server, "hook_worker", None),
+            default_harness=default_harness,
+            params=params,
+            payload=payload,
+            home_dir=self._optional_string(params.get("home", [None])[-1]),
+            deadline=hook_deadline.expires_at,
+        )
+        if direct_response is not None:
+            self._write_json(direct_response)
+            return
+
         try:
             workspace_query = self._normalized_hook_workspace_string(params.get("workspace", [None])[-1])
             action_workdir_provided, action_workdir = self._runtime_hook_exec_command_workdir(payload)
@@ -1874,7 +1891,6 @@ class _GuardDaemonHandler(
             if action_workdir_provided and action_workdir is None:
                 raise _HookPathValidationError("workspace", "invalid_action_workdir")
             workspace = directories.require("workspace")
-            paths_validated = True
         except _HookPathValidationError as error:
             # The Rust edge still receives the complete raw payload. Use
             # daemon-owned metadata when an optional caller context is
@@ -1884,20 +1900,6 @@ class _GuardDaemonHandler(
             home_dir = str(daemon_server.home_dir)
             guard_home = str(daemon_server.store.guard_home)
             workspace = None
-
-        if paths_validated:
-            # Oh My Pi has no bridge to ask the resident first, so ask it here.
-            direct_response = pi_direct_answer(
-                getattr(daemon_server, "hook_worker", None),
-                default_harness=default_harness,
-                params=params,
-                payload=payload,
-                home_dir=home_dir,
-                deadline=hook_deadline.expires_at,
-            )
-            if direct_response is not None:
-                self._write_json(direct_response)
-                return
 
         if not prepare_native_hook_policy(
             self, daemon_server, payload, params, default_harness, workspace, hook_deadline.expires_at

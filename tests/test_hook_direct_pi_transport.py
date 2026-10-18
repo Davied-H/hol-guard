@@ -17,6 +17,21 @@ ANSWER = {"schema": "guard-hook-direct-result.v1", "outcome": "answer", "edge": 
 DEFER = {"schema": "guard-hook-direct-result.v1", "outcome": "defer", "reason": "direct_hook_event_unsupported"}
 
 
+class _SettledDirectories:
+    """Stand in for the directories the runtime settles for one request.
+
+    The handler asks for every candidate at once and reads each verdict back
+    by name. Nothing here is a verdict: these tests are about the transport,
+    so each candidate settles as the string it arrived as.
+    """
+
+    def __init__(self, candidates: tuple[tuple[str, str | None], ...]) -> None:
+        self._paths = {parameter: value for parameter, value in candidates}
+
+    def require(self, parameter: str) -> str | None:
+        return self._paths.get(parameter)
+
+
 class _Client:
     def __init__(self, output: object) -> None:
         self.output = output
@@ -153,13 +168,7 @@ def _handle(worker: SimpleNamespace, harness: str, query: str = "workspace=/work
         request=object(),
         _daemon_server=lambda: daemon,
         _optional_string=lambda value: value if isinstance(value, str) else None,
-        _settled_hook_directories=lambda *candidates, **kwargs: SimpleNamespace(
-            require=lambda parameter, **_ignored: next(
-                (value for name, value in candidates if name == parameter), None
-            )
-        ),
-        _validated_hook_guard_home=lambda value: value,
-        _hook_safe_roots=lambda: (),
+        _settled_hook_directories=lambda *candidates, **kwargs: _SettledDirectories(candidates),
         _normalized_hook_workspace_string=lambda value: value,
         _runtime_hook_exec_command_workdir=lambda payload: (False, None),
         _record_hook_path_rejection=lambda **values: None,
@@ -189,13 +198,17 @@ def test_the_daemon_path_continues_after_a_defer(tmp_path: Path, harness: str, o
 
 
 def test_a_rejected_path_keeps_the_daemon_path(tmp_path: Path) -> None:
-    client = _Client(ANSWER)
+    # The direct lane is asked first, with the `home` query as the caller
+    # spelled it, and defers here. Settling the directories is then the
+    # daemon path's own work, and a refused path keeps the request on it.
+    client = _Client(DEFER)
 
-    def reject(*_candidates: object, **_kwargs: object):
+    def reject(*candidates: object, **kwargs: object) -> object:
         raise server._HookPathValidationError("workspace", "outside_roots")  # pyright: ignore[reportPrivateUsage]
 
     worker = _worker(client, tmp_path)
     responses: list[dict[str, object]] = []
+    rejections: list[tuple[str, str]] = []
     daemon = SimpleNamespace(
         request_deadline=lambda request, cap: time.monotonic() + cap,
         home_dir=Path("/home/user"),
@@ -208,9 +221,8 @@ def test_a_rejected_path_keeps_the_daemon_path(tmp_path: Path) -> None:
         _optional_string=lambda value: value if isinstance(value, str) else None,
         _settled_hook_directories=reject,
         _normalized_hook_workspace_string=lambda value: value,
-        _record_hook_path_rejection=lambda **values: None,
-        _hook_safe_roots=lambda: (),
         _runtime_hook_exec_command_workdir=lambda payload: (False, None),
+        _record_hook_path_rejection=lambda **values: rejections.append((values["parameter"], values["reason"])),
         _runtime_hook_fail_safe_response=lambda *args, **kwargs: {"reason_code": kwargs["reason_code"]},
         _write_json=responses.append,
     )
@@ -220,5 +232,6 @@ def test_a_rejected_path_keeps_the_daemon_path(tmp_path: Path) -> None:
         "workspace=/work",
         default_harness="pi",
     )
-    assert client.calls == []
+    assert len(client.calls) == 1
+    assert rejections == [("workspace", "outside_roots")]
     assert responses == [{"reason_code": "native_policy_not_ready"}]
