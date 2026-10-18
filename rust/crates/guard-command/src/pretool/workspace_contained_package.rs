@@ -28,6 +28,9 @@ use std::path::{Path, PathBuf};
 // Node package managers. Their scripts, builds, tests and version probes run
 // workspace code, which the sandbox bounds like any other local command.
 const NODE_MANAGERS: &[&str] = &["npm", "pnpm", "yarn", "bun"];
+// The runners that fetch the package they name. Only the caller's proof that
+// every one of them starts an installed project tool makes them local work.
+const PACKAGE_RUNNERS: &[&str] = &["npx", "bunx", "pnpx"];
 pub(super) const NODE_PACKAGE_EXTENSION: &str = "command.package.node";
 const PYTHON_PACKAGE_EXTENSION: &str = "command.package.python";
 // The package-firewall permissions that mark a manager's use. They record
@@ -325,7 +328,12 @@ pub(super) fn local_package_work(
             return local_uv_work(&arguments, directory, workspace);
         }
         if !NODE_MANAGERS.contains(&name.as_str()) {
-            return !super::super::generic::is_package_tool(executable);
+            // A runner still here was not proved to start an installed tool,
+            // so the package it names is one it fetches. The fallback below
+            // admits whatever is not a package tool, which a runner is not,
+            // so a manager's local verb beside it must not carry it in.
+            return !PACKAGE_RUNNERS.contains(&name.as_str())
+                && !super::super::generic::is_package_tool(executable);
         }
         let arguments: Vec<&str> = segment
             .arguments
