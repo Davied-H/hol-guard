@@ -138,7 +138,7 @@ fn supervise_managed_child(
     // Windows spawns the serving child without a stderr pipe, so the record
     // carries the supervisor's own classification of this exit.
     if let Ok(scope) = crate::resident_state::state_scope(owner.state_base, owner.digest) {
-        super::record_supervised_exit(
+        super::exit_record::record_supervised_exit(
             &scope,
             Some(super::resident_failure_log::ResidentFailureLog::for_scope(
                 &scope,
