@@ -153,7 +153,11 @@ def _handle(worker: SimpleNamespace, harness: str, query: str = "workspace=/work
         request=object(),
         _daemon_server=lambda: daemon,
         _optional_string=lambda value: value if isinstance(value, str) else None,
-        _validated_hook_directory_string=lambda _kind, value, **kwargs: value,
+        _settled_hook_directories=lambda *candidates, **kwargs: SimpleNamespace(
+            require=lambda parameter, **_ignored: next(
+                (value for name, value in candidates if name == parameter), None
+            )
+        ),
         _validated_hook_guard_home=lambda value: value,
         _hook_safe_roots=lambda: (),
         _normalized_hook_workspace_string=lambda value: value,
@@ -187,7 +191,7 @@ def test_the_daemon_path_continues_after_a_defer(tmp_path: Path, harness: str, o
 def test_a_rejected_path_keeps_the_daemon_path(tmp_path: Path) -> None:
     client = _Client(ANSWER)
 
-    def reject(_kind: str, value: str | None, **kwargs: object) -> str | None:
+    def reject(*_candidates: object, **_kwargs: object):
         raise server._HookPathValidationError("workspace", "outside_roots")  # pyright: ignore[reportPrivateUsage]
 
     worker = _worker(client, tmp_path)
@@ -202,9 +206,11 @@ def test_a_rejected_path_keeps_the_daemon_path(tmp_path: Path) -> None:
         request=object(),
         _daemon_server=lambda: daemon,
         _optional_string=lambda value: value if isinstance(value, str) else None,
-        _validated_hook_directory_string=reject,
+        _settled_hook_directories=reject,
+        _normalized_hook_workspace_string=lambda value: value,
         _record_hook_path_rejection=lambda **values: None,
         _hook_safe_roots=lambda: (),
+        _runtime_hook_exec_command_workdir=lambda payload: (False, None),
         _runtime_hook_fail_safe_response=lambda *args, **kwargs: {"reason_code": kwargs["reason_code"]},
         _write_json=responses.append,
     )

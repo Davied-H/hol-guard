@@ -1927,6 +1927,7 @@ class _GuardDaemonHandler(
                     default_harness=default_harness,
                     reason="HOL Guard could not authenticate the local hook payload.",
                     reason_code="invalid_hook_payload_reference",
+                    hook_deadline=hook_deadline.expires_at,
                 )
             )
             return
@@ -1943,6 +1944,7 @@ class _GuardDaemonHandler(
                     params,
                     default_harness=default_harness,
                     reason_code=reservation_reason,
+                    hook_deadline=hook_deadline.expires_at,
                 )
             )
             return
@@ -2052,6 +2054,7 @@ class _GuardDaemonHandler(
         *,
         default_harness: str,
         reason_code: RuntimeHookAdmissionReason | None = None,
+        hook_deadline: float | None = None,
     ) -> dict[str, object]:
         resolved_reason_code = reason_code or "daemon_hook_queue_capacity"
         if resolved_reason_code == "daemon_hook_deadline_exhausted":
@@ -2064,6 +2067,7 @@ class _GuardDaemonHandler(
             default_harness=default_harness,
             reason=reason,
             reason_code=resolved_reason_code,
+            hook_deadline=hook_deadline,
         )
 
     def _runtime_hook_fail_safe_response(
@@ -2074,12 +2078,13 @@ class _GuardDaemonHandler(
         default_harness: str,
         reason: str,
         reason_code: str,
+        hook_deadline: float | None = None,
     ) -> dict[str, object]:
         runtime_harness = self._optional_string(params.get("runtime-harness", [None])[-1])
         harness = (runtime_harness or default_harness).strip().lower().replace("_", "-")
         event = self._optional_string(payload.get("hook_event_name", payload.get("event"))) or "PreToolUse"
         daemon_server = getattr(self, "server", None)
-        workspace_path, home_path = self._validated_fail_safe_hook_paths(params)
+        workspace_path, home_path = self._validated_fail_safe_hook_paths(params, hook_deadline=hook_deadline)
         guard_home = None if daemon_server is None else cast(_GuardDaemonHttpServer, daemon_server).store.guard_home
         from ..native_policy_snapshot_acked import recording_only_from_acked_snapshot
         from .hook_availability_policy import availability_harness_response
@@ -2100,6 +2105,8 @@ class _GuardDaemonHandler(
     def _validated_fail_safe_hook_paths(
         self,
         params: Mapping[str, list[str]],
+        *,
+        hook_deadline: float | None = None,
     ) -> tuple[Path | None, Path | None]:
         """Return workspace and home directories that passed hook path validation.
 
@@ -2108,11 +2115,18 @@ class _GuardDaemonHandler(
         a fail-safe response must not wait on the runtime it is standing in for.
         """
 
+        deadline = time.monotonic() + _FAIL_SAFE_DIRECTORY_TRUST_SECONDS
+        if hook_deadline is not None:
+            deadline = min(deadline, hook_deadline)
+        if time.monotonic() >= deadline:
+            # A fail-safe answer must not start another RPC after the hook
+            # budget expires; omitting unverified paths remains fail closed.
+            return (None, None)
         try:
             directories = self._settled_hook_directories(
                 ("workspace", self._optional_string(params.get("workspace", [None])[-1])),
                 ("home", self._optional_string(params.get("home", [None])[-1])),
-                deadline_monotonic=time.monotonic() + _FAIL_SAFE_DIRECTORY_TRUST_SECONDS,
+                deadline_monotonic=deadline,
             )
         except _HookPathValidationError:
             return (None, None)
@@ -2162,6 +2176,7 @@ class _GuardDaemonHandler(
                     default_harness=default_harness,
                     reason="HOL Guard could not complete the native hook decision safely.",
                     reason_code="native_hook_worker_unavailable",
+                    hook_deadline=deadline,
                 )
             elif deadline is not None and time.monotonic() >= deadline:
                 result = self._runtime_hook_fail_safe_response(
@@ -2170,6 +2185,7 @@ class _GuardDaemonHandler(
                     default_harness=default_harness,
                     reason="HOL Guard could not complete local review within the hook deadline. Retry this action.",
                     reason_code="daemon_hook_deadline_exhausted",
+                    hook_deadline=deadline,
                 )
         # The decision is final. Free its review slot before the answer is
         # sent: a client holding its answer must never see the slot still

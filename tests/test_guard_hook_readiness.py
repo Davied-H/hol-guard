@@ -28,6 +28,11 @@ class _FakeHandler:
     def _daemon_server(self) -> object:
         return self._fake_daemon_server
 
+    def _settled_hook_directories(self, *candidates: tuple[str, str | None], **_kwargs: object):
+        """The readiness tests stub a successful native admission verdict."""
+        values = {parameter: value for parameter, value in candidates if value is not None}
+        return SimpleNamespace(require=lambda parameter, **_ignored: values.get(parameter))
+
     @staticmethod
     def _optional_string(value: object) -> str | None:
         return value if isinstance(value, str) else None
