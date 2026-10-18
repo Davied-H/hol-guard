@@ -53,6 +53,10 @@ fn fixture() -> Fixture {
     ] {
         write(app.join(file), "export default function Page() {}\n");
     }
+    // A route directory whose class also matches a one-letter sibling once
+    // the shell folds case.
+    write(app.join("app/[sidebar]/page.tsx"), "export default 2;\n");
+    write(app.join("app/S/page.tsx"), "export default 3;\n");
     // A route that keeps a local environment file beside its component.
     write(app.join("app/admin/[id]/page.tsx"), "export default 1;\n");
     write(app.join("app/admin/[id]/.env"), "TOKEN=fixture\n");
@@ -114,6 +118,9 @@ fn bracketed_searches_that_could_reach_more_keep_their_review() {
         "rg -n export ~/portal/app/[,-0]",
         // A parent component leaves the tree whose rules were inspected.
         "rg -n export ../portal/app/[locale]",
+        // Under `nocaseglob` the class matches the sibling named `S`, so the
+        // word is not the literal route directory the screens walked.
+        "rg -n export ~/portal/app/[sidebar]",
     ] {
         check(&f, command, false);
     }
