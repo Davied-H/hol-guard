@@ -1490,7 +1490,9 @@ class TestGuardSurfaceServer:
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(request, timeout=5) as response:
+            # The review deliberately outlasts the full admission budget, so
+            # allow for it plus the daemon's own work.
+            with urllib.request.urlopen(request, timeout=30) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         finally:
             daemon.stop()
@@ -1579,14 +1581,18 @@ class TestGuardSurfaceServer:
             "_hook_safe_roots",
             lambda _self: (home_dir.resolve(),),
         )
-        # Wide enough that admission itself never starves on a loaded runner,
-        # short enough that the review below finishes well after it lapses.
-        monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_PROCESS_TIMEOUT_SECONDS", 0.5)
-        monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_ADMISSION_TIMEOUT_SECONDS", 0.5)
         daemon = GuardDaemonServer(store, host="127.0.0.1", port=0)
 
-        def late_review(**_kwargs: object) -> dict[str, object]:
-            time.sleep(1.0)
+        # Run past the deadline the review was handed rather than past a wall
+        # clock: shortening the admission budget instead would make the same
+        # deadline expire before the scheduler ever admits the request, and the
+        # answer would then be a capacity rejection rather than the late
+        # decision this test is about.
+        def late_review(**kwargs: object) -> dict[str, object]:
+            deadline = kwargs.get("deadline")
+            if isinstance(deadline, (int, float)):
+                while time.monotonic() <= deadline + 0.05:
+                    time.sleep(0.01)
             return {"decision": "allow"}
 
         monkeypatch.setattr(
