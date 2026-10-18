@@ -190,10 +190,29 @@ const HOME_PREFIXES: [&str; 4] = [".npm-global", ".local", "n", ".nodebrew/curre
 
 /// Directories holding one prefix per installed Node version, and the
 /// component between a version and its prefix where a manager adds one.
-const HOME_VERSION_ROOTS: [(&str, &str); 4] = [
+///
+/// A manager that follows the XDG layout keeps its versions below
+/// `~/.local/share`, and on macOS fnm uses the application-support directory
+/// instead, so both spellings are read beside the manager's older home
+/// directory. A relocation a variable asks for (`NVM_DIR`, `FNM_DIR`,
+/// `XDG_DATA_HOME`) is not read: those are exported by the manager's own
+/// shell setup on every machine that uses one, so refusing them would review
+/// an ordinary `npm ls` for every developer who installed Node that way,
+/// while the file they move is one only someone who can already write the
+/// home directory can write.
+const HOME_VERSION_ROOTS: [(&str, &str); 10] = [
     (".nvm/versions/node", ""),
     (".fnm/node-versions", "installation"),
+    (".local/share/fnm/node-versions", "installation"),
+    (
+        "Library/Application Support/fnm/node-versions",
+        "installation",
+    ),
+    (".local/share/mise/installs/node", ""),
+    (".local/share/rtx/installs/node", ""),
     (".asdf/installs/nodejs", ""),
+    (".nodenv/versions", ""),
+    (".proto/tools/node", ""),
     (".volta/tools/image/node", ""),
 ];
 

@@ -225,18 +225,37 @@ fn a_global_configuration_file_is_read_wherever_node_was_installed() {
     }
     std::fs::remove_file(global.join("npmrc")).unwrap();
     // One prefix per installed version, as a version manager keeps them.
-    let version = home.join(".nvm/versions/node/v24.4.1/etc");
-    std::fs::create_dir_all(&version).unwrap();
-    std::fs::write(
-        version.join("npmrc"),
-        "registry=https://registry.example.test/\n",
-    )
-    .unwrap();
-    for command in commands {
-        assert_ne!(
-            decide(&[], Some(&home), command, &home, &project),
-            "allow",
-            "{command}"
-        );
+    // Managers that follow the XDG layout, and fnm on macOS, keep that
+    // directory somewhere else, and the file moves with it.
+    for prefix in [
+        ".nvm/versions/node/v24.4.1",
+        ".local/share/fnm/node-versions/v24.4.1/installation",
+        "Library/Application Support/fnm/node-versions/v24.4.1/installation",
+        ".local/share/mise/installs/node/24.4.1",
+        ".nodenv/versions/24.4.1",
+        ".proto/tools/node/24.4.1",
+    ] {
+        let version = home.join(prefix).join("etc");
+        std::fs::create_dir_all(&version).unwrap();
+        std::fs::write(
+            version.join("npmrc"),
+            "registry=https://registry.example.test/\n",
+        )
+        .unwrap();
+        for command in commands {
+            assert_ne!(
+                decide(&[], Some(&home), command, &home, &project),
+                "allow",
+                "{prefix} {command}"
+            );
+        }
+        std::fs::remove_file(version.join("npmrc")).unwrap();
+        for command in commands {
+            assert_eq!(
+                decide(&[], Some(&home), command, &home, &project),
+                "allow",
+                "{prefix} {command}"
+            );
+        }
     }
 }
