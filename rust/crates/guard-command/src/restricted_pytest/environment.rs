@@ -219,8 +219,11 @@ pub(super) fn filter(
     // plan grants read-only and links into a private `CARGO_HOME` cargo can
     // take its locks in. The toolchain resolves through the real rustup
     // installation, and the offline flag turns a missing crate into an
-    // immediate error rather than a blocked fetch.
-    if allowed.is_empty() && !super::toolchains::host_cargo_caches().is_empty() {
+    // immediate error rather than a blocked fetch. A host that has fetched no
+    // crate yet still gets all three: the private directory is empty rather
+    // than absent, and a run whose toolchain lives in rustup needs
+    // `RUSTUP_HOME` to find it at all.
+    if allowed.is_empty() {
         result.insert(
             "CARGO_HOME".to_owned(),
             cargo_home(private_tmp).to_string_lossy().into_owned(),
@@ -246,3 +249,7 @@ pub(super) fn filter(
 pub(super) fn cargo_home(private_tmp: &Path) -> PathBuf {
     private_tmp.join("cargo")
 }
+
+#[cfg(test)]
+#[path = "environment_tests.rs"]
+mod tests;
