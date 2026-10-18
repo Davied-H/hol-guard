@@ -213,7 +213,7 @@ pub(in crate::pretool) fn safe_literal_bracket_search_target(
 /// than reach the literal route directory. A class this matcher would read
 /// differently from the shell, and a word carrying another glob
 /// metacharacter, prove nothing.
-pub(in crate::pretool) fn inert_bracket_class(value: &str, context: ReadContext<'_>) -> bool {
+fn inert_bracket_class(value: &str, context: ReadContext<'_>) -> bool {
     !value.contains(['*', '?', '!'])
         && !super::glob_class::bracket_fallback_unsafe(value)
         && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())

@@ -68,8 +68,8 @@ fn fixture() -> Fixture {
     // A route that keeps a local environment file beside its component.
     write(app.join("app/admin/[id]/page.tsx"), "export default 1;\n");
     write(app.join("app/admin/[id]/.env"), "TOKEN=fixture\n");
-    // The environment file is not ignored, so `rg` would read it: the walk
-    // that follows the search's own ignore rules refuses the route too.
+    // The walk inspects what is on disk under the route, so the environment
+    // file refuses the route whether or not the repository ignores it.
     write(app.join(".gitignore"), "dist/\n");
     Fixture { root, home }
 }

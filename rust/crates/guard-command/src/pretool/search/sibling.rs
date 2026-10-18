@@ -106,10 +106,12 @@ fn reachable_by_default(root: &Path, operand: &Path, ignored: &mut Ignored) -> b
 
 /// A sibling repository holds framework routes too, and an agent spells one
 /// as `~/badges/app/[slug]`. A word with no bracket is the ordinary case; one
-/// with a bracket qualifies only where the class matches nothing, so the
-/// shell hands the program the path as it was typed.
+/// with a bracket qualifies only where it carries the same proof a search of
+/// the working tree's own route carries: the class matches nothing, so the
+/// shell hands the program the path as it was typed, and the tree that path
+/// names holds nothing these screens refuse to read.
 fn literal_brackets(value: &str, context: ReadContext<'_>) -> bool {
-    !value.contains(['[', ']']) || tree::inert_bracket_class(value, context)
+    !value.contains(['[', ']']) || tree::safe_literal_bracket_search_target(value, context)
 }
 
 /// `rg` also reads `.ignore` and `.rgignore` files in parent directories.
