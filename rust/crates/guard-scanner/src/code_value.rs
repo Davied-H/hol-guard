@@ -116,7 +116,7 @@ fn encoded_segment(segment: &str) -> bool {
 
 /// An upper-case key such as `DB_PASSWORD` in a dotenv or shell assignment,
 /// whose value is data rather than code.
-fn environment_style_key(key: &str) -> bool {
+pub(crate) fn environment_style_key(key: &str) -> bool {
     let key = key
         .trim()
         .trim_matches(['"', '\''])
