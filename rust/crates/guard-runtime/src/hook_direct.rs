@@ -298,15 +298,18 @@ fn answer(
 
     let request_home = match request.home_dir {
         // The daemon sends the `home` query as the caller spelled it. The
-        // lane settles it here rather than letting the daemon spend a round
-        // trip settling a directory only this operation reads; a spelling
-        // that cannot be settled defers, and the daemon path refuses and
-        // audits it there.
+        // lane normalizes that spelling here so the binding's own home below
+        // decides whether this is the home the lane was published for. It is
+        // settled lexically, the way the daemon settles a home: asking the
+        // filesystem to canonicalize it would refuse a home that simply is
+        // not mounted on this host, which is a verdict the daemon never
+        // reaches. A spelling that cannot be normalized defers, and the
+        // daemon path refuses and audits it there.
         Some(home_dir) => {
             let bound = policy_store
                 .direct_lane_home_dir()
                 .ok_or(HookDirectDefer::BindingIncomplete)?;
-            settled_directory(&normpath(&expanduser(&home_dir, &bound)?)?)?
+            normpath(&expanduser(&home_dir, &bound)?)?
         }
         None => policy_store
             .direct_lane_home_dir()
