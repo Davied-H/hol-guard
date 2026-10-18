@@ -51,7 +51,7 @@ fn only_a_text_that_names_the_toolchain_reaches_the_go_module_cache() {
         "GOFLAGS=-mod=mod go build ./...",
         "sudo go install ./cmd/api",
     ] {
-        assert!(runs_go(text), "{text}");
+        assert!(runs_toolchain(text, "go"), "{text}");
     }
     // The name as an argument compiles nothing, and the grant is read and
     // executable access to whatever `go mod download` has fetched.
@@ -64,6 +64,40 @@ fn only_a_text_that_names_the_toolchain_reaches_the_go_module_cache() {
         "npm run golden",
         "./scripts/gogo.sh",
     ] {
-        assert!(!runs_go(text), "{text}");
+        assert!(!runs_toolchain(text, "go"), "{text}");
     }
+}
+
+#[test]
+fn only_a_cargo_workspace_or_a_cargo_text_reaches_the_cargo_caches() {
+    // The registry and the git checkouts below the real HOME hold whatever
+    // the host fetched, a private registry included, and the plan grants each
+    // as an executable root. A Node or Python workspace that never names the
+    // toolchain has no reason to reach them.
+    let root = std::env::temp_dir().join(format!("guard-cargo-reach-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    for text in [
+        "cargo build --locked",
+        "cargo test -q && cargo clippy",
+        "rustup run stable cargo build",
+        "rustc --version",
+        "CARGO_TERM_COLOR=always cargo check",
+    ] {
+        assert!(reaches_cargo_caches(text, &root), "{text}");
+    }
+    for text in [
+        "pnpm test",
+        "pytest -q",
+        "go build ./...",
+        "rg -n cargo",
+        "./scripts/cargocult.sh",
+    ] {
+        assert!(!reaches_cargo_caches(text, &root), "{text}");
+    }
+    // A package the root holds is driven by `make` and by its own scripts
+    // without either naming cargo, so the manifest grants the caches too.
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+    assert!(reaches_cargo_caches("make test", &root));
+    let _ = std::fs::remove_dir_all(&root);
 }

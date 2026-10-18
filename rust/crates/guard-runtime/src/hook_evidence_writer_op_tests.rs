@@ -325,3 +325,92 @@ fn a_submission_reply_carries_the_signals_a_counter_read_would() {
     let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
     assert_eq!(stopped["payload"]["drained"], json!(true));
 }
+
+/// Building the writer replays its journal. The daemon paid that at startup
+/// when it owned the object; `start` is where it pays for it now, so the
+/// first hook to record a decision does not wait for the replay.
+#[test]
+fn a_start_builds_the_writer_before_any_submission() {
+    let home = store_home("writer-op-start", "record_basic");
+    let started = call(&home, json!({"action": "start"}));
+    assert_eq!(started["status"], json!("ok"));
+    assert_eq!(started["payload"]["running"], json!(true));
+    assert_eq!(started["payload"]["accepted"], json!(0));
+
+    // The writer the start built is the writer a counter read finds, not a
+    // second one: `stats` never starts one of its own.
+    let stats = call(&home, json!({"action": "stats"}));
+    assert_eq!(stats["payload"]["running"], json!(true));
+    assert_eq!(stats["payload"]["started"], json!(true));
+
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
+}
+
+/// A home no writer was ever built for is idle, not faulty. A reader that
+/// treats a stopped writer as something to repair needs the two apart.
+#[test]
+fn a_home_without_a_writer_reports_that_none_was_started() {
+    let home = temp_home("writer-op-unstarted");
+    let stats = call(&home, json!({"action": "stats"}));
+    assert_eq!(stats["payload"]["running"], json!(false));
+    assert_eq!(stats["payload"]["started"], json!(false));
+}
+
+/// A writer whose thread has exited is replaced on the next submission. It
+/// may still hold the mutations a caller has to wake its publishers for and
+/// the store failure a caller has to recover from — the two things the signal
+/// path exists to deliver. Dropping that writer silently would drop both, so
+/// its replacement carries them.
+#[test]
+fn a_replaced_writer_hands_its_pending_signals_to_the_next_one() {
+    let home = store_home("writer-op-carry", "record_basic");
+    let started = call(&home, json!({"action": "start"}));
+    assert_eq!(started["payload"]["running"], json!(true));
+
+    {
+        let slot = super::slot(&std::fs::canonicalize(&home).unwrap());
+        let held = slot.writer.lock().unwrap();
+        let resident = held.as_ref().expect("the start built a writer");
+        resident
+            .mutations
+            .fetch_add(3, std::sync::atomic::Ordering::SeqCst);
+        resident.fatal.record("native_guard_store_sqlite_corrupt");
+        // Stopping the writer leaves it in the slot with its thread gone,
+        // which is the state a writer that died on its own reaches.
+        assert!(resident.writer.stop(10.0));
+    }
+
+    let queued = call(
+        &home,
+        json!({
+            "action": "submit_command_activity",
+            "harness": "claude-code",
+            "event": "PostToolUse",
+            "payload": {"tool_name": "Bash", "tool_input": {"command": "ls /tmp"}},
+            "succeeded": true,
+        }),
+    );
+    assert_eq!(queued["payload"]["queued"], json!(true));
+    assert_eq!(queued["payload"]["policy_mutations"], json!(3));
+    assert_eq!(
+        queued["payload"]["store_fatal"]["code"],
+        json!("native_guard_store_sqlite_corrupt")
+    );
+
+    // The mutation count is cleared by the read that reported it; the failure
+    // waits for the acknowledgement that names it.
+    let identifier = queued["payload"]["store_fatal"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let stats = call(
+        &home,
+        json!({"action": "stats", "store_fatal_ack": identifier}),
+    );
+    assert_eq!(stats["payload"]["policy_mutations"], json!(0));
+    assert_eq!(stats["payload"]["store_fatal"], Value::Null);
+
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
+}

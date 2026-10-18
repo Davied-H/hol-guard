@@ -758,6 +758,8 @@ pub mod local_supply_chain;
 mod local_supply_chain_saved_claim_tests;
 #[cfg(test)]
 mod local_supply_chain_stale_policy_tests;
+#[cfg(test)]
+mod local_supply_chain_timestamp_tests;
 pub mod package_approval;
 pub mod package_policy_override;
 pub mod package_protect_projection;

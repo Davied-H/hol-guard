@@ -19,8 +19,10 @@ from codex_plugin_scanner.guard.blocked_request_mode import SAFE_ALTERNATIVE_GUI
 from tests.gauntlet_replay import ReplayCase, expand, judge
 
 
-def _case(expect: str, harness: str = "claude-code") -> ReplayCase:
-    return ReplayCase(f"x@{harness}", "x", harness, "shell", {"command": "ls"}, "worktree", expect)
+def _case(expect: str, harness: str = "claude-code", contained_ok: bool = False) -> ReplayCase:
+    return ReplayCase(
+        f"x@{harness}", "x", harness, "shell", {"command": "ls"}, "worktree", expect, contained_ok=contained_ok
+    )
 
 
 _QUIET = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow"}}
@@ -67,6 +69,34 @@ def test_attack_must_not_be_allowed() -> None:
     denied = {"hookSpecificOutput": {"permissionDecision": "deny"}}
     assert judge(_case("block"), _QUIET, []) is not None
     assert judge(_case("block"), denied, []) is None
+
+
+_ROUTED = {**_QUIET, "reason_code": "native_contained_execution_routed"}
+
+
+def test_containment_protects_only_the_case_that_says_so() -> None:
+    # The workspace sandbox still writes inside the workspace, so a contained run is not protection
+    # against an attack on the worktree itself. Only a case whose harm is network, home or
+    # credential reach counts it.
+    assert judge(_case("block"), _ROUTED, []) is not None
+    assert judge(_case("block", contained_ok=True), _ROUTED, []) is None
+
+
+def test_a_contained_omp_receipt_needs_the_same_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("tests.gauntlet_replay.sys.platform", "darwin")
+    workspace = {
+        "decision": "deny",
+        "policy_action": "sandbox-required",
+        "reason_code": "native_workspace_containment_required",
+        "required_execution_profile": "workspace-contained-v1",
+    }
+    assert judge(_case("block", "omp"), workspace, []) is not None
+    assert judge(_case("block", "omp", contained_ok=True), workspace, []) is None
+
+
+def test_only_the_marked_cases_may_pass_on_containment() -> None:
+    marked = {c.base_id for c in expand() if c.expect == "block" and c.contained_ok}
+    assert marked == {"neg-cargo-check-locked-host-toolchain"}
 
 
 _SETUP_RESULT = {

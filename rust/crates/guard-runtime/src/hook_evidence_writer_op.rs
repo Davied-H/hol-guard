@@ -128,6 +128,13 @@ pub(crate) enum HookEvidenceWriterActionV1 {
     },
     /// `submit_native_decision_receipt` (:243).
     SubmitNativeDecisionReceipt { receipt: Map<String, Value> },
+    /// Build this home's writer without queueing anything.
+    ///
+    /// Construction recovers the journal, which the Python writer paid for at
+    /// daemon startup because the daemon built the writer itself. A daemon
+    /// that warms the writer this way keeps that replay off the first hook's
+    /// decision path.
+    Start,
     /// `stats` (:396), plus the policy mutations observed since the last read.
     Stats,
     /// `stop` (:432). The writer is dropped from the registry either way, so
@@ -241,6 +248,17 @@ fn slot(guard_home: &Path) -> Arc<HomeSlot> {
     }))
 }
 
+/// The home as the filesystem names it.
+///
+/// One home can be spelled more than one way — through a symlink, with a
+/// component that resolves away — and each spelling would otherwise take its
+/// own slot and its own writer, two writers appending to the one journal that
+/// home owns. A home that cannot be resolved keeps the spelling it arrived
+/// with; the store seam refuses it the same way either way.
+fn canonical_home(guard_home: &Path) -> PathBuf {
+    std::fs::canonicalize(guard_home).unwrap_or_else(|_| guard_home.to_path_buf())
+}
+
 /// Run `act` against this Guard home's writer, started on first use.
 fn with_writer<T>(
     guard_home: &Path,
@@ -249,8 +267,48 @@ fn with_writer<T>(
 ) -> Result<T, io::Error> {
     let slot = slot(guard_home);
     let mut held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
+    // A writer whose thread has exited drains nothing more, so anything
+    // queued onto it would sit there. It is replaced — but what it still
+    // holds is the two signals it exists to deliver, and dropping it would
+    // drop them silently. The replacement carries them instead.
+    let mut carried = None;
+    if held
+        .as_ref()
+        .is_some_and(|resident| resident.writer.has_exited())
+    {
+        carried = held.take();
+    }
+    // A writer whose drain ran out of time has not left the journal yet. A
+    // second writer for the same home would append to the file the first one
+    // still owns, so this request is refused until that worker leaves.
+    if held
+        .as_ref()
+        .is_some_and(|resident| resident.writer.is_stopping())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::WouldBlock,
+            "the hook evidence writer for this Guard home is still draining",
+        ));
+    }
     if held.is_none() {
-        *held = Some(build(guard_home, source)?);
+        let fresh = match build(guard_home, source) {
+            Ok(fresh) => fresh,
+            Err(error) => {
+                // The replacement failed, so the exited writer goes back into
+                // the slot. It still holds the mutation count and the store
+                // failure this request exists to report, and an empty slot
+                // would answer `stats` with an idle home instead of the fault.
+                *held = carried;
+                return Err(error);
+            }
+        };
+        if let Some(gone) = carried {
+            fresh
+                .mutations
+                .fetch_add(gone.mutations.swap(0, Ordering::SeqCst), Ordering::SeqCst);
+            fresh.fatal.adopt(&gone.fatal);
+        }
+        *held = Some(fresh);
     }
     Ok(act(held.as_ref().expect("the writer was just built")))
 }
@@ -335,6 +393,7 @@ fn stats_payload(resident: &ResidentWriter) -> Value {
         "receipt_durable_pending": stats.receipt_durable_pending,
         "policy_mutations": mutations,
         "store_fatal": fatal,
+        "started": true,
     })
 }
 
@@ -359,6 +418,10 @@ fn idle_stats() -> Value {
         "receipt_durable_pending": 0,
         "policy_mutations": 0,
         "store_fatal": Value::Null,
+        // Nothing has asked this home for a writer yet. A reader that treats
+        // `running: false` as a fault needs to tell that apart from a writer
+        // that was started and then stopped running.
+        "started": false,
     })
 }
 
@@ -402,7 +465,7 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             "guard home is required".to_owned(),
         ));
     }
-    let guard_home = PathBuf::from(&request.guard_home);
+    let guard_home = canonical_home(Path::new(&request.guard_home));
     // Before anything this request reports: a failure recorded after the
     // acknowledgement is a new one and must still be reported.
     if let Some(acknowledged) = &request.store_fatal_ack {
@@ -466,6 +529,9 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             .map_err(started)?;
             Ok(queued_payload(queued, reported))
         }
+        HookEvidenceWriterActionV1::Start => {
+            with_writer(&guard_home, &request.source, stats_payload).map_err(started)
+        }
         HookEvidenceWriterActionV1::Stats => {
             Ok(with_running(&guard_home, stats_payload).unwrap_or_else(idle_stats))
         }
@@ -488,6 +554,15 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             // appending to the journal the draining writer still owns.
             let drained = resident.writer.stop(stop_timeout(*timeout_seconds));
             let (mutations, fatal) = signals(&resident);
+            if !drained && !resident.writer.has_exited() {
+                // The deadline passed with the worker still inside journal or
+                // store I/O. It owns the journal until it leaves, and it may
+                // still raise a mutation or a store failure. Dropping the
+                // resident here would let the next submission build a second
+                // writer for the same file and would lose those signals, so
+                // it goes back into the slot and requests wait for its exit.
+                *held = Some(resident);
+            }
             Ok(json!({
                 "drained": drained,
                 "policy_mutations": mutations,
