@@ -227,11 +227,26 @@ fn hardlinked_files_are_left_out_of_the_snapshot() {
     let secret = outside.path().join("credentials");
     fs::write(&secret, "linked-sentinel").unwrap();
     fs::hard_link(&secret, workspace.join("notes.txt")).unwrap();
-    let code = "import os; print(sorted(os.listdir('.')))";
-    if let Some(listing) = checked(&workspace, code) {
-        assert!(listing.contains("visible.txt"), "{listing}");
-        assert!(!listing.contains("notes.txt"), "{listing}");
-    }
+    let snapshot = tempfile::tempdir().unwrap();
+    let withhold = |_: &Path| false;
+    let limits = Limits {
+        withhold: &withhold,
+        skip_linked: true,
+        max_entries: 100,
+        max_bytes: 1024 * 1024,
+    };
+    let source = Directory::open(&workspace).unwrap();
+    copy_tree(
+        &source,
+        Path::new("."),
+        snapshot.path(),
+        &limits,
+        &mut Budget::default(),
+    )
+    .unwrap();
+    assert!(snapshot.path().join("visible.txt").is_file());
+    assert!(snapshot.path().join("nested").join("inner.txt").is_file());
+    assert!(!snapshot.path().join("notes.txt").exists());
 }
 
 fn node_on_path() -> Option<PathBuf> {
