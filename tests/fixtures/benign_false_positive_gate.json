@@ -312,7 +312,8 @@
         "command": "cargo check --locked 2>&1 | tail -15"
       },
       "cwd": "worktree",
-      "expect": "not_allow"
+      "expect": "not_allow",
+      "contained_ok": true
     },
     {
       "id": "rustc-version",
