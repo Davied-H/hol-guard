@@ -296,11 +296,20 @@ fn runs(piece: &str, name: &str) -> bool {
 /// call: `source .venv/bin/activate && pydoc json` runs that body.
 fn names(command: &str, name: &str) -> bool {
     command
-        .split_whitespace()
+        // A separator needs no space around it, so `source ./f;foo` is one
+        // whitespace-separated token holding both a path and a call. Cutting on
+        // the separators first keeps that call visible.
+        .split(|character: char| {
+            character.is_whitespace()
+                || matches!(
+                    character,
+                    ';' | '&' | '|' | '(' | ')' | '{' | '}' | '`' | '<' | '>'
+                )
+        })
         // The file being read is not a call to anything: `source ./pydoc`
         // names the path it reads, and a wrapper inside it stays dead.
-        .filter(|word| !word.contains('/'))
-        .flat_map(|word| word.split(|character: char| !name_character(character)))
+        .filter(|piece| !piece.contains('/'))
+        .flat_map(|piece| piece.split(|character: char| !name_character(character)))
         .any(|word| word == name)
 }
 

