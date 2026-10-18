@@ -147,6 +147,48 @@ pub(super) fn external_root(launch: &Path, executable: &Path, workspace: &Path) 
     Some(root)
 }
 
+/// The `lib/pythonX.Y` standard libraries an install prefix holds.
+fn standard_libraries(prefix: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(prefix.join("lib")) else {
+        return Vec::new();
+    };
+    let mut libraries: Vec<PathBuf> = Vec::new();
+    for entry in entries.flatten().take(64) {
+        let name = entry.file_name();
+        let Some(version) = name.to_str().and_then(|name| name.strip_prefix("python")) else {
+            continue;
+        };
+        if version.is_empty() || !version.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            continue;
+        }
+        let Ok(canonical) = entry.path().canonicalize() else {
+            continue;
+        };
+        if !canonical.is_dir() || !path_is_within(&canonical, prefix) {
+            continue;
+        }
+        if !libraries.contains(&canonical) {
+            libraries.push(canonical);
+        }
+        if libraries.len() == 4 {
+            break;
+        }
+    }
+    libraries
+}
+
+/// A prefix that holds one runtime's install of its own, so granting it whole
+/// stays inside that runtime. A trusted root named exactly, such as
+/// `/usr/local` or `/opt/homebrew`, is not one: it holds every program and
+/// configuration file installed below it, and a `pyvenv.cfg` in the workspace
+/// chooses the `home` this prefix comes from.
+fn managed_prefix(prefix: &Path) -> bool {
+    approved_user_python_runtime(prefix)
+        || TRUSTED_EXECUTABLE_ROOTS
+            .iter()
+            .any(|root| prefix != root.as_path() && path_is_within(prefix, root))
+}
+
 /// The install a workspace venv's launchers run, as the directory that holds
 /// both the interpreter and its standard library.
 ///
@@ -154,20 +196,34 @@ pub(super) fn external_root(launch: &Path, executable: &Path, workspace: &Path) 
 /// there, but `bin/python` is a symlink to an interpreter installed elsewhere.
 /// Unless that install is an executable root the sandbox cannot start it, and
 /// ordinary Python work in a project venv would be contained and then fail.
-/// The venv must have a venv's shape and name a trusted or managed runtime,
-/// and only that runtime's own prefix is granted.
-pub(super) fn workspace_base_prefix(bin: &Path, workspace: &Path) -> Option<PathBuf> {
+/// The venv must have a venv's shape and name a trusted or managed runtime.
+/// A managed install is granted whole; anywhere else only the interpreter's
+/// own directory and the standard library beside it are.
+pub(super) fn workspace_base_roots(bin: &Path, workspace: &Path) -> Vec<PathBuf> {
     if bin.file_name() != Some(OsStr::new("bin")) {
-        return None;
+        return Vec::new();
     }
-    let root = bin.parent()?;
+    let Some(root) = bin.parent() else {
+        return Vec::new();
+    };
     if !path_is_within(root, workspace) || !venv_shape(root) {
-        return None;
+        return Vec::new();
     }
-    let prefix = configured_home(root)?.parent()?.to_path_buf();
-    // The prefix is approved in its own right, so the grant stays inside the
-    // managed install and never widens to the directory that holds it.
-    (approved_runtime(&prefix) && !path_is_within(&prefix, workspace)).then_some(prefix)
+    let Some(home) = configured_home(root) else {
+        return Vec::new();
+    };
+    let Some(prefix) = home.parent().map(Path::to_path_buf) else {
+        return Vec::new();
+    };
+    if !approved_runtime(&home) || path_is_within(&prefix, workspace) {
+        return Vec::new();
+    }
+    if managed_prefix(&prefix) {
+        return vec![prefix];
+    }
+    let mut roots = vec![home];
+    roots.extend(standard_libraries(&prefix));
+    roots
 }
 
 #[cfg(test)]

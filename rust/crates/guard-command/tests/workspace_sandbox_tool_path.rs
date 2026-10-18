@@ -157,7 +157,10 @@ fn a_workspace_venv_keeps_its_bin_and_grants_its_interpreter_install() {
         .iter()
         .map(|root| root.as_str().unwrap())
         .collect();
-    assert!(roots.contains(&text(&prefix).as_str()), "{roots:?}");
+    // The interpreter's own directory is granted, never the trusted root that
+    // holds every other program installed below it.
+    assert!(roots.contains(&text(&bin).as_str()), "{roots:?}");
+    assert!(!roots.contains(&text(&prefix).as_str()), "{roots:?}");
     assert!(!roots.contains(&text(&venv).as_str()), "{roots:?}");
     let _ = std::fs::remove_dir_all(&root);
 }

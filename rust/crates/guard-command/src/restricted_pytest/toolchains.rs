@@ -182,18 +182,21 @@ fn developer_root(resolved: &Path) -> Option<PathBuf> {
     (bundle.extension() == Some(OsStr::new("app"))).then_some(bundle)
 }
 
-/// A workspace venv's `bin` and the install its launchers link to. The
+/// A workspace venv's `bin` and the install roots its launchers link to. The
 /// directory keeps its place on the sandbox PATH, because a bare `python` has
 /// to find the same launcher inside the sandbox as the session found outside
 /// it, and the install becomes an executable root, because that launcher is a
 /// symlink to a file the workspace does not hold.
-fn workspace_venv(entry: &Path, workspace: &Path) -> Option<(PathBuf, PathBuf)> {
+fn workspace_venv(entry: &Path, workspace: &Path) -> Option<(PathBuf, Vec<PathBuf>)> {
     let canonical = entry.canonicalize().ok()?;
     if !path_is_within(&canonical, workspace) {
         return None;
     }
-    let prefix = super::venv::workspace_base_prefix(&canonical, workspace)?;
-    owned_and_sealed(&prefix).then_some((canonical, prefix))
+    let roots = super::venv::workspace_base_roots(&canonical, workspace);
+    // The interpreter needs every root it was given; a run that can start but
+    // cannot read its standard library would fail inside the sandbox instead.
+    (!roots.is_empty() && roots.iter().all(|root| owned_and_sealed(root)))
+        .then_some((canonical, roots))
 }
 
 /// Keep `canonical` on the sandbox PATH, in the place the session gave it.
@@ -220,10 +223,12 @@ pub(super) fn workspace_exec_roots(
             continue;
         }
         if path_is_within(path, workspace) {
-            if let Some((bin, prefix)) = workspace_venv(path, workspace) {
+            if let Some((bin, installs)) = workspace_venv(path, workspace) {
                 keep_entry(&mut entries, &bin);
-                if !roots.contains(&prefix) {
-                    roots.push(prefix);
+                for install in installs {
+                    if !roots.contains(&install) {
+                        roots.push(install);
+                    }
                 }
             }
             continue;

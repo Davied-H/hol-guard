@@ -45,6 +45,28 @@ fn trusted_prefix() -> Option<(PathBuf, PathBuf)> {
     path_is_within_any(&prefix, &TRUSTED_EXECUTABLE_ROOTS).then_some((prefix, bin))
 }
 
+/// An install of one runtime's own below a trusted root, such as a
+/// tool-cache or Homebrew formula directory, with the `bin` it installs.
+fn managed_prefix_install() -> Option<(PathBuf, PathBuf)> {
+    let parents = [
+        "/opt/hostedtoolcache/Python",
+        "/opt/homebrew/opt",
+        "/usr/local/opt",
+    ];
+    parents
+        .iter()
+        .filter_map(|parent| fs::read_dir(parent).ok())
+        .flat_map(|entries| entries.flatten().take(64).collect::<Vec<_>>())
+        .filter_map(|entry| {
+            let prefix = entry.path().canonicalize().ok()?;
+            let bin = prefix.join("bin").canonicalize().ok()?;
+            let library = prefix.join("lib").is_dir();
+            (library && bin.parent() == Some(prefix.as_path()) && managed_prefix(&prefix))
+                .then_some((prefix, bin))
+        })
+        .next()
+}
+
 fn executable(path: &Path) {
     fs::write(path, b"#!/bin/sh\n").unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
@@ -237,13 +259,6 @@ fn a_workspace_venv_grants_the_install_its_launchers_run() {
     let venv = workspace.join(".venv");
     fs::rename(&outside, &venv).unwrap();
     let venv_bin = venv.join("bin");
-    assert_eq!(workspace_base_prefix(&venv_bin, &workspace), Some(prefix));
-    // Only a venv's `bin`, and only a venv the workspace holds.
-    assert!(workspace_base_prefix(&venv, &workspace).is_none());
-    assert!(workspace_base_prefix(&venv_bin, &fixture.0.join("elsewhere")).is_none());
-    // A home that is not an approved runtime grants nothing.
-    let plain = fixture.0.join("base/bin");
-    fs::create_dir_all(&plain).unwrap();
     let home = |home: &Path| {
         fs::write(
             venv.join("pyvenv.cfg"),
@@ -251,13 +266,48 @@ fn a_workspace_venv_grants_the_install_its_launchers_run() {
         )
         .unwrap();
     };
+    // A trusted root names every program and configuration file installed
+    // below it, so a `pyvenv.cfg` naming its `bin` grants the interpreter's
+    // own directory and the standard library beside it, never the root.
+    let granted = workspace_base_roots(&venv_bin, &workspace);
+    assert_eq!(granted.first(), Some(&bin), "{granted:?}");
+    assert!(!granted.contains(&prefix), "{granted:?}");
+    assert!(
+        granted.iter().skip(1).all(|library| {
+            library.parent() == Some(prefix.join("lib").as_path())
+                && library.to_string_lossy().contains("python")
+        }),
+        "{granted:?}"
+    );
+    // A managed install is one runtime's own, so it is granted whole.
+    if let Some((managed, managed_bin)) = managed_prefix_install() {
+        home(&managed_bin);
+        assert_eq!(
+            workspace_base_roots(&venv_bin, &workspace),
+            vec![managed],
+            "{managed_bin:?}"
+        );
+        home(&bin);
+    }
+    // Only a venv's `bin`, and only a venv the workspace holds.
+    assert!(workspace_base_roots(&venv, &workspace).is_empty());
+    assert!(workspace_base_roots(&venv_bin, &fixture.0.join("elsewhere")).is_empty());
+    // A home that is not an approved runtime grants nothing.
+    let plain = fixture.0.join("base/bin");
+    fs::create_dir_all(&plain).unwrap();
     home(&plain);
-    assert!(workspace_base_prefix(&venv_bin, &workspace).is_none());
-    // A system interpreter needs no grant: the sandbox runs `/usr/bin` itself.
+    assert!(workspace_base_roots(&venv_bin, &workspace).is_empty());
+    // A system interpreter grants `/usr/bin` and its standard library, not
+    // `/usr`, which holds the whole system's libraries and configuration.
     home(Path::new("/usr/bin"));
-    assert!(workspace_base_prefix(&venv_bin, &workspace).is_none());
+    let system = workspace_base_roots(&venv_bin, &workspace);
+    assert_eq!(
+        system.first().map(PathBuf::as_path),
+        Some(Path::new("/usr/bin"))
+    );
+    assert!(!system.contains(&PathBuf::from("/usr")), "{system:?}");
     // Nor does a venv that is no longer shaped like one.
     home(&bin);
     fs::write(venv.join("notes.txt"), "").unwrap();
-    assert!(workspace_base_prefix(&venv_bin, &workspace).is_none());
+    assert!(workspace_base_roots(&venv_bin, &workspace).is_empty());
 }
