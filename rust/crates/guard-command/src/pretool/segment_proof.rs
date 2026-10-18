@@ -236,6 +236,7 @@ pub(super) fn exact_safe_segment_with_context(
                         && sensitive_path_argument(argument)
                 }))
         || !(segment.environment_names.is_empty()
+            || super::inert_environment::inert_prefix(segment)
             || (basename == "kubectl"
                 && super::kubectl_reads::trusted_kubeconfig_prefix(segment, context)))
         || (executable.contains(['/', '\\'])
@@ -253,6 +254,9 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::drive_targets_quoted(segment)
         }
         "pwd" | "true" | "echo" | "printf" | "which" | "whoami" | "uname" => true,
+        "export" | "unset" | "set" => {
+            super::inert_environment::safe_shell_setting(basename, segment)
+        }
         "type" | "command" => {
             super::lookup_reads::safe_lookup_arguments(basename, &segment.arguments)
         }
