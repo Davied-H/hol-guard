@@ -2,6 +2,15 @@ use super::*;
 use crate::native_command_program::NativeCommandProgram;
 use sha2::{Digest, Sha256};
 
+fn budget() -> crate::native_command_program::PackAdmissionBudget {
+    crate::native_command_program::PackAdmissionBudget {
+        packs: 512,
+        program_bytes: 128 * 1024 * 1024,
+        rules: 16384,
+        nodes: 65536,
+    }
+}
+
 #[test]
 fn selected_release_admission_never_reads_an_unselected_pack() {
     let sources = sources();
@@ -62,6 +71,7 @@ fn selected_release_admission_never_reads_an_unselected_pack() {
         &root_bytes,
         &digest,
         &selected,
+        budget(),
         |digest| {
             stored
                 .get(digest)
@@ -79,6 +89,7 @@ fn selected_release_admission_never_reads_an_unselected_pack() {
         &root_bytes,
         &digest,
         &all,
+        budget(),
         |digest| stored.get(digest).cloned().ok_or("missing_active_payload"),
     )
     .is_err());
@@ -86,6 +97,7 @@ fn selected_release_admission_never_reads_an_unselected_pack() {
         &root_bytes,
         &"0".repeat(64),
         &selected,
+        budget(),
         |_| panic!("unverified root fetched objects"),
     )
     .is_err());
@@ -93,7 +105,35 @@ fn selected_release_admission_never_reads_an_unselected_pack() {
         &root_bytes,
         &digest,
         &selected,
+        budget(),
         |_| Ok(b"{}".to_vec()),
     )
     .is_err());
+    for limits in [
+        crate::native_command_program::PackAdmissionBudget {
+            packs: 0,
+            ..budget()
+        },
+        crate::native_command_program::PackAdmissionBudget {
+            program_bytes: 1,
+            ..budget()
+        },
+        crate::native_command_program::PackAdmissionBudget {
+            rules: 0,
+            ..budget()
+        },
+        crate::native_command_program::PackAdmissionBudget {
+            nodes: 0,
+            ..budget()
+        },
+    ] {
+        assert!(NativeCommandProgram::from_integrity_bound_packs(
+            &root_bytes,
+            &digest,
+            &selected,
+            limits,
+            |digest| stored.get(digest).cloned().ok_or("missing"),
+        )
+        .is_err());
+    }
 }

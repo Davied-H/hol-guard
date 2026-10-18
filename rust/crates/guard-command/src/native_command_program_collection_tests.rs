@@ -242,3 +242,63 @@ fn selected_collection_exceeds_legacy_aggregate_bounds_without_raising_pack_limi
             .unwrap();
     assert!(collection.observe(&command, &ids, None).is_ok());
 }
+
+#[test]
+fn composition_rejects_mutated_rule_ownership_without_panicking() {
+    let source = source();
+    for invalid_index in [1, usize::MAX] {
+        let mut parts = selected(&source, &defaults(&source));
+        parts
+            .iter_mut()
+            .find(|part| !part.rules.is_empty())
+            .unwrap()
+            .rules[0]
+            .extension_index = invalid_index;
+        assert_eq!(
+            NativeCommandProgram::combine_admitted_packs(parts).unwrap_err(),
+            "native_command_pack_rule_owner_invalid"
+        );
+    }
+    let mut parts = selected(&source, &defaults(&source));
+    parts
+        .iter_mut()
+        .find(|part| !part.rules.is_empty())
+        .unwrap()
+        .rules[0]
+        .permission_id = "command.other.permission.read".to_owned();
+    assert_eq!(
+        NativeCommandProgram::combine_admitted_packs(parts).unwrap_err(),
+        "native_command_pack_rule_owner_invalid"
+    );
+}
+
+#[test]
+fn composition_checks_mcp_ownership_without_the_release_reader() {
+    let source = source();
+    let id = source["extensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|extension| extension["trust_class"] == "external" && extension["mcp"].is_object())
+        .unwrap()["extension_id"]
+        .as_str()
+        .unwrap();
+    let mut parts = selected(&source, &defaults(&source));
+    let template = serde_json::to_string(&pack_value(&source, id)).unwrap();
+    for suffix in ["one", "two"] {
+        let mut value: Value = serde_json::from_str(
+            &template.replace(id, &format!("command.collection-mcp-{suffix}")),
+        )
+        .unwrap();
+        value.as_object_mut().unwrap().remove("program_digest");
+        value["program_digest"] = json!(digest_value(PROGRAM_DOMAIN, &value).unwrap());
+        parts.push(admit(&value, &(BTreeSet::new(), BTreeSet::new())));
+    }
+    let error = NativeCommandProgram::combine_admitted_packs(parts).unwrap_err();
+    assert!(matches!(
+        error,
+        "command_source_mcp_command_duplicate"
+            | "command_source_mcp_package_duplicate"
+            | "command_source_mcp_endpoint_duplicate"
+    ));
+}

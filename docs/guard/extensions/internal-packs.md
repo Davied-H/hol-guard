@@ -102,12 +102,15 @@ available while their consumers migrate.
 Native collection construction can read a selected dependency closure through
 `NativeCommandProgram::from_integrity_bound_packs`. The caller supplies exact root
 bytes, a separately authenticated digest, selected IDs and a bounded object
-fetcher. Only selected pack manifests and their referenced payloads are read.
+fetcher. An explicit `PackAdmissionBudget` limits selected pack count, cumulative
+serialized program bytes, and pre-interning rule/node counts. Programs are
+admitted one at a time; the entire selected JSON inventory is never retained.
+Only selected pack manifests and their referenced payloads are read.
 Missing selected data, corrupt proofs, incompatible engines, duplicate owners,
 incomplete dependencies and incomplete compatibility inventory return errors.
 The collection also rechecks MCP executable ownership across selected packs.
 
-`combine_admitted_packs` composes the admitted native indexes directly and interns
+The internal `combine_admitted_packs` composes native indexes directly and interns
 shared matcher nodes by their verified content identity. Each pack keeps the
 existing program bounds; the collection needs no aggregate program JSON. Its
 identity binds the engine and ordered selected pack identities. Discovery roots

@@ -7,7 +7,7 @@ impl NativeCommandProgram {
     /// Combine a complete selected dependency closure of one-extension packs.
     /// Each input must already have passed bounded native pack admission. The
     /// resulting indexes and identities contain only the supplied policy set.
-    pub fn combine_admitted_packs(mut packs: Vec<Self>) -> Result<Self, &'static str> {
+    pub(super) fn combine_admitted_packs(mut packs: Vec<Self>) -> Result<Self, &'static str> {
         if packs.is_empty() || packs.iter().any(|pack| pack.extensions.len() != 1) {
             return Err("native_command_pack_inventory_invalid");
         }
@@ -19,10 +19,19 @@ impl NativeCommandProgram {
         let mut extension_ids = BTreeSet::new();
         let mut permission_ids = BTreeSet::new();
         let mut rule_ids = BTreeSet::new();
+        let mut mcp_inventory = source::McpInventory::default();
         for pack in &packs {
             for extension in &pack.extensions {
                 if !extension_ids.insert(extension.extension_id.as_str()) {
                     return Err("native_command_extension_duplicate");
+                }
+                if let Some(mcp) = &extension.mcp {
+                    let launch = &mcp.mcp_launch;
+                    mcp_inventory.insert(&serde_json::json!({
+                        "kind":launch.kind,"command":launch.command,
+                        "package":launch.package,"url":launch.url,
+                        "serverNames":launch.server_names,
+                    }))?;
                 }
                 for permission in &extension.permissions {
                     if !permission_ids.insert(permission.permission_id.as_str()) {
@@ -31,6 +40,14 @@ impl NativeCommandProgram {
                 }
             }
             for rule in &pack.rules {
+                if rule.extension_index != 0
+                    || !pack.extensions[0].permissions.iter().any(|permission| {
+                        permission.permission_id == rule.permission_id
+                            && permission.rule_ids.contains(&rule.rule_id)
+                    })
+                {
+                    return Err("native_command_pack_rule_owner_invalid");
+                }
                 if !rule_ids.insert(rule.rule_id.as_str()) {
                     return Err("native_command_rule_duplicate");
                 }

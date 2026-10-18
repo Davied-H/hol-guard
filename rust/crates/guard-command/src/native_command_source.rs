@@ -49,15 +49,7 @@ pub use stream::{compile_source_stream, validate_and_compact_source, SourceStrea
 
 pub const MAX_SOURCE_INPUT_BYTES: usize = json::MAX_SOURCE_BYTES;
 
-pub(super) fn validate_pack_mcp_inventory(programs: &[Value]) -> Result<(), &'static str> {
-    let extensions: Vec<_> = programs
-        .iter()
-        .filter_map(|program| program["extensions"].as_array())
-        .flatten()
-        .cloned()
-        .collect();
-    mcp::validate_inventory(&serde_json::json!({"extensions": extensions}))
-}
+pub(super) use mcp::McpInventory;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

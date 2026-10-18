@@ -78,6 +78,7 @@ pub(crate) use admission::{public_ipv4, public_ipv6};
 mod collection;
 #[path = "native_command_program_collection_reader.rs"]
 mod collection_reader;
+pub use collection_reader::PackAdmissionBudget;
 #[path = "native_command_program_compile.rs"]
 mod compile;
 #[path = "native_command_program_dispatch.rs"]

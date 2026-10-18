@@ -1,6 +1,23 @@
 //! Read only a selected closure from an independently authenticated release.
 use super::*;
 
+/// Caller-selected admission limits, independent of source format budgets.
+/// Counts apply before interning, bounding temporary as well as retained work.
+#[derive(Clone, Copy)]
+pub struct PackAdmissionBudget {
+    pub packs: usize,
+    pub program_bytes: usize,
+    pub rules: usize,
+    pub nodes: usize,
+}
+
+fn charge(remaining: &mut usize, amount: usize) -> Result<(), &'static str> {
+    *remaining = remaining
+        .checked_sub(amount)
+        .ok_or("native_command_pack_budget_exceeded")?;
+    Ok(())
+}
+
 impl NativeCommandProgram {
     /// Construct a collection from exact integrity-bound pack bytes. The caller
     /// must authenticate `expected_root` and authorize the complete selection
@@ -10,14 +27,15 @@ impl NativeCommandProgram {
         root: &[u8],
         expected_root: &str,
         selected: &BTreeSet<String>,
+        mut budget: PackAdmissionBudget,
         fetch: impl FnMut(&str) -> Result<Vec<u8>, &'static str>,
     ) -> Result<Self, &'static str> {
         if selected.is_empty() || selected.iter().any(|id| !bounded_id(id)) {
             return Err("native_command_pack_selection_invalid");
         }
+        charge(&mut budget.packs, selected.len())?;
         let mut reader = source::PackReleaseReuse::from_bytes(root, expected_root, fetch)?;
-        let mut values = Vec::with_capacity(selected.len());
-        let mut permissions = BTreeSet::new();
+        let mut packs = Vec::with_capacity(selected.len());
         for id in selected {
             let value = reader
                 .read(id, None)?
@@ -29,26 +47,48 @@ impl NativeCommandProgram {
             if extensions[0]["extension_id"] != *id {
                 return Err("native_command_pack_inventory_invalid");
             }
+            // Complete dependency ownership is checked at composition. Allow
+            // only this pack's declared references during partial admission.
+            let mut permissions = BTreeSet::new();
             for permission in extensions[0]["permissions"]
                 .as_array()
                 .ok_or("native_command_permission_contract_invalid")?
             {
-                let permission = permission["permission_id"]
+                let identity = permission["permission_id"]
                     .as_str()
                     .ok_or("native_command_permission_contract_invalid")?;
-                if !permissions.insert(permission.to_owned()) {
-                    return Err("native_command_permission_duplicate");
+                permissions.insert(identity.to_owned());
+                for field in ["dependencies", "implied_permissions"] {
+                    for reference in permission[field]
+                        .as_array()
+                        .ok_or("native_command_permission_contract_invalid")?
+                    {
+                        permissions.insert(
+                            reference
+                                .as_str()
+                                .ok_or("native_command_permission_contract_invalid")?
+                                .to_owned(),
+                        );
+                    }
                 }
             }
-            values.push(value.program);
-        }
-        // Repeat executable ownership checks across the selected inventory.
-        // Consume each JSON program when admitting its executable tree.
-        source::validate_pack_mcp_inventory(&values)?;
-        let mut packs = Vec::with_capacity(values.len());
-        for value in values {
-            let bytes =
-                canonical_json_bytes(&value).map_err(|_| "native_command_program_json_invalid")?;
+            charge(
+                &mut budget.rules,
+                value.program["rules"]
+                    .as_array()
+                    .ok_or("native_command_program_shape_invalid")?
+                    .len(),
+            )?;
+            charge(
+                &mut budget.nodes,
+                value.program["nodes"]
+                    .as_object()
+                    .ok_or("native_command_program_shape_invalid")?
+                    .len(),
+            )?;
+            let bytes = canonical_json_bytes(&value.program)
+                .map_err(|_| "native_command_program_json_invalid")?;
+            charge(&mut budget.program_bytes, bytes.len())?;
             packs.push(Self::from_bytes_observed(
                 &bytes,
                 &mut |_| {},
