@@ -280,7 +280,13 @@ class ExtensionControlApiService:
         return self.effective()
 
     def acknowledge_degraded(self, payload: dict[str, object]) -> dict[str, object]:
-        if self._runtime.current().health is not AuthorityHealth.DEGRADED_UNACKNOWLEDGED:
+        current_snapshot = self._runtime.current()
+        if current_snapshot.unread:
+            # The daemon started without reading the authority, so degraded mode
+            # here is the absence of a reading. Acknowledging it would persist an
+            # outage nobody observed and invalidate the native policy with it.
+            raise ExtensionControlApiError(503, "authority_unread")
+        if current_snapshot.health is not AuthorityHealth.DEGRADED_UNACKNOWLEDGED:
             raise ExtensionControlApiError(409, "authority_not_degraded")
         current = self._store.read_extension_control_authority_for_registry(self._registry)
         action = "acknowledge-degraded"

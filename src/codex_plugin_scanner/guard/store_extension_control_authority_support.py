@@ -11,6 +11,7 @@ import sqlite3
 import sys
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
@@ -313,9 +314,13 @@ class _ExtensionControlAuthoritySupportMixin:
         It carries no layers, so nothing taken from it widens what Guard
         allows. A caller that can wait retries instead: an unread authority is
         not a reading, and only the one caller that must still start uses this.
+
+        It is marked unread so nothing downstream mistakes it for a verdict on
+        the authority. Acknowledging degraded mode off a view like this would
+        persist an outage the daemon never observed.
         """
 
-        return self._degraded_view(catalog_digest)
+        return replace(self._degraded_view(catalog_digest), unread=True)
 
     @staticmethod
     def _tampered_view(catalog_digest: str) -> ExtensionControlAuthorityView:

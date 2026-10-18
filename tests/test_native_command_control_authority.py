@@ -453,3 +453,59 @@ def test_daemon_startup_reports_no_layers_when_no_lease_is_obtainable() -> None:
     view = _startup_view_with_store(_Store())
     assert view is unreadable
     assert not view.layers
+
+
+def test_unreadable_authority_view_is_marked_unread() -> None:
+    """The fallback view reports that nothing was read, not that protection was lost."""
+
+    from codex_plugin_scanner.guard.runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
+    from codex_plugin_scanner.guard.store_extension_control_authority_support import (
+        _ExtensionControlAuthoritySupportMixin,
+    )
+
+    class _Support(_ExtensionControlAuthoritySupportMixin):
+        def __init__(self) -> None:
+            self._extension_control_degraded_acknowledged = False
+
+    view = _Support().extension_control_authority_unreadable_view("digest")
+    assert view.unread is True
+    assert not view.layers
+    assert ExtensionControlRuntimeSnapshot.from_authority_view(view).unread is True
+
+
+def test_acknowledging_degraded_mode_refuses_an_unread_authority() -> None:
+    """Acknowledging an unread authority would persist an outage nobody observed."""
+
+    import pytest
+
+    from codex_plugin_scanner.guard.daemon.extension_control_api import ExtensionControlApiService
+    from codex_plugin_scanner.guard.daemon.extension_control_errors import ExtensionControlApiError
+    from codex_plugin_scanner.guard.runtime.extension_control_authority import (
+        AuthorityHealth,
+        ExtensionControlAuthorityView,
+    )
+    from codex_plugin_scanner.guard.runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
+
+    class _Runtime:
+        def __init__(self, snapshot: ExtensionControlRuntimeSnapshot) -> None:
+            self._snapshot = snapshot
+
+        def current(self) -> ExtensionControlRuntimeSnapshot:
+            return self._snapshot
+
+    def _service(view: ExtensionControlAuthorityView) -> ExtensionControlApiService:
+        service = object.__new__(ExtensionControlApiService)
+        service._runtime = _Runtime(ExtensionControlRuntimeSnapshot.from_authority_view(view))
+        return service
+
+    unread = ExtensionControlAuthorityView(AuthorityHealth.DEGRADED_UNACKNOWLEDGED, 0, "digest", (), unread=True)
+    with pytest.raises(ExtensionControlApiError) as unread_error:
+        _ = _service(unread).acknowledge_degraded({})
+    assert unread_error.value.status == 503
+    assert unread_error.value.code == "authority_unread"
+
+    # A read authority that really is degraded still reaches the grant check.
+    observed = ExtensionControlAuthorityView(AuthorityHealth.PROTECTED, 3, "digest", ())
+    with pytest.raises(ExtensionControlApiError) as protected_error:
+        _ = _service(observed).acknowledge_degraded({})
+    assert protected_error.value.code == "authority_not_degraded"
