@@ -166,6 +166,49 @@ fn tool_bin_directories_list_metadata_only() {
     }
 }
 
+/// Before running a CLI an agent asks which bin directory holds it, naming
+/// every candidate in one `ls`. Most of those names do not exist, and the
+/// system prefixes sit outside the workspace, so the probe used to pause.
+#[test]
+fn a_cli_presence_probe_lists_every_candidate_bin_directory() {
+    let root = fixture("bin-probe");
+    let home = root.join("home");
+    let cwd = home.join("work");
+    std::fs::create_dir_all(&cwd).unwrap();
+    for directory in [
+        ".bun/bin",
+        ".cargo/bin",
+        ".local/bin",
+        ".npm-global/bin",
+        "go/bin",
+    ] {
+        std::fs::create_dir_all(home.join(directory)).unwrap();
+    }
+    write(home.join(".local/bin/alohajet"), "binary");
+    write(home.join(".ssh/id_rsa"), "key");
+    for allowed in [
+        "ls /usr/bin/alohajet ~/.local/bin/alohajet ~/.npm-global/bin/alohajet ~/go/bin/alohajet",
+        "ls -la ~/.bun/bin/alohajet ~/.cargo/bin/alohajet",
+        "ls /usr/bin/env",
+        "ls /usr/bin",
+        "ls ~/.npm-global/bin ~/go/bin",
+    ] {
+        assert_eq!(shell(allowed, &home, &cwd), "allow", "{allowed}");
+    }
+    for denied in [
+        // A probe names one leaf per bin directory, never a path below it.
+        "ls /usr/bin/../../etc/passwd",
+        "ls /usr/bin/../etc",
+        "ls /usr/bin/x/y",
+        // The screens on the named child hold whether or not it exists.
+        "ls ~/.local/bin/id_rsa",
+        "ls ~/.npm-global/.npmrc",
+        "cat ~/.local/bin/alohajet",
+    ] {
+        assert_ne!(shell(denied, &home, &cwd), "allow", "{denied}");
+    }
+}
+
 #[test]
 fn a_directory_named_like_the_launcher_does_not_shadow_it() {
     let root = fixture("launcher");

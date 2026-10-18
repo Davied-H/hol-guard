@@ -1,20 +1,69 @@
-//! Metadata-only `ls` of well-known tool bin directories below hidden home
-//! components (`~/.bun/bin/bun`, `~/.cargo/bin`, `~/.local/bin/tool`).
+//! Metadata-only `ls` of the bin directories a tool is installed into
+//! (`~/.bun/bin/bun`, `~/.cargo/bin`, `/opt/homebrew/bin/jq`).
 //!
-//! A listing prints names and metadata, never file content. Only the exact
-//! `~/.<tool>/bin` directory and its direct children qualify, so the sibling
-//! credential, cache and state directories of the same tool stay guarded. A
-//! symlink child is judged by its canonical target, which must stay inside the
-//! same bin directory or clear every read screen. A project's
-//! `node_modules/.bin` gets the same treatment below a readable root.
+//! A listing prints names and metadata, never file content. Only a known bin
+//! directory and its direct children qualify, so the sibling credential, cache
+//! and state directories of the same tool stay guarded. The named child may be
+//! absent, since naming every bin directory a tool could live in is how a
+//! presence probe asks which one has it. A symlink child is judged by its
+//! canonical target, which must stay inside the same bin directory or clear
+//! every read screen. A project's `node_modules/.bin` gets the same treatment
+//! below a readable root.
 
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 #[path = "listing_metadata.rs"]
 mod metadata;
 pub(super) use metadata::{credential_file_metadata_operand, global_package_listing_operand};
 
-const TOOL_ROOTS: [&str; 4] = [".bun", ".cargo", ".deno", ".local"];
+/// Home components holding a `bin` directory of installed tools.
+const TOOL_ROOTS: [&str; 6] = [".bun", ".cargo", ".deno", ".local", ".npm-global", "go"];
+
+/// Bin directories a probe spells in full, outside home. Package managers own
+/// these paths, so a name below one of them is an installed tool rather than a
+/// file the agent chose the location of.
+const SYSTEM_BIN_DIRS: [&str; 6] = [
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    "/opt/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/home/linuxbrew/.linuxbrew/bin",
+];
+
+/// Split an operand into the bin directory it names and the single child below
+/// it, if any. Anything deeper, or below another directory, is not a probe.
+fn split_bin_target(expanded: &str, home_dir: &str) -> Option<(PathBuf, Option<String>)> {
+    if let Ok(relative) = Path::new(expanded).strip_prefix(home_dir) {
+        let names: Vec<String> = relative
+            .components()
+            .map(|component| match component {
+                Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect::<Option<_>>()?;
+        let (root, child) = match names.as_slice() {
+            [root, bin] if bin == "bin" => (root, None),
+            [root, bin, child] if bin == "bin" => (root, Some(child.clone())),
+            _ => return None,
+        };
+        if !TOOL_ROOTS.contains(&root.as_str()) {
+            return None;
+        }
+        return Some((Path::new(home_dir).join(root).join("bin"), child));
+    }
+    let directory = SYSTEM_BIN_DIRS.iter().find(|directory| {
+        expanded == **directory || expanded.starts_with(&format!("{directory}/"))
+    })?;
+    let child = expanded[directory.len()..].trim_start_matches('/');
+    if child.is_empty() {
+        return Some((PathBuf::from(directory), None));
+    }
+    if child.contains('/') {
+        return None;
+    }
+    Some((PathBuf::from(directory), Some(child.to_owned())))
+}
 
 pub(super) fn tool_bin_listing_operand(value: &str, context: super::PathContext<'_>) -> bool {
     if value.is_empty()
@@ -31,30 +80,12 @@ pub(super) fn tool_bin_listing_operand(value: &str, context: super::PathContext<
     };
     let expanded = super::read_paths::expand_home_read_path(value, context.home_dir)
         .unwrap_or_else(|| value.to_owned());
-    let expanded = Path::new(&expanded);
-    if !expanded.is_absolute() {
+    if !Path::new(&expanded).is_absolute() {
         return false;
     }
-    let Ok(relative) = expanded.strip_prefix(home_dir) else {
+    let Some((bin_dir, child)) = split_bin_target(&expanded, home_dir) else {
         return false;
     };
-    let names: Vec<String> = relative
-        .components()
-        .map(|component| match component {
-            Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
-            _ => None,
-        })
-        .collect::<Option<_>>()
-        .unwrap_or_default();
-    let (root, child) = match names.as_slice() {
-        [root, bin] if bin == "bin" => (root, None),
-        [root, bin, child] if bin == "bin" => (root, Some(child)),
-        _ => return false,
-    };
-    if !TOOL_ROOTS.contains(&root.as_str()) {
-        return false;
-    }
-    let bin_dir = Path::new(home_dir).join(root).join("bin");
     if !std::fs::symlink_metadata(&bin_dir).is_ok_and(|metadata| metadata.is_dir()) {
         return false;
     }
@@ -62,14 +93,15 @@ pub(super) fn tool_bin_listing_operand(value: &str, context: super::PathContext<
         return true;
     };
     if child.starts_with('.')
-        || guard_secure_fs::sensitive_external_filename(Path::new(child))
-        || guard_secure_fs::credential_named_path(Path::new(child))
+        || guard_secure_fs::sensitive_external_filename(Path::new(&child))
+        || guard_secure_fs::credential_named_path(Path::new(&child))
     {
         return false;
     }
-    let leaf = bin_dir.join(child);
-    let Ok(metadata) = std::fs::symlink_metadata(&leaf) else {
-        return false;
+    let leaf = bin_dir.join(&child);
+    let metadata = match std::fs::symlink_metadata(&leaf) {
+        Ok(metadata) => metadata,
+        Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
     };
     if !metadata.file_type().is_symlink() {
         return metadata.is_file();
