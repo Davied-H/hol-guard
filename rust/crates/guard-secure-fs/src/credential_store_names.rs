@@ -316,21 +316,37 @@ fn documentation_name(name: &str) -> bool {
 /// A tool ships readable programs there too. `~/.alohajet/bin/cdp-shim.js` is
 /// a wrapper script the tool installed, the same text as the file one
 /// directory over in `~/.alohajet/lib`, which this screen already reads; the
-/// name that holds it is not what makes it content. Under a shared root the
-/// directory is nobody's install: `~/.local/bin` is the drawer the user keeps
-/// their own commands in, so a script written there keeps its review.
+/// name that holds it is not what makes it content. In a shared drawer the
+/// directory is nobody's install: `~/.local/bin` is where the user keeps
+/// their own commands, so a script written there keeps its review.
 fn program_directory(parents: &[String], name: &str) -> bool {
     parents.iter().any(|part| part == "bin" || part == "sbin")
         && (shared_command_drawer(parents) || !crate::source_path::source_extension(name))
 }
 
-/// Whether a program directory sits below a root shared by every tool rather
-/// than inside one tool's own directory, per [`tool_root_depth`].
+/// Drawers whose `bin` holds commands that came from somewhere else: the
+/// shared roots of [`tool_root_depth`], and the directories a package manager
+/// installs other people's programs into. `cargo install`, `go install`,
+/// `bun add -g` and `deno install` all write a third party's command into
+/// their own hidden directory, so a script there is no more the manager's own
+/// source than one the user dropped in `~/.local/bin`, and reading it needs
+/// the same review.
+const SHARED_COMMAND_ROOTS: [&str; 7] = [
+    ".local",
+    ".config",
+    ".bun",
+    ".cargo",
+    ".deno",
+    ".npm-global",
+    "go",
+];
+
+/// Whether a program directory sits below a drawer shared by every tool
+/// rather than inside the directory of the tool that installed it.
 fn shared_command_drawer(parents: &[String]) -> bool {
-    matches!(
-        parents.first().map(String::as_str),
-        Some(".local" | ".config")
-    )
+    parents
+        .first()
+        .is_some_and(|first| SHARED_COMMAND_ROOTS.contains(&first.as_str()))
 }
 
 /// How deep the directory a tool owns sits below the home directory.

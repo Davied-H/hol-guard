@@ -38,6 +38,7 @@ fn home(name: &str) -> PathBuf {
         ".codex/skills/release-check",
         ".bun/bin",
         ".alohajet/bin",
+        ".cargo/bin",
         ".local/bin/helpers",
         ".config/doctl",
         ".config/gcloud",
@@ -70,6 +71,7 @@ fn home(name: &str) -> PathBuf {
         (".alohajet/bin/cdp-shim.js", "export const port = 9303;\n"),
         (".alohajet/bin/alohajet", "\u{7f}ELF\n"),
         (".local/bin/deploy.sh", "#!/bin/sh\nexec deploy \"$@\"\n"),
+        (".cargo/bin/deploy.sh", "#!/bin/sh\nexec deploy \"$@\"\n"),
         (".local/bin/helpers/run", "#!/bin/sh\n"),
         (".certs/server.pem", "-----BEGIN CERTIFICATE-----\n"),
         (".claude/.credentials.json", "{}\n"),
@@ -286,23 +288,28 @@ fn a_tools_own_script_reads_from_its_program_directory() {
     );
 }
 
-/// `~/.local/bin` is below a shared root, so no tool owns what is written
-/// there: it is the drawer a user keeps their own commands in, and one of
-/// those scripts commonly carries the credential it deploys with. A script
-/// there keeps its review even though its name reads as source.
+/// `~/.local/bin` is a shared drawer, so no tool owns what is written there:
+/// it is where a user keeps their own commands, and one of those scripts
+/// commonly carries the credential it deploys with. `~/.cargo/bin` is the
+/// same drawer by another name, holding whatever `cargo install` put there
+/// rather than cargo's own source. A script in either keeps its review even
+/// though its name reads as source.
 #[test]
 fn the_users_own_command_drawer_keeps_review() {
     let home = home("command-drawer");
-    assert_ne!(
-        action(&home, "codex", "cat ~/.local/bin/deploy.sh"),
-        "allow"
-    );
-    for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+    for path in [".local/bin/deploy.sh", ".cargo/bin/deploy.sh"] {
         assert_ne!(
-            native_action(&home, harness, tool, ".local/bin/deploy.sh"),
+            action(&home, "codex", &format!("cat ~/{path}")),
             "allow",
-            "{harness} {tool}"
+            "{path}"
         );
+        for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+            assert_ne!(
+                native_action(&home, harness, tool, path),
+                "allow",
+                "{harness} {tool} {path}"
+            );
+        }
     }
 }
 
