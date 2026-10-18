@@ -42,7 +42,9 @@ def reserve(store, connection, draft, *, control_revision, snapshot_digest, cata
     if draft.previous_digest is None:
         if draft.baseline_metadata is None:
             raise NativePolicySnapshotError("native_command_pack_baseline_missing")
-        activation_baseline.install(store, connection, draft.baseline_metadata, key=key, recorded_at=recorded_at)
+        activation_baseline.reserve_legacy_baseline(
+            store, connection, draft.baseline_metadata, key=key, recorded_at=recorded_at
+        )
     else:
         from ..store_extension_control_authority_schema import ensure_extension_control_authority_schema
 

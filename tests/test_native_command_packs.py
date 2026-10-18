@@ -191,7 +191,7 @@ def test_concurrent_object_writers_publish_only_complete_bytes(generator, tmp_pa
 
 
 def test_interrupted_object_publication_can_be_retried(generator, monkeypatch, tmp_path):
-    import command_pack_store as store
+    from codex_plugin_scanner.guard.catalog_delivery import pack_store as store
 
     data = b"completed temporary bytes"
     digest = hashlib.sha256(data).hexdigest()

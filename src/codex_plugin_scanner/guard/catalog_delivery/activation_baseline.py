@@ -49,7 +49,7 @@ def verify(row, key):
     return value
 
 
-def install(store, connection, metadata, *, key, recorded_at):
+def reserve_legacy_baseline(store, connection, metadata, *, key, recorded_at):
     from ..native_command_control_authority_io import require_exclusive_command_control_mutation_lease
     from ..store_extension_control_authority_schema import ensure_extension_control_authority_schema
 
