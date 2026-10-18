@@ -68,9 +68,7 @@ fn managed_prefix_install() -> Option<(PathBuf, PathBuf)> {
             let prefix = entry.path().canonicalize().ok()?;
             let bin = prefix.join("bin").canonicalize().ok()?;
             let library = prefix.join("lib").is_dir();
-            let interpreter = fs::read_dir(&bin).ok()?.flatten().any(|entry| {
-                entry.file_name().to_string_lossy().starts_with("python") && entry.path().is_file()
-            });
+            let interpreter = interpreter_home(&bin);
             (library
                 && interpreter
                 && bin.parent() == Some(prefix.as_path())
