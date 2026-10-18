@@ -196,6 +196,20 @@ fn workspace_venv(entry: &Path, workspace: &Path) -> Option<(PathBuf, PathBuf)> 
     owned_and_sealed(&prefix).then_some((canonical, prefix))
 }
 
+/// A directory of the workspace's own that the session finds its tools in,
+/// such as `node_modules/.bin`. It needs no grant, because the sandbox reads
+/// and runs the workspace already; what it needs is its place on the sandbox
+/// PATH, so a bare `vite` or `tsc` resolves to the same file inside the
+/// sandbox that the session resolved outside it. Without it the sandbox
+/// cannot start the program the command names, and ordinary project work is
+/// contained and then refused.
+fn workspace_tools(entry: &Path, workspace: &Path) -> Option<PathBuf> {
+    let canonical = entry.canonicalize().ok()?;
+    // A directory anyone else can write could answer for a project's tool
+    // with a file the session never saw.
+    (path_is_within(&canonical, workspace) && owned_and_sealed(&canonical)).then_some(canonical)
+}
+
 /// Keep `canonical` on the sandbox PATH, in the place the session gave it.
 fn keep_entry(entries: &mut Vec<String>, canonical: &Path) {
     let text = canonical.to_string_lossy().into_owned();
@@ -225,6 +239,8 @@ pub(super) fn workspace_exec_roots(
                 if !roots.contains(&prefix) {
                     roots.push(prefix);
                 }
+            } else if let Some(bin) = workspace_tools(path, workspace) {
+                keep_entry(&mut entries, &bin);
             }
             continue;
         }
