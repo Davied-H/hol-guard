@@ -430,7 +430,13 @@ def run_authorized_contained_test(
         elif node_test:
             node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
         else:
-            prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
+            prepare_restricted_pytest(
+                command,
+                workspace=workspace,
+                cwd=cwd,
+                home_dir=home_dir,
+                read_only_workspace=True,
+            )
     except RestrictedPytestError as error:
         # The read-only planners reject the mutating shapes (`git add && git
         # commit`, `node -e`, `./todo.py`) that Rust sends to the workspace
@@ -581,6 +587,7 @@ def run_authorized_contained_test(
         command,
         workspace=workspace,
         cwd=cwd,
+        home_dir=home_dir,
         timeout_seconds=timeout_seconds,
         read_only_workspace=True,
         merge_stderr=merge_stderr,
