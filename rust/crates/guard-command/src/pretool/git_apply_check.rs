@@ -8,8 +8,6 @@
 //! and the ones that reach beyond the patch, such as `--directory`,
 //! `--unsafe-paths` and the three-way merge, keep the review.
 
-use super::git_branch_listing::bounded_pattern;
-
 /// `arguments` are the tokens after the `apply` subcommand.
 pub(crate) fn is_check_only(arguments: &[String]) -> bool {
     patch_targets(arguments).is_some()
@@ -54,7 +52,7 @@ pub(crate) fn patch_targets(arguments: &[String]) -> Option<Vec<&str>> {
             "--exclude" | "--include" => {
                 if !arguments
                     .get(index)
-                    .is_some_and(|value| bounded_pattern(value))
+                    .is_some_and(|value| literal_filter(value))
                 {
                     return None;
                 }
@@ -65,7 +63,7 @@ pub(crate) fn patch_targets(arguments: &[String]) -> Option<Vec<&str>> {
                     .strip_prefix("--exclude=")
                     .or_else(|| value.strip_prefix("--include="))
                 {
-                    if !bounded_pattern(pattern) {
+                    if !literal_filter(pattern) {
                         return None;
                     }
                 } else if let Some(mode) = value.strip_prefix("--whitespace=") {
@@ -95,6 +93,21 @@ fn patch_target(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 4096
         && !value.starts_with(['-', '/', '\\'])
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-/".contains(&byte))
+        && value
+            .split('/')
+            .all(|part| !matches!(part, "" | "." | ".."))
+}
+
+/// A path the caller keeps out of, or holds the patch to. Git reads it as a
+/// pattern of its own, but the shell gets the word first, so a glob here names
+/// whatever the working directory happened to hold rather than the paths this
+/// spelling says.
+fn literal_filter(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"._-/".contains(&byte))
@@ -134,8 +147,8 @@ mod tests {
             "--check --stat --summary feature.patch",
             "--check --ignore-whitespace feature.patch",
             "--check --whitespace=error feature.patch",
-            "--check --exclude=build/* feature.patch",
-            "--check --include src/* feature.patch",
+            "--check --exclude=build feature.patch",
+            "--check --include src/app.py feature.patch",
             "--check -R feature.patch",
             "--check -- patches/one.diff patches/two.diff",
         ] {
@@ -179,6 +192,8 @@ mod tests {
             "--check *.patch",
             "--check patches/*",
             "--check -- patches/?.diff",
+            "--check --exclude=build/* feature.patch",
+            "--check --include src/* feature.patch",
         ] {
             assert!(!check(command), "{command}");
         }

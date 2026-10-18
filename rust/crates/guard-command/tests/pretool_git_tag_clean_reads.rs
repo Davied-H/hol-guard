@@ -194,8 +194,15 @@ fn apply_check_is_allowed_and_patching_stays_reviewed() {
         ),
         (
             "",
-            "git apply --check --exclude=build/* feature.patch",
+            "git apply --check --exclude=build feature.patch",
             "allow",
+        ),
+        // The shell gets the pattern first, so the word names whatever the
+        // working directory held rather than the paths the spelling says.
+        (
+            "",
+            "git apply --check --exclude=build/* feature.patch",
+            "review",
         ),
         ("", "git apply --check -- patches/one.diff", "allow"),
         ("", "git apply --check feature.patch | cat", "allow"),
