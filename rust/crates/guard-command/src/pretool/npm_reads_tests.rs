@@ -217,6 +217,11 @@ fn a_version_root_with_a_stray_file_reads_like_one_without_it() {
     std::fs::write(versions.join("v22.1.0/etc/npmrc"), "save-exact=true\n").unwrap();
     std::fs::write(versions.join(".DS_Store"), "\x00\x01").unwrap();
 
+    // The stray entry has to read as an absent configuration on its own.
+    // Comparing the two homes alone proves nothing on a host that keeps a
+    // live `<prefix>/etc/npmrc`, since both homes are then not inert whether
+    // or not `ENOTDIR` is handled.
+    assert!(npmrc_inert(&versions.join(".DS_Store").join("etc/npmrc")));
     assert_eq!(
         global_configuration_inert(&stray),
         global_configuration_inert(&bare)
