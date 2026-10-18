@@ -197,7 +197,6 @@ class StoreApprovalQueriesMixin:
     ) -> int:
         return int(
             self._native_approval_read(
-                "approval_desktop_notified_at",
                 "count_approval_requests",
                 {
                     "status": status,
