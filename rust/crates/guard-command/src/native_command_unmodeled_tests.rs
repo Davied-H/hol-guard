@@ -494,6 +494,25 @@ fn program_lookups_do_not_make_a_command_unmatchable() {
     }
 }
 
+/// The shell glues a quoted part onto the word before it, so a lookup name
+/// that carries one is not a plain operand and the run has to stop in front of
+/// it. Consuming only its plain prefix would leave the quoted remainder beside
+/// the replacement and invent a command nothing in the line names.
+#[test]
+fn a_quoted_part_of_a_name_is_not_a_separate_operand() {
+    for (command, stripped) in [
+        ("which doctl foo'bar'", "true foo'bar'"),
+        ("which doctl \"kube ctl\"", "true \"kube ctl\""),
+        ("command -v gh'ub'", "command -v gh'ub'"),
+    ] {
+        assert_eq!(
+            super::shapes::without_lookups(command),
+            stripped,
+            "{command}"
+        );
+    }
+}
+
 #[test]
 fn plain_awk_filters_are_not_interpreters() {
     let controls = controls(serde_json::json!([]), false);

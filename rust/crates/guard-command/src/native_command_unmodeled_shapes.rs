@@ -303,9 +303,11 @@ fn lookup_word_end(text: &str) -> usize {
         .unwrap_or(0)
 }
 
-/// Whether `letter` ends a lookup operand the way the shell does.
+/// Whether `letter` ends a lookup operand the way the shell does. A quote
+/// does not: the shell glues `foo'bar'` into one word, so the plain prefix is
+/// not an operand of its own and the run stops before it.
 fn ends_lookup_word(letter: char) -> bool {
-    letter.is_whitespace() || matches!(letter, ';' | '&' | '|' | ')' | '"' | '\'' | '}' | '`')
+    letter.is_whitespace() || matches!(letter, ';' | '&' | '|' | ')' | '}' | '`')
 }
 
 /// The names a lookup prints paths for, and how far its operands reach.
