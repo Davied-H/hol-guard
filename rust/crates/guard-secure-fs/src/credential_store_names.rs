@@ -302,18 +302,35 @@ fn documentation_name(name: &str) -> bool {
         .any(|suffix| name.ends_with(suffix))
 }
 
-/// Whether the file sits in a directory a tool keeps its programs in.
+/// Whether the file sits in a directory a tool keeps its programs in, holding
+/// something other than the tool's own readable source.
 ///
 /// `~/.bun/bin/bun` is an executable, not content a task reads: its bytes are
 /// a program, and a listing already answers the question an agent actually
-/// asks there, which is whether the tool is installed. The install roots this
-/// screen would otherwise open (`~/.cargo/bin`, `~/.local/bin`) are also where
-/// a link can point somewhere else entirely, so the directory keeps its review
-/// and the metadata screen keeps the benign half. A subdirectory of one holds
-/// the same thing a level down (`~/.local/bin/helpers/run`), so every parent
-/// is read rather than only the one the file sits in.
-fn program_directory(parents: &[String]) -> bool {
-    parents.iter().any(|name| name == "bin" || name == "sbin")
+/// asks there, which is whether the tool is installed. A name carrying no
+/// source extension is that case, so the directory keeps its review and the
+/// metadata screen keeps the benign half. A subdirectory of one holds the
+/// same thing a level down (`~/.local/bin/helpers/run`), so every parent is
+/// read rather than only the one the file sits in.
+///
+/// A tool ships readable programs there too. `~/.alohajet/bin/cdp-shim.js` is
+/// a wrapper script the tool installed, the same text as the file one
+/// directory over in `~/.alohajet/lib`, which this screen already reads; the
+/// name that holds it is not what makes it content. Under a shared root the
+/// directory is nobody's install: `~/.local/bin` is the drawer the user keeps
+/// their own commands in, so a script written there keeps its review.
+fn program_directory(parents: &[String], name: &str) -> bool {
+    parents.iter().any(|part| part == "bin" || part == "sbin")
+        && (shared_command_drawer(parents) || !crate::source_path::source_extension(name))
+}
+
+/// Whether a program directory sits below a root shared by every tool rather
+/// than inside one tool's own directory, per [`tool_root_depth`].
+fn shared_command_drawer(parents: &[String]) -> bool {
+    matches!(
+        parents.first().map(String::as_str),
+        Some(".local" | ".config")
+    )
 }
 
 /// How deep the directory a tool owns sits below the home directory.
@@ -369,7 +386,7 @@ pub fn hidden_content_read_allowed(lowered: &[String]) -> bool {
         && !name.starts_with('.')
         && !curated_tree_owns(parents)
         && !tool_configuration_slot(parents, name)
-        && !program_directory(parents)
+        && !program_directory(parents, name)
         && !names_hold_credential_store(lowered)
         && !secret_bearing_file_name(name)
 }

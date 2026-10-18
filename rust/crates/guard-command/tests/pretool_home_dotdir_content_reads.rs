@@ -37,6 +37,7 @@ fn home(name: &str) -> PathBuf {
         ".codex/sessions/2026-10-16",
         ".codex/skills/release-check",
         ".bun/bin",
+        ".alohajet/bin",
         ".local/bin/helpers",
         ".config/doctl",
         ".config/gcloud",
@@ -66,6 +67,9 @@ fn home(name: &str) -> PathBuf {
             "pub fn parse() {}\n",
         ),
         (".bun/bin/bun", "\u{7f}ELF\n"),
+        (".alohajet/bin/cdp-shim.js", "export const port = 9303;\n"),
+        (".alohajet/bin/alohajet", "\u{7f}ELF\n"),
+        (".local/bin/deploy.sh", "#!/bin/sh\nexec deploy \"$@\"\n"),
         (".local/bin/helpers/run", "#!/bin/sh\n"),
         (".certs/server.pem", "-----BEGIN CERTIFICATE-----\n"),
         (".claude/.credentials.json", "{}\n"),
@@ -251,6 +255,51 @@ fn a_tools_program_directory_keeps_review() {
     for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
         assert_ne!(
             native_action(&home, harness, tool, ".bun/bin/bun"),
+            "allow",
+            "{harness} {tool}"
+        );
+    }
+}
+
+/// A tool ships readable programs beside its executables. `~/.alohajet/bin`
+/// holds the wrapper script the tool installed, which is the same text as the
+/// file one directory over that this screen already reads, so an agent
+/// debugging the tool it just ran reads it without an approval.
+#[test]
+fn a_tools_own_script_reads_from_its_program_directory() {
+    let home = home("program-scripts");
+    assert_eq!(
+        action(&home, "codex", "head -50 ~/.alohajet/bin/cdp-shim.js"),
+        "allow"
+    );
+    for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+        assert_eq!(
+            native_action(&home, harness, tool, ".alohajet/bin/cdp-shim.js"),
+            "allow",
+            "{harness} {tool}"
+        );
+    }
+    // The executable beside it is still a program, whoever installed it.
+    assert_ne!(
+        action(&home, "codex", "cat ~/.alohajet/bin/alohajet"),
+        "allow"
+    );
+}
+
+/// `~/.local/bin` is below a shared root, so no tool owns what is written
+/// there: it is the drawer a user keeps their own commands in, and one of
+/// those scripts commonly carries the credential it deploys with. A script
+/// there keeps its review even though its name reads as source.
+#[test]
+fn the_users_own_command_drawer_keeps_review() {
+    let home = home("command-drawer");
+    assert_ne!(
+        action(&home, "codex", "cat ~/.local/bin/deploy.sh"),
+        "allow"
+    );
+    for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+        assert_ne!(
+            native_action(&home, harness, tool, ".local/bin/deploy.sh"),
             "allow",
             "{harness} {tool}"
         );
