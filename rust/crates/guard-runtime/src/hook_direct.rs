@@ -458,6 +458,7 @@ fn answer(
             .get(STRUCTURED_OUTPUT_FIELD)
             .cloned()
             .unwrap_or(Value::Null);
+        let deadline = started + Duration::from_millis(deadline_budget_ms);
         let context = pi::Mediation {
             harness: &request.harness,
             resolution: &resolution,
@@ -465,16 +466,26 @@ fn answer(
             receipt: &receipt,
             content: &content,
             recording_only,
-            deadline: started + Duration::from_millis(deadline_budget_ms),
+            deadline,
         };
+        // Readmitting the workspace settles an ACK the publisher may still be
+        // writing, which is a wait of its own. Past the deadline that wait can
+        // no longer change the answer, so the recheck reports no binding and
+        // `mediate_finish` withholds on the deadline it has already missed.
         let refresh = || {
+            if Instant::now() >= deadline {
+                return Value::Null;
+            }
             policy_store
                 .admit_direct_hook_or_subdirectory(&workspace)
                 .ok()
-                .and_then(|(_, binding)| {
-                    pi::resolution(&request.harness, binding.structured_output_config.as_ref())
+                .and_then(|(_, refreshed)| {
+                    pi::resolution(
+                        &request.harness,
+                        refreshed.structured_output_config.as_ref(),
+                    )
                 })
-                .map_or(Value::Null, |resolution| pi::resolved_binding(&resolution))
+                .map_or(Value::Null, |refreshed| pi::resolved_binding(&refreshed))
         };
         if let Some(mediation) = pi::mediate(&context, refresh) {
             answered["harness_response"]["structured_content_mediation"] = mediation;
