@@ -64,9 +64,31 @@ failure closes the session so unread output cannot be consumed by a later build.
 Only results compiled by that process may enter its cache. A hit requires the
 current native source/trust/interface build key after global validation. The cache
 retains at most 64 MiB of encoded projections; this is not a measurement of heap
-use. Larger working sets compile normally with partial reuse. Disk objects cannot
-seed the compilation cache, and storage reuse alone proves no compilation reuse.
-Authenticated reuse across separate build processes remains separate work.
+use. Larger working sets compile normally with partial reuse. Storage reuse alone
+does not prove compilation reuse.
+
+Publication builds using `--reuse-current` can also reuse compiled IR across
+fresh processes. The publisher first authenticates the selected release with
+production Sigstore/TUF, then materializes its bounded Merkle index and policy
+objects. A different engine starts a cold compilation. The native maintainer
+operation `compile-packs-reuse <cache-directory> <authenticated-root-digest>`
+checks the root bytes against the separately supplied digest and proves each
+requested pack through that root. The digest must come from the verified
+publication; a cache cannot supply its own authority.
+
+Every build still strictly decodes the current raw sources and validates all
+global relationships before reuse. Native-computed source, trust, interface,
+engine and semantic-profile keys select matching packs. Referenced objects,
+catalog identities and native program admission are checked again. Changed
+keys compile from current sources; corrupt proofs or matching-key payloads fail
+closed. The one-shot path retains no compiled-IR cache between packs. The
+publication build writes `compilation-report.json` with compiled/reused counts.
+
+`scripts/benchmark_pack_compiler_reuse.py` compares cold and fresh-process
+builds at 1x, 10x and 100x using valid unique source fixtures. It checks complete
+byte-identical outputs for unchanged inputs and a single edit, and reports each
+compiler process's elapsed time and peak RSS. Its locally generated unsigned
+roots are benchmark inputs only, never authenticated publication or runtime proof.
 
 Integrity is not publisher authority. A root must be bound to an authenticated
 release before runtime use; an arbitrary directory or a matching hash alone is

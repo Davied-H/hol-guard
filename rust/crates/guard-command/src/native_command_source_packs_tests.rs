@@ -339,6 +339,69 @@ fn incremental_compilation_matches_clean_and_revalidates_raw_sources() {
 }
 
 #[test]
+fn authenticated_release_reuse_matches_cold_output_without_process_cache() {
+    let mut sources = sources();
+    sources.push(synthetic(0));
+    let mut cold = Vec::new();
+    let root = compile_pack_stream(stream(&sources).as_slice(), &mut cold).unwrap();
+    let objects: BTreeMap<String, Vec<u8>> = cold
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let row: Value = serde_json::from_slice(line).unwrap();
+            (
+                row["sha256"].as_str().unwrap().to_owned(),
+                STANDARD.decode(row["data"].as_str().unwrap()).unwrap(),
+            )
+        })
+        .collect();
+    let fetch = |id: &str| objects.get(id).cloned().ok_or("missing");
+    let mut reuse = PackReleaseReuse::new(&root, fetch).unwrap();
+    let mut compiler = PackCompiler {
+        limit: 0,
+        ..PackCompiler::default()
+    };
+    let mut warm = Vec::new();
+    let (again, stats) = compiler
+        .compile_reusing(stream(&sources).as_slice(), &mut warm, &mut reuse)
+        .unwrap();
+    assert_eq!(
+        (stats.compiled, stats.reused, stats.retained_encoded_bytes),
+        (0, sources.len(), 0)
+    );
+    assert_eq!(again, root);
+    assert_eq!(warm, cold);
+    let mut changed: Value = serde_json::from_slice(&sources.last().unwrap().1).unwrap();
+    changed["extension"]["description"] = json!("One source edit across compiler processes");
+    sources.last_mut().unwrap().1 = serde_json::to_vec(&changed).unwrap();
+    warm.clear();
+    let (updated, stats) = compiler
+        .compile_reusing(stream(&sources).as_slice(), &mut warm, &mut reuse)
+        .unwrap();
+    assert_eq!((stats.compiled, stats.reused), (1, sources.len() - 1));
+    cold.clear();
+    assert_eq!(
+        compile_pack_stream(stream(&sources).as_slice(), &mut cold).unwrap(),
+        updated
+    );
+    assert_eq!(warm, cold);
+    // Current invalid source relationships still reject before cache lookup.
+    changed["extension"]["dependencies"] = json!(["command.missing"]);
+    sources.last_mut().unwrap().1 = serde_json::to_vec(&changed).unwrap();
+    warm.clear();
+    assert!(compiler
+        .compile_reusing(stream(&sources).as_slice(), &mut warm, &mut reuse)
+        .is_err());
+    assert!(warm.is_empty());
+    // Replacing a disk object cannot replace the authenticated Merkle path.
+    let mut corrupt = PackReleaseReuse::new(&root, |_: &str| Ok(b"{}".to_vec())).unwrap();
+    assert!(corrupt.get("command.git", "irrelevant").is_err());
+    let mut wrong_engine = root;
+    wrong_engine["engine"] = json!("0".repeat(64));
+    assert!(PackReleaseReuse::new(&wrong_engine, |_: &str| Err("unused")).is_err());
+}
+
+#[test]
 fn referenced_interface_changes_invalidate_dependants_and_removed_owners_fail() {
     let mut sources = sources();
     let (metadata, bytes) = synthetic(0);

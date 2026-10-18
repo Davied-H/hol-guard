@@ -172,11 +172,14 @@ def create_distribution(
     existing_locations=None,
     publication_id="0.0",
     reuse_published_legacy=False,
+    compiled_reuse=None,
 ):
     verify_sources(ROOT, commit)
     packs.safe_directory(output)
     policy = output / "compiled-policy"
-    packs.stage(compiler, policy)
+    report = packs.stage(compiler, policy, reuse=compiled_reuse)
+    with (output / "compilation-report.json").open("xb") as stream:
+        stream.write(encoded(report))
     native_root = json.loads((policy / "release.json").read_bytes())
     plan = AssetPlan(output / "assets", commit, existing=existing_locations, publication_id=publication_id)
     store = LocatedStore(output / "metadata", publisher=plan)
@@ -227,6 +230,7 @@ def main():
     parser.add_argument("--metadata-cache", type=Path)
     args = parser.parse_args()
     existing = None
+    compiled_reuse = None
     if args.reuse_current:
         from extension_delivery_reuse import locations
 
@@ -245,7 +249,11 @@ def main():
                 # Current sources are compiled independently for this release.
                 previous = None
             if previous is not None:
-                existing = locations(previous, args.metadata_cache or args.output / "previous-metadata")
+                from extension_delivery_compiler_reuse import prepare as prepare_compiler_reuse
+
+                cache = args.metadata_cache or args.output / "previous-metadata"
+                existing = locations(previous, cache)
+                compiled_reuse = prepare_compiler_reuse(previous, cache, packs.legacy.implementation_digest())
     root = create_distribution(
         args.compiler.resolve() if args.compiler else packs.bootstrap_compiler(),
         args.output,
@@ -254,6 +262,7 @@ def main():
         publication_id=args.publication_id,
         existing_locations=existing,
         reuse_published_legacy=args.reuse_current,
+        compiled_reuse=compiled_reuse,
     )
     print(json.dumps({"schema": SCHEMA, "source_sha": root["source_sha"], "extensions": root["directory"]["count"]}))
 

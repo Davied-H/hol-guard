@@ -13,9 +13,12 @@ use std::{
 #[path = "native_command_pack_objects.rs"]
 pub mod objects;
 use objects::{ObjectRef, ObjectWriter};
+#[path = "native_command_source_pack_reuse.rs"]
+mod reuse;
+pub use reuse::PackReleaseReuse;
 
-/// Only results produced by this compiler instance can enter this cache. Disk
-/// objects and caller-supplied JSON cannot be promoted to validated policy.
+/// Only freshly compiled results or authenticated release inputs revalidated by
+/// this instance enter its bounded cache. Cache contents grant no policy authority.
 pub struct PackCompiler {
     cache: BTreeMap<String, (String, Arc<catalog::CompiledSourceCatalog>, usize)>,
     bytes: usize,
@@ -47,7 +50,18 @@ impl PackCompiler {
         reader: impl Read,
         output: impl Write,
     ) -> Result<(Value, CompilationStats), &'static str> {
-        compile(reader, output, self)
+        compile(reader, output, self, &mut |_, _| Ok(None))
+    }
+
+    /// Maintainer-only reuse from a root authenticated by the release caller.
+    /// This does not install policy or grant the build output runtime authority.
+    pub fn compile_reusing(
+        &mut self,
+        reader: impl Read,
+        output: impl Write,
+        reuse: &mut PackReleaseReuse<impl FnMut(&str) -> Result<Vec<u8>, &'static str>>,
+    ) -> Result<(Value, CompilationStats), &'static str> {
+        compile(reader, output, self, &mut |id, key| reuse.get(id, key))
     }
 }
 
@@ -123,10 +137,25 @@ pub fn compile_pack_stream(reader: impl Read, output: impl Write) -> Result<Valu
     .map(|(root, _)| root)
 }
 
+/// One-shot maintainer compilation with integrity-bound external reuse and no
+/// retained IR cache. The caller remains responsible for root authentication.
+pub fn compile_pack_stream_reusing(
+    reader: impl Read,
+    output: impl Write,
+    reuse: &mut PackReleaseReuse<impl FnMut(&str) -> Result<Vec<u8>, &'static str>>,
+) -> Result<(Value, CompilationStats), &'static str> {
+    PackCompiler {
+        limit: 0,
+        ..PackCompiler::default()
+    }
+    .compile_reusing(reader, output, reuse)
+}
+
 fn compile(
     mut reader: impl Read,
     output: impl Write,
     compiler: &mut PackCompiler,
+    reuse: &mut impl FnMut(&str, &str) -> Result<Option<catalog::CompiledSourceCatalog>, &'static str>,
 ) -> Result<(Value, CompilationStats), &'static str> {
     let mut magic = [0; 5];
     reader
@@ -290,13 +319,27 @@ fn compile(
             stats.reused += 1;
             Arc::clone(value)
         } else {
-            stats.compiled += 1;
-            let value = Arc::new(catalog::compile_pack(
-                &commands,
-                &servers,
-                &serde_json::to_vec(&input.trust).map_err(|_| "command_pack_encoding_failed")?,
-                (&extension_interfaces, &permission_interfaces),
-            )?);
+            let reused = reuse(id, &cache_key)?;
+            let value = if let Some(value) = reused {
+                let bytes = serde_json::to_vec(&value.program)
+                    .map_err(|_| "command_pack_encoding_failed")?;
+                super::super::NativeCommandProgram::validate_compiler_pack_with_interfaces(
+                    &bytes,
+                    (&extension_interfaces, &permission_interfaces),
+                )?;
+                mcp::validate_inventory(&value.program)?;
+                stats.reused += 1;
+                Arc::new(value)
+            } else {
+                stats.compiled += 1;
+                Arc::new(catalog::compile_pack(
+                    &commands,
+                    &servers,
+                    &serde_json::to_vec(&input.trust)
+                        .map_err(|_| "command_pack_encoding_failed")?,
+                    (&extension_interfaces, &permission_interfaces),
+                )?)
+            };
             let bytes = if compiler.limit > 0 {
                 serde_json::to_vec(&*value)
                     .map_err(|_| "command_pack_encoding_failed")?

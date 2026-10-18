@@ -96,16 +96,31 @@ def safe_directory(path: Path) -> None:
 
 
 def stage(
-    compiler: Path, destination: Path, *, session: PackCompilerSession | None = None, source_root: Path | None = None
+    compiler: Path,
+    destination: Path,
+    *,
+    session: PackCompilerSession | None = None,
+    source_root: Path | None = None,
+    reuse=None,
 ) -> dict:
+    if reuse is not None:
+        from extension_delivery_compiler_reuse import VerifiedCompilerReuse
+
+        if not isinstance(reuse, VerifiedCompilerReuse) or session is not None:
+            raise ValueError("compiler reuse requires a verified publication and a fresh process")
     if session:
         with session.request():
             return _stage(compiler, destination, session=session, source_root=source_root)
-    return _stage(compiler, destination, source_root=source_root)
+    return _stage(compiler, destination, source_root=source_root, reuse=reuse)
 
 
 def _stage(
-    compiler: Path, destination: Path, *, session: PackCompilerSession | None = None, source_root: Path | None = None
+    compiler: Path,
+    destination: Path,
+    *,
+    session: PackCompilerSession | None = None,
+    source_root: Path | None = None,
+    reuse=None,
 ) -> dict:
     safe_directory(destination)
     objects = destination / "objects"
@@ -120,7 +135,12 @@ def _stage(
         process = (
             session.submit(compiler, source)
             if session
-            else subprocess.Popen([str(compiler), "compile-packs"], stdin=source, stdout=subprocess.PIPE, stderr=errors)
+            else subprocess.Popen(
+                [str(compiler), *(reuse.arguments() if reuse is not None else ["compile-packs"])],
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=errors,
+            )
         )
         try:
             assert process.stdout is not None
@@ -128,7 +148,7 @@ def _stage(
                 if len(line) > MAX_OUTPUT_LINE or not line.endswith(b"\n"):
                     raise ValueError("native pack output exceeds record budget")
                 row = json.loads(line)
-                if session and row.get("kind") == "compilation":
+                if (session or reuse is not None) and row.get("kind") == "compilation":
                     stats = row.get("stats")
                     if (
                         compilation is not None
@@ -169,6 +189,8 @@ def _stage(
                 else:
                     reused += 1
             status = process.poll() if session else process.wait()
+            if reuse is not None and compilation is None:
+                raise ValueError("native compiler reuse report is missing")
             if session and (compilation is None or root is None):
                 raise ValueError(f"native compiler session failed: {session.error()}")
             if status or root is None:
@@ -212,7 +234,7 @@ def _stage(
         "created_objects": created,
         "reused_objects": reused,
         "changed_object_bytes": changed_bytes,
-        "compilation": compilation or "all sources revalidated; immutable objects reused",
+        "compilation": compilation or {"compiled": count, "reused": 0, "retained_encoded_bytes": 0},
     }
 
 
