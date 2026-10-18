@@ -493,3 +493,27 @@ def test_installed_lane_refuses_a_runner_without_the_user_database_before_any_se
     code = main(["installed", "--runtime", str(tmp_path / "hol-guard"), "--output", str(tmp_path / "out")])
     assert code == 2
     assert "cannot resolve its OS account" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the account home comes from the POSIX user database")
+@pytest.mark.parametrize(("harness", "refused"), [("codex", True), ("claude-code", True), ("cursor", False)])
+def test_only_lanes_that_take_the_lifecycle_lock_need_the_user_database(
+    monkeypatch, tmp_path, capsys, harness, refused
+):
+    import pwd
+
+    from ci.gauntlet import harness_suite
+    from ci.gauntlet.__main__ import main
+
+    def missing(uid: int) -> object:
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
+    def fake_suite(**kwargs: object) -> dict[str, object]:
+        return {"pass": True, "cases": [], "outcomes": {}}
+
+    monkeypatch.setattr(pwd, "getpwuid", missing)
+    monkeypatch.setattr(harness_suite, "run_harness_suite", fake_suite)
+    code = main(["run", "--harness", harness, "--expected-source-sha", "a" * 40, "--output", str(tmp_path / "out")])
+    captured = capsys.readouterr()
+    assert (code == 2) is refused
+    assert ("cannot resolve its OS account" in captured.err) is refused

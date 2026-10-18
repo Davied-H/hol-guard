@@ -472,7 +472,10 @@ def _run_harness(args: argparse.Namespace) -> int:
         raise ValueError("host timeout is outside supported bounds")
     from .harness_case import require_account_database
 
-    require_account_database()
+    # Only the Claude Code and Codex lanes reach the lifecycle lock that needs the
+    # account; a Cursor run has no use for it.
+    if args.harness in ("claude-code", "codex"):
+        require_account_database()
     if args.profile == "full-tasks":
         from .full_task_cli import run_harness_profile
 
