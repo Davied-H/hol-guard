@@ -67,6 +67,12 @@ impl OMap {
         }
     }
 
+    /// `dict.pop(key, None)`.
+    pub fn remove(&mut self, key: &str) -> Option<OValue> {
+        let index = self.entries.iter().position(|(name, _)| name == key)?;
+        Some(self.entries.remove(index).1)
+    }
+
     /// `dict.setdefault(key, value)`.
     pub fn set_default(&mut self, key: &str, value: OValue) {
         if !self.contains_key(key) {

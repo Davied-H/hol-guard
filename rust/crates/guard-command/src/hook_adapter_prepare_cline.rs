@@ -43,15 +43,17 @@ fn decode_parameter_map(value: Option<&OValue>) -> Result<OValue, AdapterError> 
     Ok(OValue::Map(decoded))
 }
 
+const EVENT_KEYS: [&str; 6] = [
+    "hook_event_name",
+    "hookEventName",
+    "hook_name",
+    "hookName",
+    "event",
+    "eventName",
+];
+
 fn event_name(payload: &OMap) -> String {
-    for key in [
-        "hook_event_name",
-        "hookEventName",
-        "hook_name",
-        "hookName",
-        "event",
-        "eventName",
-    ] {
+    for key in EVENT_KEYS {
         if let Some(value) = string_value(payload.get(key)) {
             let lookup = py_lower(&value).replace('-', "_");
             return EVENT_NAMES
@@ -380,6 +382,14 @@ fn present_or<'a>(payload: &'a OMap, first: &str, second: &str) -> Option<&'a OV
 pub fn prepare_cline(payload: &OMap) -> Result<OMap, AdapterError> {
     let mut normalized = payload.clone();
     let event = event_name(payload);
+    // Cline spells events its own way (`tool_call`, `prompt_submit`). Every
+    // event key must name the canonical event, or the generic pre-tool
+    // extractor reads two different events and fails closed.
+    for key in EVENT_KEYS {
+        if normalized.contains_key(key) {
+            normalized.insert(key, OValue::str(event.as_str()));
+        }
+    }
     normalized.insert("hook_event_name", OValue::str(event.as_str()));
     if event == "UserPromptSubmit" {
         let nested = mapping(payload.get("userPromptSubmit"));
@@ -419,6 +429,18 @@ pub fn prepare_cline(payload: &OMap) -> Result<OMap, AdapterError> {
     }
     let tool_input = input_object(original_name.as_deref(), &raw_input);
     let (tool_name, tool_input) = normalized_tool(original_name.clone(), tool_input);
+    // `tool_name` and `tool_input` now carry the call, and `assert_compatible`
+    // has proved the typed and compatibility copies agree. Left in place, the
+    // copies spell the tool differently (`read_files` beside `read_file`) and
+    // the generic pre-tool extractor fails closed on the conflict.
+    let wire_keys = if event == "PostToolUse" {
+        ["tool_result", "postToolUse"]
+    } else {
+        ["tool_call", "preToolUse"]
+    };
+    for key in wire_keys {
+        normalized.remove(key);
+    }
     if event == "PreToolUse"
         && matches!(
             tool_input.get("cline_action_bearing_unknown"),
