@@ -123,6 +123,7 @@ def test_rust_keeps_the_same_notes_and_markers_in_the_same_order() -> None:
         (b"Error: connect EPERM fe80::1", False),
         (b"Error: connect EPERM 2001:db8::1:443", False),
         (b"Error: connect EPERM ::10:443", False),
+        (b"Error: connect EPERM [::1:abcd]:443", False),
         (b"Error: connect EPERM 203.0.113.7:443", False),
         (b"getaddrinfo ENOTFOUND mcp.example.test", False),
         (b"EPERM: operation not permitted, mkdir '/tmp/localhost'", False),

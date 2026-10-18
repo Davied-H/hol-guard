@@ -165,7 +165,12 @@ fn holds_address(line: &[u8], marker: &[u8]) -> bool {
                 && before.is_none_or(|byte| {
                     !word_byte(byte) && !(ipv6 && (byte == b':' || byte.is_ascii_hexdigit()))
                 })
-                && after.is_none_or(|byte| !word_byte(byte))
+                && if ipv6 && before == Some(b'[') {
+                    // A bracketed address must close right after the marker.
+                    after == Some(b']')
+                } else {
+                    after.is_none_or(|byte| !word_byte(byte))
+                }
         })
 }
 

@@ -108,7 +108,11 @@ def _holds_address(line: bytes, marker: bytes) -> bool:
         clear_start = before is None or not (
             _word_byte(before) or (ipv6 and (before == ord(":") or chr(before) in "0123456789abcdef"))
         )
-        clear_end = end == len(line) or not _word_byte(line[end])
+        after = line[end] if end < len(line) else None
+        clear_end = after is None or not _word_byte(after)
+        # A bracketed address must close right after the marker.
+        if ipv6 and before == ord("["):
+            clear_end = after == ord("]")
         if clear_start and clear_end:
             return True
         start = line.find(marker, start + 1)

@@ -127,6 +127,7 @@ fn only_a_blocked_connection_to_this_machine_counts_as_loopback() {
     assert!(!denied("Error: connect EPERM fe80::1"));
     assert!(!denied("Error: connect EPERM 2001:db8::1:443"));
     assert!(!denied("Error: connect EPERM ::10:443"));
+    assert!(!denied("Error: connect EPERM [::1:abcd]:443"));
     assert!(!denied("Error: connect EPERM 203.0.113.7:443"));
     assert!(!denied("getaddrinfo ENOTFOUND mcp.example.test"));
     assert!(!denied(
