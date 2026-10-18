@@ -133,10 +133,6 @@ const REGISTRY_VERBS: &[&str] = &[
     "doctor",
 ];
 
-/// Whether `uv` runs a local verb against an environment the workspace
-/// already holds. uv materializes a project environment before it runs
-/// anything, so without `.venv` the run would have to install, which the
-/// sandbox has no network for; those commands keep the admission they have.
 /// Whether `go` runs a local verb inside a module the workspace holds.
 /// Outside a module these verbs read the wider GOPATH, and the sandbox has no
 /// network to resolve a package by import path, so they keep the admission
@@ -148,6 +144,10 @@ fn local_go_work(arguments: &[&str], workspace: &Path) -> bool {
         && workspace.join("go.mod").is_file()
 }
 
+/// Whether `uv` runs a local verb against an environment the workspace
+/// already holds. uv materializes a project environment before it runs
+/// anything, so without `.venv` the run would have to install, which the
+/// sandbox has no network for; those commands keep the admission they have.
 fn local_uv_work(arguments: &[&str], workspace: &Path) -> bool {
     arguments
         .first()
