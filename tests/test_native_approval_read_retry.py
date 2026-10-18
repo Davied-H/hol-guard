@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 import pytest
 
+from codex_plugin_scanner.guard.native_approval_scope import UNAVAILABLE as SCOPE_UNAVAILABLE
 from codex_plugin_scanner.guard.native_approval_scope import ApprovalScopeUnavailableError
 from codex_plugin_scanner.guard.native_guard_store import _unavailable
 from codex_plugin_scanner.guard.store_approval_queries import StoreApprovalQueriesMixin
@@ -49,3 +50,10 @@ def test_an_answered_refusal_is_not_retried() -> None:
     with pytest.raises(ApprovalScopeUnavailableError):
         store._native_approval_read("count_approval_requests", {})
     assert store.calls == ["count_approval_requests"]
+
+
+def test_a_scope_refusal_on_the_retry_reads_as_unavailable() -> None:
+    store = _Store([_unavailable("native_guard_store_unavailable"), ValueError(SCOPE_UNAVAILABLE)])
+    with pytest.raises(ApprovalScopeUnavailableError):
+        store._native_approval_read("count_approval_requests", {})
+    assert len(store.calls) == 2

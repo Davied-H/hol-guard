@@ -147,17 +147,21 @@ class StoreApprovalQueriesMixin:
         except OSError:
             cwd = None
         try:
-            return self._native_store_call(method, {**args, "cwd": cwd})
+            return self._native_approval_call(method, {**args, "cwd": cwd})
         except NativeGuardStoreUnavailable as error:
             if method not in _RETRYABLE_READS or error.reason != _NO_ANSWER:
                 raise ApprovalScopeUnavailableError from error
-            # A read changes nothing, so a resident that dropped one round trip
-            # (a restart, a busy socket) gets one more before the queue reads as
-            # unavailable. Writes are never retried: the first may have landed.
-            try:
-                return self._native_store_call(method, {**args, "cwd": cwd})
-            except NativeGuardStoreUnavailable as retry_error:
-                raise ApprovalScopeUnavailableError from retry_error
+        # A read changes nothing, so a resident that dropped one round trip
+        # (a restart, a busy socket) gets one more before the queue reads as
+        # unavailable. Writes are never retried: the first may have landed.
+        try:
+            return self._native_approval_call(method, {**args, "cwd": cwd})
+        except NativeGuardStoreUnavailable as error:
+            raise ApprovalScopeUnavailableError from error
+
+    def _native_approval_call(self, method: str, args: dict[str, object]) -> Any:
+        try:
+            return self._native_store_call(method, args)
         except ValueError as error:
             if str(error) == SCOPE_UNAVAILABLE:
                 raise ApprovalScopeUnavailableError from error
