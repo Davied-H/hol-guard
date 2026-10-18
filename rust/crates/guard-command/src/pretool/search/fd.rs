@@ -196,10 +196,15 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
             if matches!(role, SearchValueRole::Path) {
                 root_seen = true;
             }
-            // The shell does not expand `~` after `--search-path=`.
+            // The shell does not expand `~` after `--search-path=`, and it
+            // globs the whole word rather than the part after `=`: a
+            // repository holding `--search-path=app/s` turns
+            // `--search-path=app/[slug]` into a root the bracket proof never
+            // walked. Only the separate word is the word that was proven.
             if attached.is_empty() {
                 pending = Some(role);
-            } else if (matches!(role, SearchValueRole::Path) && attached.starts_with('~'))
+            } else if (matches!(role, SearchValueRole::Path)
+                && (attached.starts_with('~') || attached.contains(['[', ']'])))
                 || unsafe_value(role, attached, context)
             {
                 return false;

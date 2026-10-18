@@ -37,9 +37,20 @@ fn a_names_only_search_of_a_route_directory_is_allowed() {
         "fd . ~/Code/org/app-portal/app/blog/[slug]",
         "fd . ~/Code/org/service-api/app/[locale]",
         "fd . app/blog/[slug] | head -20",
+        "fd . --search-path app/blog/[slug]",
     ] {
         assert_decision(&cwd, &layout.home, command, true);
     }
+    // The shell globs the whole `--search-path=` word, not the part after
+    // `=`, so a directory named `--search-path=app/b` would send fd somewhere
+    // the bracket proof never walked. The attached spelling keeps its review,
+    // as the attached `~` one does.
+    assert_decision(
+        &cwd,
+        &layout.home,
+        "fd . --search-path=app/blog/[slug]",
+        false,
+    );
 }
 
 #[test]
