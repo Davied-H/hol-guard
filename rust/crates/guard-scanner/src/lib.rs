@@ -9,6 +9,7 @@ pub mod staged_scanner;
 mod code_value;
 mod continuation;
 mod field_copy;
+mod guard_link;
 mod masked_value;
 mod match_spans;
 mod reference_value;
@@ -255,6 +256,7 @@ fn interpolates(value: &str) -> bool {
 fn is_sample(
     classifier: &str,
     matched: &str,
+    preceding: &str,
     continued: bool,
     rest_of_line: &str,
     suppress_samples: bool,
@@ -265,6 +267,7 @@ fn is_sample(
     }
     if classifier == "credential-assignment"
         && (field_copy::is_field_copy(matched, rest_of_line)
+            || guard_link::is_guard_link(matched, preceding)
             || self_named_value::is_self_named(matched, rest_of_line)
             || assignment_value(matched).is_some_and(|value| {
                 inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
@@ -317,6 +320,7 @@ fn counted_matches<'t>(
         !is_sample(
             classifier,
             matched.as_str(),
+            &text[..matched.start()],
             continuation::continues_as_expression(&text[matched.end()..]),
             &text[matched.end()..line_end],
             suppress_samples,
