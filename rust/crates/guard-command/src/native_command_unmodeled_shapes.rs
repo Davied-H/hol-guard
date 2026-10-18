@@ -352,6 +352,56 @@ fn lookup_run(text: &str, options_allowed: bool) -> Option<(Vec<&str>, usize)> {
     (!names.is_empty()).then_some((names, end))
 }
 
+/// How far a run of plain redirections reaches, when it ends at the close of a
+/// command substitution.
+///
+/// Only redirections count: an optional file descriptor, a `>` or `<` operator
+/// in one of its spellings, and a plain target word. `&& rm -rf ~)` is not one,
+/// so it reads as no run at all and the substitution keeps its `true`. The
+/// answer is the offset of the `)` within `text`.
+fn redirections_end(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    let mut seen = false;
+    loop {
+        while matches!(bytes.get(at), Some(b' ') | Some(b'\t')) {
+            at += 1;
+        }
+        match bytes.get(at) {
+            Some(b')') => return seen.then_some(at),
+            None => return None,
+            _ => {}
+        }
+        while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+            at += 1;
+        }
+        if matches!(bytes.get(at), Some(b'&')) {
+            at += 1;
+        }
+        if !matches!(bytes.get(at), Some(b'>') | Some(b'<')) {
+            return None;
+        }
+        at += 1;
+        // `>>` appends and `>&` duplicates; both still only redirect.
+        if matches!(bytes.get(at), Some(b'>') | Some(b'&')) {
+            at += 1;
+        }
+        while matches!(bytes.get(at), Some(b' ') | Some(b'\t')) {
+            at += 1;
+        }
+        let target = at;
+        while bytes.get(at).is_some_and(|letter| {
+            letter.is_ascii_alphanumeric() || matches!(*letter, b'/' | b'.' | b'_' | b'-')
+        }) {
+            at += 1;
+        }
+        if at == target {
+            return None;
+        }
+        seen = true;
+    }
+}
+
 fn strip_one_lookup(text: &str) -> Option<String> {
     for (lead, options_allowed) in [
         ("command -v ", false),
@@ -368,17 +418,28 @@ fn strip_one_lookup(text: &str) -> Option<String> {
                 continue;
             };
             let end = name_start + length;
-            let after = text[end..].chars().next();
-            let whole = before.ends_with("$(") && after == Some(')');
-            let filler = if whole {
+            let rest = &text[end..];
+            // A lookup that fills the whole substitution leaves a plain word
+            // naming what it looked up; anything else keeps a `true` that runs
+            // nothing. A trailing run of redirections still leaves the lookup
+            // alone in the substitution, and `$(command -v cygpath &>/dev/null)`
+            // is how a generated activation script asks whether a program
+            // exists, so the redirections are read past to find the close.
+            let closing = if !before.ends_with("$(") {
+                None
+            } else if rest.starts_with(')') {
+                Some(end + 1)
+            } else {
+                redirections_end(rest).map(|offset| end + offset + 1)
+            };
+            let filler = if closing.is_some() {
                 names.join(" ")
             } else {
                 "true".to_owned()
             };
-            let (from, to) = if whole {
-                (before.len() - 2, end + 1)
-            } else {
-                (at, end)
+            let (from, to) = match closing {
+                Some(close) => (before.len() - 2, close),
+                None => (at, end),
             };
             return Some(format!("{}{}{}", &text[..from], filler, &text[to..]));
         }
