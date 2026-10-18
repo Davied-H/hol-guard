@@ -18,9 +18,14 @@ background traffic they are, the same way the daemon's own evidence drain is.
 
 Nothing here decides anything or holds a record that the writer would
 otherwise keep: the resident still owns the queue, the journal and the store.
-A dispatch that is full, stopped or absent runs the work on the calling thread
-rather than dropping it, so the worst this can degrade to is the inline call it
-replaced.
+Order outranks delivery here, because a record that overtakes the one it links
+to is read as a contradiction rather than as a gap: a post event that reaches
+the writer before its own pre event is stored as explicitly unpaired, and the
+pre event that follows it stays `allowed_unconfirmed` for good. So a caller
+that finds the queue full waits briefly for a slot and then drops the record,
+which is what the resident's own writer does when its queue overflows. Only a
+host with no dispatch at all runs the work inline, where there is no queued
+record for it to overtake.
 """
 
 from __future__ import annotations
@@ -44,6 +49,11 @@ BACKGROUND_LABEL: Final = "hook_evidence_writer_drain"
 # and the next caller runs its own work rather than growing the backlog.
 _MAX_PENDING: Final = 1024
 
+# How long a caller waits for a slot before its record is dropped. A queue
+# this deep means the resident has stopped answering, so the wait is short
+# enough that a wedged writer cannot hold up the hook response it sits behind.
+_ENQUEUE_WAIT_SECONDS: Final = 0.05
+
 _LOGGER: Final = logging.getLogger(__name__)
 
 
@@ -57,18 +67,28 @@ class HookEvidenceDispatch:
         self._thread.start()
 
     def run(self, work: Callable[[], object]) -> None:
-        """Take `work` for the dispatch thread, or run it here if it cannot."""
+        """Take `work` for the dispatch thread, in the order it arrived.
+
+        A record is never run on the calling thread while earlier records are
+        still queued: that would let a hook's later evidence reach the writer
+        before its earlier evidence. A caller that cannot get a slot inside
+        the wait drops its record instead.
+        """
 
         if not self._stopping.is_set() and self._thread.is_alive():
             try:
-                self._queue.put_nowait(work)
-                return
+                self._queue.put(work, timeout=_ENQUEUE_WAIT_SECONDS)
             except queue.Full:
-                pass
+                _LOGGER.debug("Hook evidence dispatch is full; the record was dropped to keep order.")
+            return
         _run_quietly(work)
 
     def flush(self, timeout_seconds: float = 1.0) -> bool:
-        """Wait for the evidence already taken to be submitted."""
+        """Wait for the evidence already taken to be submitted.
+
+        Reports `False` when the marker itself was dropped by a full queue,
+        which is the same answer it gives when the queue drains too slowly.
+        """
 
         done = threading.Event()
         self.run(done.set)

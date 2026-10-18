@@ -34,22 +34,24 @@ def test_work_runs_off_the_calling_thread() -> None:
     assert threads and threads[0] != threading.get_ident()
 
 
-def test_a_full_dispatch_runs_the_work_on_the_caller() -> None:
+def test_a_full_dispatch_drops_the_record_rather_than_overtaking_the_queue() -> None:
     dispatch = HookEvidenceDispatch(max_pending=1)
     held = threading.Event()
     released = threading.Event()
-    inline: list[int] = []
+    recorded: list[str] = []
     try:
         dispatch.run(lambda: (held.set(), released.wait(5.0)))
         assert held.wait(5.0)
-        dispatch.run(lambda: None)
-        # The worker is held and the one queue slot is taken, so this caller
-        # has nowhere to put the work but its own thread.
-        dispatch.run(lambda: inline.append(threading.get_ident()))
-        assert inline == [threading.get_ident()]
+        dispatch.run(lambda: recorded.append("queued"))
+        # The worker is held and the one queue slot is taken. Running this
+        # record here would put it in front of the queued one, which is how a
+        # post event comes to be written before its own pre event.
+        dispatch.run(lambda: recorded.append("dropped"))
+        assert recorded == []
     finally:
         released.set()
         assert dispatch.stop(timeout_seconds=5.0)
+    assert recorded == ["queued"]
 
 
 def test_a_stopped_dispatch_still_records_what_it_is_given() -> None:
