@@ -8,7 +8,7 @@
 //! the copies prepare has already reconciled.
 
 use crate::hook_adapter_cline_tables::EVENT_NAMES;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 const EVENT_KEYS: [&str; 6] = [
     "hook_event_name",
@@ -17,12 +17,6 @@ const EVENT_KEYS: [&str; 6] = [
     "hookName",
     "event",
     "eventName",
-];
-const WIRE_COPIES: [(&str, &str); 4] = [
-    ("tool_call", "name"),
-    ("preToolUse", "toolName"),
-    ("tool_result", "name"),
-    ("postToolUse", "toolName"),
 ];
 
 /// The prepared payload without Cline's reconciled duplicates, or `None`
@@ -41,27 +35,45 @@ pub(super) fn evaluated_view(payload: &Value) -> Option<Value> {
             view.insert(key.to_owned(), Value::from(event));
         }
     }
-    // Prepare records the name it reconciled as `cline_tool_name`. Only a
-    // copy naming that same tool is dropped; any other copy stays and the
-    // extractor still refuses the conflict.
+    // Prepare reconciles only the pair for this event, `tool_call` with
+    // `preToolUse` or `tool_result` with `postToolUse`, and refuses a pair
+    // that disagrees. A copy is dropped only when both present copies of that
+    // pair name the tool prepare recorded as `cline_tool_name`. Any other
+    // copy, including one from the other phase, stays and the extractor still
+    // refuses the conflict. Prepare keeps a `cline_tool_name` the tool input
+    // already carried; such a value names either the pair's own tool, which
+    // prepare reconciled, or another tool, which drops nothing.
+    let pair: [(&str, &str); 2] = match event {
+        "PreToolUse" => [("tool_call", "name"), ("preToolUse", "toolName")],
+        "PostToolUse" => [("tool_result", "name"), ("postToolUse", "toolName")],
+        _ => return finished(view, root),
+    };
     let reconciled = root
         .get("tool_input")
         .and_then(Value::as_object)
         .and_then(|input| input.get("cline_tool_name"))
         .and_then(Value::as_str);
-    if let Some(reconciled) = reconciled {
-        for (key, name_key) in WIRE_COPIES {
-            let named = root
-                .get(key)
-                .and_then(Value::as_object)
-                .and_then(|copy| copy.get(name_key))
+    let present: Vec<(&str, Option<&str>)> = pair
+        .iter()
+        .filter_map(|(key, name_key)| {
+            let copy = root.get(*key)?;
+            let name = copy
+                .as_object()
+                .and_then(|copy| copy.get(*name_key))
                 .and_then(Value::as_str)
                 .map(str::trim);
-            if named == Some(reconciled) {
-                view.remove(key);
-            }
+            Some((*key, name))
+        })
+        .collect();
+    if reconciled.is_some() && present.iter().all(|(_, name)| *name == reconciled) {
+        for (key, _) in present {
+            view.remove(key);
         }
     }
+    finished(view, root)
+}
+
+fn finished(view: Map<String, Value>, root: &Map<String, Value>) -> Option<Value> {
     if view == *root {
         None
     } else {

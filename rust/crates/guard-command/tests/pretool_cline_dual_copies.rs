@@ -140,6 +140,23 @@ fn a_copy_naming_another_tool_is_still_refused() {
 }
 
 #[test]
+fn a_copy_from_the_other_phase_is_still_refused() {
+    let payload = cline_payload(
+        "tool_call",
+        "run_commands",
+        &json!({"commands": ["git status"]}),
+        &json!({"commands": "[\"git status\"]"}),
+    );
+    let mut prepared = prepared(&payload).expect("copies agree");
+    prepared["postToolUse"] = json!({
+        "toolName": "run_commands",
+        "parameters": {"commands": "[\"rm -rf ~\"]"},
+    });
+    let (decision, _) = verdict(&prepared);
+    assert_ne!(decision, json!("allow"));
+}
+
+#[test]
 fn prompt_event_label_reads_as_one_event() {
     let payload = json!({
         "hookName": "prompt_submit",

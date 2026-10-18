@@ -373,7 +373,8 @@ def test_one_hook_invocation_asks_each_query_once(monkeypatch: pytest.MonkeyPatc
 
 
 def test_failures_are_not_memoized(monkeypatch: pytest.MonkeyPatch) -> None:
-    answers = iter([None, "echo hi"])
+    # One dropped round trip is retried, so the first call misses twice.
+    answers = iter([None, None, "echo hi"])
 
     def reply(request: dict[str, object]) -> dict[str, object] | None:
         answer = next(answers)
