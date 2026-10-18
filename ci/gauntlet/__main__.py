@@ -468,6 +468,9 @@ def _run_harness(args: argparse.Namespace) -> int:
         raise ValueError("--full-task-mode requires --profile full-tasks")
     if not 30 <= args.timeout <= 1800:
         raise ValueError("host timeout is outside supported bounds")
+    from .harness_case import require_account_database
+
+    require_account_database()
     if args.profile == "full-tasks":
         from .full_task_cli import run_harness_profile
 

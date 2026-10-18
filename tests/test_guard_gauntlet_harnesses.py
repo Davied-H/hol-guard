@@ -454,3 +454,20 @@ def test_macos_login_shells_keep_the_runner_path_order(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     keep_login_shell_path(tmp_path, path)
     assert (tmp_path / ".zprofile").read_text(encoding="utf-8") == f"export PATH='{path}'\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the account home comes from the POSIX user database")
+def test_harness_lane_refuses_a_runner_without_the_user_database(monkeypatch):
+    # Every managed install takes the Codex lifecycle lock, which needs getpwuid.
+    import pwd
+
+    from ci.gauntlet.harness_case import require_account_database
+
+    require_account_database()
+
+    def missing(uid: int) -> object:
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
+    monkeypatch.setattr(pwd, "getpwuid", missing)
+    with pytest.raises(RuntimeError, match="cannot resolve its OS account"):
+        require_account_database()

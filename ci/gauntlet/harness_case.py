@@ -58,6 +58,29 @@ def route_task(scenario: Scenario, prompt: str, context: str) -> tuple[str, str]
     return prompt, context
 
 
+def require_account_database() -> None:
+    """Refuse a harness lane whose host process cannot name its own OS account.
+
+    Every managed install takes Guard's Codex lifecycle lock, which resolves the
+    account home through the user database so CLI and Desktop owners agree on one
+    lock directory, and fails closed without it. A runner that cannot answer
+    ``getpwuid`` (some IDE agent tool processes on macOS cannot reach the
+    directory service) would otherwise turn every case into a harness error
+    after building its fixture and daemon.
+    """
+    if os.name == "nt":
+        return
+    import pwd
+
+    try:
+        pwd.getpwuid(os.getuid())
+    except KeyError:
+        raise RuntimeError(
+            "this process cannot resolve its OS account (getpwuid has no entry for the current UID), "
+            "and Guard's install lock requires it; run the harness lane from an ordinary terminal session"
+        ) from None
+
+
 def install_harness_hooks(name: str, daemon: Any, *, home: Path, guard_home: Path, workspace: Path) -> dict[str, Any]:
     """Apply Guard's real managed install for the harness into the fixture HOME.
 
