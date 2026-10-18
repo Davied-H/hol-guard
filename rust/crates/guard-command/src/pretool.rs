@@ -34,6 +34,7 @@ pub struct PathContext<'a> {
 
 mod contained_wrapper;
 pub(crate) mod curl_reads;
+mod digest_reads;
 pub(crate) mod docker_reads;
 mod docker_start;
 mod doctl_reads;
