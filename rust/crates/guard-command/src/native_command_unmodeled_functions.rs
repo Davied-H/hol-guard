@@ -309,8 +309,18 @@ fn names(command: &str, name: &str) -> bool {
         // The file being read is not a call to anything: `source ./pydoc`
         // names the path it reads, and a wrapper inside it stays dead.
         .filter(|piece| !piece.contains('/'))
-        .flat_map(|piece| piece.split(|character: char| !name_character(character)))
-        .any(|word| word == name)
+        .any(|piece| {
+            // The shell joins quoted and escaped pieces into one word before it
+            // looks the command up, so `py""doc`, `'py'doc` and `p\ydoc` all
+            // call `pydoc`. Taking that splicing out keeps the call visible.
+            let spliced: String = piece
+                .chars()
+                .filter(|character| !matches!(character, '\'' | '"' | '\\'))
+                .collect();
+            spliced
+                .split(|character: char| !name_character(character))
+                .any(|word| word == name)
+        })
 }
 
 fn name_character(character: char) -> bool {
