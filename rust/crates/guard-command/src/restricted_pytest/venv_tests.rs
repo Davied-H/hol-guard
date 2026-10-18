@@ -311,3 +311,41 @@ fn a_workspace_venv_grants_the_install_its_launchers_run() {
     fs::write(venv.join("notes.txt"), "").unwrap();
     assert!(workspace_base_roots(&venv_bin, &workspace).is_empty());
 }
+
+#[test]
+fn a_version_selector_reaches_the_run_only_as_a_version_name() {
+    let Some(base) = trusted_python() else { return };
+    let fixture = fixture();
+    let home = base.parent().unwrap().to_string_lossy().into_owned();
+    let (workspace, venv) = layout(&fixture.0, &base, &home);
+    let allowed = admit("python3", &workspace, &venv).unwrap();
+    let private = fixture.0.join("private");
+    let filter = |source: &BTreeMap<String, String>| {
+        environment::filter(
+            source, &workspace, &workspace, &private, &private, &allowed, false,
+        )
+        .unwrap()
+    };
+    let kept = BTreeMap::from([
+        ("PYENV_VERSION".to_owned(), "3.12.1:3.11".to_owned()),
+        ("ASDF_NODEJS_VERSION".to_owned(), "20.11.0".to_owned()),
+        ("RBENV_VERSION".to_owned(), "system".to_owned()),
+    ]);
+    let env = filter(&kept);
+    for (key, value) in &kept {
+        assert_eq!(env.get(key), Some(value), "{key}");
+    }
+    // A value that names anything but a version, and a setting that moves the
+    // manager's root instead of choosing inside it, are both dropped.
+    let dropped = BTreeMap::from([
+        ("PYENV_VERSION".to_owned(), "../../etc".to_owned()),
+        ("NODENV_VERSION".to_owned(), "-rf".to_owned()),
+        ("GOENV_VERSION".to_owned(), String::new()),
+        ("PYENV_ROOT".to_owned(), home.clone()),
+        ("ASDF_DATA_DIR".to_owned(), home),
+    ]);
+    let env = filter(&dropped);
+    for key in dropped.keys() {
+        assert!(!env.contains_key(key), "{key}");
+    }
+}

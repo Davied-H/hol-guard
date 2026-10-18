@@ -78,11 +78,47 @@ static SECRET: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:^|_)(?:API_?KEY|AUTH(?:ORIZATION)?|BEARER|COOKIE|CREDENTIALS?|DSN|KEY(?:_?ID)?|PASSWORD|PRIVATE_?KEY|SECRET|SESSION|TOKEN)(?:_|$)").unwrap()
 });
 
+/// The version a manager's shims dispatch to, named by its own setting.
+/// `~/.pyenv/shims/python` and its kind pick an interpreter from the version
+/// named here before any file; dropping the setting runs a different version
+/// inside the sandbox than the caller asked for outside it. Only the managers
+/// whose installs a run may be granted, and only the name of a version: the
+/// settings that move a manager's root instead name a directory and stay out.
+const VERSION_SELECTORS: &[&str] = &[
+    "GOENV_VERSION",
+    "JENV_VERSION",
+    "NODENV_VERSION",
+    "PYENV_VERSION",
+    "RBENV_VERSION",
+    "TFENV_VERSION",
+];
+
+/// Whether `key` names a version for a manager's shims to resolve.
+fn version_selector(key: &str) -> bool {
+    VERSION_SELECTORS.contains(&key)
+        || (key.starts_with("ASDF_") && key.ends_with("_VERSION") && key.len() > 13)
+}
+
+/// Whether `value` is a version a manager can name, and nothing else: one or
+/// more plain names, never a path, a flag or anything a shell would act on.
+fn version_names(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.split([' ', ':']).all(|name| {
+            !name.is_empty()
+                && !name.starts_with('-')
+                && name
+                    .chars()
+                    .all(|letter| letter.is_ascii_alphanumeric() || "._-+".contains(letter))
+        })
+}
+
 /// Whether [`filter`] can pass the caller's setting `key` to the run; it
 /// drops every other name.
 pub(crate) fn forwarded_setting(key: &str) -> bool {
     matches!(key, "PYTHONPATH" | "VIRTUAL_ENV")
         || SAFE_ENV_KEYS.contains(&key)
+        || version_selector(key)
         || key.starts_with("LC_")
 }
 
@@ -113,6 +149,10 @@ pub(super) fn filter(
                 if path_is_within(&resolved, workspace) {
                     result.insert(key.clone(), resolved.to_string_lossy().into_owned());
                 }
+            }
+        } else if version_selector(key) {
+            if version_names(value) {
+                result.insert(key.clone(), value.clone());
             }
         } else if SAFE_ENV_KEYS.contains(&key.as_str()) || key.starts_with("LC_") {
             result.insert(key.clone(), value.clone());
