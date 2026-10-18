@@ -202,13 +202,14 @@ def test_node_script_token_binds_the_code_it_imports(
     imported.write_text("export const total = () => 0;\n")
     assert _token("node scripts/report.mjs", workspace) not in {None, first}
 
+    # Code Guard cannot follow is approved by its command alone.
     imported.write_text("import { execSync } from 'node:child_process';\nexport const total = () => execSync('id');\n")
-    assert _token("node scripts/report.mjs", workspace) is None
+    assert not _proven("node scripts/report.mjs", workspace)
     imported.write_text("export const total = () => 0;\n")
-    assert _token("node -e 1", workspace) is None
-    assert _token("cd scripts && node report.mjs", workspace) is None
+    assert not _proven("node -e 1", workspace)
+    assert not _proven("cd scripts && node report.mjs", workspace)
     monkeypatch.setenv("NODE_OPTIONS", "--require ./preload.js")
-    assert _token("node scripts/report.mjs", workspace) is None
+    assert not _proven("node scripts/report.mjs", workspace)
 
 
 @pytest.mark.parametrize(
@@ -549,13 +550,13 @@ def _local_bin(workspace: Path, package: str, name: str) -> None:
         "xargs ./payload",
     ],
 )
-def test_selectors_interpreters_and_code_loaders_stay_once_only(
+def test_selectors_interpreters_and_code_loaders_bind_only_the_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_context_digest: Path, command: str
 ) -> None:
     workspace = _wrangler_workspace(tmp_path, monkeypatch)
     _local_bin(workspace, "tsx", "tsx")
     (workspace / "script.ts").write_text("console.log(1)\n")
-    assert _token(command, workspace) is None
+    assert not _proven(command, workspace)
 
 
 def test_token_binds_file_operand_contents(

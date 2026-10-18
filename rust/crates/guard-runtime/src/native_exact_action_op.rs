@@ -267,6 +267,10 @@ mod tests;
 #[path = "native_exact_action_op/approval_fallback_tests.rs"]
 mod approval_fallback_tests;
 
+#[cfg(test)]
+#[path = "native_exact_action_op/wire_tests.rs"]
+mod wire_tests;
+
 #[cfg(all(test, windows))]
 #[path = "native_exact_action_op/windows_tests.rs"]
 mod windows_tests;

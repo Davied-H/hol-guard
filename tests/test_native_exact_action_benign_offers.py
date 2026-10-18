@@ -12,6 +12,7 @@ from codex_plugin_scanner.guard.daemon.hook_native_exact_action import (
 from tests.test_native_review_exact_action_always import (
     _HARNESS,
     _native_package_intent,  # noqa: F401  (autouse fixture)
+    _proven,
     _token,
     _verdict,
     _wrangler_workspace,
@@ -59,7 +60,7 @@ def test_version_probe_of_a_plain_binary_is_eligible(
         # alone does not bind what runs.
         "pytest --version",
         "cargo --version",
-        # The resident gives an interpreter with no entrypoint a fresh nonce.
+        # An interpreter with no entrypoint gets a fresh nonce, never a proof.
         "python3 --version",
         "node -V",
         "cargo --version --foo",
@@ -71,11 +72,11 @@ def test_version_probe_of_a_plain_binary_is_eligible(
         "python3 -c 'print(1)' --version",
     ],
 )
-def test_launchers_that_run_code_stay_once_only(
+def test_launchers_that_run_code_bind_only_the_command(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_context_digest: Path, command: str
 ) -> None:
     workspace = _workspace(tmp_path, monkeypatch)
-    assert _token(command, workspace) is None
+    assert not _proven(command, workspace)
 
 
 @pytest.mark.parametrize("tool", ["todo", "todo_write", "TodoWrite"])
