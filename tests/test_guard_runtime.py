@@ -1091,7 +1091,7 @@ clearer UX and an implementation plan with technical references.
             },
             "stdout": (
                 "guard/server.py:42:def handle_post(self):\n"
-                "guard/server.py:43:    daemon_auth_token = self.headers.get('X-Guard-Token')\n"
+                "guard/server.py:43:    daemon_auth_token = 'dev-token-123'\n"
             ),
             "source_scope": "project",
         }
@@ -1115,6 +1115,48 @@ clearer UX and an implementation plan with technical references.
         assert rc == 1
         assert output["continue"] is True
         assert output["approval_reuse"]["action"] == "require-reapproval"
+
+    def test_pi_post_tool_use_does_not_review_native_grep_of_token_handling_code(
+        self,
+        monkeypatch,
+        tmp_path,
+        capsys,
+    ) -> None:
+        home_dir = tmp_path / "home"
+        workspace_dir = home_dir / "workspace"
+        external_source_dir = tmp_path / "codex_plugin_scanner_full"
+        external_source_dir.mkdir(parents=True)
+        _build_guard_fixture(home_dir, workspace_dir)
+        event = {
+            "event": "PostToolUse",
+            "tool_name": "grep",
+            "tool_input": {"pattern": "handle_post|token", "path": str(external_source_dir)},
+            "stdout": (
+                "guard/server.py:42:def handle_post(self):\n"
+                "guard/server.py:43:    daemon_auth_token = self.headers.get('X-Guard-Token')\n"
+            ),
+            "source_scope": "project",
+        }
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(event)))
+
+        rc = main(
+            [
+                "guard",
+                "hook",
+                "--home",
+                str(home_dir),
+                "--workspace",
+                str(workspace_dir),
+                "--harness",
+                "pi",
+                "--json",
+            ]
+        )
+        output = json.loads(capsys.readouterr().out)
+
+        assert rc == 0
+        assert output["continue"] is True
+        assert output.get("approval_reuse", {}).get("action") != "require-reapproval"
 
     def test_pi_post_tool_use_blocks_private_key_from_external_source_tree(
         self,

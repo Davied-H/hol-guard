@@ -38,6 +38,25 @@ pub(crate) fn encoded_looking(word: &[u8]) -> bool {
     word.len() >= 16 && word.iter().any(u8::is_ascii_digit)
 }
 
+/// Path segments that name the process environment.
+const ENVIRONMENT_PATH: [&[u8]; 4] = [b"env", b"environ", b"ENV", b"Env"];
+/// Reads of one environment variable, whose first argument is its name.
+const ENVIRONMENT_READS: [&[u8]; 4] = [b"get", b"fetch", b"var", b"var_os"];
+/// Calls that supply the value used when the environment has none.
+const ENVIRONMENT_DEFAULTS: [&[u8]; 4] =
+    [b"unwrap_or", b"unwrap_or_else", b"or_else", b"getOrDefault"];
+
+/// The first argument position of an environment call whose literals are
+/// hardcoded defaults rather than variable names. `os.getenv("TOKEN", "x")`
+/// spells the name first and the default second; `.unwrap_or("x")` on an
+/// environment read is all default.
+pub(crate) fn environment_call(path_env: bool, name: &[u8]) -> Option<usize> {
+    if name == b"getenv" || (path_env && ENVIRONMENT_READS.contains(&name)) {
+        return Some(1);
+    }
+    (path_env && ENVIRONMENT_DEFAULTS.contains(&name)).then_some(0)
+}
+
 /// A quoted argument that cannot be a credential: every word is short, or the
 /// whole literal reads as a slug, a host or a path of at most three words.
 pub(crate) fn literal_ok(literal: &[u8]) -> bool {
@@ -273,6 +292,46 @@ impl<'a> Cursor<'a> {
         }
     }
 
+    /// The argument list of an environment call. A quoted argument from
+    /// `defaults_from` onward is a hardcoded default, which can hold a real
+    /// credential, so the expression is not inert code. An empty literal is
+    /// no such value and is read like any other argument.
+    pub(crate) fn environment_arguments(&mut self, defaults_from: usize) -> Scan {
+        let mut argument = 0usize;
+        loop {
+            self.skip_blanks();
+            if self.done() {
+                return Scan::Incomplete;
+            }
+            let byte = self.bytes[self.at];
+            if byte == b')' {
+                self.at += 1;
+                return Scan::Done;
+            }
+            if byte == b',' {
+                self.at += 1;
+                argument += 1;
+                continue;
+            }
+            if matches!(byte, b'"' | b'\'' | b'`') && argument >= defaults_from {
+                if self.peek(1) != byte {
+                    return Scan::Fail;
+                }
+                self.at += 2;
+                continue;
+            }
+            if self.scan(None, 1) == Scan::Fail {
+                return Scan::Fail;
+            }
+            if self.done() {
+                return Scan::Incomplete;
+            }
+            if !matches!(self.bytes[self.at], b',' | b')') {
+                return Scan::Fail;
+            }
+        }
+    }
+
     /// A `<...>` type argument list directly before a call, as in `parse<T>(`.
     pub(crate) fn generic_before_call(&mut self) -> bool {
         let mut at = self.at + 1;
@@ -337,25 +396,31 @@ impl<'a> Cursor<'a> {
         if !is_identifier_start(first) || first == b'$' {
             return None;
         }
-        if encoded_looking(self.identifier()?) {
+        let mut name = self.identifier()?;
+        if encoded_looking(name) {
             return None;
         }
+        let mut path_env = ENVIRONMENT_PATH.contains(&name);
         let mut dotted = false;
         while !self.done() {
             let byte = self.bytes[self.at];
             if byte == b'.' && is_identifier_start(self.peek(1)) {
                 self.at += 1;
                 dotted = true;
-                if encoded_looking(self.identifier()?) {
+                name = self.identifier()?;
+                if encoded_looking(name) {
                     return None;
                 }
+                path_env = path_env || ENVIRONMENT_PATH.contains(&name);
             } else if byte == b'?' && self.peek(1) == b'.' {
                 self.at += 2;
                 if !self.done() && is_identifier_start(self.bytes[self.at]) {
                     dotted = true;
-                    if encoded_looking(self.identifier()?) {
+                    name = self.identifier()?;
+                    if encoded_looking(name) {
                         return None;
                     }
+                    path_env = path_env || ENVIRONMENT_PATH.contains(&name);
                 }
             } else if byte == b'?'
                 && (self.at + 1 >= self.bytes.len() || b";),".contains(&self.peek(1)))
@@ -364,11 +429,16 @@ impl<'a> Cursor<'a> {
                 structural = true;
             } else if byte == b':' && self.peek(1) == b':' && is_identifier_start(self.peek(2)) {
                 self.at += 2;
-                self.identifier()?;
+                name = self.identifier()?;
+                path_env = path_env || ENVIRONMENT_PATH.contains(&name);
             } else if byte == b'(' || byte == b'[' {
                 self.at += 1;
                 let close = if byte == b'(' { b')' } else { b']' };
-                let scan = self.scan(Some(close), 1);
+                let scan = match (byte, environment_call(path_env, name)) {
+                    (b'(', Some(defaults_from)) => self.environment_arguments(defaults_from),
+                    _ => self.scan(Some(close), 1),
+                };
+                name = b"";
                 if scan == Scan::Fail {
                     return None;
                 }

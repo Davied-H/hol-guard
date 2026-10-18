@@ -154,3 +154,27 @@ fn literal_secrets_beside_code_are_still_credentials() {
         assert!(flagged(&text), "{text:?}");
     }
 }
+
+#[test]
+fn environment_defaults_are_credentials_and_lookups_stay_inert() {
+    let secret = ["hunter2", "-production", "-value"].concat();
+    for text in [
+        format!("TOKEN = os.getenv(\"TOKEN\", \"{secret}\")"),
+        format!("token = os.environ.get(\"TOKEN\", \"{secret}\")"),
+        format!("let token = std::env::var(\"TOKEN\").unwrap_or(\"{secret}\".into());"),
+        format!("const token = Deno.env.get(\"TOKEN\") ?? \"{secret}\";"),
+        format!("api_key = ENV.fetch(\"API_KEY\", \"{secret}\")"),
+    ] {
+        assert!(flagged(&text), "{text:?}");
+    }
+    for text in [
+        "TOKEN = os.getenv(\"TOKEN\")",
+        "token = os.environ.get(\"TOKEN\", \"\")",
+        "let token = std::env::var(\"TOKEN\").unwrap_or_default();",
+        "const token = query.get('token') ?? '';",
+        "const token = client.get('token', 'header');",
+        "const token = jwt.sign(payload, signingKey, { algorithm: 'HS256' });",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}
