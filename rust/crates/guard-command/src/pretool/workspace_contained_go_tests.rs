@@ -106,3 +106,32 @@ fn the_module_a_verb_builds_moves_with_the_command() {
         assert_ne!(reason, CONTAINED, "{harness}");
     }
 }
+
+#[test]
+fn a_fetching_flag_keeps_its_review_however_it_is_spelled() {
+    let ws = module("go-flag-spellings");
+    // Go reads one dash or two alike, and a boolean's value may stand behind
+    // an `=`, so every spelling of the flags that reach a module proxy keeps
+    // the command out.
+    for command in [
+        "go list -m -u all",
+        "go list -m --u all",
+        "go list -m -u=true all",
+        "go list -m --u=false all",
+        "go list -m -versions all",
+        "go list -m --versions=true all",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+    // A flag whose name only starts with one of them, and an operand that is
+    // not a flag at all, are still ordinary local work.
+    for command in ["go test -update ./...", "go list ./versions"] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+}

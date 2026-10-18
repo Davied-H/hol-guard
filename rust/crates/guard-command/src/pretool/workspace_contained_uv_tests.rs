@@ -208,3 +208,115 @@ fn the_project_a_verb_works_on_moves_with_the_command() {
         }
     }
 }
+
+#[test]
+fn an_option_that_takes_a_value_does_not_hide_what_follows_it() {
+    let ws = project("uv-values");
+    std::fs::write(ws.join("vars.txt"), "LEVEL=debug\n").unwrap();
+    std::fs::write(
+        ws.join("report.py"),
+        "# /// script\n# dependencies = [\"httpx\"]\n# ///\nprint(1)\n",
+    )
+    .unwrap();
+    // The value belongs to the option, so the fetching option behind it is
+    // still read and the operand is still the script uv would run.
+    for command in [
+        "uv run --env-file vars.txt --with httpx pytest",
+        "uv run --package api --refresh pytest",
+        "uv run --env-file vars.txt report.py",
+        "uv run --mystery pytest",
+        "uv tree --outdated",
+        "uv run --group test pytest",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+    for command in [
+        "uv run --env-file vars.txt pytest",
+        "uv run --frozen pytest",
+        "uv tree --depth 2 --invert",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+}
+
+#[test]
+fn an_operand_uv_writes_or_downloads_keeps_its_review() {
+    let ws = project("uv-operand");
+    // `uv version 2.0.0` writes the version and locks the project again; a
+    // script named by URL is downloaded before it runs.
+    for command in [
+        "uv version 2.0.0",
+        "uv run https://example.invalid/script.py",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+}
+
+#[test]
+fn a_dependency_block_below_a_long_header_is_still_found() {
+    let ws = project("uv-late-block");
+    let mut script = "# notice\n".repeat(2048);
+    script.push_str("# /// script\n# dependencies = [\"httpx\"]\n# ///\nprint(1)\n");
+    std::fs::write(ws.join("late.py"), script).unwrap();
+    for harness in ["codex", "claude-code", "omp"] {
+        let (reason, _) = outcome(harness, "uv run late.py", &ws);
+        assert_ne!(reason, CONTAINED, "{harness}");
+    }
+}
+
+#[test]
+fn a_script_is_read_where_the_run_will_stand() {
+    let ws = project("uv-script-directory");
+    std::fs::create_dir_all(ws.join("api/.venv/bin")).unwrap();
+    std::fs::write(ws.join("api/pyproject.toml"), PROJECT).unwrap();
+    std::fs::write(
+        ws.join("api/report.py"),
+        "# /// script\n# dependencies = [\"httpx\"]\n# ///\nprint(1)\n",
+    )
+    .unwrap();
+    std::fs::write(ws.join("api/plain.py"), "print(1)\n").unwrap();
+    for harness in ["codex", "claude-code", "omp"] {
+        let (reason, _) = outcome(harness, "uv --directory api run report.py", &ws);
+        assert_ne!(reason, CONTAINED, "{harness}");
+        let (reason, _) = outcome(harness, "uv --directory api run plain.py", &ws);
+        assert_eq!(reason, CONTAINED, "{harness}");
+    }
+}
+
+#[test]
+fn the_project_is_read_from_the_directory_the_run_enters() {
+    let ws = project("uv-project-order");
+    // uv enters `--directory` first and reads `--project` from there, however
+    // the two stand, and only the last of each counts. A project below the
+    // starting directory does not make the one uv would read materialized.
+    for command in [
+        "uv --project api --directory sub run pytest",
+        "uv --directory sub --project api run pytest",
+        "uv --directory api --directory sub run pytest",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+    std::fs::create_dir_all(ws.join("sub/api/.venv/bin")).unwrap();
+    std::fs::write(ws.join("sub/api/pyproject.toml"), PROJECT).unwrap();
+    for command in [
+        "uv --project api --directory sub run pytest",
+        "uv --directory sub --project api run pytest",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+}
