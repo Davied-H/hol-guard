@@ -33,6 +33,13 @@ fn sibling(label: &str) -> (Session, PathBuf) {
         &service,
         &["commit", "--quiet", "-m", "fixture"],
     );
+    // A rebase start proves its upstream resolves to a commit, so the sibling
+    // carries the remote-tracking ref an ordinary checkout holds.
+    git(
+        &session.home,
+        &service,
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
     (session, service)
 }
 
