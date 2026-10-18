@@ -1579,12 +1579,14 @@ class TestGuardSurfaceServer:
             "_hook_safe_roots",
             lambda _self: (home_dir.resolve(),),
         )
-        monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_PROCESS_TIMEOUT_SECONDS", 0.03)
-        monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_ADMISSION_TIMEOUT_SECONDS", 0.03)
+        # Wide enough that admission itself never starves on a loaded runner,
+        # short enough that the review below finishes well after it lapses.
+        monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_PROCESS_TIMEOUT_SECONDS", 0.5)
+        monkeypatch.setattr(daemon_server_module, "_RUNTIME_HOOK_ADMISSION_TIMEOUT_SECONDS", 0.5)
         daemon = GuardDaemonServer(store, host="127.0.0.1", port=0)
 
         def late_review(**_kwargs: object) -> dict[str, object]:
-            time.sleep(0.05)
+            time.sleep(1.0)
             return {"decision": "allow"}
 
         monkeypatch.setattr(
