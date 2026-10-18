@@ -2,7 +2,7 @@
 
 use std::time::Instant;
 
-use guard_command::hook_adapter_envelope_text::is_shell_tool;
+use guard_command::hook_adapter_envelope::is_shell_tool;
 use guard_contracts::{NativeExactActionQueryV1, NativePolicyBindingV1, NativeReviewFactsV1};
 use serde_json::{json, Value};
 
