@@ -287,17 +287,28 @@ fn an_unreadable_store_reports_one_fatal_failure() {
         digest: "digest".to_owned(),
     };
 
-    assert!(store.fatal().take().is_none());
+    assert_eq!(store.fatal().peek(), Value::Null);
     assert!(store
         .command_activity_by_request_correlation(&correlation)
         .is_err());
-    assert_eq!(
-        store.fatal().take(),
-        Some("native_guard_store_sqlite_corrupt")
-    );
-    // The read cleared it: the recovery it asks for runs once, not on every
-    // later report.
-    assert!(store.fatal().take().is_none());
+    let reported = store.fatal().peek();
+    assert_eq!(reported["code"], json!("native_guard_store_sqlite_corrupt"));
+    // Reporting it does not clear it: the reply carrying it can be lost, and
+    // the recovery it asks for can fail, so it waits to be acknowledged.
+    assert_eq!(store.fatal().peek(), reported);
+    // A second failure behind the first is the same quarantine, so the
+    // identifier the client is recovering from does not change under it.
+    assert!(store
+        .command_activity_by_request_correlation(&correlation)
+        .is_err());
+    assert_eq!(store.fatal().peek(), reported);
+
+    // An acknowledgement for a failure this slot never held leaves it waiting.
+    store.fatal().acknowledge("fatal-does-not-exist");
+    assert_eq!(store.fatal().peek(), reported);
+
+    store.fatal().acknowledge(reported["id"].as_str().unwrap());
+    assert_eq!(store.fatal().peek(), Value::Null);
 }
 
 /// An ordinary failed call is not a reason to quarantine the store.
@@ -310,5 +321,5 @@ fn a_refused_argument_is_not_a_fatal_failure() {
     let (store, _) = new_store(&home, "oauth");
 
     assert!(store.transition_command_activity(&Map::new()).is_err());
-    assert!(store.fatal().take().is_none());
+    assert_eq!(store.fatal().peek(), Value::Null);
 }

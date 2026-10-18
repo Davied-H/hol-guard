@@ -24,6 +24,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -85,25 +86,68 @@ impl Drop for PolicyBarrier<'_> {
 /// `_native_store_call` recovers in place because the caller there holds the
 /// `GuardStore` that knows how to quarantine and rebuild one. The resident
 /// holds no such object, so it reports the failure instead and the client runs
-/// `GuardStore._recover_fatal_sqlite_store`. Reads clear the slot, the way the
-/// policy-mutation count is read and cleared, so one failure is recovered once.
+/// `GuardStore._recover_fatal_sqlite_store`.
+///
+/// Reporting the failure does not clear it. A reply can be lost after the
+/// resident built it, and recovery can fail in the client, so a slot cleared
+/// by the read that reported it would lose the failure for good. The signal
+/// carries an identifier, the client names that identifier once recovery has
+/// run, and only that acknowledgement empties the slot. Recovery stays
+/// once-per-failure because the identifier a later request acknowledges is
+/// the one the client already handled.
 #[derive(Clone, Default)]
-pub(crate) struct StoreFatalSignal(Arc<Mutex<Option<&'static str>>>);
+pub(crate) struct StoreFatalSignal(Arc<Mutex<Option<PendingFatal>>>);
+
+/// A reported failure and the identifier that clears it.
+struct PendingFatal {
+    id: String,
+    code: &'static str,
+}
+
+/// Identifiers are unique within the process, so an acknowledgement cannot
+/// clear a failure the client has not seen.
+static NEXT_FATAL_ID: AtomicU64 = AtomicU64::new(1);
 
 impl StoreFatalSignal {
+    /// Record `code` unless a failure is already waiting to be acknowledged.
+    /// Recovery quarantines and rebuilds the whole store, so a second failure
+    /// behind the first is handled by the recovery the first one asks for.
     fn record(&self, code: &'static str) {
-        *self
+        let mut slot = self
             .0
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(code);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.is_none() {
+            let id = NEXT_FATAL_ID.fetch_add(1, Ordering::Relaxed);
+            *slot = Some(PendingFatal {
+                id: format!("fatal-{id}"),
+                code,
+            });
+        }
     }
 
-    /// The pending failure code, cleared by this read.
-    pub(crate) fn take(&self) -> Option<&'static str> {
+    /// The pending failure as the wire carries it, left in the slot.
+    pub(crate) fn peek(&self) -> Value {
         self.0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
+            .as_ref()
+            .map_or(
+                Value::Null,
+                |pending| json!({ "id": pending.id, "code": pending.code }),
+            )
+    }
+
+    /// Drop the pending failure when `id` names it. An acknowledgement for a
+    /// failure that has already been replaced leaves the newer one waiting.
+    pub(crate) fn acknowledge(&self, id: &str) {
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.as_ref().is_some_and(|pending| pending.id == id) {
+            *slot = None;
+        }
     }
 }
 

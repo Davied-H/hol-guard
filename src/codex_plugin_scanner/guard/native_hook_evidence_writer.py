@@ -14,8 +14,15 @@ caller wakes its own publishers.
 The second is fatal-store recovery. ``GuardStore._recover_fatal_sqlite_store``
 quarantines a store a probe has proven unusable, writes the forensics beside it
 and rebuilds the database. That belongs to the ``GuardStore`` object this
-process owns, so the resident reports the failure code instead and the recovery
-runs here, once per reported failure.
+process owns, so the resident reports the failure instead and the recovery runs
+here.
+
+The resident reports that failure on every reply, not only on a counter read,
+because the writer drains on its own thread and a daemon that never reads
+counters would otherwise keep writing to a store it has already lost. It holds
+the failure until this client acknowledges the identifier it recovered from, so
+a reply lost in transport, or a recovery that itself fails, is retried rather
+than forgotten.
 
 A resident that is unavailable, replies unbound, or violates the contract never
 yields a silent default: the call raises ``NativeHookEvidenceWriterUnavailableError``
@@ -24,6 +31,8 @@ rather than reporting evidence as queued when nothing was.
 
 from __future__ import annotations
 
+import logging
+import re
 import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
@@ -54,6 +63,12 @@ _TIMEOUT_SECONDS: Final = 5.0
 _STOP_TRANSPORT_SLACK_SECONDS: Final = 5.0
 
 _FATAL_STORE_CODES: Final = frozenset({"native_guard_store_sqlite_corrupt", "native_guard_store_sqlite_io"})
+# The store client owns every `native_guard_store_*` code and maps it to the
+# exception the caller expects; the writer op's own codes are not store codes.
+_STORE_CODE_PREFIX: Final = "native_guard_store_"
+_CODE: Final = re.compile(r"[a-z0-9_]{1,64}")
+
+_LOGGER: Final = logging.getLogger(__name__)
 
 
 class NativeHookEvidenceWriterUnavailableError(RuntimeError):
@@ -80,6 +95,12 @@ class NativeHookEvidenceWriter:
         self._guard_home = Path(store.guard_home)
         self._source = store.guard_source
         self._policy_mutations = 0
+        # The failure this client still owes a recovery for, and the identifier
+        # of the one it has finished with. Both outlive a single call: recovery
+        # that fails is retried on the next reply, and the resident keeps the
+        # failure until a request carries the acknowledgement.
+        self._pending_fatal: tuple[str, str] | None = None
+        self._fatal_ack: str | None = None
 
     @property
     def guard_home(self) -> Path:
@@ -95,6 +116,10 @@ class NativeHookEvidenceWriter:
             "request_id": f"hook-evidence-writer-{uuid4().hex}",
             "guard_home": str(self._guard_home),
             "source": self._source,
+            # Always on the wire, including as ``None``: the resident digests
+            # the request it decoded, so a key sent only sometimes would make
+            # the two digests disagree and every call read as unbound.
+            "store_fatal_ack": self._fatal_ack,
             **dict(action),
         }
         try:
@@ -124,15 +149,36 @@ class NativeHookEvidenceWriter:
             raise _unavailable("native_hook_evidence_writer_unavailable")
         if identity is not None:
             native_record_resident_success(identity.sha256, self._guard_home)
+        # The resident answered, so the acknowledgement this request carried
+        # has been applied and must not be repeated.
+        self._fatal_ack = None
         status, code, payload = response.get("status"), response.get("code"), response.get("payload")
         if status == "error":
-            _raise_for_code(code, payload)
+            self._raise_for_resident_error(code, payload)
         if status != "ok" or code != "ok" or not isinstance(payload, dict):
             raise _unavailable("native_hook_evidence_writer_response_invalid")
         return payload
 
+    @staticmethod
+    def _raise_for_resident_error(code: object, payload: object) -> None:
+        """Raise the exception the resident's code names.
+
+        Only the store's own codes are the store client's to map. The writer
+        op refuses a request with codes of its own, and routing those through
+        the store mapper turned every refusal into a SQLite failure that the
+        callers catching this module's error never saw.
+        """
+
+        if isinstance(code, str) and code.startswith(_STORE_CODE_PREFIX):
+            _raise_for_code(code, payload)
+        named = code if isinstance(code, str) and _CODE.fullmatch(code) else "unavailable"
+        raise _unavailable(f"native_hook_evidence_writer_{named}")
+
     def _queued(self, action: Mapping[str, object]) -> bool:
         payload = self._call(action, timeout_seconds=_TIMEOUT_SECONDS)
+        # A submission is the one call a daemon always makes, so it is the path
+        # that has to carry the signals a running writer raised.
+        self._consume_signals(payload)
         queued = payload.get("queued")
         if not isinstance(queued, bool):
             raise _unavailable("native_hook_evidence_writer_response_invalid")
@@ -186,10 +232,9 @@ class NativeHookEvidenceWriter:
     def stats(self) -> dict[str, Any]:
         """The writer's counters, with the two signals the resident hands back.
 
-        ``policy_mutations`` and ``store_fatal`` are read-and-clear in the
-        resident. Both are consumed here so a second reader cannot repeat the
-        publisher wake or the store recovery, and neither is reported as a
-        counter.
+        ``policy_mutations`` is read and cleared in the resident, so a second
+        reader cannot repeat the publisher wake. ``store_fatal`` stays there
+        until this client acknowledges it. Neither is reported as a counter.
         """
 
         payload = self._call({"action": "stats"}, timeout_seconds=_TIMEOUT_SECONDS)
@@ -207,8 +252,11 @@ class NativeHookEvidenceWriter:
             {"action": "stop", "timeout_seconds": max(0.0, timeout_seconds)},
             timeout_seconds=max(0.0, timeout_seconds) + _STOP_TRANSPORT_SLACK_SECONDS,
         )
-        self._consume_signals(payload)
+        # Read the drain result before recovery runs: this writer has already
+        # left the resident's registry, so a recovery that raises here would
+        # otherwise lose the one answer the caller asked for.
         drained = payload.get("drained")
+        self._consume_signals(payload)
         if not isinstance(drained, bool):
             raise _unavailable("native_hook_evidence_writer_response_invalid")
         return drained
@@ -224,23 +272,40 @@ class NativeHookEvidenceWriter:
         if isinstance(mutations, int) and not isinstance(mutations, bool) and mutations > 0:
             self._policy_mutations += mutations
         fatal = payload.pop("store_fatal", None) if isinstance(payload, dict) else None
-        if isinstance(fatal, str):
-            self._recover_store(fatal)
+        if isinstance(fatal, Mapping):
+            identifier, code = fatal.get("id"), fatal.get("code")
+            if isinstance(identifier, str) and isinstance(code, str):
+                self._pending_fatal = (identifier, code)
+        self._recover_store()
 
-    def _recover_store(self, code: str) -> None:
-        """Run the store's own recovery for a failure the resident reported.
+    def _recover_store(self) -> None:
+        """Run the store's own recovery for the failure the resident reported.
 
         The resident names the failure in the ``native_guard_store_*`` codes the
         store client already maps, so the exception the recovery inspects is
         built by that same mapping rather than a second classifier here.
+
+        A recovery that raises leaves the failure pending, so the next reply
+        tries it again. Only a recovery that returns acknowledges the failure,
+        and only the acknowledgement lets the resident drop it.
         """
 
-        if code not in _FATAL_STORE_CODES:
+        pending = self._pending_fatal
+        if pending is None:
             return
-        try:
-            _raise_for_code(code, None)
-        except sqlite3.DatabaseError as error:
-            self._store._recover_fatal_sqlite_store(error)
+        identifier, code = pending
+        if code in _FATAL_STORE_CODES:
+            try:
+                _raise_for_code(code, None)
+            except sqlite3.DatabaseError as error:
+                try:
+                    self._store._recover_fatal_sqlite_store(error)
+                except Exception:
+                    # The store is still broken. Keep the failure pending; the
+                    # next reply from the resident asks for it again.
+                    _LOGGER.exception("Guard store recovery failed for %s.", code)
+                    return
+        self._pending_fatal, self._fatal_ack = None, identifier
 
 
 __all__ = [

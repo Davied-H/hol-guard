@@ -231,3 +231,97 @@ fn a_request_without_a_guard_home_is_refused() {
     assert_eq!(answer["status"], json!("error"));
     assert_eq!(answer["code"], json!("invalid_guard_home"));
 }
+
+/// The whole request as the Python client puts it on the wire: every field
+/// the op knows is present, so the digest the resident takes over the request
+/// it decoded is the digest the client took over the JSON it sent.
+fn full_activity_wire(home: &Path) -> Value {
+    json!({
+        "schema": HOOK_EVIDENCE_WRITER_REQUEST_SCHEMA,
+        "request_id": "writer-op-digest",
+        "guard_home": home.to_string_lossy(),
+        "source": "guard",
+        "store_fatal_ack": Value::Null,
+        "action": "submit_command_activity",
+        "harness": "claude-code",
+        "event": "PostToolUse",
+        "payload": {"tool_name": "Bash", "tool_input": {"command": "ls /tmp"}},
+        "succeeded": true,
+        "policy_action": Value::Null,
+        "receipt_id": Value::Null,
+        "prompted": false,
+        "approval_reuse_status": "not-applicable",
+    })
+}
+
+/// The client refuses a reply that is not bound to the request it sent, so a
+/// reply without the digest is a reply it reads as an unavailable resident.
+#[test]
+fn a_reply_carries_the_digest_of_the_request_that_arrived() {
+    let home = store_home("writer-op-digest", "record_basic");
+    let wire = full_activity_wire(&home);
+    let request: HookEvidenceWriterRequestV1 = serde_json::from_value(wire.clone()).unwrap();
+    let bytes = evaluate_hook_evidence_writer_request(&request).unwrap();
+    let reply: Value = serde_json::from_slice(&bytes).unwrap();
+
+    let mut canonical = Vec::new();
+    crate::context_digest_json::write_canonical_json(&wire, &mut canonical).unwrap();
+    let expected = format!("sha256:{}", guard_policy_snapshot::digest_bytes(&canonical));
+    assert_eq!(reply["request_sha256"], json!(expected));
+
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
+}
+
+/// A refused request is still bound to what was sent: the client has to be
+/// able to read the code rather than discard the reply as unbound.
+#[test]
+fn a_refused_request_is_bound_to_what_was_sent() {
+    let refused = call(
+        Path::new(""),
+        json!({"action": "submit_native_decision_receipt", "receipt": {}}),
+    );
+    assert_eq!(refused["status"], json!("error"));
+    assert_eq!(refused["code"], json!("invalid_guard_home"));
+    assert!(refused["request_sha256"]
+        .as_str()
+        .is_some_and(|digest| digest.starts_with("sha256:")));
+}
+
+/// The writer drains on its own thread, so a failure it meets there has to
+/// ride back on the call a daemon always makes rather than wait for a counter
+/// read the daemon may never make.
+#[test]
+fn a_submission_reply_carries_the_signals_a_counter_read_would() {
+    let home = store_home("writer-op-signals", "record_basic");
+    let queued = call(
+        &home,
+        json!({
+            "action": "submit_command_activity",
+            "harness": "claude-code",
+            "event": "PostToolUse",
+            "payload": {"tool_name": "Bash", "tool_input": {"command": "ls /tmp"}},
+            "succeeded": true,
+        }),
+    );
+    assert_eq!(queued["payload"]["queued"], json!(true));
+    assert_eq!(queued["payload"]["policy_mutations"], json!(0));
+    assert_eq!(queued["payload"]["store_fatal"], Value::Null);
+
+    // A discovery the op refuses before it reaches the writer answers with the
+    // same shape, so the client reads one reply shape for every submission.
+    let refused = call(
+        &home,
+        json!({
+            "action": "submit_composio_discovery",
+            "harness": "claude-code",
+            "payload": {},
+            "succeeded": true,
+        }),
+    );
+    assert_eq!(refused["payload"]["queued"], json!(false));
+    assert_eq!(refused["payload"]["store_fatal"], Value::Null);
+
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
+    assert_eq!(stopped["payload"]["drained"], json!(true));
+}
