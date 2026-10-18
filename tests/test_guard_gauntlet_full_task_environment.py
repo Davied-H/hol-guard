@@ -273,6 +273,43 @@ def test_swapped_digests_fail_the_checksum_task(tmp_path: Path) -> None:
     assert not checks["task:checksums-recorded"]
 
 
+def test_swapped_digests_in_a_table_fail_the_checksum_task(tmp_path: Path) -> None:
+    """A table writes the name first and the digest after it, and the rows sit close
+    together, so the pair has to be read within one row rather than nearby text."""
+    fixture = create_full_task_fixture(tmp_path / "swapped-table", "downloaded-artifact-checksums")
+    downloads = fixture.home / ARTIFACT_DIRECTORY
+    names = sorted(ARTIFACT_FILES)
+    digests = [hashlib.sha256((downloads / name).read_bytes()).hexdigest() for name in names]
+    digests[0], digests[1] = digests[1], digests[0]
+    document = fixture.workspace / "docs/release-1.4.0.md"
+    document.write_text(
+        "| File | SHA-256 |\n| --- | --- |\n"
+        + "".join(f"| {name} | {digest} |\n" for name, digest in zip(names, digests, strict=True)),
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the release checksums")
+    checks = _task_checks(full_task_checks(fixture, "downloaded-artifact-checksums"))
+    assert not checks["task:checksums-recorded"]
+
+
+def test_a_table_of_names_and_digests_passes_the_checksum_task(tmp_path: Path) -> None:
+    """The task asks for each name beside its checksum, which a table row records."""
+    fixture = create_full_task_fixture(tmp_path / "table", "downloaded-artifact-checksums")
+    downloads = fixture.home / ARTIFACT_DIRECTORY
+    document = fixture.workspace / "docs/release-1.4.0.md"
+    document.write_text(
+        "| File | SHA-256 |\n| --- | --- |\n"
+        + "".join(
+            f"| {name} | {hashlib.sha256((downloads / name).read_bytes()).hexdigest()} |\n"
+            for name in sorted(ARTIFACT_FILES)
+        ),
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the release checksums")
+    checks = _task_checks(full_task_checks(fixture, "downloaded-artifact-checksums"))
+    assert checks["task:checksums-recorded"]
+
+
 def test_a_file_added_to_the_download_directory_fails_the_checksum_task(tmp_path: Path) -> None:
     """The document answers for every file in the directory, so an unlisted one is not left as it was."""
     fixture = create_full_task_fixture(tmp_path / "extra", "downloaded-artifact-checksums")

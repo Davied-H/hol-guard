@@ -17,6 +17,7 @@ checks still run unchanged.
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -319,19 +320,12 @@ def _assertions(source: str) -> str:
 
 def _paired(document: str, name: str, digest: str) -> bool:
     """Whether the document records `digest` beside `name` rather than somewhere
-    else in the same list. One name is a prefix of another, so an occurrence
-    counts only where the name ends, and either order of the pair is read: a
-    checksum list prints the digest first, a table prints the name first."""
-    boundary = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
-    index = document.find(name)
-    while index != -1:
-        end = index + len(name)
-        if (end == len(document) or document[end] not in boundary) and digest in document[
-            max(0, index - 128) : end + 256
-        ]:
-            return True
-        index = document.find(name, index + 1)
-    return False
+    else in the same list. The pair has to sit on one line, which is how both
+    layouts write it: a checksum list prints `<digest>  <name>`, a table row
+    prints the name and the digest in one row. One name is a prefix of another,
+    so an occurrence counts only where the name ends."""
+    ends = re.compile(re.escape(name) + r"(?![A-Za-z0-9._-])")
+    return any(digest in line and ends.search(line) for line in document.splitlines())
 
 
 def _read(path: Path) -> str:
