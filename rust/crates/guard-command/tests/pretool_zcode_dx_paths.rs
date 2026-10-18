@@ -192,14 +192,16 @@ fn a_cli_presence_probe_lists_every_candidate_bin_directory() {
         "ls /usr/bin/env",
         "ls /usr/bin",
         "ls ~/.npm-global/bin ~/go/bin",
+        // A deeper name is not a bin listing, but naming what is not there
+        // under a directory a listing may already name prints only an error.
+        "ls /usr/bin/x/y",
     ] {
         assert_eq!(shell(allowed, &home, &cwd), "allow", "{allowed}");
     }
     for denied in [
-        // A probe names one leaf per bin directory, never a path below it.
+        // A probe reaches no further than the bin directory it names.
         "ls /usr/bin/../../etc/passwd",
         "ls /usr/bin/../etc",
-        "ls /usr/bin/x/y",
         // The screens on the named child hold whether or not it exists.
         "ls ~/.local/bin/id_rsa",
         "ls ~/.npm-global/.npmrc",
