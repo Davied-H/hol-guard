@@ -42,6 +42,19 @@ impl Fixture {
         )
     }
 
+    /// The stored revision of the one catalog row, for the repeated-slug case
+    /// the vectors can only record against an empty catalog.
+    fn action_revision(&self) -> i64 {
+        Connection::open(self.home.join("guard.db"))
+            .unwrap()
+            .query_row(
+                "select revision from local_mcp_provider_action",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
     fn action_rows(&self) -> i64 {
         Connection::open(self.home.join("guard.db"))
             .unwrap()
@@ -150,4 +163,29 @@ fn an_oversized_catalog_is_refused_and_stores_nothing() {
         "provider metadata catalog capacity exceeded"
     );
     assert_eq!(fixture.action_rows(), 0);
+}
+
+/// Python upserts each action inside the loop that reads it, so a slug
+/// repeated in one batch measures itself against the copy before it. The
+/// pre-pass settles every revision before it writes anything, so it has to
+/// carry those copies itself: a stored revision 1 followed by two further
+/// authority moves in one batch has to land on 3, not 2.
+#[test]
+fn a_repeated_slug_counts_each_copy_against_the_one_before_it() {
+    let fixture = Fixture::new("composio-repeated-slug");
+    fixture.run(&fixture.step("first_discovery", 0));
+    assert_eq!(fixture.action_revision(), 1);
+
+    let mut batch = fixture.step("first_discovery", 0);
+    let action = batch["wire_args"]["actions"][0].clone();
+    let mut second = action.clone();
+    second["toolkit"] = Value::from("slack-renamed");
+    let mut third = action;
+    third["description"] = Value::from("Synthetic metadata, revised again");
+    batch["wire_args"]["actions"] = Value::from(vec![second, third]);
+    let reply = fixture.run(&batch);
+    assert_eq!(reply["status"], "ok", "{reply}");
+    assert_eq!(reply["payload"], json!({ "authority_changed": true }));
+    assert_eq!(fixture.action_rows(), 1);
+    assert_eq!(fixture.action_revision(), 3);
 }
