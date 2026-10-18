@@ -128,6 +128,8 @@ fn literal_secrets_beside_code_are_still_credentials() {
     let live = ["sk-", "live-abcdefghijklmnop1234"].concat();
     let sample = ["a1b2c3d4", "e5f6g7h8i9j0"].concat();
     let long = ["abcdef123456", "abcdef123456"].concat();
+    let hex = ["abcdef0123", "456789abcdef"].concat();
+    let run = ["abcdefghijklmnop", "1234567890"].concat();
     for text in [
         "const token = process.env.TOKEN || 'dev-token-123';".to_string(),
         "const secret = process.env.SECRET ?? 'fallbackSecretValue1';".to_string(),
@@ -138,7 +140,7 @@ fn literal_secrets_beside_code_are_still_credentials() {
         format!("const token = login(user, '{sample}');"),
         "const token = login(user, 'correct-horse-battery-staple');".to_string(),
         format!("const token = `{live}${{suffix}}`;"),
-        "const token = `abcdefghijklmnop1234567890`;".to_string(),
+        format!("const token = `{run}`;"),
         "const password = `correct horse battery staple`;".to_string(),
         "if (password === 'hunter2production') {".to_string(),
         "if (password == 123456) {".to_string(),
@@ -147,7 +149,7 @@ fn literal_secrets_beside_code_are_still_credentials() {
         "password = hunter2".to_string(),
         "password: foo.bar.baz".to_string(),
         "const secret = 'x' as string;".to_string(),
-        "token: abcdef0123456789abcdef".to_string(),
+        format!("token: {hex}"),
     ] {
         assert!(flagged(&text), "{text:?}");
     }

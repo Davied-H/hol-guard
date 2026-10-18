@@ -17,7 +17,7 @@
 //! literal (`?? 'dev-secret'`), a concatenation and an encoded-looking
 //! argument are never treated as code here.
 
-use crate::code_cursor::{is_identifier_byte, is_identifier_start, Cursor, Scan};
+use crate::code_cursor::{is_identifier_byte, is_identifier_start, text_ok, Cursor, Scan};
 
 const KEYWORDS: [&[u8]; 9] = [
     b"null",
