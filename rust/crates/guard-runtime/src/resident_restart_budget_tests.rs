@@ -241,3 +241,95 @@ fn windows_budget_existence_requires_private_regular_file_handle() {
 
     fs::remove_dir_all(scope).unwrap();
 }
+
+const SERVED_RUN: Duration = Duration::from_secs(3);
+const INSTANT_RUN: Duration = Duration::from_millis(5);
+
+#[test]
+fn only_a_served_run_that_exited_cleanly_counts_as_healthy() {
+    assert!(healthy_exit(true, SERVED_RUN));
+    assert!(healthy_exit(true, Duration::from_millis(1_000)));
+    assert!(!healthy_exit(true, Duration::from_millis(999)));
+    assert!(!healthy_exit(false, SERVED_RUN));
+    assert!(!healthy_exit(false, INSTANT_RUN));
+}
+
+#[test]
+fn repeated_one_shot_client_cycles_never_open_the_restart_circuit() {
+    // Ten `hol-guard hook` calls inside one window: each cold-spawns a
+    // resident, is answered, and the resident shuts down once the call's
+    // lease expires. None of that is a restart.
+    let scope = temp_scope("one-shot-cycles");
+    for _ in 0..10 {
+        consume(&scope).expect("an answered one-shot cycle is never refused");
+        release_after_exit(&scope, true, SERVED_RUN).unwrap();
+        assert_eq!(read_budget(&scope).attempts, 0);
+    }
+    consume(&scope).expect("the circuit stays closed after ten served cycles");
+
+    std::fs::remove_dir_all(scope).unwrap();
+}
+
+#[test]
+fn a_crashing_resident_still_opens_the_restart_circuit() {
+    let scope = temp_scope("crash-loop");
+    for _ in 0..MAX_RESTARTS_PER_WINDOW {
+        consume(&scope).unwrap();
+        release_after_exit(&scope, false, INSTANT_RUN).unwrap();
+    }
+    assert_eq!(read_budget(&scope).attempts, MAX_RESTARTS_PER_WINDOW);
+    assert_eq!(
+        consume(&scope).unwrap_err(),
+        "native_resident_restart_circuit_open"
+    );
+
+    std::fs::remove_dir_all(scope).unwrap();
+}
+
+#[test]
+fn a_resident_that_exits_zero_immediately_keeps_its_restart_charge() {
+    // A success reported before the resident can have served anything is a
+    // loop, not a cycle: the budget must still pace it.
+    let scope = temp_scope("instant-success");
+    for _ in 0..MAX_RESTARTS_PER_WINDOW {
+        consume(&scope).unwrap();
+        release_after_exit(&scope, true, INSTANT_RUN).unwrap();
+    }
+    assert_eq!(
+        consume(&scope).unwrap_err(),
+        "native_resident_restart_circuit_open"
+    );
+
+    std::fs::remove_dir_all(scope).unwrap();
+}
+
+#[test]
+fn a_served_run_after_crashes_closes_the_open_circuit() {
+    let scope = temp_scope("recovered");
+    for _ in 0..MAX_RESTARTS_PER_WINDOW {
+        consume(&scope).unwrap();
+    }
+    assert_eq!(
+        consume(&scope).unwrap_err(),
+        "native_resident_restart_circuit_open"
+    );
+    assert!(read_budget(&scope).circuit_until_ms > now_ms().unwrap());
+
+    release_after_exit(&scope, true, SERVED_RUN).unwrap();
+    let recovered = read_budget(&scope);
+    assert_eq!(recovered.attempts, MAX_RESTARTS_PER_WINDOW - 1);
+    assert_eq!(recovered.circuit_until_ms, 0);
+    assert_eq!(recovered.backoff_steps, 0);
+    consume(&scope).expect("a resident that served again may be restarted");
+
+    std::fs::remove_dir_all(scope).unwrap();
+}
+
+#[test]
+fn a_release_without_a_budget_writes_nothing() {
+    let scope = temp_scope("no-budget");
+    release_after_exit(&scope, true, SERVED_RUN).unwrap();
+    assert!(!scope.join("restart-budget.json").exists());
+
+    std::fs::remove_dir_all(scope).unwrap();
+}

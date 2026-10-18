@@ -102,6 +102,7 @@ fn supervise_managed_child(
     owner: &ManagedOwner<'_>,
 ) -> Result<(), String> {
     let argument_refs: Vec<&OsStr> = arguments.iter().map(OsString::as_os_str).collect();
+    let started = Instant::now();
     let mut child = spawn_managed_child(executable, &argument_refs)
         .map_err(|_| "native_resident_spawn_failed".to_owned())?;
     let mut liveness_writer = child.take_stdin().ok_or_else(|| {
@@ -129,10 +130,24 @@ fn supervise_managed_child(
     );
     let status_result =
         child.wait_success_with_timeout(super::MANAGED_IDLE_TIMEOUT + super::MANAGED_STOP_TIMEOUT);
+    let ran_for = started.elapsed();
     child_done.store(true, Ordering::Release);
     let _ = watcher.join();
     let status_success =
         status_result.map_err(|_| "native_resident_supervisor_wait_failed".to_owned())?;
+    // Windows spawns the serving child without a stderr pipe, so the record
+    // carries the supervisor's own classification of this exit.
+    if let Ok(scope) = crate::resident_state::state_scope(owner.state_base, owner.digest) {
+        super::record_supervised_exit(
+            &scope,
+            Some(super::resident_failure_log::ResidentFailureLog::for_scope(
+                &scope,
+            )),
+            status_success,
+            None,
+            ran_for,
+        );
+    }
     if status_success {
         Ok(())
     } else {

@@ -30,6 +30,8 @@ mod managed_resident_windows;
 #[path = "managed_resident_owner_lock.rs"]
 mod owner_lock;
 pub(crate) use owner_lock::ManagedOwnerLock;
+#[path = "resident_failure_log.rs"]
+mod resident_failure_log;
 #[path = "resident_state_retirement.rs"]
 mod resident_state_retirement;
 #[path = "resident_restart_budget.rs"]
@@ -314,6 +316,9 @@ pub(crate) fn supervise_managed_for_owner(
     {
         let executable = std::env::current_exe()
             .map_err(|_| "native_resident_runtime_path_failed".to_owned())?;
+        // Resolve the scope before the spawn: a failure here must not leave a
+        // serving child behind with nobody to classify or contain it.
+        let scope = state_scope(state_base, expected_digest)?;
         let mut child = Command::new(&executable);
         child
             .arg("serve-managed")
@@ -327,11 +332,29 @@ pub(crate) fn supervise_managed_for_owner(
             .arg(expected_digest)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            // The client that asked for this resident is a one-shot process
+            // and is usually gone before the resident fails. Keep the
+            // serving child's stderr instead of discarding it, so a denied
+            // tool call leaves a panic or startup error behind in the scope.
+            .stderr(Stdio::piped());
         // Keep the serving child in the supervisor's group for joint containment.
+        let started = Instant::now();
         let mut child = child
             .spawn()
             .map_err(|_| "native_resident_spawn_failed".to_owned())?;
+        // The pump hands the record back over a channel rather than a join:
+        // a grandchild that inherited this pipe can hold it open after the
+        // resident itself is gone, and the supervisor must still finish.
+        let stderr_record = child.stderr.take().map(|stderr| {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let scope = scope.clone();
+            let _pump = thread::spawn(move || {
+                let mut record = resident_failure_log::ResidentFailureLog::for_scope(&scope);
+                record.drain(stderr);
+                let _ = sender.send(record);
+            });
+            receiver
+        });
         let mut liveness_writer = child
             .stdin
             .take()
@@ -353,14 +376,53 @@ pub(crate) fn supervise_managed_for_owner(
         let status = child
             .wait()
             .map_err(|_| "native_resident_supervisor_wait_failed".to_owned())?;
+        let ran_for = started.elapsed();
         child_done.store(true, Ordering::Release);
         let _ = watcher.join();
+        record_supervised_exit(
+            &scope,
+            stderr_record.and_then(|record| record.recv_timeout(MANAGED_STOP_TIMEOUT).ok()),
+            status.success(),
+            status.code(),
+            ran_for,
+        );
         if status.success() {
             Ok(())
         } else {
             Err("native_resident_managed_exit_failed".to_owned())
         }
     }
+}
+
+/// Close out one supervised resident run: hand the restart budget the
+/// classification of this exit, and leave the user a record of the runs that
+/// were not healthy. A broken record or a busy budget must not change the
+/// supervised result, so both are best effort here.
+fn record_supervised_exit(
+    scope: &Path,
+    record: Option<resident_failure_log::ResidentFailureLog>,
+    success: bool,
+    exit_code: Option<i32>,
+    ran_for: Duration,
+) {
+    // No record means the stderr pump still owns the file. Leave it to the
+    // pump rather than truncating a record that is still being written.
+    if let Some(mut record) = record {
+        let code = exit_code.map_or_else(|| "none".to_owned(), |code| code.to_string());
+        let ran_for_ms = ran_for.as_millis();
+        if !success {
+            record.note(&format!(
+                "native_resident_managed_exit_failed exit_code={code} ran_for_ms={ran_for_ms}"
+            ));
+        } else if !restart_budget::healthy_exit(success, ran_for) {
+            // A resident that reports success before it can have served
+            // anything keeps its restart charge; say so where it can be seen.
+            record.note(&format!(
+                "native_resident_managed_exit_premature exit_code={code} ran_for_ms={ran_for_ms}"
+            ));
+        }
+    }
+    let _ = restart_budget::release_after_exit(scope, success, ran_for);
 }
 
 /// Hold the serving child's stdin until its owner has exited and no client of
