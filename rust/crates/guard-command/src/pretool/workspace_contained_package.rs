@@ -43,34 +43,35 @@ const PYTHON_MANAGERS: &[&str] = &["pip", "pip3", "pipx", "uvx", "poetry", "pipe
 // uv drives a project environment the workspace holds. Only the verbs that
 // read it are local: `pip`, `add`, `tool` and the rest reach a registry.
 const UV_LOCAL_VERBS: &[&str] = &["run", "tree", "export", "version"];
-// uv options that fetch whatever verb carries them: a dependency to add to
-// the run, an interpreter to download, a fresh resolution, a version to
-// write, or an index to read. Each needs the network the sandbox denies.
-const UV_FETCHING_OPTIONS: &[&str] = &[
-    "--with",
-    "--with-requirements",
-    "--with-editable",
-    "--python",
-    "-p",
-    "--isolated",
-    "--script",
-    "-s",
-    "--upgrade",
-    "-U",
-    "--upgrade-package",
-    "-P",
-    "--reinstall",
-    "--reinstall-package",
-    "--refresh",
-    "--refresh-package",
-    "--bump",
-    "--index",
-    "--index-url",
-    "-i",
-    "--default-index",
-    "--extra-index-url",
-    "--find-links",
-    "-f",
+// uv options a local verb may carry: each changes what the verb reads, never
+// what it has to fetch. The list is an allowlist because uv's installing
+// options are many and grow: an option this module does not know keeps the
+// command out, where it keeps the admission it has today.
+const UV_VERB_FLAGS: &[&str] = &[
+    "--frozen",
+    "--locked",
+    "--no-sync",
+    "--no-dev",
+    "--no-hashes",
+    "--no-header",
+    "--no-annotate",
+    "--no-emit-project",
+    "--all-packages",
+    "--short",
+    "--invert",
+    "--no-dedupe",
+];
+// The same, for the options that take a value of their own. Their value is
+// read as the option's, never as the verb's operand, so a fetching option
+// behind one of them cannot pass unseen.
+const UV_VERB_VALUE_OPTIONS: &[&str] = &[
+    "--env-file",
+    "--package",
+    "--depth",
+    "--format",
+    "--output-file",
+    "--no-emit-package",
+    "--prune",
 ];
 // uv's global options that change nothing a local verb reads. They may stand
 // before the verb, so skipping them finds the verb behind them.
@@ -89,9 +90,10 @@ const UV_GLOBAL_FLAGS: &[&str] = &[
 // uv's global options that move the project a verb works on, so the
 // environment the check below looks for moves with them.
 const UV_PROJECT_OPTIONS: &[&str] = &["--directory", "--project"];
-// How much of a script is read to find the dependency block PEP 723 puts at
-// its top. The block opens within the leading comments, never past them.
-const SCRIPT_HEAD: usize = 8192;
+// How much of a script is read to find the dependency block. PEP 723 allows
+// the block anywhere in the file, so the whole script is read, up to a bound
+// that keeps a hook from paging in an arbitrarily large one.
+const SCRIPT_BYTES: u64 = 1 << 20;
 // Verbs that fetch from, or publish to, a registry. Without network they would
 // fail silently, so they keep supply-chain admission or consent instead. This
 // excludes by effect; local verbs and script names are never enumerated.
@@ -191,51 +193,90 @@ fn entered(directory: &Path, target: &str, workspace: &Path) -> Option<PathBuf> 
     })
 }
 
-/// The verb `uv` runs and the directory it runs it in, reading past the
-/// global options that may stand before the verb. An option this module does
-/// not know hides what the command does, so it names no verb.
-fn uv_verb(arguments: &[&str], directory: &Path, workspace: &Path) -> Option<(usize, PathBuf)> {
-    let mut project = directory.to_owned();
-    let mut index = 0;
-    while let Some(argument) = arguments.get(index) {
-        if !argument.starts_with('-') {
-            return Some((index, project));
-        }
-        if UV_GLOBAL_FLAGS.contains(argument) {
-            index += 1;
-            continue;
-        }
-        if UV_PROJECT_OPTIONS.contains(argument) {
-            project = entered(&project, arguments.get(index + 1)?, workspace)?;
-            index += 2;
-            continue;
-        }
-        let moved = UV_PROJECT_OPTIONS.iter().find_map(|option| {
-            argument
-                .strip_prefix(option)
-                .and_then(|rest| rest.strip_prefix('='))
-        })?;
-        project = entered(&project, moved, workspace)?;
-        index += 1;
-    }
-    None
+/// What a `uv` command was told to do: where its verb stands, the directory
+/// the verb runs in, the project whose environment it reads, and the operand
+/// that follows the verb's own options.
+struct UvCommand {
+    verb: usize,
+    directory: PathBuf,
+    project: PathBuf,
+    operand: Option<usize>,
 }
 
-/// Whether `argument` is one of the options that make uv fetch, written
-/// either as `--option value` or as `--option=value`.
-fn uv_fetches(argument: &str) -> bool {
-    let name = argument.split_once('=').map_or(argument, |(name, _)| name);
-    UV_FETCHING_OPTIONS.contains(&name)
+/// Read `arguments` as far as the verb's first operand. `--directory` moves
+/// the run itself and `--project` only the project a verb reads, and either
+/// may stand on one side of the verb or the other. An option this module does
+/// not know hides what the command does, so the command reads as nothing.
+fn uv_command(arguments: &[&str], directory: &Path, workspace: &Path) -> Option<UvCommand> {
+    let mut run = directory.to_owned();
+    let mut project: Option<PathBuf> = None;
+    let mut verb: Option<usize> = None;
+    let mut index = 0;
+    while let Some(argument) = arguments.get(index) {
+        let separator = *argument == "--";
+        if !argument.starts_with('-') || separator {
+            let Some(verb) = verb else {
+                if separator {
+                    return None;
+                }
+                verb = Some(index);
+                index += 1;
+                continue;
+            };
+            let operand = index + usize::from(separator);
+            return Some(UvCommand {
+                verb,
+                project: project.unwrap_or_else(|| run.clone()),
+                operand: (operand < arguments.len()).then_some(operand),
+                directory: run,
+            });
+        }
+        let (name, value, step) = match argument.split_once('=') {
+            Some((name, value)) => (name, Some(value), 1),
+            None => (*argument, arguments.get(index + 1).copied(), 2),
+        };
+        if value.is_none() || !argument.contains('=') {
+            let known = UV_GLOBAL_FLAGS.contains(&name)
+                || (verb.is_some() && UV_VERB_FLAGS.contains(&name));
+            if known {
+                index += 1;
+                continue;
+            }
+        }
+        let value = value?;
+        if UV_PROJECT_OPTIONS.contains(&name) {
+            let moved = entered(&run, value, workspace)?;
+            if name == "--directory" {
+                run = moved;
+            } else {
+                project = Some(moved);
+            }
+        } else if !(verb.is_some() && UV_VERB_VALUE_OPTIONS.contains(&name)) {
+            return None;
+        }
+        index += step;
+    }
+    verb.map(|verb| UvCommand {
+        verb,
+        project: project.unwrap_or_else(|| run.clone()),
+        operand: None,
+        directory: run,
+    })
 }
 
 /// Whether `path` is a script that carries its own dependencies. uv installs
 /// those into a fresh environment before it runs the script, which the
 /// sandbox has no network for.
 fn declares_dependencies(path: &Path) -> bool {
-    let Ok(text) = std::fs::read(path) else {
+    use std::io::Read;
+    let Ok(file) = std::fs::File::open(path) else {
         return false;
     };
-    String::from_utf8_lossy(&text[..text.len().min(SCRIPT_HEAD)])
+    let mut text = Vec::new();
+    if file.take(SCRIPT_BYTES).read_to_end(&mut text).is_err() {
+        return false;
+    }
+    String::from_utf8_lossy(&text)
         .lines()
         .any(|line| line.trim_end() == "# /// script")
 }
@@ -244,25 +285,28 @@ fn declares_dependencies(path: &Path) -> bool {
 /// already holds. uv materializes a project environment before it runs
 /// anything, so without `.venv` the run would have to install, which the
 /// sandbox has no network for; those commands keep the admission they have.
-/// An option that fetches, and a script that declares its own dependencies,
-/// keep it for the same reason.
+/// An operand uv has to write, fetch or install for keeps it for the same
+/// reason.
 fn local_uv_work(arguments: &[&str], directory: &Path, workspace: &Path) -> bool {
-    let Some((verb, project)) = uv_verb(arguments, directory, workspace) else {
+    let Some(uv) = uv_command(arguments, directory, workspace) else {
         return false;
     };
-    if !UV_LOCAL_VERBS.contains(&arguments[verb].to_ascii_lowercase().as_str()) {
+    let verb = arguments[uv.verb].to_ascii_lowercase();
+    if !UV_LOCAL_VERBS.contains(&verb.as_str()) {
         return false;
     }
-    // uv's own options for the verb end at its first operand; what follows
-    // belongs to the program uv starts, whose `-p` or `-s` means its own
-    // thing. That operand is the script a `uv run` would read.
-    let rest = &arguments[verb + 1..];
-    let operand = rest.iter().position(|argument| !argument.starts_with('-'));
-    !rest[..operand.unwrap_or(rest.len())]
-        .iter()
-        .any(|argument| uv_fetches(argument))
-        && !operand.is_some_and(|operand| declares_dependencies(&directory.join(rest[operand])))
-        && project.join(".venv").is_dir()
+    if let Some(operand) = uv.operand.map(|operand| arguments[operand]) {
+        // `uv version 2.0.0` writes the version into the project and locks it
+        // again, a script named by URL is downloaded before it runs, and a
+        // script carrying a dependency block has those installed first.
+        if verb == "version"
+            || operand.contains("://")
+            || declares_dependencies(&uv.directory.join(operand))
+        {
+            return false;
+        }
+    }
+    uv.project.join(".venv").is_dir()
 }
 
 /// Whether any segment runs a manager this module decides a verb for. The
