@@ -817,10 +817,39 @@ fn bounds_its_owners(text: &str) -> bool {
         return false;
     }
     let literal = mask_parameter_expansions(&unquoted_literal(text));
+    let masked = mask_double_quoted_separators(&literal);
     !synthesizes_program(&literal, false)
-        && !command_words(&mask_double_quoted_separators(&literal)).any(|word| {
+        && !runs_beside_its_command_words(&masked)
+        && !command_words(&masked).any(|word| {
             let base = command_basename(&joined_quotes(word));
             INTERPRETERS.contains(&base.as_str())
+        })
+}
+
+/// Whether the text runs a program somewhere other than a command word.
+///
+/// Two shapes do. `find . -exec "$CMD" {} \;` runs the program named by its
+/// own argument, and only `find` ever reads as a command word, so the scan
+/// above never sees it. A pipeline hands one program's bytes to another, and
+/// the screen that names an exfiltration reads the command's own text, not a
+/// file it sources: `cat secrets.txt | gh api ...` would otherwise bound its
+/// owners and carry the file out behind an approval for `source ... && pytest`.
+///
+/// `||` is not a pipe, and a generated activation script uses it to pick a
+/// path. Neither shape appears in one of those scripts at all.
+fn runs_beside_its_command_words(masked: &str) -> bool {
+    let characters: Vec<char> = masked.chars().collect();
+    let piped = characters.iter().enumerate().any(|(index, character)| {
+        *character == '|'
+            && characters.get(index + 1) != Some(&'|')
+            && (index == 0 || characters[index - 1] != '|')
+    });
+    piped
+        || masked.split_whitespace().any(|word| {
+            matches!(
+                joined_quotes(word).as_str(),
+                "-exec" | "-execdir" | "-ok" | "-okdir"
+            )
         })
 }
 
