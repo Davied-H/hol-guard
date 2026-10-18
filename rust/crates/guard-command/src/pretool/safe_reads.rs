@@ -109,6 +109,7 @@ pub(super) fn command_read_target(
                     context.home_dir,
                     context.cwd,
                 ))
+            || (!allow_directory && super::search::safe_literal_bracket_read_target(value, context))
     } else {
         safe_read_target(value)
     }

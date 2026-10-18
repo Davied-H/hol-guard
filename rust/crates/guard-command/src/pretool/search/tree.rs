@@ -21,6 +21,14 @@ use std::path::{Path, PathBuf};
 #[path = "glob_expand.rs"]
 mod glob_expand;
 
+#[path = "literal_bracket.rs"]
+mod literal_bracket;
+
+use literal_bracket::inert_bracket_class;
+pub(in crate::pretool) use literal_bracket::{
+    safe_literal_bracket_read_target, safe_literal_bracket_search_target, safe_literal_bracket_tree,
+};
+
 const MAX_WALK_ENTRIES: usize = 10_000;
 const MAX_WALK_DEPTH: usize = 64;
 const MAX_GLOB_MATCHES: usize = 256;
@@ -145,19 +153,6 @@ fn safe_walk_target(
     )
 }
 
-/// A recursive `ls` operand that the shell passes through literally. Only
-/// bracket characters may differ from an ordinary bounded target.
-pub(in crate::pretool) fn safe_literal_bracket_tree(
-    value: &str,
-    context: ReadContext<'_>,
-    recursive: bool,
-) -> bool {
-    let Some(root) = checked_directory(value, context) else {
-        return false;
-    };
-    !recursive || walk(root, &[], &[], false, false)
-}
-
 /// A glob operand that is expanded here, component by component. Every
 /// match must be a non-hidden directory entry that clears the same screens as
 /// a literal operand, and recursive listings walk each matched directory.
@@ -182,60 +177,6 @@ pub(in crate::pretool) fn safe_glob_operand(
             true
         }
     })
-}
-
-/// A content search of a path whose bracket class matches nothing.
-///
-/// Framework routes are spelled with brackets: `app/blog/[slug]/page.tsx` is
-/// one file in a Next.js application, and `rg -n useRouter app/[locale]` is
-/// an ordinary search of one directory. The shell finds nothing for the class
-/// and hands `rg` the word as typed, so what is searched is the path spelled
-/// out, and it is screened exactly as the same path without brackets would
-/// be: the whole tree below it is walked, and an Oh My Pi agent-state tree is
-/// refused as for a literal search root. The class has to match nothing under
-/// both matchers: the default one, which reads it byte by byte, and the folded
-/// one, since under `nocaseglob` `app/[slug]` would expand to a directory
-/// named `S` rather than reach the literal route directory. A class holding a
-/// range is left to review, because the shell expands the range in the
-/// locale's collating sequence, which neither matcher models.
-pub(in crate::pretool) fn safe_literal_bracket_search_target(
-    value: &str,
-    context: ReadContext<'_>,
-) -> bool {
-    value.contains('[')
-        && inert_bracket_class(value, context)
-        && literal_bracket_walk(value, context)
-}
-
-/// Whether a word carrying a bracket class reaches the program as it was
-/// typed. The class has to match no entry, with case folded too, since under
-/// `nocaseglob` `app/[slug]` would expand to a directory named `S` rather
-/// than reach the literal route directory. A class this matcher would read
-/// differently from the shell, and a word carrying another glob
-/// metacharacter, prove nothing.
-fn inert_bracket_class(value: &str, context: ReadContext<'_>) -> bool {
-    !value.contains(['*', '?', '!'])
-        && !super::glob_class::bracket_fallback_unsafe(value)
-        && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
-        && glob_expand::expand_glob_matches_folded(value, context)
-            .is_some_and(|matches| matches.is_empty())
-}
-
-fn literal_bracket_walk(value: &str, context: ReadContext<'_>) -> bool {
-    if parent_component(value)
-        || !super::super::read_paths::bounded_literal_bracket_target(
-            value,
-            context.home_dir,
-            context.cwd,
-            true,
-        )
-    {
-        return false;
-    }
-    let Some(root) = expanded_operand(value, context) else {
-        return false;
-    };
-    !inside_agent_state(&root, context) && walk(root, &[], &[], false, false)
 }
 
 /// An unquoted bracket operand that matches nothing. Bash passes such a word
