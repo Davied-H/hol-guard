@@ -59,7 +59,7 @@ class StoreExtensionControlAuthorityMixin(
         catalog_digest: str,
         migration_registry: CommandSafetyExtensionRegistry | None = None,
     ) -> ExtensionControlAuthorityView:
-        from .native_policy_snapshot_constants import NativePolicySnapshotError
+        from .catalog_delivery.activation_journal import UnverifiablePackTransitionError
 
         with self._extension_control_authority_lock():
             self._invalidate_native_extension_control_policy(explicit_recovery=True)
@@ -120,9 +120,9 @@ class StoreExtensionControlAuthorityMixin(
                             expected_revision=_row_int(pending, "previous_revision"),
                             key=key,
                         )
-                    except (ExtensionControlAuthorityError, NativePolicySnapshotError, ValueError):
-                        # Explicit recovery is authorized to reset an unverifiable
-                        # pending transition, retaining the prior pack baseline.
+                    except UnverifiablePackTransitionError:
+                        # Only damaged pending authentication permits the existing
+                        # explicit recovery reset; environmental failures propagate.
                         connection.rollback()
                         return self._reset_extension_control_authority(
                             catalog_digest, key=key, reason="pending-transition-unverifiable"

@@ -31,7 +31,7 @@ from tests.test_native_command_control_binding_publisher import (
 )
 
 
-@pytest.mark.parametrize("failure", [None, "crash", "missing", "corrupt"])
+@pytest.mark.parametrize("failure", [None, "crash", "missing", "corrupt", "key-unavailable", "lineage-conflict"])
 def test_approved_control_commit_and_anchored_retry_install_the_same_pack_record(
     delivery, tmp_path, monkeypatch, failure
 ):
@@ -85,6 +85,48 @@ def test_approved_control_commit_and_anchored_retry_install_the_same_pack_record
             store.commit_extension_control_layers((), **arguments)
         assert activation_store.read(store) is None
         monkeypatch.setattr(store, "_write_and_verify_anchor", write_anchor)
+        if failure in {"key-unavailable", "lineage-conflict"}:
+            from codex_plugin_scanner.guard.catalog_delivery import activation_journal
+            from codex_plugin_scanner.guard.native_policy_snapshot_constants import NativePolicySnapshotError
+
+            table_names = (
+                "extension_control_authority_snapshot",
+                "extension_control_authority_transition",
+                "extension_command_pack_pending",
+                "extension_control_pack_reservation_archive",
+            )
+
+            def retained_rows():
+                with store._connect() as connection:
+                    return {
+                        name: [tuple(row) for row in connection.execute(f"select * from {name}")]
+                        for name in table_names
+                    }
+
+            before = retained_rows()
+            code = (
+                "native_command_control_authority_key_unavailable"
+                if failure == "key-unavailable"
+                else "native_command_pack_activation_conflict"
+            )
+
+            def unavailable(*args, **kwargs):
+                raise NativePolicySnapshotError(code)
+
+            with monkeypatch.context() as transient:
+                transient.setattr(
+                    activation_journal, "_key" if failure == "key-unavailable" else "write_in_transaction", unavailable
+                )
+                with pytest.raises(NativePolicySnapshotError, match=code):
+                    store.recover_extension_control_authority(
+                        catalog_digest=registry.catalog_digest, migration_registry=registry
+                    )
+            assert retained_rows() == before
+            recovered = store.recover_extension_control_authority(
+                catalog_digest=registry.catalog_digest, migration_registry=registry
+            )
+            assert recovered.health is AuthorityHealth.PROTECTED
+            assert recovered.revision == 1
         if failure in {"missing", "corrupt"}:
             with store._connect() as connection:
                 if failure == "missing":
@@ -114,7 +156,11 @@ def test_approved_control_commit_and_anchored_retry_install_the_same_pack_record
             )
             arguments["idempotency_key"] = "after-reset"
             arguments["nonce"] = "after-reset-nonce"
-    view = store.commit_extension_control_layers((), **arguments)
+    view = (
+        recovered
+        if failure in {"key-unavailable", "lineage-conflict"}
+        else store.commit_extension_control_layers((), **arguments)
+    )
     assert view.health is AuthorityHealth.PROTECTED
     assert view.revision == 1
     active = activation_store.read(store)

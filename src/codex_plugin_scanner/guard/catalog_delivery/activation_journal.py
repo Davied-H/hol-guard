@@ -7,13 +7,22 @@ import time
 from ..native_command_control_authority_io import require_exclusive_command_control_mutation_lease
 from ..native_command_control_authority_store import _key
 from ..native_policy_snapshot_constants import NativePolicySnapshotError
-from ..runtime.extension_control_authority import TRANSITION_PURPOSE, authenticated_record, verify_authenticated_record
+from ..runtime.extension_control_authority import (
+    TRANSITION_PURPOSE,
+    ExtensionControlAuthorityError,
+    authenticated_record,
+    verify_authenticated_record,
+)
 from . import activation_baseline
 from .activation_record import verify_header
 from .activation_store import _row, directory_for_store, write_in_transaction
 from .activation_transition import ActivationDraft
 
 PURPOSE = "command-pack-control-transition.v1"
+
+
+class UnverifiablePackTransitionError(NativePolicySnapshotError):
+    """Pending pack bytes cannot authenticate against their approved transition."""
 
 
 def _exists(connection):
@@ -112,7 +121,7 @@ def finish(store, connection, transition):
         return
     require_exclusive_command_control_mutation_lease(store.guard_home)
     if row is None or row["record_digest"] != expected_pack:
-        raise NativePolicySnapshotError("native_command_pack_transition_missing")
+        raise UnverifiablePackTransitionError("native_command_pack_transition_missing")
     anchor = store._read_anchor(key=authority_key)
     if (
         anchor is None
@@ -122,22 +131,7 @@ def finish(store, connection, transition):
     ):
         raise NativePolicySnapshotError("native_command_pack_transition_unanchored")
     key = _key(store)
-    link = verify_authenticated_record(
-        row["link_json"], expected_digest=row["link_digest"], expected_mac=row["link_mac"], key=key, purpose=PURPOSE
-    )
-    expected = {
-        "control_revision": transition["revision"],
-        "snapshot_digest": transition["snapshot_digest"],
-        "catalog_digest": transition["catalog_digest"],
-        "pack_record_digest": row["record_digest"],
-    }
-    if set(link) != {"authority_schema_version", "purpose", "admitted_at", *expected} or any(
-        link[name] != value for name, value in expected.items()
-    ):
-        raise NativePolicySnapshotError("native_command_pack_transition_mismatch")
-    header = verify_header(row["record_json"], row["record_digest"], row["record_mac"], key=key)
-    if header["catalog_digest"] != transition["catalog_digest"]:
-        raise NativePolicySnapshotError("native_command_pack_transition_mismatch")
+    header, link = _verified_pending(row, transition, key)
     draft = object.__new__(ActivationDraft)
     for name, value in {
         "directory": directory_for_store(store),
@@ -152,6 +146,35 @@ def finish(store, connection, transition):
         store, connection, draft, verifier_key=key, recorded_at=transition["created_at"], now=link["admitted_at"]
     )
     connection.execute("delete from extension_command_pack_pending where control_revision=?", (transition["revision"],))
+
+
+def _verified_pending(row, transition, key):
+    # Only bounded, pure authentication failures are eligible for an explicit
+    # recovery reset. Key access, lineage checks and storage errors stay retryable.
+    try:
+        return _verify_pending(row, transition, key)
+    except (ExtensionControlAuthorityError, ValueError) as error:
+        raise UnverifiablePackTransitionError("native_command_pack_transition_mismatch") from error
+
+
+def _verify_pending(row, transition, key):
+    link = verify_authenticated_record(
+        row["link_json"], expected_digest=row["link_digest"], expected_mac=row["link_mac"], key=key, purpose=PURPOSE
+    )
+    expected = {
+        "control_revision": transition["revision"],
+        "snapshot_digest": transition["snapshot_digest"],
+        "catalog_digest": transition["catalog_digest"],
+        "pack_record_digest": row["record_digest"],
+    }
+    if set(link) != {"authority_schema_version", "purpose", "admitted_at", *expected} or any(
+        link[name] != value for name, value in expected.items()
+    ):
+        raise UnverifiablePackTransitionError("native_command_pack_transition_mismatch")
+    header = verify_header(row["record_json"], row["record_digest"], row["record_mac"], key=key)
+    if header["catalog_digest"] != transition["catalog_digest"]:
+        raise UnverifiablePackTransitionError("native_command_pack_transition_mismatch")
+    return header, link
 
 
 def abandon(connection, revision):
