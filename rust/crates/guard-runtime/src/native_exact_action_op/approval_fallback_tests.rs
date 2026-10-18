@@ -101,6 +101,21 @@ fn a_tool_called_with_no_input_can_be_approved() {
         query["tool_input"] = Value::Null;
     });
     assert!(bare.is_some(), "an argument-free tool offers Always allow");
+    let sent = |raw: Value| {
+        token(&root(), move |query| {
+            query["tool_name"] = json!("todo");
+            query["command"] = Value::Null;
+            query["tool_input"] = Value::Null;
+            query["raw_tool_input"] = raw;
+        })
+        .unwrap()
+    };
+    // An input that is not an object binds the hash as it was sent.
+    let first = sent(json!("list"));
+    assert_eq!(sent(json!("list")), first);
+    assert_ne!(sent(json!("delete all")), first);
+    assert_ne!(sent(json!(["list"])), first);
+    assert_ne!(bare.unwrap(), first);
 }
 
 #[test]

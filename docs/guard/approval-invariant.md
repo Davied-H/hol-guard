@@ -43,8 +43,8 @@ falls back to `native-command-hash-v1`. That hash covers:
 - tool name
 - workspace
 - working directory (the payload `cwd`, else the workspace)
-- command text, or the tool input for non-shell tools (empty when the tool
-  takes none)
+- command text, or the tool input for non-shell tools as it was sent, even
+  when it is not an object (empty only when the tool takes none)
 
 Changing any of these produces a new command, and Guard asks again.
 

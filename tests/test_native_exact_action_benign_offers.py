@@ -28,9 +28,7 @@ def _workspace(root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return workspace
 
 
-def _decide(
-    tool: str, tool_input: dict[str, object], workspace: Path, **overrides: object
-) -> tuple[str | None, str | None]:
+def _decide(tool: str, tool_input: object, workspace: Path, **overrides: object) -> tuple[str | None, str | None]:
     result, receipt = _verdict(**overrides)
     return native_exact_action_decision(
         harness=_HARNESS,
@@ -101,6 +99,19 @@ def test_code_and_write_tools_bind_the_exact_call(
     other, _ = _decide(tool, {"path": "a.txt", "code": "1+2"}, workspace)
     # Without a proven identity the approval covers this call's input only.
     assert other != token
+
+
+@pytest.mark.parametrize("tool", ["eval", "mcp__notes__search"])
+def test_an_input_that_is_not_an_object_binds_the_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_context_digest: Path, tool: str
+) -> None:
+    workspace = _workspace(tmp_path, monkeypatch)
+    token, reason = _decide(tool, "list", workspace)
+    assert token is not None and reason is None
+    assert _decide(tool, "list", workspace)[0] == token
+    # Approving one call does not approve another input, or a call without one.
+    for other in ("delete all", ["list"], None):
+        assert _decide(tool, other, workspace)[0] not in (None, token), other
 
 
 @pytest.mark.parametrize(

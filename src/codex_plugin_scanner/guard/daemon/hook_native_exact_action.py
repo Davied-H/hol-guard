@@ -123,6 +123,18 @@ def _tool_input_pairs(payload: Mapping[str, object]) -> list[list[object]] | Non
     return [[key, value] for key, value in tool_input.items() if isinstance(key, str)]
 
 
+def _raw_tool_input(payload: Mapping[str, object]) -> object | None:
+    """The first tool input sent that is not an object, when none is one."""
+
+    if pre_tool_input(payload) is not None or isinstance(payload.get("arguments"), Mapping):
+        return None
+    for key in ("tool_input", "toolInput", "arguments"):
+        value = payload.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _text(value: object) -> str | None:
     return str(value) if value is not None else None
 
@@ -157,6 +169,9 @@ def native_exact_action(
             "extension_control_digest": current_extension_control_binding_digest(),
             "budget_ms": _BUDGET_MS,
         }
+        raw_tool_input = _raw_tool_input(payload)
+        if raw_tool_input is not None:
+            query["raw_tool_input"] = raw_tool_input
         reply = _answer(query, guard_home)
     except (NativeExactActionError, OSError, RuntimeError, TypeError, ValueError) as error:
         # Only the error class is logged: the query holds environment and command text.
