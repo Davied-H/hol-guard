@@ -6,6 +6,10 @@
 //! start, pull and change nothing. Every option is allowlisted. Starting an
 //! existing container is proven in `docker_start`.
 //!
+//! `docker version` and `docker compose version` print the client banner and,
+//! for the first, the daemon's version line. Neither starts a container or
+//! reads a project file.
+//!
 //! Still reviewed:
 //! - any option before the subcommand. `-H`/`--host`, `--context` and
 //!   `--config` move the client to another daemon or configuration, and
@@ -74,6 +78,15 @@ pub(super) fn safe_docker_arguments(arguments: &[String]) -> bool {
         return false;
     }
     let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
+    // A version banner prints the client's own build, and the server line it
+    // asks the daemon for is the same connection `docker ps` already uses. The
+    // Compose plugin prints its banner without loading a project file.
+    if matches!(
+        words.as_slice(),
+        ["version"] | ["compose", "version"] | ["compose", "version", "--short"]
+    ) {
+        return true;
+    }
     let (listing, rest) = match words.as_slice() {
         ["ps", rest @ ..] => (Listing::Containers, rest),
         ["container", "ls" | "list" | "ps", rest @ ..] => (Listing::Containers, rest),

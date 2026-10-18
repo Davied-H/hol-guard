@@ -24,6 +24,9 @@ fn container_and_image_listings_are_admitted() {
         vec!["images", "node:20-alpine"],
         vec!["images", "--format", "{{.Repository}}:{{.Tag}}"],
         vec!["image", "ls", "-q"],
+        vec!["version"],
+        vec!["compose", "version"],
+        vec!["compose", "version", "--short"],
     ] {
         assert!(safe_docker_arguments(&arguments(&words)), "{words:?}");
     }
@@ -68,6 +71,11 @@ fn remote_daemons_secrets_and_other_subcommands_stay_reviewed() {
         vec!["image", "inspect", "alpine"],
         vec!["image", "history", "alpine"],
         vec!["container", "top", "web"],
+        // Only the banner itself; a format string or a project file is not it.
+        vec!["version", "--format", "{{json .}}"],
+        vec!["compose", "version", "--format", "json"],
+        vec!["compose", "-f", "compose.yaml", "version"],
+        vec!["-H", "ssh://ops@example.com", "version"],
     ] {
         assert!(!safe_docker_arguments(&arguments(&words)), "{words:?}");
     }

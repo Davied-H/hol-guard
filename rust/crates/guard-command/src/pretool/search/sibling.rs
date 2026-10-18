@@ -14,12 +14,17 @@
 //! must be visible, or a hidden project-metadata directory such as `.github`,
 //! and not plainly ignored, and any `.ignore` or `.rgignore` file sends the
 //! search to review. A negated pattern in a `.gitignore` or the repository's
-//! `info/exclude` is admitted only when it re-includes a literal path, such
-//! as `!.gitkeep` or `!.env.example`, that this walk does not prune; hidden
-//! entries with that name are then screened like any other descendant, where
-//! the walk meets them. A rule at the repository root therefore holds only
-//! the searches that can reach the file it names.
+//! `info/exclude` is kept with the scope git gives it, whether it spells a
+//! literal path such as `!.gitkeep` or a glob such as `!src/icons/**/*.js`;
+//! hidden entries it re-includes are then screened like any other
+//! descendant, where the walk meets them. A negation that can name an entry
+//! this walk prunes keeps the search at review, because `rg` would read a
+//! subtree the walk never screened. A rule at the repository root therefore
+//! holds only the searches that can reach the file it names.
+mod negations;
+
 use super::{tree, ReadContext};
+use negations::Whitelist;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -129,21 +134,6 @@ struct Ignored {
     whitelisted: Vec<Whitelist>,
 }
 
-/// One negated pattern, kept with the scope git gives it.
-///
-/// A pattern anchored to its ignore file's directory, by a leading slash or
-/// by a slash anywhere inside it, re-includes that one path and nothing
-/// else: `!/.env.example` in the root says nothing about `src/.env.example`.
-/// A bare name re-includes every entry of that name below the directory.
-struct Whitelist {
-    /// The directory the ignore file applies to.
-    base: PathBuf,
-    /// The re-included path, relative to `base`, lowercased.
-    relative: PathBuf,
-    /// Whether the name is re-included at any depth below `base`.
-    anywhere: bool,
-}
-
 impl Ignored {
     fn prunes(&self, name: &str, directly_below_root: bool) -> bool {
         self.anywhere.iter().any(|ignored| ignored == name)
@@ -153,17 +143,7 @@ impl Ignored {
     /// Whether a negation re-includes `path`, which the walk reached below
     /// the directory its ignore file applies to.
     fn whitelists(&self, path: &Path) -> bool {
-        let lowered =
-            |value: &std::ffi::OsStr| PathBuf::from(value.to_string_lossy().to_lowercase());
-        self.whitelisted.iter().any(|whitelisted| {
-            if whitelisted.anywhere {
-                path.file_name()
-                    .is_some_and(|name| lowered(name) == whitelisted.relative)
-            } else {
-                path.strip_prefix(&whitelisted.base)
-                    .is_ok_and(|relative| lowered(relative.as_os_str()) == whitelisted.relative)
-            }
-        })
+        negations::whitelists(&self.whitelisted, path)
     }
 
     /// Reads the `.gitignore` in `directory`, if any, and admits its
@@ -178,53 +158,18 @@ impl Ignored {
     }
 
     /// Records the negated patterns among `lines`, read from an ignore file
-    /// that applies to the tree being walked. A negation may only re-include a literal
-    /// path whose components this walk never prunes, so a plainly ignored
-    /// directory stays out of `rg`'s reach. Whether the name it re-includes
-    /// is one the descendant screen refuses is decided where the walk meets
-    /// the file, so a root rule naming a template beside the searched
-    /// directory does not answer for a search that never reaches it.
+    /// that applies to the tree being walked. Whether the name a negation
+    /// re-includes is one the descendant screen refuses is decided where the
+    /// walk meets the file, so a root rule naming a template beside the
+    /// searched directory does not answer for a search that never reaches it.
     fn admit_negations(&mut self, lines: &[String], base: &Path) -> bool {
-        for line in lines {
-            let Some(pattern) = line.strip_prefix('!') else {
-                continue;
-            };
-            let pattern = pattern.strip_suffix('/').unwrap_or(pattern);
-            // A leading `**/` stands for any run of directories, which is
-            // what a bare name already means: `!**/notes.md` re-includes
-            // that name wherever it sits. A `**` anywhere else spans
-            // directories this walk would have to match depth by depth, and
-            // falls to the literal screen below.
-            let (pattern, any_depth) = match pattern.strip_prefix("**/") {
-                Some(rest) => (rest, true),
-                None => (pattern, false),
-            };
-            // Git anchors a pattern to its ignore file's directory as soon as
-            // it carries a slash anywhere but the end, so only a bare name
-            // re-includes entries deeper down.
-            let anchored = !any_depth && (pattern.starts_with('/') || pattern.contains('/'));
-            let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
-            let components: Vec<&str> = pattern.split('/').collect();
-            let literal = components.iter().all(|component| plain_name(component));
-            let pruned = components.iter().any(|component| {
-                self.anywhere
-                    .iter()
-                    .chain(&self.at_root)
-                    .any(|ignored| ignored.eq_ignore_ascii_case(component))
-            });
-            if !literal || pruned || (!anchored && components.len() != 1) {
-                return false;
-            }
-            self.whitelisted.push(Whitelist {
-                base: base.to_path_buf(),
-                relative: components
-                    .iter()
-                    .map(|component| component.to_lowercase())
-                    .collect(),
-                anywhere: !anchored,
-            });
-        }
-        true
+        negations::admit(
+            &mut self.whitelisted,
+            lines,
+            base,
+            &self.anywhere,
+            &self.at_root,
+        )
     }
 }
 

@@ -42,6 +42,7 @@ use crate::guard_store_cmd_feedback as feedback;
 use crate::guard_store_cmd_lifecycle as lifecycle;
 use crate::guard_store_cmd_maintenance as maintenance;
 use crate::guard_store_cmd_privacy as privacy;
+use crate::guard_store_composio_catalog as composio_catalog;
 use crate::guard_store_connect as connect;
 use crate::guard_store_connector_context as connector_context;
 use crate::guard_store_db::{exec, query_all, query_one, text, StoreError, StoreResult};
@@ -392,7 +393,7 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "prune_inactive_local_cli_observations"
         | "cache_advisories" => Kind::Write,
         "find_local_mcp_observation" => Kind::Read,
-        "ensure_local_mcp_observation" => Kind::Write,
+        "ensure_local_mcp_observation" | "record_composio_discovery" => Kind::Write,
         _ if connect::is_state_read(method) => Kind::Read,
         _ if connect::handles(method) => Kind::Write,
         _ => return None,
@@ -520,6 +521,9 @@ fn dispatch(
         "prune_inactive_local_cli_observations" => local_cli::prune_inactive(connection, args),
         "find_local_mcp_observation" => local_mcp::find_observation(connection, args),
         "ensure_local_mcp_observation" => local_mcp::ensure_observation(connection, args),
+        "record_composio_discovery" => {
+            composio_catalog::record_composio_discovery(connection, args)
+        }
         "upsert_guard_session" => sessions::upsert_session(connection, args),
         "get_guard_session" => sessions::get_session(connection, args),
         "list_guard_sessions" => sessions::list_sessions(connection, args),

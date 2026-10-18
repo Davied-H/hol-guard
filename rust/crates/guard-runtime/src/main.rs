@@ -299,6 +299,9 @@ mod guard_store_cmd_rollups;
 #[cfg(test)]
 mod guard_store_cmd_vectors_tests;
 mod guard_store_cmd_wire;
+mod guard_store_composio_catalog;
+#[cfg(test)]
+mod guard_store_composio_catalog_tests;
 mod guard_store_connect;
 mod guard_store_connect_effective;
 #[cfg(test)]
@@ -862,6 +865,25 @@ mod tests {
                 .join(",")
         );
         assert!(strict_json_value(wide.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn strict_json_carries_strings_up_to_the_operation_request_bound() {
+        let catalog_capacity_overflow =
+            format!("{{\"description\":\"{}\"}}", "x".repeat(2_000_001));
+        let parsed = strict_json_value(catalog_capacity_overflow.as_bytes()).unwrap();
+        assert_eq!(
+            parsed["description"].as_str().map(str::len),
+            Some(2_000_001)
+        );
+        let over_cap = format!(
+            "{{\"description\":\"{}\"}}",
+            "x".repeat(strict_json::TEST_MAX_JSON_STRING_BYTES + 1)
+        );
+        assert_eq!(
+            strict_json_value(over_cap.as_bytes()).unwrap_err(),
+            "native_json_string_too_large"
+        );
     }
 
     #[test]

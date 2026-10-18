@@ -296,3 +296,93 @@ fn cross_pack_relationships_are_checked_before_output() {
     );
     assert!(output.is_empty());
 }
+
+#[test]
+fn incremental_compilation_matches_clean_and_revalidates_raw_sources() {
+    let mut sources = sources();
+    sources.push(synthetic(0));
+    let mut compiler = PackCompiler::default();
+    let mut first = Vec::new();
+    let (root, stats) = compiler
+        .compile(stream(&sources).as_slice(), &mut first)
+        .unwrap();
+    assert_eq!(stats.compiled, sources.len());
+    let mut repeated = Vec::new();
+    let (again, stats) = compiler
+        .compile(stream(&sources).as_slice(), &mut repeated)
+        .unwrap();
+    assert_eq!((stats.compiled, stats.reused), (0, sources.len()));
+    assert_eq!(root, again);
+    assert_eq!(first, repeated);
+    assert!(stats.retained_encoded_bytes <= CACHE_BYTES);
+    let mut source: Value = serde_json::from_slice(&sources.last().unwrap().1).unwrap();
+    source["extension"]["description"] = json!("Updated description");
+    sources.last_mut().unwrap().1 = serde_json::to_vec(&source).unwrap();
+    let mut cached = Vec::new();
+    let (changed, stats) = compiler
+        .compile(stream(&sources).as_slice(), &mut cached)
+        .unwrap();
+    assert_eq!((stats.compiled, stats.reused), (1, sources.len() - 1));
+    let mut clean = Vec::new();
+    assert_eq!(
+        compile_pack_stream(stream(&sources).as_slice(), &mut clean).unwrap(),
+        changed
+    );
+    assert_eq!(cached, clean);
+    // A hit cannot skip strict JSON decoding, ownership or global validation.
+    sources.last_mut().unwrap().1 = b"{\"schema\":0,\"schema\":1}".to_vec();
+    let mut rejected = Vec::new();
+    assert!(compiler
+        .compile(stream(&sources).as_slice(), &mut rejected)
+        .is_err());
+    assert!(rejected.is_empty());
+}
+
+#[test]
+fn referenced_interface_changes_invalidate_dependants_and_removed_owners_fail() {
+    let mut sources = sources();
+    let (metadata, bytes) = synthetic(0);
+    let mut owner: Value = serde_json::from_slice(&bytes).unwrap();
+    owner["extension"]["dependencies"] = json!(["command.scale-1"]);
+    sources.push((metadata, serde_json::to_vec(&owner).unwrap()));
+    sources.push(synthetic(1));
+    let mut compiler = PackCompiler::default();
+    compiler
+        .compile(stream(&sources).as_slice(), std::io::sink())
+        .unwrap();
+    let last = sources.last_mut().unwrap();
+    let mut related: Value = serde_json::from_slice(&last.1).unwrap();
+    related["extension"]["description"] = json!("Related interface input changed");
+    last.1 = serde_json::to_vec(&related).unwrap();
+    let (_, stats) = compiler
+        .compile(stream(&sources).as_slice(), std::io::sink())
+        .unwrap();
+    assert_eq!((stats.compiled, stats.reused), (2, sources.len() - 2));
+    sources.pop();
+    let mut rejected = Vec::new();
+    assert_eq!(
+        compiler
+            .compile(stream(&sources).as_slice(), &mut rejected)
+            .unwrap_err(),
+        "command_source_dependency_missing"
+    );
+    assert!(rejected.is_empty());
+}
+
+#[test]
+fn cache_working_set_over_budget_compiles_without_retaining_unbounded_results() {
+    let sources = sources();
+    let mut compiler = PackCompiler {
+        limit: 1,
+        ..PackCompiler::default()
+    };
+    for _ in 0..2 {
+        let (_, stats) = compiler
+            .compile(stream(&sources).as_slice(), std::io::sink())
+            .unwrap();
+        assert_eq!(stats.compiled, sources.len());
+        assert_eq!(stats.reused, 0);
+        assert_eq!(stats.retained_encoded_bytes, 0);
+    }
+    assert!(compiler.cache.is_empty());
+}

@@ -465,6 +465,24 @@ fn program_lookups_do_not_make_a_command_unmatchable() {
     let controls = controls(serde_json::json!([]), false);
     let command = "date -u +%Y-%m-%dT%H:%M:%SZ; echo \"rc=$?\"; echo \"HOME=$HOME\"; command -v doctl; ls -l \"$(command -v doctl)\"";
     assert_ne!(decision(&controls, command).1, FAILED);
+    // `which` takes a list of names and runs none of them, with or without the
+    // options that only change how it prints the answer.
+    for command in [
+        "which doctl kubectl",
+        "which -a doctl",
+        "which --all doctl kubectl helm",
+        "which doctl kubectl 2>/dev/null",
+        "echo start; which doctl kubectl; echo done",
+    ] {
+        assert_ne!(decision(&controls, command).1, FAILED, "{command}");
+    }
+    // A word the lookup never proves is an operand leaves the whole line alone.
+    for command in [
+        "ls -l \"$(which --exec doctl)\"",
+        "ls -l \"$(which doctl; gh pr list)\"",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
     // A lookup whose name is computed, or a substitution that runs a program,
     // still could run anything.
     for command in [
@@ -473,6 +491,25 @@ fn program_lookups_do_not_make_a_command_unmatchable() {
         "echo $(gh pr list)",
     ] {
         assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}
+
+/// The shell glues a quoted part onto the word before it, so a lookup name
+/// that carries one is not a plain operand and the run has to stop in front of
+/// it. Consuming only its plain prefix would leave the quoted remainder beside
+/// the replacement and invent a command nothing in the line names.
+#[test]
+fn a_quoted_part_of_a_name_is_not_a_separate_operand() {
+    for (command, stripped) in [
+        ("which doctl foo'bar'", "true foo'bar'"),
+        ("which doctl \"kube ctl\"", "true \"kube ctl\""),
+        ("command -v gh'ub'", "command -v gh'ub'"),
+    ] {
+        assert_eq!(
+            super::shapes::without_lookups(command),
+            stripped,
+            "{command}"
+        );
     }
 }
 
