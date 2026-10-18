@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use super::context::ResidentEngines;
 use super::{decide, decide_with, Fallback};
 
-const UNPROVABLE: &str = "alohajet --cdp 9303 tabs";
+const UNPROVABLE: &str = "browser-tool --cdp 9303 tabs";
 
 fn exact_request(root: &str, edit: impl FnOnce(&mut Value)) -> NativeExactActionRequestV1 {
     let mut request = json!({
@@ -82,7 +82,7 @@ fn the_command_hash_holds_until_the_command_changes() {
     }
     // The command, its directory and its workspace are the hash.
     let changed: [fn(&mut Value); 5] = [
-        |query: &mut Value| query["command"] = json!("alohajet --cdp 9304 tabs"),
+        |query: &mut Value| query["command"] = json!("browser-tool --cdp 9304 tabs"),
         |query: &mut Value| query["payload_cwd"] = json!("/"),
         |query: &mut Value| query["workspace"] = json!("/"),
         |query: &mut Value| query["harness"] = json!("claude-code"),
