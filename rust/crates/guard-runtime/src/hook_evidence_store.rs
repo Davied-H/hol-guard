@@ -101,6 +101,13 @@ impl NativeEvidenceStore {
 
     /// One store call under the shared storage gate, with the store files put
     /// back into private mode afterwards.
+    ///
+    /// TODO(deps): `_native_store_call` also hands a failure to
+    /// `_recover_fatal_sqlite_store`, which quarantines a store a probe has
+    /// proven unusable and writes the forensics beside it. That recovery has
+    /// no Rust counterpart yet, so a corrupt store would fail every call here
+    /// instead of being replaced once. Nothing routes through this seam until
+    /// the writer itself runs natively, and the recovery lands with that flip.
     fn call(
         &self,
         request_id: &str,
