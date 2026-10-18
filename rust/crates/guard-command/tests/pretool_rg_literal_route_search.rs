@@ -58,9 +58,11 @@ fn fixture() -> Fixture {
     write(app.join("app/[sidebar]/page.tsx"), "export default 2;\n");
     write(app.join("app/S/page.tsx"), "export default 3;\n");
     // A route directory whose class spans the two cases: the default matcher
-    // reaches the sibling named `_`, which the folded one cannot name.
+    // reaches the sibling named `_`, and that sibling keeps an environment
+    // file, so the word the shell builds is not the clean route directory.
     write(app.join("app/[Z-a]/page.tsx"), "export default 4;\n");
     write(app.join("app/_/page.tsx"), "export default 5;\n");
+    write(app.join("app/_/.env"), "TOKEN=fixture\n");
     // A route that keeps a local environment file beside its component.
     write(app.join("app/admin/[id]/page.tsx"), "export default 1;\n");
     write(app.join("app/admin/[id]/.env"), "TOKEN=fixture\n");
@@ -125,8 +127,8 @@ fn bracketed_searches_that_could_reach_more_keep_their_review() {
         // Under `nocaseglob` the class matches the sibling named `S`, so the
         // word is not the literal route directory the screens walked.
         "rg -n export ~/portal/app/[sidebar]",
-        // `[Z-a]` covers the bytes between the two cases, so the default
-        // matcher names the sibling `_` while the folded one matches nothing.
+        // `[Z-a]` covers the bytes between the two cases, so the shell hands
+        // `rg` the sibling named `_`, whose environment file keeps the review.
         "rg -n export ~/portal/app/[Z-a]",
     ] {
         check(&f, command, false);
