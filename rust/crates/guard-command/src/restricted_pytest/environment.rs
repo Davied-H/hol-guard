@@ -215,9 +215,41 @@ pub(super) fn filter(
             result.insert(key.to_owned(), value.to_owned());
         }
     }
+    // A Cargo build compiles the crate sources in the host registry, which the
+    // plan grants read-only and links into a private `CARGO_HOME` cargo can
+    // take its locks in. The toolchain resolves through the real rustup
+    // installation, and the offline flag turns a missing crate into an
+    // immediate error rather than a blocked fetch. A host that has fetched no
+    // crate yet still gets all three: the private directory is empty rather
+    // than absent, and a run whose toolchain lives in rustup needs
+    // `RUSTUP_HOME` to find it at all.
+    if allowed.is_empty() {
+        result.insert(
+            "CARGO_HOME".to_owned(),
+            cargo_home(private_tmp).to_string_lossy().into_owned(),
+        );
+        result.insert("CARGO_NET_OFFLINE".to_owned(), "true".to_owned());
+        if let Some(rustup) = super::toolchains::host_rustup_home() {
+            result.insert(
+                "RUSTUP_HOME".to_owned(),
+                rustup.to_string_lossy().into_owned(),
+            );
+        }
+    }
     // A linked user site is read through the private HOME; otherwise it stays off.
     if !user_site {
         result.insert("PYTHONNOUSERSITE".to_owned(), "1".to_owned());
     }
     Ok(result)
 }
+
+/// The private `CARGO_HOME` a contained run uses. Cargo writes its locks and
+/// its global cache at the top of this directory; the host's fetched crates
+/// are linked in below it.
+pub(super) fn cargo_home(private_tmp: &Path) -> PathBuf {
+    private_tmp.join("cargo")
+}
+
+#[cfg(test)]
+#[path = "environment_tests.rs"]
+mod tests;

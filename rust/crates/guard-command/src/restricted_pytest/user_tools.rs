@@ -27,6 +27,12 @@ const COREPACK_CACHE: &str = ".cache/node/corepack";
 /// Go's module cache, below GOPATH's default. It holds the dependency sources
 /// a build compiles, written read-only by `go` itself.
 const GO_MODULE_CACHE: &str = "go/pkg/mod";
+/// Cargo's caches of fetched crate sources, relative to HOME. The run gets
+/// its own `CARGO_HOME`, where cargo takes its locks, with these linked into
+/// it.
+const CARGO_CACHES: &[&str] = &[".cargo/registry", ".cargo/git"];
+/// A rustup installation, relative to HOME.
+const RUSTUP_HOME: &str = ".rustup";
 
 /// `canonical`, the resolved PATH entry, when it is a sealed tool directory
 /// of the caller's that a workspace run may read and execute from.
@@ -135,27 +141,61 @@ pub(super) fn shim_siblings(shims: &Path, homes: &[PathBuf], workspace: &Path) -
     siblings
 }
 
-/// Corepack's cache below `home`, when it is sealed like a tool directory.
-/// A Corepack shim (`pnpm`, `yarn`) runs the package-manager version stored
-/// there; the sandbox has no network to fetch it again, so the cache is
-/// granted read-only rather than replaced by an empty private one.
-pub(super) fn corepack_home(home: &Path) -> Option<PathBuf> {
-    let cache = home.join(COREPACK_CACHE).canonicalize().ok()?;
+/// `relative` below `home`, when it is sealed like a tool directory. A
+/// toolchain cache holds what a build reads and the sandbox has no network to
+/// fetch again, so it is granted read-only rather than replaced by an empty
+/// private one; what the build writes goes to a private directory instead.
+fn sealed_cache(home: &Path, relative: &str) -> Option<PathBuf> {
+    let cache = home.join(relative).canonicalize().ok()?;
     (cache.starts_with(home) && cache.is_dir() && sealed_ancestry(&cache)).then_some(cache)
 }
 
-/// Go's module cache below `home`, when it is sealed like a tool directory.
-/// A build compiles the dependency sources stored there, and the sandbox has
-/// no network to fetch them again, so the cache is granted read-only; `go`
-/// never writes it during a build, and the build cache is a private one.
+/// Corepack's cache, from which a shim (`pnpm`, `yarn`) runs the
+/// package-manager version it stores.
+pub(super) fn corepack_home(home: &Path) -> Option<PathBuf> {
+    sealed_cache(home, COREPACK_CACHE)
+}
+
+/// Go's module cache, holding the dependency sources a build compiles. `go`
+/// never writes it during a build.
 pub(super) fn go_module_cache(home: &Path) -> Option<PathBuf> {
-    let cache = home.join(GO_MODULE_CACHE).canonicalize().ok()?;
-    (cache.starts_with(home) && cache.is_dir() && sealed_ancestry(&cache)).then_some(cache)
+    sealed_cache(home, GO_MODULE_CACHE)
+}
+
+/// Cargo's registry and git checkouts, holding the crate sources a build
+/// compiles. They sit beside `credentials.toml`, which stays out of reach
+/// because each directory is granted on its own.
+pub(super) fn cargo_caches(home: &Path) -> Vec<(&'static str, PathBuf)> {
+    CARGO_CACHES
+        .iter()
+        .filter_map(|relative| {
+            let name = relative.rsplit('/').next()?;
+            Some((name, sealed_cache(home, relative)?))
+        })
+        .collect()
+}
+
+/// The rustup installation, from which `cargo` and `rustc` resolve the
+/// toolchain a build runs.
+pub(super) fn rustup_home(home: &Path) -> Option<PathBuf> {
+    sealed_cache(home, RUSTUP_HOME)
 }
 
 /// [`go_module_cache`] for this account's HOME from the password database.
 pub(in crate::restricted_pytest) fn host_go_module_cache() -> Option<PathBuf> {
     go_module_cache(&host_home_directory()?)
+}
+
+/// [`cargo_caches`] for this account's HOME from the password database.
+pub(in crate::restricted_pytest) fn host_cargo_caches() -> Vec<(&'static str, PathBuf)> {
+    host_home_directory()
+        .map(|home| cargo_caches(&home))
+        .unwrap_or_default()
+}
+
+/// [`rustup_home`] for this account's HOME from the password database.
+pub(in crate::restricted_pytest) fn host_rustup_home() -> Option<PathBuf> {
+    rustup_home(&host_home_directory()?)
 }
 
 /// [`corepack_home`] for this account's HOME from the password database.

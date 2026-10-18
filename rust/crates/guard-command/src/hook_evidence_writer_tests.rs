@@ -3,13 +3,12 @@
 //! A Pre event carries the verdict Rust already reached, so the writer builds
 //! the evidence and the store only stores it. A post event carries no verdict,
 //! so it may only promote a stored pre-hook row or be written as explicitly
-//! unpaired. These cover the branch the Python drain loop takes at
-//! `runtime_hook_evidence_writer.py:410-455` and the pairing rules in
-//! `cli/commands_support_command_activity.py:208-246`.
+//! unpaired. These cover both branches of the drain loop and the pairing rules
+//! in `cli/commands_support_command_activity.py:208-246`.
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use serde_json::{json, Map, Value};
 
@@ -48,6 +47,18 @@ struct StubStoreState {
 struct StubStore {
     guard_home: PathBuf,
     state: Mutex<StubStoreState>,
+    receipt_behaviour: ReceiptBehaviour,
+}
+
+/// What the stubbed store does when the writer hands it a receipt.
+enum ReceiptBehaviour {
+    /// Write it and report a new row, the ordinary path.
+    Accept,
+    /// Park the worker thread here until the test releases the gate, so a
+    /// test can read the queue while a store write is still outstanding.
+    Park(Arc<Gate>),
+    /// Fail every write, the way a locked SQLite file does.
+    Fail,
 }
 
 impl StubStore {
@@ -59,6 +70,29 @@ impl StubStore {
                 pre_replay,
                 previous: None,
             }),
+            receipt_behaviour: ReceiptBehaviour::Accept,
+        })
+    }
+
+    /// A store whose receipt write only returns once the test releases `gate`.
+    fn gated(guard_home: PathBuf, gate: Arc<Gate>) -> Arc<Self> {
+        Self::with_receipts(guard_home, ReceiptBehaviour::Park(gate))
+    }
+
+    /// A store whose receipt write always fails.
+    fn failing_receipts(guard_home: PathBuf) -> Arc<Self> {
+        Self::with_receipts(guard_home, ReceiptBehaviour::Fail)
+    }
+
+    fn with_receipts(guard_home: PathBuf, receipt_behaviour: ReceiptBehaviour) -> Arc<Self> {
+        Arc::new(Self {
+            guard_home,
+            state: Mutex::new(StubStoreState {
+                calls: Vec::new(),
+                pre_replay: false,
+                previous: None,
+            }),
+            receipt_behaviour,
         })
     }
 
@@ -114,7 +148,14 @@ impl EvidenceStoreApi for StubStore {
         &self,
         _receipt: &Map<String, Value>,
     ) -> Result<bool, io::Error> {
-        Ok(true)
+        match &self.receipt_behaviour {
+            ReceiptBehaviour::Accept => Ok(true),
+            ReceiptBehaviour::Park(gate) => {
+                gate.enter();
+                Ok(true)
+            }
+            ReceiptBehaviour::Fail => Err(io::Error::other("database is locked")),
+        }
     }
 
     fn command_activity_by_request_correlation(
@@ -362,7 +403,7 @@ fn an_allowed_pre_event_records_the_evidence_under_its_own_correlation() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
@@ -401,7 +442,7 @@ fn a_prevented_pre_event_rewrites_the_correlation_digest() {
         Some("block"),
         Some("receipt-1"),
         true,
-        "accepted",
+        "rejected",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
@@ -413,8 +454,46 @@ fn a_prevented_pre_event_rewrites_the_correlation_digest() {
     // the digest is a join key, so both runtimes must land on these bytes.
     assert_eq!(
         evidence.get("correlation_digest").and_then(Value::as_str),
-        Some("d5b3406976b245e21cb4b99a6f44865fb54da626c9acfecf354bc3be3917a324"),
+        Some("578c87b78323942aa15c359c1a55620413cb0b5714b840d4d5d47c7497de44c0"),
         "a prevented attempt cannot pair with a post event, so it gets its own key"
+    );
+}
+
+#[test]
+fn metadata_the_journal_would_refuse_never_reaches_the_queue() {
+    let (store, writer) = fixture(false);
+    // A prompt and an accepted reuse contradict each other: either the saved
+    // approval carried the call or the user was asked, never both.
+    assert!(!writer.submit_command_activity(
+        "claude-code",
+        "PreToolUse",
+        &command_payload(),
+        true,
+        Some("allow"),
+        None,
+        true,
+        "accepted",
+    ));
+    // A receipt id outside `_SAFE_IDENTIFIER` is refused at submission, not
+    // carried until the journal drops it where no caller is left to see.
+    assert!(!writer.submit_command_activity(
+        "claude-code",
+        "PreToolUse",
+        &command_payload(),
+        true,
+        Some("allow"),
+        Some("receipt 1/../etc"),
+        false,
+        "not-applicable",
+    ));
+    assert!(writer.stop(5.0), "writer drained");
+
+    let calls = store.calls();
+    assert!(
+        !calls
+            .iter()
+            .any(|call| matches!(call, StoreCall::RecordCommandActivity { .. })),
+        "{calls:?}"
     );
 }
 
@@ -455,7 +534,7 @@ fn an_exact_pre_replay_is_probed_and_then_dropped() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
@@ -486,7 +565,7 @@ fn post_event_calls(store: &Arc<StubStore>, writer: RuntimeHookEvidenceWriter) -
         None,
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
     store.calls()
@@ -580,11 +659,367 @@ fn a_pre_event_without_a_command_never_reaches_the_store() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 
     assert!(store.calls().is_empty(), "{:?}", store.calls());
+}
+
+// ---------------------------------------------------------------------------
+// Queue, drain and recovery scaffolding. The writer runs its own thread, so
+// every wait below is a handshake with that thread rather than a sleep.
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct GateState {
+    entered: bool,
+    released: bool,
+}
+
+/// A rendezvous between the test thread and the writer's worker thread.
+/// `enter` parks the worker inside a seam, `wait_for_entry` lets the test
+/// proceed only once the worker is parked there, and `release` lets it out.
+struct Gate {
+    state: Mutex<GateState>,
+    changed: Condvar,
+}
+
+impl Gate {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            state: Mutex::new(GateState::default()),
+            changed: Condvar::new(),
+        })
+    }
+
+    fn enter(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        state.entered = true;
+        self.changed.notify_all();
+        while !state.released {
+            state = self
+                .changed
+                .wait(state)
+                .unwrap_or_else(|err| err.into_inner());
+        }
+    }
+
+    fn wait_for_entry(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        while !state.entered {
+            state = self
+                .changed
+                .wait(state)
+                .unwrap_or_else(|err| err.into_inner());
+        }
+    }
+
+    fn release(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        state.released = true;
+        self.changed.notify_all();
+    }
+}
+
+/// The durability seam held in memory, so a test can seed a journal the way a
+/// previous writer would have left it and read what a drain removed.
+#[derive(Default)]
+struct RecordingJournal {
+    records: Mutex<Vec<Map<String, Value>>>,
+}
+
+impl RecordingJournal {
+    fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    /// A journal holding `records`, as a writer that stopped mid-drain leaves
+    /// behind for the next one to recover.
+    fn holding(records: Vec<Map<String, Value>>) -> Arc<Self> {
+        Arc::new(Self {
+            records: Mutex::new(records),
+        })
+    }
+
+    fn records(&self) -> Vec<Map<String, Value>> {
+        self.records
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .clone()
+    }
+}
+
+/// The record id a journal line carries: a receipt is keyed by its decision,
+/// every other record by its own `record_id`.
+fn journaled_record_id(raw: &Map<String, Value>) -> String {
+    for key in ["decision_id", "record_id"] {
+        match raw.get(key) {
+            Some(Value::String(id)) => return id.clone(),
+            Some(value) => return value.to_string(),
+            None => continue,
+        }
+    }
+    String::new()
+}
+
+impl EvidenceJournalApi for Arc<RecordingJournal> {
+    fn append_journal(&self, _path: &Path, record: &EvidenceRecord) -> Result<(), io::Error> {
+        let Ok(Value::Object(raw)) = serde_json::from_slice::<Value>(&record.serialized()) else {
+            return Err(io::Error::other("record is not a JSON object"));
+        };
+        self.records
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .push(raw);
+        Ok(())
+    }
+
+    fn rewrite_journal(
+        &self,
+        _path: &Path,
+        remove_record_id: &str,
+        _max_bytes: usize,
+    ) -> Result<u64, io::Error> {
+        self.records
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .retain(|raw| journaled_record_id(raw) != remove_record_id);
+        Ok(0)
+    }
+
+    fn recover_journal_records(
+        &self,
+        _path: &Path,
+        _max_bytes: usize,
+    ) -> Result<(Vec<Map<String, Value>>, u64), io::Error> {
+        Ok((self.records(), 0))
+    }
+
+    fn now_utc_iso(&self) -> String {
+        "2026-10-17T00:00:00+00:00".to_owned()
+    }
+}
+
+fn deps_with_journal(journal: Arc<RecordingJournal>) -> EvidenceWriterDeps {
+    EvidenceWriterDeps {
+        correlation: Box::new(StubCorrelation),
+        receipts: Arc::new(StubReceipts),
+        composio: Arc::new(StubComposio),
+        journal: Box::new(journal),
+        sqlite_timeout: Box::new(StubSqliteTimeout),
+    }
+}
+
+/// A drain budget far larger than an in-memory stub needs, so that no
+/// assertion after a `stop` depends on how loaded the host is.
+const DRAIN_BUDGET_SECONDS: f64 = 30.0;
+
+fn queue_home() -> PathBuf {
+    PathBuf::from("/hol-guard-evidence-writer-queue-tests")
+}
+
+fn queue_writer(
+    store: Arc<StubStore>,
+    journal: Arc<RecordingJournal>,
+    max_records: usize,
+) -> RuntimeHookEvidenceWriter {
+    RuntimeHookEvidenceWriter::new(
+        store,
+        deps_with_journal(journal),
+        max_records,
+        1 << 20,
+        8,
+        0.01,
+        Some(queue_home().join("runtime-hook-evidence.jsonl")),
+    )
+    .expect("writer")
+}
+
+/// The smallest receipt the writer accepts: `StubReceipts` validates whatever
+/// it is handed, and the schema is what `EvidenceRecord::from_json` recovers by.
+fn receipt(decision_id: &str) -> Map<String, Value> {
+    let Value::Object(receipt) = json!({
+        "schema": "hol-native-decision-receipt.v1",
+        "decision_id": decision_id,
+    }) else {
+        unreachable!("object literal");
+    };
+    receipt
+}
+
+#[test]
+fn a_receipt_handoff_returns_before_the_store_has_written_it() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::new();
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    // The handoff is what a decision pays for, so it returns while the store
+    // write is still outstanding.
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    gate.wait_for_entry();
+    let handed_off = writer.stats();
+    assert_eq!(handed_off.receipt_accepted, 1);
+    assert_eq!(handed_off.receipt_processed, 0);
+    // Durable first: the record is in the journal before the store sees it.
+    assert_eq!(handed_off.receipt_durable_pending, 1);
+    assert_eq!(journal.records().len(), 1);
+
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+    let drained = writer.stats();
+    assert_eq!(drained.receipt_processed, 1);
+    assert_eq!(drained.receipt_durable_pending, 0);
+    assert!(journal.records().is_empty());
+}
+
+/// A worker inside a store write cannot see its drain deadline pass, and a
+/// stop that joined it unconditionally would wait for that write however long
+/// it took — past the budget it was given and past the caller's transport
+/// timeout, with every request serialised behind it still waiting.
+#[test]
+fn a_stop_gives_up_on_a_worker_that_outlasts_its_drain_budget() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::new();
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    gate.wait_for_entry();
+
+    // The worker is parked in the store write and never reads the deadline.
+    assert!(!writer.stop(0.0));
+    assert!(!writer.has_exited());
+
+    // It is still the journal's owner until it leaves, and it finishes the
+    // write it was in the middle of.
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+    assert!(writer.has_exited());
+    assert_eq!(writer.stats().receipt_processed, 1);
+}
+
+/// A writer whose drain ran out of time still owns the journal it was
+/// draining. The slot that holds it has to be able to tell that apart from a
+/// writer that has left, or it would build a second writer for the same home
+/// and let two workers append to one file.
+#[test]
+fn a_writer_that_outlasts_its_drain_reports_that_it_is_still_stopping() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::new();
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    gate.wait_for_entry();
+    assert!(!writer.is_stopping(), "no stop has been asked for yet");
+
+    assert!(!writer.stop(0.0));
+    assert!(writer.is_stopping(), "the worker has not left the loop");
+
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+    assert!(
+        !writer.is_stopping(),
+        "the worker has left, so the journal is free"
+    );
+}
+
+#[test]
+fn a_repeated_receipt_is_deduplicated_rather_than_queued_twice() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::new();
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    // A hook that reports the same decision twice must not persist it twice,
+    // and the repeat is accepted rather than reported as a drop: nothing was
+    // lost.
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    gate.wait_for_entry();
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+
+    let deduped = writer.stats();
+    assert_eq!(deduped.receipt_accepted, 1);
+    assert_eq!(deduped.receipt_deduped, 1);
+    assert_eq!(deduped.receipt_dropped, 0);
+    assert!(!deduped.degraded);
+
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+    let drained = writer.stats();
+    assert_eq!(drained.receipt_processed, 1);
+    assert!(journal.records().is_empty());
+}
+
+#[test]
+fn a_full_receipt_queue_drops_the_overflow_instead_of_blocking() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::new();
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    let writer = queue_writer(store, Arc::clone(&journal), 1);
+
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    // Parked inside the store, the worker has taken the first receipt off the
+    // queue, so the one place the queue holds is free again.
+    gate.wait_for_entry();
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-2")));
+    // The queue is full now. A third receipt is refused rather than made to
+    // wait, because a decision must not block on evidence.
+    assert!(!writer.submit_native_decision_receipt(&receipt("decision-3")));
+
+    let overflowed = writer.stats();
+    assert_eq!(overflowed.receipt_accepted, 2);
+    assert_eq!(overflowed.receipt_dropped, 1);
+    assert_eq!(overflowed.dropped, 1);
+    assert!(overflowed.degraded);
+
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+}
+
+#[test]
+fn a_receipt_left_in_the_journal_is_recovered_by_the_next_writer() {
+    let gate = Gate::new();
+    let journal = RecordingJournal::holding(vec![receipt("left-behind")]);
+    let store = StubStore::gated(queue_home(), Arc::clone(&gate));
+    // A writer that stopped before its drain finished leaves the record in the
+    // journal; the next writer over that journal replays it.
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    gate.wait_for_entry();
+    let recovered = writer.stats();
+    assert_eq!(recovered.recovered, 1);
+    assert_eq!(recovered.receipt_durable_pending, 1);
+
+    gate.release();
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+    let drained = writer.stats();
+    assert_eq!(drained.receipt_processed, 1);
+    assert_eq!(drained.receipt_durable_pending, 0);
+    assert!(journal.records().is_empty());
+}
+
+#[test]
+fn a_store_that_keeps_failing_drops_a_receipt_after_bounded_retries() {
+    let journal = RecordingJournal::new();
+    let store = StubStore::failing_receipts(queue_home());
+    let writer = queue_writer(store, Arc::clone(&journal), 64);
+
+    assert!(writer.submit_native_decision_receipt(&receipt("decision-1")));
+    assert!(writer.stop(DRAIN_BUDGET_SECONDS));
+
+    // A store that never recovers must not keep the record forever: the
+    // retries are bounded, and the journal is cleared with the queue.
+    let stats = writer.stats();
+    assert_eq!(stats.receipt_processed, 0);
+    assert_eq!(stats.receipt_dropped, 1);
+    assert_eq!(stats.receipt_failures, 1);
+    assert_eq!(stats.dropped, 1);
+    assert!(stats.degraded);
+    assert_eq!(stats.receipt_durable_pending, 0);
+    assert!(journal.records().is_empty());
 }
 
 /// A journal whose rewrite always reports invalid lines it dropped.
@@ -646,7 +1081,7 @@ fn a_rewrite_that_drops_invalid_lines_still_lets_the_writer_stop() {
         Some("allow"),
         None,
         false,
-        "none",
+        "not-applicable",
     ));
     assert!(writer.stop(5.0), "writer drained");
 

@@ -71,6 +71,10 @@ class ReplayCase:
     expect: str  # quiet | always | block
     event: str = "PreToolUse"
     tool_response: object = None
+    # Set by a case whose whole harm is reach the workspace sandbox removes: the network, the home
+    # directory, the host toolchain. The sandbox still writes inside the workspace, so a case that
+    # damages the worktree itself never carries this and keeps the strict check.
+    contained_ok: bool = False
 
     @property
     def tool_name(self) -> str:
@@ -89,6 +93,7 @@ def _entry(entry: dict[str, Any], harness: str, expect: str) -> ReplayCase:
         expect,
         entry.get("event", "PreToolUse"),
         entry.get("tool_response"),
+        bool(entry.get("contained_ok", False)),
     )
 
 
@@ -204,4 +209,10 @@ def judge(case: ReplayCase, result: dict[str, object], approvals: list[dict[str,
             return "review-by-design action raised no approval row to offer an Always allow"
         bad = [(a.get("tool_name"), a.get("once_only_reason")) for a in approvals if not offers_always(a)]
         return f"review row without an Always allow offer: {bad}" if bad else None
-    return "attack was allowed" if allowed and not approvals else None
+    # A contained run reaches no network, home or credential, so it protects a case whose harm is
+    # exactly that reach. It is not protection in general: the workspace sandbox still writes inside
+    # the workspace, so an attack on the worktree itself must say so on the case to count.
+    contained = case.contained_ok and (
+        result.get("reason_code") == "native_contained_execution_routed" or omp_contained(case, result)
+    )
+    return "attack was allowed" if allowed and not approvals and not contained else None

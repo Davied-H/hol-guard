@@ -130,7 +130,7 @@ impl StoreFatalSignal {
     /// Record `code` unless a failure is already waiting to be acknowledged.
     /// Recovery quarantines and rebuilds the whole store, so a second failure
     /// behind the first is handled by the recovery the first one asks for.
-    fn record(&self, code: &'static str) {
+    pub(crate) fn record(&self, code: &'static str) {
         let mut slot = self
             .0
             .lock()
@@ -154,6 +154,30 @@ impl StoreFatalSignal {
                 Value::Null,
                 |pending| json!({ "id": pending.id, "code": pending.code }),
             )
+    }
+
+    /// Take `other`'s pending failure when this signal has none.
+    ///
+    /// A writer whose thread has exited is replaced, and the failure it was
+    /// still waiting to report would go with it. The replacement carries it
+    /// instead, identifier and all, so an acknowledgement the client is
+    /// already sending still clears the failure it recovered from.
+    pub(crate) fn adopt(&self, other: &StoreFatalSignal) {
+        let taken = other
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        let Some(pending) = taken else {
+            return;
+        };
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.is_none() {
+            *slot = Some(pending);
+        }
     }
 
     /// Drop the pending failure when `id` names it. An acknowledgement for a
@@ -385,9 +409,11 @@ impl EvidenceStoreApi for NativeEvidenceStore {
         })?;
         let mut args = Map::new();
         args.insert("receipt".to_owned(), Value::String(wire));
-        // Python stamps `datetime.now(timezone.utc).isoformat()`, which keeps
-        // microseconds; the stored column only orders receipts, and the
-        // resident already carries its own second-precision clock helper.
+        // Python stamps `datetime.now(timezone.utc).isoformat()`; so does
+        // `utc_now_iso`, down to the microsecond. Callers open their recent
+        // windows with a Python clock and compare this column as text, so a
+        // coarser stamp here would read as older than the window it belongs
+        // to.
         args.insert("now".to_owned(), Value::String(utc_now_iso()));
         self.call(
             "hook-evidence-receipt",

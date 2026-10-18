@@ -39,6 +39,8 @@ use crate::CanonicalCommandV1;
 
 #[path = "native_command_unmodeled_expansion.rs"]
 mod expansion;
+#[path = "native_command_unmodeled_functions.rs"]
+mod functions;
 #[path = "native_command_link_makers.rs"]
 mod link_makers;
 #[path = "native_command_unmodeled_redirections.rs"]
@@ -208,7 +210,7 @@ impl CompiledNativeCommandControls {
         let sources_files = interpreted.contains("source") || interpreted.contains(".");
         let sourced = if sources_files {
             crate::pretool::sourced_program_sources(command, context)
-                .filter(|texts| texts.iter().all(|text| bounds_its_owners(text)))
+                .filter(|texts| texts.iter().all(|text| bounds_its_owners(text, shell)))
         } else {
             Some(Vec::new())
         };
@@ -221,7 +223,12 @@ impl CompiledNativeCommandControls {
         }
         let mut named = named_words(text);
         for source in sourced.iter().flatten() {
-            named.extend(named_words(source));
+            // The owners come from the same reading that bounded them. A
+            // program named only in a comment or in a wrapper nothing calls
+            // runs no more here than it did there, and counting it blocked
+            // commands the file could never run: every virtualenv's `pydoc`
+            // wrapper names `python`.
+            named.extend(named_words(&running_text(source, shell)));
         }
         let xargs_programs = xargs_programs(shell);
         // An `xargs` is read only when the text also says where it reads its
@@ -540,8 +547,12 @@ fn sourcing_bounds_its_owners(
     command: &CanonicalCommandV1,
     context: crate::pretool::PathContext<'_>,
 ) -> bool {
-    crate::pretool::sole_sourcing_sources(command, context)
-        .is_some_and(|texts| !texts.is_empty() && texts.iter().all(|text| bounds_its_owners(text)))
+    crate::pretool::sole_sourcing_sources(command, context).is_some_and(|texts| {
+        !texts.is_empty()
+            && texts
+                .iter()
+                .all(|text| bounds_its_owners(text, &command.normalized_text))
+    })
 }
 
 /// A command with its heredocs removed that moves no data, or only to
@@ -812,11 +823,18 @@ fn command_basename(word: &str) -> String {
 /// a further file this scan has not read, that hands text to an interpreter,
 /// or that hides words behind an ANSI-C or locale quote can run a program
 /// whose name never appears, so the command keeps the owners it had instead.
-fn bounds_its_owners(text: &str) -> bool {
+///
+/// Comments and a function the file defines but nothing calls run nothing, so
+/// neither is part of the story: `command` is read too, because sourcing the
+/// file leaves its wrappers for the rest of the command to call.
+fn bounds_its_owners(text: &str, command: &str) -> bool {
     if text.contains("$'") || text.contains("$\"") {
         return false;
     }
-    let literal = mask_parameter_expansions(&unquoted_literal(text));
+    // A comment runs nothing, and a script's prose is full of words that read
+    // as commands: a sentence ending in a full stop put `.` in a command
+    // position, which is the shell's other name for `source`.
+    let literal = running_text(text, command);
     let masked = mask_double_quoted_separators(&literal);
     !synthesizes_program(&literal, false)
         && !runs_beside_its_command_words(&masked)
@@ -825,6 +843,29 @@ fn bounds_its_owners(text: &str) -> bool {
             let base = command_basename(&joined_quotes(word));
             INTERPRETERS.contains(&base.as_str())
         })
+}
+
+/// The parts of a sourced file that run, as one literal: its comments and the
+/// definitions nothing calls taken out, its lookups read as the names they
+/// print, and its `${NAME}` expansions read as the words they stand for.
+fn running_text(text: &str, command: &str) -> String {
+    let text = functions::without_comments(text).unwrap_or_else(|| text.to_owned());
+    // `$(command -v cygpath)` prints a path and runs nothing, the same way it
+    // does in the command itself, so the file keeps the name and loses the
+    // substitution that otherwise read as a program built at run time.
+    let text = without_lookups(&text);
+    let plain = unquoted_literal(&text);
+    // A parameter expansion in command position names the program it runs
+    // only once the shell has expanded it, so a definition this scan would
+    // read as dead may be exactly what `${f}` calls. Masking that expansion
+    // into a plain word hides the call, so the definitions stay.
+    let expands_a_command =
+        command_words(&mask_double_quoted_separators(&plain)).any(|word| word.starts_with('$'));
+    let literal = mask_parameter_expansions(&plain);
+    if expands_a_command {
+        return literal;
+    }
+    functions::without_uncalled_definitions(&literal, command).unwrap_or(literal)
 }
 
 /// Whether the text runs a program somewhere other than a command word.
