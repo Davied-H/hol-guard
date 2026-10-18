@@ -63,7 +63,8 @@ fn sibling_repository_root(value: &str, context: ReadContext<'_>, whitelisting: 
     if value.is_empty()
         || value.len() > 4096
         || value.contains(tree::HAZARDS)
-        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || value.contains(['*', '?', '{', '}'])
+        || !literal_brackets(value, context)
         || (value.starts_with('~') && value != "~" && !value.starts_with("~/"))
         || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
     {
@@ -122,6 +123,16 @@ fn reachable_by_default(root: &Path, operand: &Path, ignored: &mut Ignored) -> b
         }
     }
     true
+}
+
+/// A sibling repository holds framework routes too, and an agent spells one
+/// as `~/badges/app/[slug]`. A word with no bracket is the ordinary case; one
+/// with a bracket qualifies only where it carries the same proof a search of
+/// the working tree's own route carries: the class matches nothing, so the
+/// shell hands the program the path as it was typed, and the tree that path
+/// names holds nothing these screens refuse to read.
+fn literal_brackets(value: &str, context: ReadContext<'_>) -> bool {
+    !value.contains(['[', ']']) || tree::safe_literal_bracket_search_target(value, context)
 }
 
 /// `rg` also reads `.ignore` and `.rgignore` files in parent directories.
@@ -364,7 +375,8 @@ pub(in crate::pretool) fn named_path(
     if value.is_empty()
         || value.len() > 4096
         || value.contains(tree::HAZARDS)
-        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || value.contains(['*', '?', '{', '}'])
+        || !literal_brackets(value, context)
         || (value.starts_with('~') && value != "~" && !value.starts_with("~/"))
         // A parent step resolves somewhere this screen cannot read off the
         // spelling, and the directory rule already covers the roots agents
@@ -494,7 +506,8 @@ pub(in crate::pretool) fn grep_walk_root(
     if value.is_empty()
         || value.len() > 4096
         || value.contains(tree::HAZARDS)
-        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || value.contains(['*', '?', '{', '}'])
+        || !literal_brackets(value, context)
         || (value.starts_with('~') && value != "~" && !value.starts_with("~/"))
         || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
     {

@@ -8,7 +8,6 @@ import {
   requiresApprovalPasswordPrompt,
 } from "./approval-gate-utils";
 import { approvalProofRecentlySatisfied, buildApprovalProofCredentials } from "./approval-proof-inline";
-import { approvalCannotUnlock } from "./approval-retry-guidance";
 import { buildDecisionPayload, willPersistExactAction } from "./approval-scopes";
 import { approvalGateRefreshNeeded, resolvedStateForItem, useShownRequestCheck } from "./review-decision-state";
 import { fetchResolvedApprovalGate } from "./use-resolved-approval-gate";
@@ -212,17 +211,9 @@ export function useReviewDecisionResolve(params: ReviewDecisionResolveParams) {
     ]
   );
 
-  const approvalUnavailable =
-    item !== null &&
-    !watchOnlyObservation &&
-    item.native_business_review_display_only !== true &&
-    approvalCannotUnlock(item);
-
   const handleRequestResolve = useCallback(
     (action: "allow" | "block") => {
       if (resolutionBlockReason !== null || decisionBusy) return;
-      // The card offers no Approve here, so the "a" shortcut must not record one either.
-      if (action === "allow" && approvalUnavailable) return;
       if (action === "allow" && !hasAllowScope) {
         setErrorMessage("This action has no eligible approval scope.");
         return;
@@ -305,7 +296,6 @@ export function useReviewDecisionResolve(params: ReviewDecisionResolveParams) {
     },
     [
       allowScope,
-      approvalUnavailable,
       blockScope,
       blockScopeOptions.length,
       decisionBusy,
