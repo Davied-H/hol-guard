@@ -354,18 +354,22 @@ fn a_workspace_spelling_with_no_root_is_refused_as_the_relative_path_it_is() {
     let install = Install::new();
     let body = evaluate(json!({
         "schema": DIRECTORY_TRUST_REQUEST_SCHEMA,
-        "request_id": "req-directory-trust",
+        "request_id": "req-relative-hook-spellings",
         "guard_home": install.guard_home(),
         "home_dir": install.home_dir(),
         "temp_dir": text(&std::env::temp_dir()),
         "candidates": [
             {"parameter": "workspace-payload", "rule": "hook-workspace", "value": "project/src"},
+            {"parameter": "workspace-query", "rule": "hook-workspace", "value": "project/None"},
+            {"parameter": "exec-workdir", "rule": "exec-workdir", "value": "project/src"},
             {"parameter": "workspace-workdir", "rule": "exec-workdir", "value": "../sibling"},
         ],
     }));
 
-    let results = body["results"].as_array().expect("results");
-    assert_eq!(results.len(), 2);
+    let results = body["results"]
+        .as_array()
+        .expect("one verdict per candidate");
+    assert_eq!(results.len(), 4);
     for result in results {
         assert_eq!(result["trusted"], json!(false));
         assert_eq!(result["reason"], json!("relative_path"));
