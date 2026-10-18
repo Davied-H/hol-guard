@@ -79,6 +79,7 @@ export type LocalCliItem = {
     account_binding: "unverified";
   };
   permission_scope?: "configured-connection" | "host-namespace" | "legacy-device";
+  remote_origin?: string; // a remote server; Guard never connects to it
   profile_id?: string;
   brand?: string;
   display_name?: string;
@@ -356,8 +357,8 @@ export async function readJson(response: Response): Promise<unknown> {
   if (!response.ok) {
     const record = isRecord(payload) ? payload : {};
     const code = typeof record.error === "string" ? record.error : "local_cli_request_failed";
-    const message = typeof record.message === "string"
-      ? record.message
+    const message = typeof record.message === "string" && record.message.trim() ? record.message : response.status === 401
+      ? "Guard could not confirm this dashboard session. Reload this page, then try again."
       : "Guard could not update this custom extension.";
     throw new LocalCliApiError(code, message);
   }
