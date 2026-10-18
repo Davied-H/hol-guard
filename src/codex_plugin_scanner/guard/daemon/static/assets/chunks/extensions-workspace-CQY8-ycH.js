@@ -1466,6 +1466,10 @@ function mcpToolCanReceiveDirectAllow(command) {
 function mcpCatalogCopy(item) {
   if (item.surface !== "mcp") return null;
   const catalog = item.mcp_catalog;
+  if (!catalog && item.remote_origin) return {
+    title: "Remote connector",
+    description: "Guard does not connect to remote servers, so it cannot list this connector's tools. Tools appear here after your host app calls them."
+  };
   if (!catalog) return {
     title: "Inventory not checked",
     description: "Guard knows observed tools from this connector. Its full inventory has not been verified."
@@ -2022,7 +2026,7 @@ function customExtensionStateLabel(item) {
   if (item.state === "allowed") {
     if (item.surface === "mcp") {
       const tools = item.commands.filter((command) => command.command_id !== "other");
-      if (tools.length === 0) return "No tools allowed yet. List the inventory to choose permissions.";
+      if (tools.length === 0) return item.remote_origin ? "No tools seen yet. Use one of its tools in your host app, then choose permissions here." : "No tools allowed yet. List the inventory to choose permissions.";
       const allowed2 = tools.filter((command) => command.state === "allow" && mcpToolCanReceiveDirectAllow(command)).length;
       const denied = tools.filter((command) => command.state === "block").length;
       const ask = tools.filter((command) => command.state === "review" || !mcpToolCanReceiveDirectAllow(command) && command.state !== "block").length;
@@ -5315,26 +5319,28 @@ function LocalCliDetail(props) {
     catalog ? /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-6 border-b border-slate-200 pb-5", "aria-labelledby": "mcp-inventory-heading", "aria-busy": catalogBusy, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "mcp-inventory-heading", className: "text-sm font-semibold text-brand-dark", children: catalog.title }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 max-w-2xl text-sm leading-6 text-brand-dark/75", children: catalog.description }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: "Refresh starts this connection’s configured server to list tools. It does not grant execution permission." }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          type: "button",
-          onClick: refreshCatalog,
-          disabled: busy || catalogBusy || pending !== null,
-          className: "mt-3 inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark disabled:cursor-wait disabled:opacity-50",
-          children: catalogBusy ? "Refreshing inventory…" : "Refresh inventory"
-        }
-      ),
-      catalogBusy ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "button",
-        {
-          type: "button",
-          onClick: () => catalogController.current?.abort(),
-          className: "ml-3 min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark",
-          children: "Cancel refresh"
-        }
-      ) : null,
+      props.item.remote_origin && !catalogBusy ? null : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: "Refresh starts this connection’s configured server to list tools. It does not grant execution permission." }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            onClick: refreshCatalog,
+            disabled: busy || catalogBusy || pending !== null,
+            className: "mt-3 inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark disabled:cursor-wait disabled:opacity-50",
+            children: catalogBusy ? "Refreshing inventory…" : "Refresh inventory"
+          }
+        ),
+        catalogBusy ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            onClick: () => catalogController.current?.abort(),
+            className: "ml-3 min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-brand-dark",
+            children: "Cancel refresh"
+          }
+        ) : null
+      ] }),
       catalogError ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "alert", className: "mt-3 max-w-2xl text-sm leading-6 text-red-700", children: catalogError }) : null,
       props.item.mcp_catalog ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2 text-xs leading-5 text-brand-dark/75", children: [
         "Last discovery attempt: ",
@@ -5366,6 +5372,10 @@ function LocalCliDetail(props) {
       /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: "mt-3 text-sm text-brand-dark/75", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("summary", { className: "min-h-11 cursor-pointer py-3 font-semibold", children: "Connection details" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "break-all font-mono text-xs leading-6", children: props.item.example_label }),
+        props.item.remote_origin ? /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2 break-all", children: [
+          "Last seen remote origin: ",
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-mono text-xs", children: props.item.remote_origin })
+        ] }) : null,
         /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-2", children: [
           "Protocol: ",
           props.item.mcp_catalog?.protocol_version ?? "Not verified"

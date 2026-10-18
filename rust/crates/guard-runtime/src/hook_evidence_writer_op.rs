@@ -34,9 +34,19 @@
 //! A fatal store failure is reported the same way. `_native_store_call`
 //! quarantines and rebuilds a store a probe has proven unusable, which the
 //! `GuardStore` object owns and this process has no handle on. The store seam
-//! records the failure instead, `stats` and `stop` hand the code back, and the
-//! caller runs `GuardStore._recover_fatal_sqlite_store` for it. Both reads
-//! clear the slot, so one failure is recovered once.
+//! records the failure instead and the caller runs
+//! `GuardStore._recover_fatal_sqlite_store` for it.
+//!
+//! Every reply carries that signal and the policy-mutation count, not only
+//! `stats` and `stop`. The writer drains on its own thread, so a store that
+//! fails there would otherwise wait for a read the daemon never has to make,
+//! and every later write would go to the same failed store. A submission is
+//! the one call the daemon always makes, so the signals ride back on it.
+//!
+//! Neither signal is cleared by the read that reports it. The reply can be
+//! lost in transport and the client's recovery can fail, so the resident
+//! holds the failure until the client acknowledges the identifier it
+//! recovered from in a later request.
 
 use std::collections::HashMap;
 use std::io;
@@ -55,17 +65,12 @@ use crate::hook_evidence_activity::NativeCorrelation;
 use crate::hook_evidence_composio::NativeComposio;
 use crate::hook_evidence_store::{NativeEvidenceStore, PolicyBarrierApi, StoreFatalSignal};
 use crate::hook_evidence_store_timeout::NativeSqliteTimeout;
-use crate::package_authority_op::request_digest_with_limit;
 
 pub(crate) const HOOK_EVIDENCE_WRITER_REQUEST_SCHEMA: &str =
     "guard-hook-evidence-writer-request.v1";
 pub(crate) const HOOK_EVIDENCE_WRITER_RESULT_SCHEMA: &str = "guard-hook-evidence-writer-result.v1";
 /// The feature advertised to callers that route evidence here.
 pub(crate) const HOOK_EVIDENCE_WRITER_FEATURE: &str = "hook-evidence-writer-v1";
-/// The widest request the digest will serialize, matching the transport bound
-/// the client sends under: the writer's own submission bound plus envelope
-/// slack.
-const HOOK_EVIDENCE_WRITER_MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024 + 4096;
 
 /// `RuntimeHookEvidenceWriter.__init__` defaults (:88-92).
 const MAX_RECORDS: usize = 2_000;
@@ -74,6 +79,9 @@ const MAX_BATCH: usize = 50;
 const BATCH_WAIT_SECONDS: f64 = 0.025;
 /// `submit_command_activity(approval_reuse_status=)` default (:153).
 const APPROVAL_REUSE_NOT_APPLICABLE: &str = "not-applicable";
+/// The client's own request bound (`_MAX_REQUEST_BYTES`): a request larger
+/// than this never reaches the resident, so the digest refuses it too.
+const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024 + 4096;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct HookEvidenceWriterRequestV1 {
@@ -82,6 +90,12 @@ pub(crate) struct HookEvidenceWriterRequestV1 {
     pub(crate) guard_home: String,
     /// `GuardStore.guard_source` of the store the Python writer was built on.
     pub(crate) source: String,
+    /// The fatal-store failure the client has finished recovering from, by
+    /// the identifier the signal carried. Absent until the client has one to
+    /// report, and always present on the wire so the digest both sides take
+    /// over this request is taken over the same JSON.
+    #[serde(default)]
+    pub(crate) store_fatal_ack: Option<String>,
     #[serde(flatten)]
     pub(crate) action: HookEvidenceWriterActionV1,
 }
@@ -114,17 +128,11 @@ pub(crate) enum HookEvidenceWriterActionV1 {
     },
     /// `submit_native_decision_receipt` (:243).
     SubmitNativeDecisionReceipt { receipt: Map<String, Value> },
-    /// Build this home's writer without queueing anything. Construction
-    /// recovers the journal, which the daemon used to pay at startup when it
-    /// built the writer itself; a daemon that warms the writer this way keeps
-    /// that replay off the first hook's decision path.
-    Start,
     /// `stats` (:396), plus the policy mutations observed since the last read.
     Stats,
-    /// `stop` (:432). A writer that drained within its budget is dropped from
-    /// the registry, so a later submit builds a fresh one rather than queueing
-    /// onto a drained writer. One still inside a write keeps the journal it
-    /// owns until its worker leaves.
+    /// `stop` (:432). The writer is dropped from the registry either way, so
+    /// a later submit builds a fresh one rather than queueing onto a drained
+    /// writer.
     Stop {
         #[serde(default = "stop_timeout_default")]
         timeout_seconds: f64,
@@ -143,6 +151,8 @@ fn stop_timeout_default() -> f64 {
 struct HookEvidenceWriterResultV1 {
     schema: String,
     request_id: String,
+    /// SHA-256 over the canonical request, binding the result to its request
+    /// the way every other resident operation does.
     request_sha256: String,
     status: String,
     code: String,
@@ -219,17 +229,6 @@ fn build(guard_home: &Path, source: &str) -> Result<ResidentWriter, io::Error> {
     })
 }
 
-/// The path the registry keys a home's writer by. Two spellings of one home
-/// must not receive two writers: they share one `runtime-hook-evidence.jsonl`,
-/// and each would recover and replay the records the other still has pending.
-/// Authorization compares canonical homes without rewriting the request, so
-/// the canonical form is taken here. A home that cannot be resolved keeps the
-/// path it was given, which is the path the writer would have used anyway.
-fn canonical_home(given: &str) -> PathBuf {
-    let path = PathBuf::from(given);
-    std::fs::canonicalize(&path).unwrap_or(path)
-}
-
 /// This Guard home's slot. Slots are never removed: an empty slot costs a
 /// pointer, and keeping it is what lets a stop and a racing submission agree
 /// on which writer they are talking about.
@@ -250,28 +249,8 @@ fn with_writer<T>(
 ) -> Result<T, io::Error> {
     let slot = slot(guard_home);
     let mut held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
-    // A stop that ran out of drain budget leaves its writer here: its worker
-    // still owned the journal, so only once that worker is gone may a fresh
-    // writer take the ownership over and replay what it left pending. That
-    // worker finished its write after the stop gave up, and a write is where
-    // a policy mutation or a fatal store failure is recorded, so whatever it
-    // reported moves to the replacement rather than being dropped with it.
-    let mut carried = (0_u64, None);
-    if held
-        .as_ref()
-        .is_some_and(|resident| resident.writer.has_exited())
-    {
-        if let Some(gone) = held.take() {
-            carried = (gone.mutations.swap(0, Ordering::SeqCst), gone.fatal.take());
-        }
-    }
     if held.is_none() {
-        let fresh = build(guard_home, source)?;
-        let _ = fresh.mutations.fetch_add(carried.0, Ordering::SeqCst);
-        if let Some(code) = carried.1 {
-            fresh.fatal.record(code);
-        }
-        *held = Some(fresh);
+        *held = Some(build(guard_home, source)?);
     }
     Ok(act(held.as_ref().expect("the writer was just built")))
 }
@@ -296,25 +275,47 @@ fn stop_timeout(value: f64) -> f64 {
     value.clamp(0.0, MAX_STOP_TIMEOUT_SECONDS)
 }
 
-/// The two signals the resident hands back with every reply, read and cleared
-/// together. The caller that reads a mutation owns waking its own publishers
-/// for it and the caller that reads a fatal store failure owns recovering from
-/// it, so neither may be reported to a second reader. They ride every reply
-/// rather than only the counters: a one-shot hook submits and exits without
-/// ever reading stats, and a signal only a dashboard collects is a snapshot
-/// left stale and a store left unrepaired.
+/// The two signals a reply carries whatever it was asked for: the provider
+/// policy mutations this caller must wake its publishers for, and the fatal
+/// store failure it must recover from.
+///
+/// The mutation count is read and cleared, because a second reader waking the
+/// same publishers again is waste. The failure is read and left, because the
+/// client that must recover from it may never receive this reply, or may fail
+/// to recover; it clears the slot by acknowledging the identifier.
 fn signals(resident: &ResidentWriter) -> (u64, Value) {
     (
         resident.mutations.swap(0, Ordering::SeqCst),
-        resident.fatal.take().into(),
+        resident.fatal.peek(),
     )
 }
 
-/// The writer's counters, without the signals. A stop reports these too: the
-/// drain it runs is where a store failure shows up, and after it the writer is
-/// gone, so counters read later would describe a writer that never ran.
-fn counters(resident: &ResidentWriter) -> Value {
+/// No writer runs for this home, so there is nothing to report.
+fn idle_signals() -> (u64, Value) {
+    (0, Value::Null)
+}
+
+/// A submission reply: what the queue did with the record, plus the signals.
+fn queued_payload(queued: bool, (mutations, fatal): (u64, Value)) -> Value {
+    json!({
+        "queued": queued,
+        "policy_mutations": mutations,
+        "store_fatal": fatal,
+    })
+}
+
+/// A record the op refused before it reached a writer. Nothing was queued,
+/// and the signals are whatever a writer already running for this home holds.
+fn refused_payload(guard_home: &Path) -> Value {
+    queued_payload(
+        false,
+        with_running(guard_home, signals).unwrap_or_else(idle_signals),
+    )
+}
+
+fn stats_payload(resident: &ResidentWriter) -> Value {
     let stats = resident.writer.stats();
+    let (mutations, fatal) = signals(resident);
     json!({
         "queued": stats.queued,
         "queued_bytes": stats.queued_bytes,
@@ -332,24 +333,12 @@ fn counters(resident: &ResidentWriter) -> Value {
         "receipt_dropped": stats.receipt_dropped,
         "receipt_failures": stats.receipt_failures,
         "receipt_durable_pending": stats.receipt_durable_pending,
-        "started": true,
+        "policy_mutations": mutations,
+        "store_fatal": fatal,
     })
 }
 
-fn stats_payload(resident: &ResidentWriter) -> Value {
-    let mut payload = counters(resident);
-    let (mutations, fatal) = signals(resident);
-    if let Some(object) = payload.as_object_mut() {
-        let _ = object.insert("policy_mutations".to_owned(), json!(mutations));
-        let _ = object.insert("store_fatal".to_owned(), fatal);
-    }
-    payload
-}
-
 /// A writer that was never started has nothing queued and is not running.
-/// `started` separates that from a writer that stopped: a daemon which has
-/// admitted no hook yet is healthy, and a reader that saw only `running` would
-/// read the two the same way and call for repair.
 fn idle_stats() -> Value {
     json!({
         "queued": 0,
@@ -368,7 +357,6 @@ fn idle_stats() -> Value {
         "receipt_dropped": 0,
         "receipt_failures": 0,
         "receipt_durable_pending": 0,
-        "started": false,
         "policy_mutations": 0,
         "store_fatal": Value::Null,
     })
@@ -377,8 +365,9 @@ fn idle_stats() -> Value {
 pub(crate) fn evaluate_hook_evidence_writer_request(
     request: &HookEvidenceWriterRequestV1,
 ) -> Result<Vec<u8>, String> {
-    let request_sha256 = request_digest_with_limit(request, HOOK_EVIDENCE_WRITER_MAX_REQUEST_BYTES)
-        .map_err(|_| "native_hook_evidence_writer_request_too_large".to_owned())?;
+    let request_sha256 =
+        crate::package_authority_op::request_digest_with_limit(request, MAX_REQUEST_BYTES)
+            .map_err(|_| "native_hook_evidence_writer_invalid".to_owned())?;
     let (status, code, payload) = match evaluate(request) {
         Ok(payload) => ("ok".to_owned(), "ok".to_owned(), payload),
         Err(error) => (
@@ -394,26 +383,6 @@ pub(crate) fn evaluate_hook_evidence_writer_request(
         status,
         code,
         payload,
-    })
-}
-
-/// A submission's reply: whether the record was queued, and the signals the
-/// writer reported while queueing it.
-fn queued_payload((queued, (mutations, fatal)): (bool, (u64, Value))) -> Value {
-    json!({
-        "queued": queued,
-        "policy_mutations": mutations,
-        "store_fatal": fatal,
-    })
-}
-
-/// A submission the resident declined before reaching a writer. No writer ran,
-/// so there is nothing to report.
-fn refused_payload() -> Value {
-    json!({
-        "queued": false,
-        "policy_mutations": 0,
-        "store_fatal": Value::Null,
     })
 }
 
@@ -433,7 +402,14 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             "guard home is required".to_owned(),
         ));
     }
-    let guard_home = canonical_home(&request.guard_home);
+    let guard_home = PathBuf::from(&request.guard_home);
+    // Before anything this request reports: a failure recorded after the
+    // acknowledgement is a new one and must still be reported.
+    if let Some(acknowledged) = &request.store_fatal_ack {
+        let _ = with_running(&guard_home, |resident| {
+            resident.fatal.acknowledge(acknowledged);
+        });
+    }
     let started = |error: io::Error| WriterError("writer_unavailable", error.to_string());
     match &request.action {
         HookEvidenceWriterActionV1::SubmitCommandActivity {
@@ -446,7 +422,7 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             prompted,
             approval_reuse_status,
         } => {
-            let queued = with_writer(&guard_home, &request.source, |resident| {
+            let (queued, reported) = with_writer(&guard_home, &request.source, |resident| {
                 let queued = resident.writer.submit_command_activity(
                     harness,
                     event,
@@ -460,7 +436,7 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
                 (queued, signals(resident))
             })
             .map_err(started)?;
-            Ok(queued_payload(queued))
+            Ok(queued_payload(queued, reported))
         }
         HookEvidenceWriterActionV1::SubmitComposioDiscovery {
             harness,
@@ -468,32 +444,27 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             succeeded,
         } => {
             let Some(tool_name) = payload.get("tool_name").and_then(Value::as_str) else {
-                return Ok(refused_payload());
+                return Ok(refused_payload(&guard_home));
             };
             if !succeeded {
-                return Ok(refused_payload());
+                return Ok(refused_payload(&guard_home));
             }
-            let queued = with_writer(&guard_home, &request.source, |resident| {
+            let (queued, reported) = with_writer(&guard_home, &request.source, |resident| {
                 let queued = resident
                     .writer
                     .submit_composio_discovery(harness, tool_name, payload);
                 (queued, signals(resident))
             })
             .map_err(started)?;
-            Ok(queued_payload(queued))
+            Ok(queued_payload(queued, reported))
         }
         HookEvidenceWriterActionV1::SubmitNativeDecisionReceipt { receipt } => {
-            let queued = with_writer(&guard_home, &request.source, |resident| {
+            let (queued, reported) = with_writer(&guard_home, &request.source, |resident| {
                 let queued = resident.writer.submit_native_decision_receipt(receipt);
                 (queued, signals(resident))
             })
             .map_err(started)?;
-            Ok(queued_payload(queued))
-        }
-        HookEvidenceWriterActionV1::Start => {
-            let payload =
-                with_writer(&guard_home, &request.source, stats_payload).map_err(started)?;
-            Ok(payload)
+            Ok(queued_payload(queued, reported))
         }
         HookEvidenceWriterActionV1::Stats => {
             Ok(with_running(&guard_home, stats_payload).unwrap_or_else(idle_stats))
@@ -501,38 +472,27 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
         HookEvidenceWriterActionV1::Stop { timeout_seconds } => {
             let slot = slot(&guard_home);
             let mut held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
-            let (drained, payload) = {
-                let Some(resident) = held.as_ref() else {
-                    return Ok(json!({
-                        "drained": true,
-                        "policy_mutations": 0,
-                        "store_fatal": Value::Null,
-                    }));
-                };
-                // The slot stays locked across the drain, which the writer
-                // bounds by the budget asked for here. A submission racing this
-                // stop waits that long and no longer, rather than queueing onto
-                // a writer that will never run its thread again or appending to
-                // the journal the draining writer still owns.
-                let drained = resident.writer.stop(stop_timeout(*timeout_seconds));
-                let (mutations, fatal) = signals(resident);
-                (
-                    drained,
-                    json!({
-                        "drained": drained,
-                        "final_stats": counters(resident),
-                        "policy_mutations": mutations,
-                        "store_fatal": fatal,
-                    }),
-                )
+            let Some(resident) = held.take() else {
+                return Ok(json!({
+                    "drained": true,
+                    "policy_mutations": 0,
+                    "store_fatal": Value::Null,
+                }));
             };
-            if drained {
-                *held = None;
-            }
-            // A worker still inside a write owns the journal until it leaves,
-            // so its writer stays in the slot. The next submission replaces it
-            // once that worker is gone.
-            Ok(payload)
+            // The writer leaves the registry here, so nothing is left to
+            // acknowledge a failure reported now. The client keeps it pending
+            // on its own side until its recovery succeeds.
+            // The slot stays locked across the drain. A submission racing this
+            // stop waits for it and then builds its own writer, rather than
+            // queueing onto a writer that will never run its thread again or
+            // appending to the journal the draining writer still owns.
+            let drained = resident.writer.stop(stop_timeout(*timeout_seconds));
+            let (mutations, fatal) = signals(&resident);
+            Ok(json!({
+                "drained": drained,
+                "policy_mutations": mutations,
+                "store_fatal": fatal,
+            }))
         }
     }
 }

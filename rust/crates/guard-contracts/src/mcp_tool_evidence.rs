@@ -105,7 +105,7 @@ pub struct McpFirewallInputV1 {
     /// for a skill whose document Python could not read — which projects to
     /// no firewall, exactly as the unreadable file did before.
     #[serde(deserialize_with = "required")]
-    pub skill_content: Option<String>,
+    pub skill_content: Option<String>, // NOSONAR: rust:S9334; required key, nullable value.
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

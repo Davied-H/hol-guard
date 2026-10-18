@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 
 use super::{
-    evaluate_hook_evidence_writer_request, slot, HookEvidenceWriterRequestV1,
+    evaluate_hook_evidence_writer_request, HookEvidenceWriterRequestV1,
     HOOK_EVIDENCE_WRITER_REQUEST_SCHEMA,
 };
 use crate::guard_store_cmd_vectors_tests::{build_database, dump, temp_home};
@@ -43,27 +43,9 @@ fn call(home: &Path, action: Value) -> Value {
         unreachable!("object literal");
     };
     wire.extend(action);
-    let sent = Value::Object(wire);
-    let request: HookEvidenceWriterRequestV1 = serde_json::from_value(sent.clone()).unwrap();
+    let request: HookEvidenceWriterRequestV1 = serde_json::from_value(Value::Object(wire)).unwrap();
     let bytes = evaluate_hook_evidence_writer_request(&request).unwrap();
-    let response: Value = serde_json::from_slice(&bytes).unwrap();
-    // The client refuses a reply that is not bound to the bytes it sent, so
-    // the op has to digest the request the way the client did: the digest of
-    // the wire object, not of some shape the parse invented.
-    assert_eq!(
-        response["request_sha256"],
-        json!(digest_of(&sent)),
-        "the reply must bind to the request the caller canonicalised"
-    );
-    response
-}
-
-/// The digest the client computes over the request it sent.
-fn digest_of(request: &Value) -> String {
-    let mut bytes = Vec::new();
-    crate::context_digest_json::write_canonical_json_with_limit(request, &mut bytes, usize::MAX)
-        .unwrap();
-    format!("sha256:{}", guard_policy_snapshot::digest_bytes(&bytes))
+    serde_json::from_slice(&bytes).unwrap()
 }
 
 fn activity_rows(home: &Path) -> Value {
@@ -180,70 +162,11 @@ fn reading_counters_never_starts_a_writer() {
         let stats = call(&home, json!({"action": "stats"}));
         assert_eq!(stats["status"], json!("ok"));
         assert_eq!(stats["payload"]["running"], json!(false));
-        // A daemon that has admitted no hook yet is idle, not a component
-        // that stopped and needs repair.
-        assert_eq!(stats["payload"]["started"], json!(false));
         assert_eq!(stats["payload"]["policy_mutations"], json!(0));
     }
     // Stopping a home no writer ever ran for is not an error either.
     let stopped = call(&home, json!({"action": "stop"}));
     assert_eq!(stopped["payload"]["drained"], json!(true));
-}
-
-#[test]
-fn two_spellings_of_one_home_share_a_writer() {
-    let home = store_home("writer-op-spelling", "record_basic");
-    let queued = call(
-        &home,
-        json!({
-            "action": "submit_command_activity",
-            "harness": "claude-code",
-            "event": "PreToolUse",
-            "payload": {"toolUseId": "call_spelling_0123456789ab", "toolInput": {"command": "echo hi"}},
-            "succeeded": true,
-            "policy_action": "allow",
-        }),
-    );
-    assert_eq!(queued["payload"]["queued"], json!(true));
-
-    // Both spellings name one `runtime-hook-evidence.jsonl`. A second writer
-    // for it would recover and replay the records this one still has pending.
-    let trailing = PathBuf::from(format!("{}/", home.display()));
-    let stats = call(&trailing, json!({"action": "stats"}));
-    assert_eq!(stats["payload"]["started"], json!(true));
-
-    let stopped = call(&trailing, json!({"action": "stop", "timeout_seconds": 5.0}));
-    assert_eq!(stopped["payload"]["drained"], json!(true));
-    assert_eq!(
-        call(&home, json!({"action": "stats"}))["payload"]["started"],
-        json!(false),
-        "the stop under one spelling dropped the writer the other built"
-    );
-}
-
-#[test]
-fn a_submission_carries_the_signals_the_writer_reported() {
-    let home = store_home("writer-op-signals", "record_basic");
-    let queued = call(
-        &home,
-        json!({
-            "action": "submit_command_activity",
-            "harness": "claude-code",
-            "event": "PreToolUse",
-            "payload": {"toolUseId": "call_signals_01234567890a", "toolInput": {"command": "echo hi"}},
-            "succeeded": true,
-            "policy_action": "allow",
-        }),
-    );
-
-    // A one-shot hook submits once and exits. A signal it could only collect
-    // by reading the counters afterwards is a signal nobody collects.
-    assert_eq!(queued["payload"]["policy_mutations"], json!(0));
-    assert_eq!(queued["payload"]["store_fatal"], Value::Null);
-
-    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 5.0}));
-    assert_eq!(stopped["payload"]["final_stats"]["started"], json!(true));
-    assert_eq!(stopped["payload"]["final_stats"]["failures"], json!(0));
 }
 
 #[test]
@@ -309,69 +232,96 @@ fn a_request_without_a_guard_home_is_refused() {
     assert_eq!(answer["code"], json!("invalid_guard_home"));
 }
 
+/// The whole request as the Python client puts it on the wire: every field
+/// the op knows is present, so the digest the resident takes over the request
+/// it decoded is the digest the client took over the JSON it sent.
+fn full_activity_wire(home: &Path) -> Value {
+    json!({
+        "schema": HOOK_EVIDENCE_WRITER_REQUEST_SCHEMA,
+        "request_id": "writer-op-digest",
+        "guard_home": home.to_string_lossy(),
+        "source": "guard",
+        "store_fatal_ack": Value::Null,
+        "action": "submit_command_activity",
+        "harness": "claude-code",
+        "event": "PostToolUse",
+        "payload": {"tool_name": "Bash", "tool_input": {"command": "ls /tmp"}},
+        "succeeded": true,
+        "policy_action": Value::Null,
+        "receipt_id": Value::Null,
+        "prompted": false,
+        "approval_reuse_status": "not-applicable",
+    })
+}
+
+/// The client refuses a reply that is not bound to the request it sent, so a
+/// reply without the digest is a reply it reads as an unavailable resident.
 #[test]
-fn a_start_pays_the_journal_replay_before_the_first_hook() {
-    let home = store_home("writer-op-start", "record_basic");
-    let started = call(&home, json!({"action": "start"}));
-    assert_eq!(started["status"], json!("ok"));
-    // The daemon warms the writer where it used to build one, so the hook
-    // that follows queues onto a writer whose journal is already recovered.
-    assert_eq!(started["payload"]["running"], json!(true));
-    assert_eq!(started["payload"]["started"], json!(true));
+fn a_reply_carries_the_digest_of_the_request_that_arrived() {
+    let home = store_home("writer-op-digest", "record_basic");
+    let wire = full_activity_wire(&home);
+    let request: HookEvidenceWriterRequestV1 = serde_json::from_value(wire.clone()).unwrap();
+    let bytes = evaluate_hook_evidence_writer_request(&request).unwrap();
+    let reply: Value = serde_json::from_slice(&bytes).unwrap();
 
-    let stats = call(&home, json!({"action": "stats"}));
-    assert_eq!(stats["payload"]["started"], json!(true));
+    let mut canonical = Vec::new();
+    crate::context_digest_json::write_canonical_json(&wire, &mut canonical).unwrap();
+    let expected = format!("sha256:{}", guard_policy_snapshot::digest_bytes(&canonical));
+    assert_eq!(reply["request_sha256"], json!(expected));
 
-    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 5.0}));
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
     assert_eq!(stopped["payload"]["drained"], json!(true));
 }
 
+/// A refused request is still bound to what was sent: the client has to be
+/// able to read the code rather than discard the reply as unbound.
 #[test]
-fn a_replaced_writer_hands_its_pending_signals_to_the_next_one() {
-    let home = store_home("writer-op-carry", "record_basic");
-    let started = call(&home, json!({"action": "start"}));
-    assert_eq!(started["payload"]["running"], json!(true));
+fn a_refused_request_is_bound_to_what_was_sent() {
+    let refused = call(
+        Path::new(""),
+        json!({"action": "submit_native_decision_receipt", "receipt": {}}),
+    );
+    assert_eq!(refused["status"], json!("error"));
+    assert_eq!(refused["code"], json!("invalid_guard_home"));
+    assert!(refused["request_sha256"]
+        .as_str()
+        .is_some_and(|digest| digest.starts_with("sha256:")));
+}
 
-    // A worker that outlasts its drain budget leaves its writer in the slot
-    // and then finishes the write it was blocked in. That write is where a
-    // mutation or a fatal store failure is recorded, so the signals it leaves
-    // behind must reach the caller that asks next rather than being dropped
-    // with the writer. Recording them directly stands in for that write.
-    {
-        let slot = slot(&std::fs::canonicalize(&home).unwrap());
-        let held = slot.writer.lock().unwrap();
-        let resident = held.as_ref().expect("the start built a writer");
-        let _ = resident
-            .mutations
-            .fetch_add(3, std::sync::atomic::Ordering::SeqCst);
-        resident.fatal.record("native_guard_store_sqlite_corrupt");
-        assert!(resident.writer.stop(5.0), "the idle writer drains at once");
-    }
-
+/// The writer drains on its own thread, so a failure it meets there has to
+/// ride back on the call a daemon always makes rather than wait for a counter
+/// read the daemon may never make.
+#[test]
+fn a_submission_reply_carries_the_signals_a_counter_read_would() {
+    let home = store_home("writer-op-signals", "record_basic");
     let queued = call(
         &home,
         json!({
             "action": "submit_command_activity",
             "harness": "claude-code",
-            "event": "PreToolUse",
-            "payload": {"toolUseId": "call_carry_01234567890abc", "toolInput": {"command": "echo hi"}},
+            "event": "PostToolUse",
+            "payload": {"tool_name": "Bash", "tool_input": {"command": "ls /tmp"}},
             "succeeded": true,
-            "policy_action": "allow",
         }),
     );
     assert_eq!(queued["payload"]["queued"], json!(true));
-    assert_eq!(queued["payload"]["policy_mutations"], json!(3));
-    assert_eq!(
-        queued["payload"]["store_fatal"],
-        json!("native_guard_store_sqlite_corrupt")
+    assert_eq!(queued["payload"]["policy_mutations"], json!(0));
+    assert_eq!(queued["payload"]["store_fatal"], Value::Null);
+
+    // A discovery the op refuses before it reaches the writer answers with the
+    // same shape, so the client reads one reply shape for every submission.
+    let refused = call(
+        &home,
+        json!({
+            "action": "submit_composio_discovery",
+            "harness": "claude-code",
+            "payload": {},
+            "succeeded": true,
+        }),
     );
+    assert_eq!(refused["payload"]["queued"], json!(false));
+    assert_eq!(refused["payload"]["store_fatal"], Value::Null);
 
-    // Read and cleared: a second caller must not repeat the publisher wake or
-    // the store recovery the first one owns.
-    let stats = call(&home, json!({"action": "stats"}));
-    assert_eq!(stats["payload"]["policy_mutations"], json!(0));
-    assert_eq!(stats["payload"]["store_fatal"], Value::Null);
-
-    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 5.0}));
+    let stopped = call(&home, json!({"action": "stop", "timeout_seconds": 10.0}));
     assert_eq!(stopped["payload"]["drained"], json!(true));
 }

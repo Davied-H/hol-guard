@@ -24,7 +24,8 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use guard_command::hook_evidence_writer::{
@@ -85,28 +86,86 @@ impl Drop for PolicyBarrier<'_> {
 /// `_native_store_call` recovers in place because the caller there holds the
 /// `GuardStore` that knows how to quarantine and rebuild one. The resident
 /// holds no such object, so it reports the failure instead and the client runs
-/// `GuardStore._recover_fatal_sqlite_store`. Reads clear the slot, the way the
-/// policy-mutation count is read and cleared, so one failure is recovered once.
+/// `GuardStore._recover_fatal_sqlite_store`.
+///
+/// Reporting the failure does not clear it. A reply can be lost after the
+/// resident built it, and recovery can fail in the client, so a slot cleared
+/// by the read that reported it would lose the failure for good. The signal
+/// carries an identifier, the client names that identifier once recovery has
+/// run, and only that acknowledgement empties the slot. Recovery stays
+/// once-per-failure because the identifier a later request acknowledges is
+/// the one the client already handled.
 #[derive(Clone, Default)]
-pub(crate) struct StoreFatalSignal(Arc<Mutex<Option<&'static str>>>);
+pub(crate) struct StoreFatalSignal(Arc<Mutex<Option<PendingFatal>>>);
+
+/// A reported failure and the identifier that clears it.
+struct PendingFatal {
+    id: String,
+    code: &'static str,
+}
+
+/// Identifiers are unique within the process, and the counter alone is not
+/// enough: a client holding an acknowledgement outlives the resident that
+/// issued it, so a restarted resident numbering from one again would see that
+/// stale acknowledgement clear a failure the client never recovered from.
+/// Every process draws its own nonce, so an identifier from an earlier one is
+/// never matched.
+static NEXT_FATAL_ID: AtomicU64 = AtomicU64::new(1);
+static FATAL_ID_NONCE: OnceLock<String> = OnceLock::new();
+
+/// This process's share of a fatal identifier. A random draw that fails leaves
+/// the process with a fixed nonce; the counter still separates failures inside
+/// it, which is what the old identifiers gave on their own.
+fn fatal_id_nonce() -> &'static str {
+    FATAL_ID_NONCE.get_or_init(|| {
+        let mut bytes = [0_u8; 8];
+        if getrandom::fill(&mut bytes).is_err() {
+            return "process".to_owned();
+        }
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    })
+}
 
 impl StoreFatalSignal {
-    /// Record a failure for whoever reports it onward. A writer replaced
-    /// before its failure was read hands the code to its replacement, so the
-    /// reply that reaches a caller still carries it.
-    pub(crate) fn record(&self, code: &'static str) {
-        *self
+    /// Record `code` unless a failure is already waiting to be acknowledged.
+    /// Recovery quarantines and rebuilds the whole store, so a second failure
+    /// behind the first is handled by the recovery the first one asks for.
+    fn record(&self, code: &'static str) {
+        let mut slot = self
             .0
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(code);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.is_none() {
+            let id = NEXT_FATAL_ID.fetch_add(1, Ordering::Relaxed);
+            *slot = Some(PendingFatal {
+                id: format!("fatal-{}-{id}", fatal_id_nonce()),
+                code,
+            });
+        }
     }
 
-    /// The pending failure code, cleared by this read.
-    pub(crate) fn take(&self) -> Option<&'static str> {
+    /// The pending failure as the wire carries it, left in the slot.
+    pub(crate) fn peek(&self) -> Value {
         self.0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .take()
+            .as_ref()
+            .map_or(
+                Value::Null,
+                |pending| json!({ "id": pending.id, "code": pending.code }),
+            )
+    }
+
+    /// Drop the pending failure when `id` names it. An acknowledgement for a
+    /// failure that has already been replaced leaves the newer one waiting.
+    pub(crate) fn acknowledge(&self, id: &str) {
+        let mut slot = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if slot.as_ref().is_some_and(|pending| pending.id == id) {
+            *slot = None;
+        }
     }
 }
 

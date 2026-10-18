@@ -23,7 +23,7 @@ from codex_plugin_scanner.guard.mdm.network import managed_urlopen
 from .authority import MAX_PROVENANCE_BYTES, decode, verify_distribution
 from .containers import location, member
 from .containers import maximum as container_maximum
-from .selection import BRANCH, FILE, root_tag, validate
+from .selection import BRANCH, FILE, SHA, root_tag, validate
 
 REPOSITORY = "hashgraph-online/hol-guard"
 ROOT_ASSET = "extension-distribution.v2.json"
@@ -97,6 +97,31 @@ def download(url, maximum):
 
 def selected():
     return validate(decode(download(f"https://raw.githubusercontent.com/{REPOSITORY}/{BRANCH}/{FILE}", 4096)))
+
+
+def require_source_ancestor(previous, candidate):
+    """Validate publication lineage outside activation locks and hook decisions."""
+    if any(not isinstance(value, str) or SHA.fullmatch(value) is None for value in (previous, candidate)):
+        raise ValueError("publication ancestry requires full source identities")
+    if previous == candidate:
+        return
+    # Page two omits the potentially large changed-file list. The comparison's
+    # status and merge base remain present even when that commit page is empty.
+    url = f"https://api.github.com/repos/{REPOSITORY}/compare/{previous}...{candidate}?per_page=1&page=2"
+    value = decode(download(url, 64 * 1024))
+    if (
+        not isinstance(value, dict)
+        or value.get("status") != "ahead"
+        or not isinstance(value.get("base_commit"), dict)
+        or value["base_commit"].get("sha") != previous
+        or not isinstance(value.get("merge_base_commit"), dict)
+        or value["merge_base_commit"].get("sha") != previous
+        or type(value.get("behind_by")) is not int
+        or value["behind_by"] != 0
+        or type(value.get("ahead_by")) is not int
+        or value["ahead_by"] <= 0
+    ):
+        raise ValueError("publication source is not a descendant of the retained floor")
 
 
 def root_assets(source, publication):

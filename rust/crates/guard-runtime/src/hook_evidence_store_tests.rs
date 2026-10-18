@@ -287,17 +287,60 @@ fn an_unreadable_store_reports_one_fatal_failure() {
         digest: "digest".to_owned(),
     };
 
-    assert!(store.fatal().take().is_none());
+    assert_eq!(store.fatal().peek(), Value::Null);
     assert!(store
         .command_activity_by_request_correlation(&correlation)
         .is_err());
-    assert_eq!(
-        store.fatal().take(),
-        Some("native_guard_store_sqlite_corrupt")
-    );
-    // The read cleared it: the recovery it asks for runs once, not on every
-    // later report.
-    assert!(store.fatal().take().is_none());
+    let reported = store.fatal().peek();
+    assert_eq!(reported["code"], json!("native_guard_store_sqlite_corrupt"));
+    // Reporting it does not clear it: the reply carrying it can be lost, and
+    // the recovery it asks for can fail, so it waits to be acknowledged.
+    assert_eq!(store.fatal().peek(), reported);
+    // A second failure behind the first is the same quarantine, so the
+    // identifier the client is recovering from does not change under it.
+    assert!(store
+        .command_activity_by_request_correlation(&correlation)
+        .is_err());
+    assert_eq!(store.fatal().peek(), reported);
+
+    // An acknowledgement for a failure this slot never held leaves it waiting.
+    store.fatal().acknowledge("fatal-does-not-exist");
+    assert_eq!(store.fatal().peek(), reported);
+
+    store.fatal().acknowledge(reported["id"].as_str().unwrap());
+    assert_eq!(store.fatal().peek(), Value::Null);
+}
+
+/// An acknowledgement that outlived the resident which issued it must not
+/// clear a failure a later resident recorded.
+#[test]
+fn an_identifier_from_another_process_is_not_acknowledged() {
+    let home = temp_home("evidence-store-fatal-nonce");
+    std::fs::write(home.join(STORE_FILE_NAME), b"this is not a database").unwrap();
+    let (store, _) = new_store(&home, "oauth");
+    let correlation = CorrelationHandle {
+        kind: "command".to_owned(),
+        harness: "claude-code".to_owned(),
+        key_id: "key".to_owned(),
+        digest: "digest".to_owned(),
+    };
+
+    assert!(store
+        .command_activity_by_request_correlation(&correlation)
+        .is_err());
+    let reported = store.fatal().peek();
+    let id = reported["id"].as_str().unwrap().to_owned();
+
+    // The counter alone used to name the failure, so the first failure of
+    // every resident was `fatal-1`. A client that recovered from one
+    // resident's `fatal-1` would have cleared the next resident's.
+    assert_ne!(id, "fatal-1");
+    store.fatal().acknowledge("fatal-1");
+    assert_eq!(store.fatal().peek(), reported);
+
+    // The process's own identifier still clears it.
+    store.fatal().acknowledge(&id);
+    assert_eq!(store.fatal().peek(), Value::Null);
 }
 
 /// An ordinary failed call is not a reason to quarantine the store.
@@ -310,5 +353,5 @@ fn a_refused_argument_is_not_a_fatal_failure() {
     let (store, _) = new_store(&home, "oauth");
 
     assert!(store.transition_command_activity(&Map::new()).is_err());
-    assert!(store.fatal().take().is_none());
+    assert_eq!(store.fatal().peek(), Value::Null);
 }

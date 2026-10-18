@@ -111,7 +111,7 @@ pub(in crate::pretool) fn runners_admitted(
     if tools.is_none() && model.segments.iter().any(|s| runner_arguments(s).is_some()) {
         return false;
     }
-    super::package::local_package_work(&model, tools.is_some())
+    super::package::local_package_work(&model, tools.is_some(), workspace)
         && crate::package_intent_parser::parse_package_intent(
             command,
             Some(workspace),
