@@ -15352,7 +15352,7 @@ def test_runtime_hook_package_without_workspace_invalidates_allow_after_lockfile
     assert first_output["policy_action"] == "review"
     assert first_token.startswith(APPROVAL_CONTEXT_TOKEN_PREFIX)
     assert unchanged_rc == 0
-    assert unchanged_output["policy_action"] == "allow"
+    assert unchanged_output["policy_action"] == "allow", json.dumps(unchanged_output, sort_keys=True)
     assert unchanged_output["supply_chain_evaluation"]["policy_action"] == "allow"
     assert unchanged_output["approval_reuse"]["status"] == "accepted"
     assert changed_rc == 0
