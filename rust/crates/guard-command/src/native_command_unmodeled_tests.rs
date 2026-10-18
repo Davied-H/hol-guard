@@ -465,6 +465,24 @@ fn program_lookups_do_not_make_a_command_unmatchable() {
     let controls = controls(serde_json::json!([]), false);
     let command = "date -u +%Y-%m-%dT%H:%M:%SZ; echo \"rc=$?\"; echo \"HOME=$HOME\"; command -v doctl; ls -l \"$(command -v doctl)\"";
     assert_ne!(decision(&controls, command).1, FAILED);
+    // `which` takes a list of names and runs none of them, with or without the
+    // options that only change how it prints the answer.
+    for command in [
+        "which doctl kubectl",
+        "which -a doctl",
+        "which --all doctl kubectl helm",
+        "which doctl kubectl 2>/dev/null",
+        "echo start; which doctl kubectl; echo done",
+    ] {
+        assert_ne!(decision(&controls, command).1, FAILED, "{command}");
+    }
+    // A word the lookup never proves is an operand leaves the whole line alone.
+    for command in [
+        "ls -l \"$(which --exec doctl)\"",
+        "ls -l \"$(which doctl; gh pr list)\"",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
     // A lookup whose name is computed, or a substitution that runs a program,
     // still could run anything.
     for command in [
