@@ -210,8 +210,24 @@ fn local_go_work(arguments: &[&str], directory: &Path) -> bool {
     GO_LOCAL_VERBS.contains(&verb.to_ascii_lowercase().as_str())
         && !rest
             .iter()
-            .any(|argument| matches!(*argument, "-u" | "-versions") || argument.contains('@'))
+            .any(|argument| names_a_go_fetch(argument) || argument.contains('@'))
         && directory.join("go.mod").is_file()
+}
+
+/// Whether an argument names one of the flags that send a Go verb to a module
+/// proxy. Go's flag package reads one dash or two alike and takes a boolean's
+/// value either as the next argument or behind an `=`, so the name is read
+/// the same way here. A flag turned off by its value still keeps the command
+/// out: a run that names it is one the sandbox has no reason to decide for.
+fn names_a_go_fetch(argument: &str) -> bool {
+    let name = argument.trim_start_matches('-');
+    if !(1..=2).contains(&(argument.len() - name.len())) {
+        return false;
+    }
+    matches!(
+        name.split_once('=').map_or(name, |(name, _)| name),
+        "u" | "versions"
+    )
 }
 
 /// Where a literal `target` below the workspace moves a run that stands in
