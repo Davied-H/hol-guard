@@ -127,7 +127,7 @@ pub(in crate::pretool) fn exact_safe_cwd_compound(
 
 /// Executables a verified `cd` compound may run after the directory change.
 pub(in crate::pretool) fn cwd_read_executable(executable: Option<&str>) -> bool {
-    if executable.is_some_and(super::digest_reads::digest_program) {
+    if executable.is_some_and(super::super::digest_reads::digest_program) {
         return true;
     }
     matches!(
