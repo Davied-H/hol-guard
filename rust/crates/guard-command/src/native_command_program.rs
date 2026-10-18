@@ -45,6 +45,17 @@ pub const PACKAGED_COMMAND_PROGRAM_SHA256: &str = env!("GUARD_PACKAGED_PROGRAM_S
 #[cfg(guard_source_bootstrap)]
 pub const PACKAGED_COMMAND_PROGRAM_SHA256: &str = "";
 
+/// Program identity without decoding the legacy embedded artifact.
+#[cfg(not(guard_source_bootstrap))]
+pub const PACKAGED_COMMAND_PROGRAM_ID: &str = env!("GUARD_PACKAGED_PROGRAM_ID");
+#[cfg(guard_source_bootstrap)]
+pub const PACKAGED_COMMAND_PROGRAM_ID: &str = "";
+
+#[cfg(not(guard_source_bootstrap))]
+const DEFAULT_COMMAND_PACK_IDS: &str = env!("GUARD_DEFAULT_COMMAND_PACK_IDS");
+#[cfg(guard_source_bootstrap)]
+const DEFAULT_COMMAND_PACK_IDS: &str = "";
+
 /// The exact program admitted by the runtime, also used for rule attestation.
 // One shared allocation and accessor keep multi-megabyte data out of caller
 // codegen units. Constant propagation otherwise emits redundant binary copies.
@@ -85,6 +96,8 @@ mod compile;
 mod dispatch;
 #[path = "native_command_program_evaluation.rs"]
 mod evaluation;
+#[path = "native_command_program_pack_cache.rs"]
+mod pack_cache;
 pub(crate) use dispatch::CommandCandidateIndex;
 #[path = "native_command_program_memo.rs"]
 mod memo;

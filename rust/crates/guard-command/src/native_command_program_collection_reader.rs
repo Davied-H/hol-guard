@@ -11,6 +11,18 @@ pub struct PackAdmissionBudget {
     pub nodes: usize,
 }
 
+impl PackAdmissionBudget {
+    /// Resident control-path limits. These do not alter any legacy format cap.
+    pub const fn resident() -> Self {
+        Self {
+            packs: 32768,
+            program_bytes: 512 * 1024 * 1024,
+            rules: 131072,
+            nodes: 1048576,
+        }
+    }
+}
+
 fn charge(remaining: &mut usize, amount: usize) -> Result<(), &'static str> {
     *remaining = remaining
         .checked_sub(amount)

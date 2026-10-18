@@ -2,26 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 
 from command_pack_store import digest
 
 from codex_plugin_scanner.guard.catalog_delivery.authority import decode
+from codex_plugin_scanner.guard.catalog_delivery.revocations import revocation_key as revocation_key
 from codex_plugin_scanner.guard.extension_builder.io import read_bytes
 
 IDENTITY = re.compile(r"command\.[a-z0-9]+(?:[.-][a-z0-9]+)*")
-
-
-def revocation_key(identity, kind, manifest=None):
-    return hashlib.sha256(
-        b"hol-guard.extension-revocation.v1\0"
-        + kind.encode()
-        + b"\0"
-        + identity.encode()
-        + b"\0"
-        + (manifest or "").encode()
-    ).hexdigest()
 
 
 def load(root):

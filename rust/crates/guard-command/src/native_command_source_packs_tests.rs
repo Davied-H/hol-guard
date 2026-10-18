@@ -4,6 +4,8 @@ use std::{fs, path::PathBuf};
 
 #[path = "native_command_program_collection_reader_tests.rs"]
 mod collection_reader_tests;
+#[path = "native_command_program_pack_cache_tests.rs"]
+mod pack_cache_tests;
 
 fn frame(stream: &mut Vec<u8>, bytes: &[u8]) {
     stream.extend((bytes.len() as u32).to_be_bytes());

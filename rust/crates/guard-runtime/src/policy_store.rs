@@ -39,6 +39,8 @@ mod policy_store_business_source;
 mod policy_store_command_authority;
 #[path = "policy_store_command_floor.rs"]
 mod policy_store_command_floor;
+#[path = "policy_store_command_packs.rs"]
+mod policy_store_command_packs;
 #[path = "policy_store_direct_lane.rs"]
 pub(crate) mod policy_store_direct_lane;
 #[path = "policy_store_migration.rs"]
@@ -279,7 +281,8 @@ impl PolicySnapshotStore {
             Arc::downgrade(&authority_changed),
         );
         let (admitted_snapshot, admission_failed) = match loaded.snapshot.as_ref() {
-            Some(snapshot) => match AdmittedPolicySnapshot::new(snapshot.clone()) {
+            Some(snapshot) => match policy_store_command_packs::admit(snapshot.clone(), state_base)
+            {
                 Ok(snapshot) => (Some(Arc::new(snapshot)), false),
                 Err(_) => (None, true),
             },
@@ -451,7 +454,10 @@ impl PolicySnapshotStore {
             state.business_policy_floor.as_deref(),
             &request.snapshot,
         )?;
-        let admitted = Arc::new(AdmittedPolicySnapshot::new(request.snapshot)?);
+        let admitted = Arc::new(policy_store_command_packs::admit(
+            request.snapshot,
+            &self.state_base,
+        )?);
         let mut observed = match self.authority_observed.lock() {
             Ok(observed) => observed,
             Err(_) => {
@@ -488,13 +494,5 @@ impl PolicySnapshotStore {
             Ordering::SeqCst,
         );
         encode_ack(admitted.snapshot(), false, self.resident_generation)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn current_generation(&self) -> Option<u64> {
-        self.state
-            .lock()
-            .ok()
-            .and_then(|state| state.snapshot.as_ref().map(|snapshot| snapshot.generation))
     }
 }
