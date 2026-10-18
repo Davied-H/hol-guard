@@ -94,7 +94,7 @@ pub(super) fn approval_token(
 }
 
 /// The hash of the command a review paused: harness, tool, command text (or
-/// tool input), working directory and workspace. Nothing else enters it, so an
+/// tool input, empty when the tool took none), working directory and workspace. Nothing else enters it, so an
 /// approval saved under it holds until the command changes or the user
 /// revokes it. Only a review the user can answer has one.
 pub(super) fn command_hash(query: &NativeExactActionQueryV1) -> Proof<String> {
@@ -118,9 +118,10 @@ pub(super) fn command_hash(query: &NativeExactActionQueryV1) -> Proof<String> {
     }
     let content = match command.as_deref().filter(|text| !text.trim().is_empty()) {
         Some(text) => json!({"command": text}),
+        // A tool called with no input hashes as an empty input.
         None => {
-            let pairs = tool_input.as_ref().ok_or(NO_COMMAND_IDENTITY)?;
-            let fields: serde_json::Map<String, Value> = pairs.iter().cloned().collect();
+            let fields: serde_json::Map<String, Value> =
+                tool_input.iter().flatten().cloned().collect();
             json!({"tool_input": fields})
         }
     };

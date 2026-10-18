@@ -94,6 +94,16 @@ fn the_command_hash_holds_until_the_command_changes() {
 }
 
 #[test]
+fn a_tool_called_with_no_input_can_be_approved() {
+    let bare = token(&root(), |query| {
+        query["tool_name"] = json!("todo");
+        query["command"] = Value::Null;
+        query["tool_input"] = Value::Null;
+    });
+    assert!(bare.is_some(), "an argument-free tool offers Always allow");
+}
+
+#[test]
 fn guard_control_and_package_reviews_can_be_approved() {
     let root = root();
     for kind in ["guard_control", "guard-control-operation", "package"] {

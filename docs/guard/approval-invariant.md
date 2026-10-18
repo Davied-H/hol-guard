@@ -21,8 +21,8 @@ approval the user has given.
    - the user removes it, or
    - the command's hash changes.
 
-   A rule change, a new extension, a different reason code or a change of
-   environment does not revoke it.
+   An approval saved under the command hash survives a rule change, a new
+   extension, a different reason code or a change of environment.
 
 Only terminal verdicts are excluded. `block`, `sandbox-required` and `allow`
 are not reviews, so there is nothing to approve.
@@ -31,7 +31,9 @@ are not reviews, so there is nothing to approve.
 
 When Guard can prove what a command runs, the approval token is the strong
 exact-action token. It binds the resolved program and file contents as well as
-the command.
+the command, and it also binds Guard's rule set and extensions. Editing the
+script or changing those rules makes it a new command, so Guard asks once more
+and both choices are offered again.
 
 When Guard cannot prove it, for example an executable outside the workspace
 roots, a helper-selecting Git config or a mutable script launcher, the token
@@ -41,7 +43,8 @@ falls back to `native-command-hash-v1`. That hash covers:
 - tool name
 - workspace
 - working directory (the payload `cwd`, else the workspace)
-- command text, or the tool input for non-shell tools
+- command text, or the tool input for non-shell tools (empty when the tool
+  takes none)
 
 Changing any of these produces a new command, and Guard asks again.
 

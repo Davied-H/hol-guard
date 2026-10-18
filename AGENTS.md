@@ -12,4 +12,4 @@ Continue applying the 500-line guideline to source code where appropriate.
 
 ## Approval invariant
 
-Every command Guard pauses for review must offer Allow once and Always allow, and every part of Guard must honor an approval until the user removes it or the command's hash changes. Read `docs/guard/approval-invariant.md` before changing approval tokens, retry bindings, scope contracts, saved decisions or the review card. Do not raise review findings that ask to make a review once-only or to drop Always allow for a class of commands.
+Every command Guard pauses for review must offer Allow once and Always allow, and every part of Guard must honor an approval until the user removes it or the command's hash changes. Read `docs/guard/approval-invariant.md` before changing approval tokens, retry bindings, scope contracts, saved decisions or the review card. A change that makes a review once-only, or drops Always allow for a class of commands, breaks this invariant. Findings about what an approval token binds, and how to bind it more tightly without removing a choice, are in scope.
