@@ -46,13 +46,16 @@ fn list_takes_display_flags_and_package_names() {
         "--all --json",
         "-p -l",
         "--omit=dev zod",
+        "-g",
+        "--global",
+        "--location=global",
+        "-g --depth=0",
     ] {
         assert!(list_arguments(&arguments(text)), "{text}");
     }
     for text in [
-        "-g",
-        "--global",
         "--prefix=/tmp",
+        "--location=/tmp/elsewhere",
         "--depth=999",
         "--omit=everything",
         "../outside",
