@@ -469,15 +469,16 @@ fn answer(
             deadline,
         };
         // Readmitting the workspace settles an ACK the publisher may still be
-        // writing, which is a wait of its own. Past the deadline that wait can
-        // no longer change the answer, so the recheck reports no binding and
-        // `mediate_finish` withholds on the deadline it has already missed.
+        // writing, which is a wait of its own. That wait is capped by the
+        // deadline, and past the deadline it can no longer change the answer,
+        // so the recheck reports no binding and `mediate_finish` withholds on
+        // the deadline it has already missed.
         let refresh = || {
             if Instant::now() >= deadline {
                 return Value::Null;
             }
             policy_store
-                .admit_direct_hook_or_subdirectory(&workspace)
+                .admit_direct_hook_or_subdirectory_by(&workspace, deadline)
                 .ok()
                 .and_then(|(_, refreshed)| {
                     pi::resolution(

@@ -233,7 +233,7 @@ impl PolicySnapshotStore {
         &self,
         workspace: &str,
     ) -> Result<(Arc<AdmittedPolicySnapshot>, Arc<DirectLaneBinding>), DirectLaneDefer> {
-        self.admit_direct(workspace, false)
+        self.admit_direct(workspace, false, None)
     }
 
     /// Hook admission, which also covers a file-less directory the current
@@ -243,13 +243,25 @@ impl PolicySnapshotStore {
         &self,
         workspace: &str,
     ) -> Result<(Arc<AdmittedPolicySnapshot>, Arc<DirectLaneBinding>), DirectLaneDefer> {
-        self.admit_direct(workspace, true)
+        self.admit_direct(workspace, true, None)
+    }
+
+    /// Hook admission for a caller that has already spent most of its budget.
+    /// The ACK settle wait is capped by `deadline`, so a re-admission cannot
+    /// outlive the answer it is refreshing.
+    pub(crate) fn admit_direct_hook_or_subdirectory_by(
+        &self,
+        workspace: &str,
+        deadline: Instant,
+    ) -> Result<(Arc<AdmittedPolicySnapshot>, Arc<DirectLaneBinding>), DirectLaneDefer> {
+        self.admit_direct(workspace, true, Some(deadline))
     }
 
     fn admit_direct(
         &self,
         workspace: &str,
         file_less_covered: bool,
+        deadline: Option<Instant>,
     ) -> Result<(Arc<AdmittedPolicySnapshot>, Arc<DirectLaneBinding>), DirectLaneDefer> {
         let binding = self
             .direct_lane
@@ -301,7 +313,7 @@ impl PolicySnapshotStore {
         {
             return Err(DirectLaneDefer::Unbound);
         }
-        let (ack, waited) = self.settled_direct_lane_ack(binding.generation)?;
+        let (ack, waited) = self.settled_direct_lane_ack(binding.generation, deadline)?;
         // The settle wait can sleep, so the lease is judged against the clock
         // after it, and after a wait the snapshot must still be the bound one.
         let now = now_ms().map_err(|_| DirectLaneDefer::SnapshotUnavailable)?;
@@ -339,9 +351,21 @@ impl PolicySnapshotStore {
     fn settled_direct_lane_ack(
         &self,
         generation: u64,
+        bound: Option<Instant>,
     ) -> Result<(DirectLaneAckV1, bool), DirectLaneDefer> {
         let mut ack = self.read_direct_lane_ack()?;
+        // A caller that is nearly out of budget waits for whatever is left of
+        // it, and claims the generation's wait only if that is worth sleeping
+        // on, so a hook with time to spare still gets the claim.
+        let settle = match bound {
+            Some(bound) => bound
+                .checked_duration_since(Instant::now())
+                .unwrap_or_default()
+                .min(self.direct_lane_ack_settle()),
+            None => self.direct_lane_ack_settle(),
+        };
         if ack.generation >= generation
+            || settle.is_zero()
             || !live_publisher_ack(&ack)
             || self
                 .direct_lane_ack_wait
@@ -351,7 +375,7 @@ impl PolicySnapshotStore {
         {
             return Ok((ack, false));
         }
-        let deadline = Instant::now() + self.direct_lane_ack_settle();
+        let deadline = Instant::now() + settle;
         loop {
             let now = Instant::now();
             if now >= deadline {
