@@ -76,6 +76,7 @@ fn fixture() -> Fixture {
     let tools = home.join("tools");
     std::fs::create_dir_all(tools.join(".git")).unwrap();
     write(tools.join("app/[id]/page.tsx"), "export default 4;\n");
+    write(tools.join("app/[id]/.env"), "TOKEN=fixture\n");
     write(tools.join(".ignore"), "!.env\n");
 
     Fixture { root, home }
