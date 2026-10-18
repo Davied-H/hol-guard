@@ -509,3 +509,83 @@ def test_acknowledging_degraded_mode_refuses_an_unread_authority() -> None:
     with pytest.raises(ExtensionControlApiError) as protected_error:
         _ = _service(observed).acknowledge_degraded({})
     assert protected_error.value.code == "authority_not_degraded"
+
+
+def test_refresh_serves_the_held_snapshot_when_the_lease_is_busy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A busy lease leaves the refresh without a reading; the route still answers."""
+
+    from codex_plugin_scanner.guard.daemon import extension_control_api as api_module
+    from codex_plugin_scanner.guard.runtime.extension_control_authority import (
+        AuthorityHealth,
+        ExtensionControlAuthorityView,
+    )
+    from codex_plugin_scanner.guard.runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
+
+    held = ExtensionControlRuntimeSnapshot.from_authority_view(
+        ExtensionControlAuthorityView(AuthorityHealth.PROTECTED, 4, "digest", ())
+    )
+
+    class _Runtime:
+        def current(self) -> ExtensionControlRuntimeSnapshot:
+            return held
+
+        def refresh(self, view: object) -> ExtensionControlRuntimeSnapshot:
+            raise AssertionError("a busy lease must not reach the runtime refresh")
+
+    class _Store:
+        def read_extension_control_authority_for_registry(self, registry: object) -> ExtensionControlAuthorityView:
+            raise NativeCommandControlAuthorityUnavailableError(shared=False)
+
+    served: list[ExtensionControlRuntimeSnapshot] = []
+
+    def _payload(registry: object, snapshot: ExtensionControlRuntimeSnapshot, store: object) -> dict[str, object]:
+        served.append(snapshot)
+        return {"health": snapshot.health.value}
+
+    monkeypatch.setattr(api_module, "effective_controls_payload", _payload)
+    service = object.__new__(api_module.ExtensionControlApiService)
+    service._runtime = _Runtime()
+    service._store = _Store()
+    service._registry = object()
+
+    assert service.refresh() == {"health": "protected"}
+    assert served == [held]
+
+
+def test_github_workflow_hook_floors_a_busy_authority_lease(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A busy lease floors the workflow hook rather than raising out of it."""
+
+    from codex_plugin_scanner.guard.cli import commands_hook_github_workflow as hook_module
+    from codex_plugin_scanner.guard.models import GuardArtifact
+
+    class _Descriptor:
+        record = None
+
+    descriptor = _Descriptor()
+    monkeypatch.setattr(hook_module, "_runtime_github_workflow_descriptor", lambda *a, **k: descriptor)
+    monkeypatch.setattr(hook_module, "github_workflow_capability_required", lambda store, request_id: False)
+
+    class _Store:
+        def read_extension_control_authority_for_registry(self, registry: object, *, read_only: bool = False) -> None:
+            raise NativeCommandControlAuthorityUnavailableError(shared=read_only)
+
+    state = hook_module.prepare_github_workflow_hook_state(
+        GuardArtifact(
+            artifact_id="artifact-1",
+            name="build",
+            harness="github",
+            artifact_type="workflow",
+            source_scope="project",
+            config_path=".github/workflows/build.yml",
+            command="gh workflow run build.yml",
+        ),
+        workspace=None,
+        guard_home=Path("/nonexistent-guard-home"),
+        config=object(),
+        store=_Store(),
+        approval_request_id="request-1",
+    )
+
+    assert state.artifact.metadata["command_action_floor"] == "require-reapproval"
+    assert state.artifact.metadata["command_evaluation_status"] == "native_unavailable"
+    assert state.authorization_claimed is False

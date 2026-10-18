@@ -20,6 +20,7 @@ from ..approval_gate import (
     require_extension_control,
 )
 from ..json_transport import escape_json_for_html
+from ..native_command_control_authority_io import NativeCommandControlAuthorityUnavailableError
 from ..runtime import command_inspection
 from ..runtime.command_extensions import CommandSafetyExtensionRegistry
 from ..runtime.extension_control_authority import (
@@ -157,7 +158,13 @@ class ExtensionControlApiService:
             return current
 
     def refresh(self) -> dict[str, object]:
-        view = self._store.read_extension_control_authority_for_registry(self._registry)
+        try:
+            view = self._store.read_extension_control_authority_for_registry(self._registry)
+        except NativeCommandControlAuthorityUnavailableError:
+            # A busy lease means this refresh read nothing, not that the route
+            # failed. Serve the snapshot the runtime already holds rather than
+            # retrying the read through effective(), which would wait again.
+            return effective_controls_payload(self._registry, self._runtime.current(), self._store)
         _ = self._runtime.refresh(view)
         return self.effective()
 
