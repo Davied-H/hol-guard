@@ -56,13 +56,13 @@ _FLIGHTS: dict[str, _Flight] = {}
 FileSignature = tuple[int, ...] | None
 
 
-def _file_signature(path: Path) -> FileSignature:
+def _file_signature(path: Path) -> FileSignature:  # NOSONAR(S8495) (-1,) marks unreadable
     try:
         metadata = os.lstat(path)
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        return (-1, -1, -1, -1, -1, -1)
+        return (-1,)
     return (
         metadata.st_mode,
         metadata.st_ino,
@@ -73,7 +73,7 @@ def _file_signature(path: Path) -> FileSignature:
     )
 
 
-def _directory_signature(path: Path) -> FileSignature:
+def _directory_signature(path: Path) -> FileSignature:  # NOSONAR(S8495) (-1,) marks unreadable
     """Identity and permissions of a config directory (not its changing mtime)."""
 
     try:
@@ -81,7 +81,7 @@ def _directory_signature(path: Path) -> FileSignature:
     except FileNotFoundError:
         return None
     except (OSError, ValueError):
-        return (-1, -1, -1, -1)
+        return (-1,)
     return (metadata.st_mode, metadata.st_ino, metadata.st_dev, metadata.st_uid)
 
 
