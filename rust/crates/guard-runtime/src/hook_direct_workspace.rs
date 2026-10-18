@@ -71,15 +71,17 @@ pub(super) fn normalized_workspace(
     }
     let mut candidate = expanduser(stripped, home_dir)?;
     // Callers still send `<dir>/None` as the "no workspace" sentinel. This is
-    // `os.path.dirname`, which keeps a head made only of slashes.
+    // `os.path.dirname`, which keeps a head made only of separators. It splits
+    // on a backslash as well where `ntpath` does, so a Windows caller sending
+    // `C:\proj\None` drops the same component the daemon drops.
     if candidate == "None" {
         return Ok(None);
     }
     if let Some(head) = candidate
         .strip_suffix("None")
-        .filter(|head| head.ends_with('/'))
+        .filter(|head| head.ends_with(guard_paths::is_separator))
     {
-        let trimmed = head.trim_end_matches('/');
+        let trimmed = head.trim_end_matches(guard_paths::is_separator);
         candidate = if trimmed.is_empty() { head } else { trimmed }.to_owned();
     }
     let candidate = normpath(&candidate)?;
@@ -132,3 +134,7 @@ pub(super) fn settled_directory(candidate: &str) -> Result<String, HookDirectDef
 #[cfg(all(test, unix))]
 #[path = "hook_direct_workspace_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "hook_direct_workspace_windows_tests.rs"]
+mod windows_tests;

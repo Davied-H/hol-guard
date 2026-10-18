@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -175,6 +176,12 @@ def _handle(worker: SimpleNamespace, harness: str, query: str = "workspace=/work
         _runtime_hook_fail_safe_response=lambda *args, **kwargs: {"reason_code": kwargs["reason_code"]},
         _write_json=responses.append,
     )
+    # The real check: whether the lane may answer a request that names a Guard
+    # home is the question these tests exercise, not one to stub away.
+    handler._hook_guard_home_query_is_this_home = partial(  # pyright: ignore[reportPrivateUsage]
+        server._GuardDaemonHandler._hook_guard_home_query_is_this_home,  # pyright: ignore[reportPrivateUsage]
+        handler,
+    )
     server._GuardDaemonHandler._handle_runtime_hook(
         handler,  # pyright: ignore[reportArgumentType]
         {**PAYLOAD, "hook_env": {"PATH": "/bin"}},
@@ -182,6 +189,19 @@ def _handle(worker: SimpleNamespace, harness: str, query: str = "workspace=/work
         default_harness=harness,
     )
     return responses
+
+
+def test_a_hook_naming_another_guard_home_is_not_answered_by_the_lane(tmp_path: Path) -> None:
+    # The lane answers out of the home it bound and never sends the query, so a
+    # request claiming another Guard home has to keep the daemon path, where
+    # the claim is settled and refused.
+    client = _Client(ANSWER)
+    worker = _worker(client, tmp_path)
+    assert _handle(worker, "pi", query=f"guard-home={tmp_path / 'elsewhere'}") == [
+        {"reason_code": "native_policy_not_ready"}
+    ]
+    assert client.calls == []
+    assert _handle(worker, "pi", query=f"guard-home={worker.guard_home}") == [RESPONSE]
 
 
 def test_the_daemon_writes_an_answer_without_the_worker(tmp_path: Path) -> None:
@@ -220,6 +240,8 @@ def test_a_rejected_path_keeps_the_daemon_path(tmp_path: Path) -> None:
         _daemon_server=lambda: daemon,
         _optional_string=lambda value: value if isinstance(value, str) else None,
         _settled_hook_directories=reject,
+        # This request names no Guard home, so the lane is asked and defers.
+        _hook_guard_home_query_is_this_home=lambda *_args: True,
         _normalized_hook_workspace_string=lambda value: value,
         _runtime_hook_exec_command_workdir=lambda payload: (False, None),
         _record_hook_path_rejection=lambda **values: rejections.append((values["parameter"], values["reason"])),

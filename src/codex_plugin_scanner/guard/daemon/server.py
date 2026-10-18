@@ -583,6 +583,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
                 store=self.store,
                 runtime=self.runtime,
                 opener=open_browser_url,
+                home_dir=self.home_dir,
             )
             self.general_request_executor = _BoundedRequestExecutor(
                 name="general",
@@ -1861,17 +1862,27 @@ class _GuardDaemonHandler(
         # defers to the daemon path below, which refuses and audits it. Asking
         # the runtime to settle directories first would spend a round trip per
         # hook on the answer path, where nothing here reads the result.
-        direct_response = pi_direct_answer(
-            getattr(daemon_server, "hook_worker", None),
-            default_harness=default_harness,
-            params=params,
-            payload=payload,
-            home_dir=self._optional_string(params.get("home", [None])[-1]),
-            deadline=hook_deadline.expires_at,
-        )
-        if direct_response is not None:
-            self._write_json(direct_response)
-            return
+        #
+        # A `guard-home` query is the exception, because the lane never sends
+        # it: it answers out of the home it bound, so a request naming another
+        # Guard home would be answered without that claim being refused or
+        # audited. Spelling it the same way as this daemon's own home is the
+        # only claim the lane may answer, and this comparison costs no round
+        # trip. A spelling that merely looks different -- a link, a relative
+        # path -- is not refused here; it goes down the daemon path, which
+        # settles it properly and refuses or admits it there.
+        if self._hook_guard_home_query_is_this_home(params, daemon_server):
+            direct_response = pi_direct_answer(
+                getattr(daemon_server, "hook_worker", None),
+                default_harness=default_harness,
+                params=params,
+                payload=payload,
+                home_dir=self._optional_string(params.get("home", [None])[-1]),
+                deadline=hook_deadline.expires_at,
+            )
+            if direct_response is not None:
+                self._write_json(direct_response)
+                return
 
         try:
             workspace_query = self._normalized_hook_workspace_string(params.get("workspace", [None])[-1])
@@ -2421,6 +2432,29 @@ class _GuardDaemonHandler(
             {"method": self.command, "path": urlparse(self.path).path, "has_query_token": True},
         )
 
+    def _hook_guard_home_query_is_this_home(
+        self,
+        params: Mapping[str, list[str]],
+        daemon_server: object,
+    ) -> bool:
+        """Whether a `guard-home` query, if one was sent, names this daemon's home.
+
+        Answering from the direct lane skips settling directories, so a claim
+        about which Guard home a request belongs to has nothing to check it.
+        Naming no home at all claims nothing and is fine; naming this one is
+        the claim the lane is allowed to answer. Everything else keeps the
+        daemon path, which settles the spelling and records the rejection.
+        """
+        query = self._optional_string(params.get("guard-home", [None])[-1])
+        if query is None:
+            return True
+        try:
+            claimed = os.path.normpath(os.path.expanduser(query))
+            own = os.path.normpath(str(daemon_server.store.guard_home))  # pyright: ignore[reportAttributeAccessIssue]
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return claimed == own
+
     def _record_hook_path_rejection(self, *, parameter: str, reason: str) -> None:
         self._record_bounded_denial_event(
             "daemon.hook.path_rejected",
@@ -2925,9 +2959,16 @@ class _GuardDaemonHandler(
         if not asked:
             return _HookDirectories(())
         try:
+            daemon_server = self._daemon_server()
             verdicts = native_directory_trust(
                 asked,
-                guard_home=self._daemon_server().store.guard_home,
+                guard_home=daemon_server.store.guard_home,
+                # The home this daemon was configured with, not whichever home
+                # the process happens to be running as: the runtime expands `~`
+                # against it and treats it as a trusted root, so letting it
+                # fall back to `Path.home()` would settle these paths against a
+                # different home than the one the rest of the route uses.
+                home_dir=daemon_server.home_dir,
                 deadline_monotonic=deadline_monotonic,
             )
         except NativeDirectoryTrustError as error:
