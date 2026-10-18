@@ -286,7 +286,7 @@ pub struct ObservedMcpTool {
 /// boundary stands in for, as `ensure_local_mcp_observation` records it. The
 /// observed form never carries a source path, runner or path class, so only
 /// the fields that call site reads are kept.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObservedCliIdentity {
     pub cli_id: String,
     /// The MCP server segment of the tool name.

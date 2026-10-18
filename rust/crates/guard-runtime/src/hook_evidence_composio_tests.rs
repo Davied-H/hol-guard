@@ -20,9 +20,14 @@ fn an_observed_tool_keeps_the_connector_it_names() {
     assert_eq!(tool.qualified_name, "mcp__linear__create_issue");
     assert_eq!(tool.server.identity_hash.len(), 64);
     assert_eq!(
-        tool.identity,
+        tool.identity.cli_id,
         format!("local-cli.mcp-{}", &tool.server.identity_hash[..16])
     );
+    assert_eq!(tool.identity.name, "linear");
+    assert_eq!(tool.identity.kind, "executable");
+    assert_eq!(tool.identity.example_label, "mcp__linear__");
+    assert_eq!(tool.identity.identity_hash, tool.server.identity_hash);
+    assert!(tool.identity.interpreter_name.is_none());
     assert_eq!(
         tool.server.command.as_deref(),
         Some("observed-mcp:claude-code:mcp__linear__")
