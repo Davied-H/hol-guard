@@ -147,8 +147,16 @@ struct ResidentWriter {
     mutations: Arc<AtomicU64>,
 }
 
-fn registry() -> &'static Mutex<HashMap<PathBuf, ResidentWriter>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<PathBuf, ResidentWriter>>> = OnceLock::new();
+/// One Guard home's writer slot. Holding the slot's lock serializes every
+/// request for that home: a submission cannot queue onto a writer a stop has
+/// already begun draining, and a stop cannot drop a writer a later submission
+/// built. Both matter because the writers for one home share one journal file.
+struct HomeSlot {
+    writer: Mutex<Option<ResidentWriter>>,
+}
+
+fn registry() -> &'static Mutex<HashMap<PathBuf, Arc<HomeSlot>>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<PathBuf, Arc<HomeSlot>>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -188,43 +196,54 @@ fn build(guard_home: &Path, source: &str) -> Result<ResidentWriter, io::Error> {
     })
 }
 
-/// The writer for this Guard home, started on first use.
-fn writer(
+/// This Guard home's slot. Slots are never removed: an empty slot costs a
+/// pointer, and keeping it is what lets a stop and a racing submission agree
+/// on which writer they are talking about.
+fn slot(guard_home: &Path) -> Arc<HomeSlot> {
+    let mut registry = registry().lock().unwrap_or_else(|e| e.into_inner());
+    Arc::clone(registry.entry(guard_home.to_path_buf()).or_insert_with(|| {
+        Arc::new(HomeSlot {
+            writer: Mutex::new(None),
+        })
+    }))
+}
+
+/// Run `act` against this Guard home's writer, started on first use.
+fn with_writer<T>(
     guard_home: &Path,
     source: &str,
-) -> Result<(Arc<RuntimeHookEvidenceWriter>, Arc<AtomicU64>), io::Error> {
-    let mut registry = registry().lock().unwrap_or_else(|e| e.into_inner());
-    if !registry.contains_key(guard_home) {
-        registry.insert(guard_home.to_path_buf(), build(guard_home, source)?);
+    act: impl FnOnce(&ResidentWriter) -> T,
+) -> Result<T, io::Error> {
+    let slot = slot(guard_home);
+    let mut held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
+    if held.is_none() {
+        *held = Some(build(guard_home, source)?);
     }
-    let resident = &registry[guard_home];
-    Ok((
-        Arc::clone(&resident.writer),
-        Arc::clone(&resident.mutations),
-    ))
+    Ok(act(held.as_ref().expect("the writer was just built")))
 }
 
-/// The writer for this Guard home only if one is already running. `stats` and
-/// `stop` must not start a writer that no submission has asked for.
-fn running(guard_home: &Path) -> Option<(Arc<RuntimeHookEvidenceWriter>, Arc<AtomicU64>)> {
-    let registry = registry().lock().unwrap_or_else(|e| e.into_inner());
-    registry.get(guard_home).map(|resident| {
-        (
-            Arc::clone(&resident.writer),
-            Arc::clone(&resident.mutations),
-        )
-    })
+/// Run `act` against this Guard home's writer only if one is already running.
+/// `stats` must not start a writer that no submission has asked for.
+fn with_running<T>(guard_home: &Path, act: impl FnOnce(&ResidentWriter) -> T) -> Option<T> {
+    let slot = slot(guard_home);
+    let held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
+    held.as_ref().map(act)
 }
 
-fn forget(guard_home: &Path) {
-    registry()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(guard_home);
+/// The widest drain a caller may ask for. `timeout_seconds` arrives as an
+/// unvalidated JSON number, and the duration a drain deadline is built from
+/// panics on a value a `Duration` cannot hold.
+const MAX_STOP_TIMEOUT_SECONDS: f64 = 60.0;
+
+fn stop_timeout(value: f64) -> f64 {
+    if value.is_nan() {
+        return stop_timeout_default();
+    }
+    value.clamp(0.0, MAX_STOP_TIMEOUT_SECONDS)
 }
 
-fn stats_payload(writer: &RuntimeHookEvidenceWriter, mutations: &AtomicU64) -> Value {
-    let stats = writer.stats();
+fn stats_payload(resident: &ResidentWriter) -> Value {
+    let stats = resident.writer.stats();
     json!({
         "queued": stats.queued,
         "queued_bytes": stats.queued_bytes,
@@ -244,7 +263,7 @@ fn stats_payload(writer: &RuntimeHookEvidenceWriter, mutations: &AtomicU64) -> V
         "receipt_durable_pending": stats.receipt_durable_pending,
         // Read-and-clear: the caller that reads a mutation owns waking its
         // own publishers for it, and a second reader must not repeat the wake.
-        "policy_mutations": mutations.swap(0, Ordering::SeqCst),
+        "policy_mutations": resident.mutations.swap(0, Ordering::SeqCst),
     })
 }
 
@@ -320,17 +339,19 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             prompted,
             approval_reuse_status,
         } => {
-            let (writer, _) = writer(&guard_home, &request.source).map_err(started)?;
-            let queued = writer.submit_command_activity(
-                harness,
-                event,
-                payload,
-                *succeeded,
-                policy_action.as_deref(),
-                receipt_id.as_deref(),
-                *prompted,
-                approval_reuse_status,
-            );
+            let queued = with_writer(&guard_home, &request.source, |resident| {
+                resident.writer.submit_command_activity(
+                    harness,
+                    event,
+                    payload,
+                    *succeeded,
+                    policy_action.as_deref(),
+                    receipt_id.as_deref(),
+                    *prompted,
+                    approval_reuse_status,
+                )
+            })
+            .map_err(started)?;
             Ok(json!({ "queued": queued }))
         }
         HookEvidenceWriterActionV1::SubmitComposioDiscovery {
@@ -344,30 +365,38 @@ fn evaluate(request: &HookEvidenceWriterRequestV1) -> Result<Value, WriterError>
             if !succeeded {
                 return Ok(json!({ "queued": false }));
             }
-            let (writer, _) = writer(&guard_home, &request.source).map_err(started)?;
-            let queued = writer.submit_composio_discovery(harness, tool_name, payload);
+            let queued = with_writer(&guard_home, &request.source, |resident| {
+                resident
+                    .writer
+                    .submit_composio_discovery(harness, tool_name, payload)
+            })
+            .map_err(started)?;
             Ok(json!({ "queued": queued }))
         }
         HookEvidenceWriterActionV1::SubmitNativeDecisionReceipt { receipt } => {
-            let (writer, _) = writer(&guard_home, &request.source).map_err(started)?;
-            Ok(json!({ "queued": writer.submit_native_decision_receipt(receipt) }))
+            let queued = with_writer(&guard_home, &request.source, |resident| {
+                resident.writer.submit_native_decision_receipt(receipt)
+            })
+            .map_err(started)?;
+            Ok(json!({ "queued": queued }))
         }
-        HookEvidenceWriterActionV1::Stats => Ok(match running(&guard_home) {
-            Some((writer, mutations)) => stats_payload(&writer, &mutations),
-            None => idle_stats(),
-        }),
+        HookEvidenceWriterActionV1::Stats => {
+            Ok(with_running(&guard_home, stats_payload).unwrap_or_else(idle_stats))
+        }
         HookEvidenceWriterActionV1::Stop { timeout_seconds } => {
-            let Some((writer, mutations)) = running(&guard_home) else {
+            let slot = slot(&guard_home);
+            let mut held = slot.writer.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(resident) = held.take() else {
                 return Ok(json!({ "drained": true, "policy_mutations": 0 }));
             };
-            // Drop the registry entry first: a submission racing this stop
-            // then builds its own writer rather than queueing onto one that
-            // is draining and will never run its thread again.
-            forget(&guard_home);
-            let drained = writer.stop(*timeout_seconds);
+            // The slot stays locked across the drain. A submission racing this
+            // stop waits for it and then builds its own writer, rather than
+            // queueing onto a writer that will never run its thread again or
+            // appending to the journal the draining writer still owns.
+            let drained = resident.writer.stop(stop_timeout(*timeout_seconds));
             Ok(json!({
                 "drained": drained,
-                "policy_mutations": mutations.swap(0, Ordering::SeqCst),
+                "policy_mutations": resident.mutations.swap(0, Ordering::SeqCst),
             }))
         }
     }
