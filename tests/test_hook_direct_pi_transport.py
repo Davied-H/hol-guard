@@ -29,7 +29,7 @@ class _SettledDirectories:
     def __init__(self, candidates: tuple[tuple[str, ...], ...]) -> None:
         self._paths = {candidate[0]: candidate[1] for candidate in candidates}
 
-    def require(self, parameter: str, *, reported_as: str | None = None) -> str | None:
+    def require(self, parameter: str) -> str | None:
         return self._paths.get(parameter)
 
 
@@ -240,6 +240,7 @@ def test_a_rejected_path_keeps_the_daemon_path(tmp_path: Path) -> None:
         _daemon_server=lambda: daemon,
         _optional_string=lambda value: value if isinstance(value, str) else None,
         _settled_hook_directories=reject,
+        _hook_workspace_spelling=lambda value: value,
         # This request names no Guard home, so the lane is asked and defers.
         _hook_guard_home_query_is_this_home=lambda *_args: True,
         _normalized_hook_workspace_string=lambda value: value,

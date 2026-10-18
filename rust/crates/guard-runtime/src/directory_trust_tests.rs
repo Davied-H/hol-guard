@@ -346,6 +346,34 @@ fn a_rule_tells_two_spellings_of_the_same_workspace_apart() {
 }
 
 #[test]
+fn a_workspace_spelling_with_no_root_is_refused_as_the_relative_path_it_is() {
+    // These rules read a spelling lexically, so a path naming no root says
+    // nothing about which directory it means: reading it would mean reading
+    // the daemon's own working directory. The caller is told that, not that
+    // the path failed to resolve.
+    let install = Install::new();
+    let body = evaluate(json!({
+        "schema": DIRECTORY_TRUST_REQUEST_SCHEMA,
+        "request_id": "req-directory-trust",
+        "guard_home": install.guard_home(),
+        "home_dir": install.home_dir(),
+        "temp_dir": text(&std::env::temp_dir()),
+        "candidates": [
+            {"parameter": "workspace-payload", "rule": "hook-workspace", "value": "project/src"},
+            {"parameter": "workspace-workdir", "rule": "exec-workdir", "value": "../sibling"},
+        ],
+    }));
+
+    let results = body["results"].as_array().expect("results");
+    assert_eq!(results.len(), 2);
+    for result in results {
+        assert_eq!(result["trusted"], json!(false));
+        assert_eq!(result["reason"], json!("relative_path"));
+        assert!(result.get("path").is_none());
+    }
+}
+
+#[test]
 fn a_payload_reference_is_read_only_where_guards_writer_put_it() {
     let install = Install::new();
     let holder = TempDir::new().expect("a temporary holder");

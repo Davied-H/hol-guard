@@ -44,8 +44,11 @@ impl DirectoryTrustRejection {
     }
 }
 
-fn unresolvable(_error: PathError) -> DirectoryTrustRejection {
-    DirectoryTrustRejection::PathResolveFailed
+fn unresolvable(error: PathError) -> DirectoryTrustRejection {
+    match error {
+        PathError::Relative => DirectoryTrustRejection::RelativePath,
+        PathError::Unusable => DirectoryTrustRejection::PathResolveFailed,
+    }
 }
 
 /// `canonical_guard_home_path`: the spelling identity-scoped state is keyed
@@ -316,9 +319,7 @@ fn evaluate(request: &DirectoryTrustRequestV1) -> Value {
                         )
                     };
                     match normalized {
-                        Err(_) => {
-                            CandidateVerdict::Rejected(DirectoryTrustRejection::PathResolveFailed)
-                        }
+                        Err(error) => CandidateVerdict::Rejected(unresolvable(error)),
                         Ok(None) => CandidateVerdict::Absent,
                         Ok(Some(value)) => trusted_workspace(&value, &roots, request, &temp_dir),
                     }

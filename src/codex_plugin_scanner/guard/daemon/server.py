@@ -225,6 +225,23 @@ class _HookPathValidationError(ValueError):
         self.code = f"invalid_hook_{parameter_slug}_path"
 
 
+# One request spells the same directory several ways -- the query string, the
+# payload, the exec command's own working directory -- and each spelling is
+# labelled apart so their verdicts cannot collide. A caller still sees the
+# parameter the route has always reported, whichever spelling was refused.
+_REPORTED_HOOK_PARAMETER = {
+    "exec-workdir": "workspace",
+    "workspace-payload": "workspace",
+    "workspace-query": "workspace",
+}
+
+
+def _reported_hook_parameter(parameter: str) -> str:
+    """The name a rejection of this candidate is reported under."""
+
+    return _REPORTED_HOOK_PARAMETER.get(parameter, parameter)
+
+
 class _HookDirectories:
     """The directories one hook request named, as the native owner settled them.
 
@@ -237,19 +254,14 @@ class _HookDirectories:
     def __init__(self, verdicts: Sequence[DirectoryTrustVerdict]) -> None:
         self._verdicts = {verdict.parameter: verdict for verdict in verdicts}
 
-    def require(self, parameter: str, *, reported_as: str | None = None) -> str | None:
-        """The settled path for one candidate, or `None` where it named none.
-
-        A request that spells the same directory several ways labels each
-        spelling apart, while the rejection a caller sees keeps naming the
-        parameter the route has always reported: `reported_as` is that name.
-        """
+    def require(self, parameter: str) -> str | None:
+        """The settled path for one candidate, or `None` where it named none."""
 
         verdict = self._verdicts.get(parameter)
         if verdict is None:
             return None
         if verdict.reason is not None:
-            raise _HookPathValidationError(reported_as or parameter, verdict.reason)
+            raise _HookPathValidationError(_reported_hook_parameter(parameter), verdict.reason)
         return verdict.path
 
 
@@ -1912,13 +1924,13 @@ class _GuardDaemonHandler(
             )
             home_dir = directories.require("home")
             guard_home = directories.require("guard-home")
-            action_workdir = directories.require("exec-workdir", reported_as="workspace")
+            action_workdir = directories.require("exec-workdir")
             if action_workdir_provided and action_workdir is None:
                 raise _HookPathValidationError("workspace", "invalid_action_workdir")
             workspace = (
                 action_workdir
-                or directories.require("workspace-payload", reported_as="workspace")
-                or directories.require("workspace-query", reported_as="workspace")
+                or directories.require("workspace-payload")
+                or directories.require("workspace-query")
             )
         except _HookPathValidationError as error:
             # The Rust edge still receives the complete raw payload. Use
@@ -2986,7 +2998,13 @@ class _GuardDaemonHandler(
                 deadline_monotonic=deadline_monotonic,
             )
         except NativeDirectoryTrustError as error:
-            raise _HookPathValidationError(asked[0][0], _DIRECTORY_TRUST_UNAVAILABLE) from error
+            # Nothing was settled, so the request is refused under the first
+            # candidate it named -- reported the same way a verdict against
+            # that candidate would be, not under the label the spellings are
+            # held apart by.
+            raise _HookPathValidationError(
+                _reported_hook_parameter(asked[0][0]), _DIRECTORY_TRUST_UNAVAILABLE
+            ) from error
         return _HookDirectories(verdicts)
 
     def _write_json(

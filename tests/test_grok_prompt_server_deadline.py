@@ -20,7 +20,7 @@ class _SettledDirectories:
     def __init__(self, candidates):
         self._paths = {candidate[0]: candidate[1] for candidate in candidates}
 
-    def require(self, parameter, *, reported_as=None):
+    def require(self, parameter):
         return self._paths.get(parameter)
 
 
