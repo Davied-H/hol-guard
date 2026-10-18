@@ -179,3 +179,43 @@ def test_an_overloaded_runtime_is_recorded_as_overload(monkeypatch: pytest.Monke
     with pytest.raises(NativeDirectoryTrustError, match="native_overloaded"):
         native_directory_trust([("workspace", "/tmp")], guard_home=Path("/nowhere"))
     assert overloads
+
+def test_an_expired_hook_deadline_skips_the_transport_and_health_accounting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _force_available(monkeypatch)
+    failures: list[object] = []
+    monkeypatch.setattr(module, "native_record_resident_failure", lambda *args, **kwargs: failures.append(args))
+
+    def must_not_call(**_kwargs: object) -> bytes:
+        raise AssertionError("expired requests must never reach the resident")
+
+    monkeypatch.setattr(module, "native_resident_client_request", must_not_call)
+    with pytest.raises(NativeDirectoryTrustError, match="unavailable"):
+        native_directory_trust(
+            [("workspace", "/tmp")],
+            guard_home="/nowhere",
+            deadline_monotonic=module.time.monotonic() - 1,
+        )
+    assert not failures
+
+
+def test_caller_budget_timeout_does_not_count_as_resident_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _force_available(monkeypatch)
+    failures: list[object] = []
+    monkeypatch.setattr(module, "native_record_resident_failure", lambda *args, **kwargs: failures.append(args))
+
+    def slow_client(**_kwargs: object) -> None:
+        module.time.sleep(0.1)
+        return None
+
+    monkeypatch.setattr(module, "native_resident_client_request", slow_client)
+    with pytest.raises(NativeDirectoryTrustError, match="unavailable"):
+        native_directory_trust(
+            [("workspace", "/tmp")],
+            guard_home="/nowhere",
+            deadline_monotonic=module.time.monotonic() + 0.05,
+        )
+    assert not failures

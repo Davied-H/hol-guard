@@ -141,6 +141,9 @@ def _round_trip(
 ) -> dict[str, object]:
     """One bound resident round trip; returns the verified result document."""
 
+    if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+        raise NativeDirectoryTrustError(UNAVAILABLE_REASON)
+
     status = _native_runtime_status_memo()
     if (
         not status.available
@@ -159,10 +162,13 @@ def _round_trip(
         raise NativeDirectoryTrustError(
             prerequisite_unavailable_code("native_directory_trust_prerequisite_unavailable", guard_home)
         )
-    deadline = time.monotonic() + _TIMEOUT_SECONDS
-    if deadline_monotonic is not None:
-        deadline = min(deadline, deadline_monotonic)
-    budget_ms = max(1, int((deadline - time.monotonic()) * 1000))
+    started_at = time.monotonic()
+    local_deadline = started_at + _TIMEOUT_SECONDS
+    deadline = min(local_deadline, deadline_monotonic) if deadline_monotonic is not None else local_deadline
+    remaining_seconds = deadline - time.monotonic()
+    if remaining_seconds <= 0:
+        raise NativeDirectoryTrustError(UNAVAILABLE_REASON)
+    budget_ms = max(1, int(remaining_seconds * 1000))
     try:
         request_sha256 = "sha256:" + _canonical_request_sha256(request)
         envelope = json.dumps(
@@ -188,7 +194,14 @@ def _round_trip(
     except Exception:
         output = None
     if output is None:
-        native_record_resident_failure(status.identity.sha256, guard_home, reason=UNAVAILABLE_REASON)
+        # A shorter caller deadline is not evidence that the resident failed.
+        caller_budget_expired = (
+            deadline_monotonic is not None
+            and deadline_monotonic < local_deadline
+            and time.monotonic() >= deadline_monotonic
+        )
+        if not caller_budget_expired:
+            native_record_resident_failure(status.identity.sha256, guard_home, reason=UNAVAILABLE_REASON)
         raise NativeDirectoryTrustError(UNAVAILABLE_REASON)
     try:
         result = json.loads(output)
