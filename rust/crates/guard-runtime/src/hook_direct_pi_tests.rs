@@ -247,10 +247,10 @@ fn a_pi_post_tool_use_source_reference_is_reviewed_by_the_resident() {
 
 #[test]
 fn a_pi_post_tool_use_takes_the_daemon_path_without_a_bound_view() {
-    let lane = lane("pi-post-unbound", json!({}));
-    let result = run_as(&lane, "pi", Some(HOME), post_tool_payload(&lane));
+    let unbound = lane("pi-post-unbound", json!({}));
+    let result = run_as(&unbound, "pi", Some(HOME), post_tool_payload(&unbound));
     assert_eq!(deferred(&result), "direct_hook_structured_mediation");
-    assert_eq!(drain(&lane, None)["records"], json!([]));
+    assert_eq!(drain(&unbound, None)["records"], json!([]));
     // Another harness's `PostToolUse` never resolves the view.
     let codex = lane(
         "pi-post-codex",
