@@ -54,6 +54,10 @@ use shell_normalization::*;
 mod redaction_and_combination;
 use redaction_and_combination::*;
 
+#[path = "package_intent_parser/runner_options.rs"]
+mod runner_options;
+use runner_options::*;
+
 #[path = "package_intent_parser/local_execution.rs"]
 mod local_execution;
 use local_execution::*;
@@ -128,10 +132,6 @@ static ENV_REFERENCE_RE: LazyLock<Regex> = LazyLock::new(|| {
         .expect("env reference regex")
 });
 
-// package_intent_parser.py :67  `_LOCAL_EXECUTION_COMMANDS`
-static LOCAL_EXECUTION_COMMANDS: LazyLock<HashSet<&'static str>> =
-    LazyLock::new(|| ["bunx", "npx"].into_iter().collect());
-
 // package_intent_parser.py :68-97  `_PACKAGE_COMMAND_NAMES`
 static PACKAGE_COMMAND_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
@@ -142,32 +142,6 @@ static PACKAGE_COMMAND_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(||
     .into_iter()
     .collect()
 });
-
-// package_intent_parser.py :98-103  `_LOCAL_EXECUTION_FLAGS_BY_COMMAND`
-fn local_execution_flags(command: &str) -> &'static [&'static str] {
-    match command {
-        "bunx" => &["--bun", "--no-install", "--"],
-        // The options past the first two name no package: they answer the
-        // install prompt, choose between the cache and the registry, or set
-        // how much the runner prints. The executable they precede is still
-        // the one this reads.
-        "npx" => &[
-            "--no",
-            "--no-install",
-            "--",
-            "--yes",
-            "-y",
-            "--offline",
-            "--prefer-offline",
-            "--prefer-online",
-            "--quiet",
-            "-q",
-            "--silent",
-            "-s",
-        ],
-        _ => &[],
-    }
-}
 
 // package_intent_parser.py :104  `_LOCAL_EXECUTABLE_PACKAGE_ALIASES`
 fn local_executable_package_alias(name: &str) -> &str {
