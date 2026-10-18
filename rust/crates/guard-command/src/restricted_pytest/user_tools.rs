@@ -60,6 +60,45 @@ pub(super) fn tool_root(canonical: &Path, homes: &[PathBuf], workspace: &Path) -
     admitted.then(|| canonical.to_path_buf())
 }
 
+/// The sealed sibling directories of an accepted `shims` directory, which
+/// hold the machinery its shims dispatch to. A pyenv shim runs
+/// `~/.pyenv/libexec/pyenv`, which runs an interpreter in
+/// `~/.pyenv/versions`; rye's shims run its own tree. Granting the shims
+/// directory alone contains the command and then fails it. Directories only,
+/// so a credential file beside them (`~/.rye/credentials`) is never read, and
+/// each must be sealed exactly as the shims directory is.
+pub(super) fn shim_siblings(shims: &Path) -> Vec<PathBuf> {
+    if shims.file_name().and_then(OsStr::to_str) != Some("shims") {
+        return Vec::new();
+    }
+    let Some(root) = shims.parent() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut siblings: Vec<PathBuf> = Vec::new();
+    for entry in entries.flatten().take(64) {
+        let path = entry.path();
+        if path == shims || !path.is_dir() {
+            continue;
+        }
+        let Ok(canonical) = path.canonicalize() else {
+            continue;
+        };
+        if canonical.starts_with(shims) || !sealed_ancestry(&canonical) {
+            continue;
+        }
+        if !siblings.contains(&canonical) {
+            siblings.push(canonical);
+        }
+        if siblings.len() == 16 {
+            break;
+        }
+    }
+    siblings
+}
+
 /// Corepack's cache below `home`, when it is sealed like a tool directory.
 /// A Corepack shim (`pnpm`, `yarn`) runs the package-manager version stored
 /// there; the sandbox has no network to fetch it again, so the cache is

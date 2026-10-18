@@ -179,3 +179,28 @@ fn corepack_cache_is_granted_only_when_sealed_and_inside_home() {
     .unwrap();
     assert_eq!(corepack_home(&other), None);
 }
+
+#[test]
+fn shim_siblings_grant_the_machinery_a_shim_dispatches_to() {
+    let tree = Tree::new();
+    let shims = tree.dir("home/.pyenv/shims", 0o755);
+    let versions = tree.dir("home/.pyenv/versions/3.12.1/bin", 0o755);
+    let libexec = tree.dir("home/.pyenv/libexec", 0o755);
+    let loose = tree.dir("home/.pyenv/plugins", 0o777);
+    fs::write(tree.root.join("home/.pyenv/version"), "3.12.1\n").unwrap();
+    let granted = shim_siblings(&shims);
+    if !tree.sealed {
+        assert!(granted.is_empty());
+        return;
+    }
+    let versions_root = versions.parent().unwrap().parent().unwrap().to_path_buf();
+    assert!(granted.contains(&versions_root), "{granted:?}");
+    assert!(granted.contains(&libexec), "{granted:?}");
+    // A world-writable sibling and a plain file beside the shims stay out.
+    assert!(!granted.contains(&loose), "{granted:?}");
+    assert!(granted.iter().all(|path| path.is_dir()), "{granted:?}");
+    // Only a directory named `shims` brings its siblings along.
+    let bin = tree.dir("home/.local/bin", 0o755);
+    tree.dir("home/.local/share", 0o755);
+    assert!(shim_siblings(&bin).is_empty());
+}
