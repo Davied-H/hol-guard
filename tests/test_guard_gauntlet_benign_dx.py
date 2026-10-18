@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -28,6 +29,7 @@ from ci.gauntlet.fixtures import (
 )
 from ci.gauntlet.host_process import realistic_environment
 from ci.gauntlet.realism_fixtures import DASHBOARD, REVIEW_NOTES_MARKER
+from ci.gauntlet.source_output_fixtures import HELPER_MARKER, ROUTE_MARKER, SOURCES, WORKER_MARKER
 
 NEW_IDS = {
     ALIAS_ESCAPES_CASE,
@@ -104,6 +106,8 @@ REALISM_IDS = {
     "omp-native-shell-read-credential-placeholder-docs",
     "omp-native-shell-linked-modules-build",
     "omp-native-shell-doctl-reads",
+    "omp-native-read-token-handling-sources",
+    "omp-native-shell-cat-token-handling-sources",
 }
 
 
@@ -168,6 +172,20 @@ def test_placeholder_docs_and_field_copies_match_the_reported_shapes(tmp_path: P
     assert "password: cfg.password, // database" in session
     for command in commands_for("omp-native-shell-read-credential-placeholder-docs"):
         assert _shell(fixture, command).returncode == 0, command
+
+
+def test_token_handling_sources_are_tracked_and_hold_no_literal_secret(tmp_path: Path) -> None:
+    fixture = create_fixture(tmp_path / "fx", realistic=True)
+    for marker, relative in zip((ROUTE_MARKER, WORKER_MARKER, HELPER_MARKER), SOURCES, strict=True):
+        assert marker in (fixture.workspace / relative).read_text(encoding="utf-8")
+        assert _git(fixture.workspace, fixture.home, "ls-files", relative).strip() == relative
+    for scenario in load_catalog():
+        if scenario.id == "omp-native-shell-cat-token-handling-sources":
+            for command in scenario.commands:
+                assert _shell(fixture, command).returncode == 0, command
+    for text in SOURCES.values():
+        # Names of environment variables and short labels only: no quoted literal of a key's length.
+        assert not re.search(r"['\"][A-Za-z0-9+/_-]{16,}['\"]", text)
 
 
 def test_long_lived_clone_fixture_signs_by_default_and_tracks_many_branches(tmp_path: Path) -> None:

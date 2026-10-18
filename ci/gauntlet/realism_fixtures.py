@@ -10,7 +10,10 @@ sessions hit while the Gauntlet stayed green:
   run proves the sandbox still answers ``getpwuid``;
 * a docs file quotes a placeholder credential before an escaped ``\\n``, and a
   source file copies credential fields from one object to another;
-* a read-only ``doctl`` sits on the developer ``PATH``.
+* a read-only ``doctl`` sits on the developer ``PATH``;
+* token-handling source (a redirect route, a link-building worker, an HMAC
+  helper) names credential-like identifiers on every line (see
+  ``source_output_fixtures``).
 
 None of it holds a credential, reaches the network or writes outside the fixture.
 """
@@ -21,6 +24,8 @@ import json
 import os
 import sys
 from pathlib import Path
+
+from .source_output_fixtures import PORTAL, SOURCES
 
 DASHBOARD = "dashboard"
 VITE_VERSION = "5.4.0"
@@ -131,6 +136,8 @@ def add_main_shapes(main: Path) -> tuple[str, ...]:
     _write(main / DASHBOARD / "package.json", DASHBOARD_PACKAGE)
     _write(main / DASHBOARD / "src/session.js", SESSION_SOURCE)
     _write(main / "docs/review-notes.md", REVIEW_NOTES)
+    for relative, text in SOURCES.items():
+        _write(main / relative, text)
     _write(main / "scripts/check.sh", CHECK_SCRIPT, 0o755)
     _write(main / "scripts/release/deploy.sh", DEPLOY_SCRIPT, 0o755)
     modules = main / DASHBOARD / "node_modules"
@@ -142,7 +149,7 @@ def add_main_shapes(main: Path) -> tuple[str, ...]:
     (modules / ".bin").mkdir()
     # npm links each bin relative to node_modules/.bin.
     (modules / ".bin/vite").symlink_to(Path("../vite/bin/vite"))
-    return (".gitignore", DASHBOARD, "docs/review-notes.md", "scripts")
+    return (".gitignore", DASHBOARD, PORTAL, "docs/review-notes.md", "scripts")
 
 
 def borrow_main_modules(main: Path, worktree: Path) -> None:

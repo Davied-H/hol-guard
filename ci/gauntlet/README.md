@@ -61,7 +61,7 @@ Real sessions were stopped on ordinary work the catalog never ran. Nine more `na
 
 #### Real-world false-positive shapes
 
-Six further `native-tools` allow scenarios reproduce interruptions reported from real sessions while the Gauntlet stayed green. `ci/gauntlet/realism_fixtures.py` adds the shapes to the realistic fixture; nothing in them holds a credential or reaches the network.
+Eight further `native-tools` allow scenarios reproduce interruptions reported from real sessions while the Gauntlet stayed green. `ci/gauntlet/realism_fixtures.py` adds the shapes to the realistic fixture; nothing in them holds a credential or reaches the network.
 
 | Class | Scenario | Fixture shape |
 | --- | --- | --- |
@@ -69,6 +69,7 @@ Six further `native-tools` allow scenarios reproduce interruptions reported from
 | Credential placeholder before an escaped `\n`, field-copy credential literals | `omp-native-read-credential-placeholder-docs`, `omp-native-shell-read-credential-placeholder-docs` | `docs/review-notes.md` serializes `credential = 'fixture-only'\n...`; `dashboard/src/session.js` copies `token`, `user` and `password` fields between objects |
 | Compound `cd` plus local bin build piped to `tail` | `omp-native-shell-linked-modules-build` | `cd dashboard && ./node_modules/.bin/vite build 2>&1 \| tail -15` through the npm-style `.bin` link; the `vite` stand-in looks the user up with `id -un`, so a contained macOS run must still answer `getpwuid` |
 | Harness read inside a `/tmp` scratch checkout (macOS resolves `/tmp` to `/private/tmp`) | `omp-native-read-tmp-alias-worktree-file` | the `temp-root-leaf` worktree command, then an OMP `read` of `{{scratch}}/notes.md`; every read must name that note (either spelling redacts to `{{scratch}}`) and follow the checkout. On macOS it depends on the OMP /tmp-alias read fix; Linux and Windows have no alias |
+| Token-handling source (post-tool output scan) | `omp-native-read-token-handling-sources`, `omp-native-shell-cat-token-handling-sources` | `portal/` holds a click redirect route, a reminder worker that builds links carrying signed tokens, and an HMAC helper that names its key only through the environment; many lines name a credential-like identifier and none holds a value |
 | Read-only cloud CLI | `omp-native-shell-doctl-reads` | a `doctl` stand-in under `$HOME/.local/bin` (prepended to `PATH`) answers `version` and `apps list` only |
 
 The model-free gate pairs each with protection counterparts: `cat docs/review-notes.md .env`, the vite build piped to an upload, `doctl auth token`, `doctl compute droplet delete` and `doctl apps list --trace` must not allow.
