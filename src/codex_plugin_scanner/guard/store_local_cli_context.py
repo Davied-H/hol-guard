@@ -84,21 +84,18 @@ def connector_resolution_state(
 def note_capability_cause(connection: sqlite3.Connection, *, cli_id: str, identity_hash: str, cause: str) -> int:
     """Keep that an allowed CLI's contained run was denied what ``cause`` names.
 
-    The cause replaces one a capability cannot resolve (outside the roots, not
-    recognised, or none), so the connector can point at the capability it
-    lacks; an earlier capability cause stays. Nothing here turns a capability
-    on. Returns how many rows changed.
+    The newest denial wins, so the connector points at the capability the last
+    run lacked. Nothing here turns a capability on. Returns how many rows
+    changed.
     """
 
     if cause not in CAPABILITY_BY_CAUSE:
         raise ValueError("invalid_first_blocked_cause")
-    capability_causes = tuple(CAPABILITY_BY_CAUSE)
-    marks = ", ".join("?" for _ in capability_causes)
     cursor = connection.execute(
-        f"""update local_cli_observation set first_blocked_cause = ?
+        """update local_cli_observation set first_blocked_cause = ?
             where cli_id = ? and identity_hash = ? and surface = 'cli'
-              and (first_blocked_cause is null or first_blocked_cause not in ({marks}))""",
-        (cause, cli_id, identity_hash, *capability_causes),
+              and first_blocked_cause is not ?""",
+        (cause, cli_id, identity_hash, cause),
     )
     return cursor.rowcount
 

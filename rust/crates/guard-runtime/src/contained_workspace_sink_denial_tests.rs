@@ -122,6 +122,11 @@ fn only_a_blocked_connection_to_this_machine_counts_as_loopback() {
         "curl: (7) Failed to connect to localhost port 8080: Operation not permitted"
     ));
     assert!(denied("Error: connect EPERM ::1:8080"));
+    assert!(denied("Error: connect EPERM [::1]:8080"));
+    assert!(denied("Error: connect EPERM ::1"));
+    assert!(!denied("Error: connect EPERM fe80::1"));
+    assert!(!denied("Error: connect EPERM 2001:db8::1:443"));
+    assert!(!denied("Error: connect EPERM ::10:443"));
     assert!(!denied("Error: connect EPERM 203.0.113.7:443"));
     assert!(!denied("getaddrinfo ENOTFOUND mcp.example.test"));
     assert!(!denied(

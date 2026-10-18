@@ -101,17 +101,49 @@ def test_a_cause_for_another_binary_changes_nothing(tmp_path: Path, monkeypatch)
     assert "suggested_capability" not in _listed(service)
 
 
-def test_an_earlier_capability_cause_stays(tmp_path: Path, monkeypatch) -> None:
+def _cause(store: GuardStore) -> str | None:
+    with store._connect() as connection:
+        (cause,) = connection.execute(
+            "select first_blocked_cause from local_cli_observation where cli_id = ?", (_IDENTITY.cli_id,)
+        ).fetchone()
+    return cause
+
+
+def test_the_newest_capability_cause_wins(tmp_path: Path, monkeypatch) -> None:
     store, _ = _service(tmp_path, monkeypatch)
     for cause in ("write_home_state", "connect_loopback"):
         store.note_local_cli_capability_cause(
             cli_id=_IDENTITY.cli_id, identity_hash=_IDENTITY.identity_hash, cause=cause
         )
-    with store._connect() as connection:
-        (cause,) = connection.execute(
-            "select first_blocked_cause from local_cli_observation where cli_id = ?", (_IDENTITY.cli_id,)
-        ).fetchone()
-    assert cause == "write_home_state"
+    assert _cause(store) == "connect_loopback"
+
+
+def test_turning_the_capability_on_clears_its_cause(tmp_path: Path, monkeypatch) -> None:
+    store, service = _service(tmp_path, monkeypatch)
+    _apply(store, service, "allowed")
+    _note(store)
+
+    _apply(store, service, "allowed", {"state-dir-read": "on"})
+    assert _cause(store) == "connect_loopback"
+
+    _apply(store, service, "allowed", {"loopback-network": "on"})
+    assert _cause(store) is None
+
+
+def test_a_changed_binary_drops_the_old_cause(tmp_path: Path, monkeypatch) -> None:
+    store, _ = _service(tmp_path, monkeypatch)
+    _note(store)
+    changed = UnlistedCliIdentity(
+        cli_id=_IDENTITY.cli_id,
+        name=_IDENTITY.name,
+        kind=_IDENTITY.kind,
+        identity_hash="b" * 64,
+        example_label=_IDENTITY.example_label,
+    )
+
+    store.record_local_cli_observation(changed, seen_at=_SEEN, surface="cli")
+
+    assert _cause(store) is None
 
 
 def test_an_unknown_cause_is_refused(tmp_path: Path, monkeypatch) -> None:

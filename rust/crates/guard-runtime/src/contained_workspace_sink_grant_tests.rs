@@ -191,7 +191,7 @@ fn no_state_link_without_a_state_capability_or_directory() {
 }
 
 #[test]
-fn a_loopback_denial_replaces_only_a_cause_no_capability_resolves() {
+fn the_newest_loopback_denial_replaces_an_older_cause() {
     let connection = rusqlite::Connection::open_in_memory().unwrap();
     connection
         .execute_batch(
@@ -219,7 +219,7 @@ fn a_loopback_denial_replaces_only_a_cause_no_capability_resolves() {
         [
             Some("connect_loopback".to_owned()),
             Some("connect_loopback".to_owned()),
-            Some("write_home_state".to_owned()),
+            Some("connect_loopback".to_owned()),
             None,
         ]
     );

@@ -140,12 +140,12 @@ pub(super) fn link_state(
     })
 }
 
-/// Records a loopback denial over a cause no capability resolves.
+/// Records a loopback denial as the latest cause, so Protect points at the
+/// access the most recent denied run lacked.
 const REPLACEABLE_CAUSE_SQL: &str = "update local_cli_observation \
      set first_blocked_cause = 'connect_loopback' \
      where cli_id = ?1 and identity_hash = ?2 and surface = 'cli' \
-     and (first_blocked_cause is null or first_blocked_cause not in \
-     ('connect_loopback', 'read_home_state', 'write_home_state'))";
+     and first_blocked_cause is not 'connect_loopback'";
 
 /// Remembers that a granted run failed on a blocked connection to this
 /// machine, so Protect can suggest local network access. It changes no
