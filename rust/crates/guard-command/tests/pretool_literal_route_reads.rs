@@ -59,6 +59,13 @@ fn fixture() -> Fixture {
     write(app.join("app/admin/[id]/page.tsx"), "export default 1;\n");
     write(app.join("app/admin/[id]/.env"), "TOKEN=fixture\n");
     write(app.join(".gitignore"), ".env\n");
+    // A name one space away from the route file, pointing at the file the
+    // route's own screens refuse.
+    std::os::unix::fs::symlink(
+        app.join("app/admin/[id]/.env"),
+        app.join("app/blog/[slug]/page.tsx "),
+    )
+    .unwrap();
     Fixture { root, home }
 }
 
@@ -116,6 +123,9 @@ fn bracketed_reads_that_could_reach_more_keep_their_review() {
         "cat ~/portal/app/[sidebar]/page.tsx",
         // A directory is not a content read however it is spelled.
         "cat ~/portal/app/blog/[slug]",
+        // The trailing space is part of the name the shell passes on, so the
+        // word names a link beside the route file rather than the route file.
+        "cat 'app/blog/[slug]/page.tsx '",
     ] {
         check(&f, command, false);
     }

@@ -125,7 +125,14 @@ pub(super) fn bounded_literal_bracket_target(
     cwd: Option<&str>,
     allow_directory: bool,
 ) -> bool {
-    bounded_read_target_with_brackets(value, home_dir, cwd, allow_directory, true, true)
+    // The screen below resolves the trimmed word, while the shell hands the
+    // program the word as it was typed: `app/blog/[slug]/page.tsx ` and
+    // `app/blog/[slug]/page.tsx` are two different names, and the first may
+    // be a link somewhere this crate would not read. A word that is not
+    // already its own trimmed form keeps its review rather than borrowing
+    // a neighbour's proof.
+    value == value.trim()
+        && bounded_read_target_with_brackets(value, home_dir, cwd, allow_directory, true, true)
 }
 
 fn bounded_read_target_with_brackets(
