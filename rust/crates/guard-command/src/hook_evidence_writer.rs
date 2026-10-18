@@ -277,9 +277,26 @@ pub struct ObservedMcpTool {
     /// Fully qualified `mcp__<server>__<tool>` name.
     pub qualified_name: String,
     /// `source.identity` passed to `ensure_local_mcp_observation`.
-    pub identity: String,
+    pub identity: ObservedCliIdentity,
     /// Server descriptor consumed by `record_composio_discovery`.
     pub server: ObservedMcpServerIdentity,
+}
+
+/// `ObservedMcpTool.identity` — the `UnlistedCliIdentity` the connector
+/// boundary stands in for, as `ensure_local_mcp_observation` records it. The
+/// observed form never carries a source path, runner or path class, so only
+/// the fields that call site reads are kept.
+#[derive(Debug, Clone)]
+pub struct ObservedCliIdentity {
+    pub cli_id: String,
+    /// The MCP server segment of the tool name.
+    pub name: String,
+    /// Always `executable` for an observed connector.
+    pub kind: String,
+    pub identity_hash: String,
+    /// The `mcp__<server>__` namespace.
+    pub example_label: String,
+    pub interpreter_name: Option<String>,
 }
 
 /// Server identity carried inside [`ObservedMcpTool`].

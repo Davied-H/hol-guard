@@ -430,6 +430,8 @@ mod hook_evidence_activity;
 mod hook_evidence_composio;
 #[allow(dead_code)]
 mod hook_evidence_correlation;
+#[allow(dead_code)]
+mod hook_evidence_store;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
