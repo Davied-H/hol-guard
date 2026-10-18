@@ -1,10 +1,12 @@
 """Output filters after a contained core, as native authority classifies them.
 
-A chain of up to three `| head -N`, `| tail -N` and `| grep` stages that read
-only standard input. Head and tail run in-process. Grep runs as the system
-binary on the captured output with a validated argument list: no file
-operand, pattern file, recursion or other output, so it can only print lines
-of the text it is given. `contained_output_filters.rs` accepts the same chain.
+A chain of up to three `| head -N`, `| tail -N`, `| grep` and `| rg` stages
+that read only standard input. Head and tail run in-process. A matcher runs
+as its own binary on the captured output with a validated argument list: no
+file operand, pattern file, recursion or other output, so it can only print
+lines of the text it is given, and it runs inside the core's sandbox with an
+environment this module builds, never the caller's.
+`contained_output_filters.rs` accepts the same chain.
 """
 
 from __future__ import annotations
@@ -19,11 +21,24 @@ MAX_FILTERS = 3
 _COUNT = re.compile(r"[0-9]{1,6}")
 # Single-letter switches that change only which input lines print and how.
 _GREP_SWITCHES = frozenset("EFGacinosvwx")
+# The same for ripgrep, which spells its own set. `-E` (encoding) and `-g`
+# (glob) take a value there, and `-P` opts into a second regex engine.
+_RG_SWITCHES = frozenset("FNSUacinosvwx")
 _GREP_COUNTS = ("-A", "-B", "-C", "-m")
 _GREP_PROGRAMS = {"grep": (), "egrep": ("-E",), "fgrep": ("-F",)}
 _GREP_BINARIES = (Path("/usr/bin/grep"), Path("/bin/grep"))
+# ripgrep ships from a package manager rather than the system image, so it is
+# looked for in the ordinary install directories instead of a fixed path.
+_RG_DIRECTORIES = (
+    Path("/usr/bin"),
+    Path("/bin"),
+    Path("/usr/local/bin"),
+    Path("/opt/homebrew/bin"),
+    Path("/opt/local/bin"),
+    Path("/home/linuxbrew/.linuxbrew/bin"),
+)
 _LOCALE = ("LANG", "LC_ALL", "LC_CTYPE", "LC_COLLATE")
-_GREP_TIMEOUT_SECONDS = 60
+_FILTER_TIMEOUT_SECONDS = 60
 
 Stage = tuple[str, ...]
 
@@ -37,12 +52,12 @@ def bounded_count(values: list[str]) -> int | None:
     return None
 
 
-def grep_arguments(values: list[str]) -> bool:
-    """Whether `grep <values>` reads only standard input.
+def stdin_arguments(values: list[str], switches: frozenset[str]) -> bool:
+    """Whether a matcher called with `values` reads only standard input.
 
-    Switches from `_GREP_SWITCHES`, counted options, `-e PATTERN`, and one
-    pattern operand unless `-e` gave the patterns. Any further operand is a
-    file, so it is refused.
+    Switches from `switches`, counted options, `-e PATTERN`, and one pattern
+    operand unless `-e` gave the patterns. Any further operand is a file, so
+    it is refused.
     """
     expressions = operands = 0
     options_done = False
@@ -75,10 +90,20 @@ def grep_arguments(values: list[str]) -> bool:
             if not _COUNT.fullmatch(count):
                 return False
             continue
-        switches = value[1:]
-        if not switches or not set(switches) <= _GREP_SWITCHES:
+        flags = value[1:]
+        if not flags or not set(flags) <= switches:
             return False
     return operands == 0 if expressions else operands == 1
+
+
+def grep_arguments(values: list[str]) -> bool:
+    """Whether `grep <values>` reads only standard input."""
+    return stdin_arguments(values, _GREP_SWITCHES)
+
+
+def rg_arguments(values: list[str]) -> bool:
+    """Whether `rg <values>` reads only standard input."""
+    return stdin_arguments(values, _RG_SWITCHES)
 
 
 def filter_chain(tokens: list[tuple[str, bool]]) -> tuple[Stage, ...]:
@@ -99,6 +124,8 @@ def filter_chain(tokens: list[tuple[str, bool]]) -> tuple[Stage, ...]:
             chain.append((program, str(count)))
         elif program in _GREP_PROGRAMS and grep_arguments(arguments):
             chain.append((program, *arguments))
+        elif program == "rg" and rg_arguments(arguments):
+            chain.append((program, *arguments))
         else:
             raise ValueError("unsupported output filter")
     return tuple(chain)
@@ -108,6 +135,33 @@ def keep_lines(lines: list[str], kind: str, count: int) -> list[str]:
     if kind == "head":
         return lines[:count]
     return lines[len(lines) - count :] if count else []
+
+
+def _owners() -> set[int]:
+    """The identities a filter binary may belong to: root or this user."""
+    return {0, os.getuid()} if hasattr(os, "getuid") else {0}
+
+
+def _rewritable_only_by_owner(info: os.stat_result) -> bool:
+    return stat.S_ISREG(info.st_mode) and info.st_uid in _owners() and not info.st_mode & 0o022
+
+
+def _trusted_ripgrep() -> str:
+    """The installed ripgrep: a regular file only its owner can rewrite.
+
+    Its path is not fixed the way the system grep's is, so the install
+    directories are searched in turn and the resolved file must belong to root
+    or to this user with no group or other write bit.
+    """
+    for directory in _RG_DIRECTORIES:
+        try:
+            resolved = (directory / "rg").resolve(strict=True)
+            info = resolved.stat()
+        except OSError:
+            continue
+        if _rewritable_only_by_owner(info):
+            return str(resolved)
+    raise RuntimeError("no trusted ripgrep")
 
 
 def _trusted_grep() -> str:
@@ -122,18 +176,27 @@ def _trusted_grep() -> str:
     raise RuntimeError("no trusted system grep")
 
 
-def _grep(text: str, stage: Stage) -> tuple[str, str, int]:
+def _matcher_command(program: str, arguments: list[str]) -> list[str]:
+    """The screened binary and argument list one matcher stage runs."""
+    if program in _GREP_PROGRAMS and grep_arguments(arguments):
+        return [_trusted_grep(), *_GREP_PROGRAMS[program], *arguments]
+    if program == "rg" and rg_arguments(arguments):
+        return [_trusted_ripgrep(), *arguments]
+    raise ValueError("unsupported output filter")
+
+
+def _match_lines(text: str, stage: Stage) -> tuple[str, str, int]:
     program, *arguments = stage
-    if program not in _GREP_PROGRAMS or not grep_arguments(arguments):
-        raise ValueError("unsupported output filter")
+    command = _matcher_command(program, arguments)
+    # No `RIPGREP_CONFIG_PATH` or `GREP_OPTIONS`: the environment is built here.
     environment = {"PATH": "/usr/bin:/bin"}
     environment.update({name: os.environ[name] for name in _LOCALE if name in os.environ})
-    completed = subprocess.run(  # fixed binary, validated stdin-only arguments
-        [_trusted_grep(), *_GREP_PROGRAMS[program], *arguments],
+    completed = subprocess.run(  # screened binary, validated stdin-only arguments
+        command,
         input=text.encode("utf-8", "surrogateescape"),
         capture_output=True,
         env=environment,
-        timeout=_GREP_TIMEOUT_SECONDS,
+        timeout=_FILTER_TIMEOUT_SECONDS,
         check=False,
     )
     return (
@@ -144,7 +207,7 @@ def _grep(text: str, stage: Stage) -> tuple[str, str, int]:
 
 
 def apply_filters(text: str, stages: tuple[Stage, ...]) -> tuple[str, str, int]:
-    """Run the chain over `text`: (output, grep diagnostics, last stage's status)."""
+    """Run the chain over `text`: (output, matcher diagnostics, last stage's status)."""
     errors: list[str] = []
     status = 0
     for stage in stages:
@@ -152,6 +215,6 @@ def apply_filters(text: str, stages: tuple[Stage, ...]) -> tuple[str, str, int]:
             text = "".join(keep_lines(text.splitlines(keepends=True), stage[0], int(stage[1])))
             status = 0
             continue
-        text, error, status = _grep(text, stage)
+        text, error, status = _match_lines(text, stage)
         errors.append(error)
     return text, "".join(errors), status
