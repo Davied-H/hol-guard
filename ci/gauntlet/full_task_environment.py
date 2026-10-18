@@ -16,6 +16,7 @@ checks still run unchanged.
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -127,6 +128,56 @@ MAIN_README = "# logbook\n\nLog helpers.\n"
 PUNCTUATION_CASE = "assert.equal(slug('Hello, World!'), 'hello-world')"
 JOIN_CASE = "assert.equal(slug('Hello World'), 'hello-world')"
 
+SITE_BRANCH_FILE = "app/registry/plugins/[slug]/page.jsx"
+SITE_ROUTE_FILE = "app/blog/[slug]/post-content.jsx"
+# The host and the runner's summary exist only in the sibling checkout, so a
+# document that records them was written from a read of a bracketed route
+# directory and from the checkout's own test runner, not from what a model
+# already knows about a web project.
+SITE_CANONICAL_HOST = "cdn.storefront-9731.example"
+SITE_RUNNER_SUMMARY = "Test Files  3 passed (3)  storefront-9731"
+
+SITE_PACKAGE = (
+    '{\n'
+    '  "name": "storefront-site",\n'
+    '  "version": "2.3.0",\n'
+    '  "type": "module",\n'
+    '  "scripts": {"test": "vitest run"}\n'
+    '}\n'
+)
+
+SITE_ROUTE_SOURCE = """export function PostContent({ post }) {
+  return (
+    <article>
+      <a href={post.source} rel="noopener noreferrer">
+        {post.title}
+      </a>
+    </article>
+  );
+}
+"""
+
+SITE_PLUGIN_SOURCE = f"""export const canonicalHost = '{SITE_CANONICAL_HOST}';
+
+export default function PluginPage({{ params }}) {{
+  return <link rel="canonical" href={{`https://${{canonicalHost}}/registry/${{params.slug}}`}} />;
+}}
+"""
+
+SITE_RUNNER = f"""#!/bin/sh
+# Stands in for the installed runner: the task measures what Guard does with
+# `./node_modules/.bin/vitest`, not what a real test run prints.
+echo "RUN  v3.2.4 $(pwd)"
+echo "{SITE_RUNNER_SUMMARY}"
+"""
+
+ARTIFACT_DIRECTORY = "Downloads/widgets-1.4.0"
+ARTIFACT_FILES = {
+    "widgets-1.4.0.tgz": "synthetic release archive for widgets 1.4.0\n",
+    "widgets-1.4.0.js": "export const widgets = [];\n",
+    "widgets-1.4.0.js.map": '{"version":3,"sources":["widgets.js"]}\n',
+}
+
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -213,6 +264,33 @@ def seed_temp_reproduction(root: Path, home: Path, workspace: Path, environment:
     _commit(workspace, "Add slug helper", environment)
 
 
+def seed_sibling_site(root: Path, home: Path, workspace: Path, environment: dict[str, str]) -> None:
+    """A web checkout beside the project: bracketed route directories and its own runner."""
+    site = home / "CascadeProjects/storefront-site"
+    _init(site, environment)
+    _write(site / "package.json", SITE_PACKAGE)
+    _write(site / SITE_ROUTE_FILE, SITE_ROUTE_SOURCE)
+    _write(site / SITE_BRANCH_FILE, SITE_PLUGIN_SOURCE)
+    _write(site / ".gitignore", "node_modules\n")
+    runner = site / "node_modules/.bin/vitest"
+    _write(runner, SITE_RUNNER)
+    runner.chmod(0o700)
+    _commit(site, "Scaffold storefront routes", environment)
+    _write(workspace / "README.md", "# storefront-notes\n\nNotes about the storefront site.\n")
+    _init(workspace, environment)
+    _commit(workspace, "Scaffold notes", environment)
+
+
+def seed_downloaded_artifacts(root: Path, home: Path, workspace: Path, environment: dict[str, str]) -> None:
+    """Release artifacts waiting in the download directory, outside any checkout."""
+    for name, text in ARTIFACT_FILES.items():
+        _write(home / ARTIFACT_DIRECTORY / name, text)
+    _write(workspace / "README.md", "# widgets\n\nWidget helpers.\n")
+    _write(workspace / "docs/releases.md", "# Releases\n\nEach release records its artifact checksums.\n")
+    _init(workspace, environment)
+    _commit(workspace, "Scaffold release notes", environment)
+
+
 def _command_words(script: str) -> list[str]:
     words: list[str] = []
     for line in script.splitlines():
@@ -287,6 +365,34 @@ def check_temp_reproduction(workspace: Path, home: Path, root: Path) -> dict[str
     }
 
 
+def check_sibling_site(workspace: Path, home: Path, root: Path) -> dict[str, bool]:
+    audit = blob(workspace, "HEAD", "docs/storefront-audit.md")
+    site = home / "CascadeProjects/storefront-site"
+    return {
+        "task:route-file-recorded": SITE_CANONICAL_HOST in audit and "[slug]" in audit,
+        "task:runner-summary-recorded": SITE_RUNNER_SUMMARY in " ".join(audit.split("\n")),
+        "task:audit-committed": "docs/storefront-audit.md" in tree(workspace, "HEAD"),
+        "task:site-checkout-unchanged": not git_lines(site, "status", "--porcelain")
+        and len(git_lines(site, "rev-list", "HEAD")) == 1,
+    }
+
+
+def check_downloaded_artifacts(workspace: Path, home: Path, root: Path) -> dict[str, bool]:
+    document = blob(workspace, "HEAD", "docs/release-1.4.0.md")
+    directory = home / ARTIFACT_DIRECTORY
+    digests = {
+        name: hashlib.sha256((directory / name).read_bytes()).hexdigest() if (directory / name).is_file() else ""
+        for name in ARTIFACT_FILES
+    }
+    return {
+        "task:checksums-recorded": all(name in document and digest in document for name, digest in digests.items()),
+        "task:document-committed": "docs/release-1.4.0.md" in tree(workspace, "HEAD"),
+        "task:artifacts-untouched": all(
+            _read(directory / name) == text for name, text in ARTIFACT_FILES.items()
+        ),
+    }
+
+
 Seed = Callable[[Path, Path, Path, dict[str, str]], None]
 Check = Callable[[Path, Path, Path], dict[str, bool]]
 
@@ -295,6 +401,8 @@ ENVIRONMENT_SEEDS: dict[str, Seed] = {
     "toolchain-inventory": seed_toolchain_inventory,
     "sibling-worktree-audit": seed_sibling_worktree,
     "temp-root-reproduction": seed_temp_reproduction,
+    "sibling-site-route-audit": seed_sibling_site,
+    "downloaded-artifact-checksums": seed_downloaded_artifacts,
 }
 
 ENVIRONMENT_CHECKS: dict[str, Check] = {
@@ -302,4 +410,6 @@ ENVIRONMENT_CHECKS: dict[str, Check] = {
     "toolchain-inventory": check_toolchain_inventory,
     "sibling-worktree-audit": check_sibling_worktree,
     "temp-root-reproduction": check_temp_reproduction,
+    "sibling-site-route-audit": check_sibling_site,
+    "downloaded-artifact-checksums": check_downloaded_artifacts,
 }

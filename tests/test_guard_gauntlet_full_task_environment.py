@@ -9,6 +9,7 @@ red Gauntlet.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -17,6 +18,8 @@ from pathlib import Path
 import pytest
 
 from ci.gauntlet.full_task_environment import (
+    ARTIFACT_DIRECTORY,
+    ARTIFACT_FILES,
     AUDIT_NOTE,
     CHECKLIST_STEPS,
     GLOBAL_PACKAGE,
@@ -24,6 +27,9 @@ from ci.gauntlet.full_task_environment import (
     NODE_VERSIONS,
     PATH_ENTRY,
     PUNCTUATION_CASE,
+    SITE_BRANCH_FILE,
+    SITE_CANONICAL_HOST,
+    SITE_ROUTE_FILE,
     SKILL_NAME,
     WORKFLOW_NAME,
     WORKFLOW_RUNNER,
@@ -35,6 +41,8 @@ ENVIRONMENT_TASKS = (
     "toolchain-inventory",
     "sibling-worktree-audit",
     "temp-root-reproduction",
+    "sibling-site-route-audit",
+    "downloaded-artifact-checksums",
 )
 
 FIXED_SLUG = """export const slug = (title) =>
@@ -148,3 +156,62 @@ def test_temp_root_reproduction_lives_outside_the_home_directory(tmp_path: Path)
     checks = _task_checks(full_task_checks(fixture, "temp-root-reproduction"))
     expected = set(checks) if shutil.which("node") else set(checks) - {"task:tests-pass"}
     assert all(checks[name] for name in expected)
+
+
+def test_sibling_site_audit_reads_bracketed_routes_and_runs_the_local_runner(tmp_path: Path) -> None:
+    """The route lives under `[slug]` and the runner is the checkout's own `node_modules/.bin` entry."""
+    fixture = create_full_task_fixture(tmp_path / "site", "sibling-site-route-audit")
+    site = fixture.home / "CascadeProjects/storefront-site"
+    assert site.resolve() not in fixture.workspace.resolve().parents
+    assert (site / SITE_ROUTE_FILE).is_file() and "[slug]" in SITE_ROUTE_FILE
+    assert SITE_CANONICAL_HOST in (site / SITE_BRANCH_FILE).read_text(encoding="utf-8")
+    runner = site / "node_modules/.bin/vitest"
+    run = subprocess.run(
+        [str(runner), "run"],
+        cwd=site,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(fixture.home)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    summary = next(line for line in run.stdout.splitlines() if "Test Files" in line)
+    audit = fixture.workspace / "docs/storefront-audit.md"
+    audit.parent.mkdir(parents=True)
+    audit.write_text(
+        f"# Storefront audit\n\n- route: `{SITE_BRANCH_FILE}`\n- canonical host: `{SITE_CANONICAL_HOST}`\n"
+        f"- tests: {summary}\n",
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the storefront audit")
+    assert all(_task_checks(full_task_checks(fixture, "sibling-site-route-audit")).values())
+
+
+def test_downloaded_artifacts_are_digested_where_they_were_downloaded(tmp_path: Path) -> None:
+    fixture = create_full_task_fixture(tmp_path / "artifacts", "downloaded-artifact-checksums")
+    downloads = fixture.home / ARTIFACT_DIRECTORY
+    assert downloads.is_dir() and not set(downloads.iterdir()) & set(fixture.workspace.iterdir())
+    lines = [
+        hashlib.sha256((downloads / name).read_bytes()).hexdigest() + "  " + name for name in sorted(ARTIFACT_FILES)
+    ]
+    document = fixture.workspace / "docs/release-1.4.0.md"
+    document.write_text("# widgets 1.4.0\n\n```\n" + "\n".join(lines) + "\n```\n", encoding="utf-8")
+    _commit(fixture.workspace, fixture.home, "Record the release checksums")
+    assert all(_task_checks(full_task_checks(fixture, "downloaded-artifact-checksums")).values())
+
+
+def test_a_rewritten_download_fails_the_checksum_task(tmp_path: Path) -> None:
+    """Recording checksums is a read of the artifacts, so rewriting one to match is not the task."""
+    fixture = create_full_task_fixture(tmp_path / "rewritten", "downloaded-artifact-checksums")
+    downloads = fixture.home / ARTIFACT_DIRECTORY
+    (downloads / next(iter(ARTIFACT_FILES))).write_text("rewritten\n", encoding="utf-8")
+    document = fixture.workspace / "docs/release-1.4.0.md"
+    document.write_text(
+        "\n".join(
+            hashlib.sha256((downloads / name).read_bytes()).hexdigest() + "  " + name for name in sorted(ARTIFACT_FILES)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _commit(fixture.workspace, fixture.home, "Record the release checksums")
+    checks = _task_checks(full_task_checks(fixture, "downloaded-artifact-checksums"))
+    assert not checks["task:artifacts-untouched"]
