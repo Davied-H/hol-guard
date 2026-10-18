@@ -77,7 +77,9 @@ fn a_route_tree_that_could_name_a_secret_is_reviewed() {
     let portal = layout.org.join("app-portal");
     write(portal.join("app/admin/[id]/service.pem"), "SYNTHETIC KEY\n");
     write(layout.home.join(".ssh/id_rsa"), "fixture\n");
-    std::os::unix::fs::symlink(layout.home.join(".ssh"), portal.join("app/keys/[id]")).unwrap();
+    let keys = portal.join("app/keys");
+    std::fs::create_dir_all(&keys).unwrap();
+    std::os::unix::fs::symlink(layout.home.join(".ssh"), keys.join("[id]")).unwrap();
     let cwd = portal.clone();
     for command in ["fd . app/admin/[id]", "fd . app/keys/[id]"] {
         assert_decision(&cwd, &layout.home, command, false);
