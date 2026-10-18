@@ -18,6 +18,7 @@ from .codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND
 from .codex_hook_events import MANAGED_CODEX_HOOK_EVENTS
 from .codex_hook_file_integrity import split_hook_command
 from .codex_hook_owner_commands import has_codex_harness_tokens, python_codex_hook_command
+from .codex_hook_self_binding import codex_hook_binds_guard_home
 from .frozen_runtime_commands import frozen_codex_bridge_tokens_are_live
 
 
@@ -351,10 +352,12 @@ def install_managed_codex_hook_groups(
     *,
     current_guard_home: Path,
 ) -> None:
-    """Append after authenticated and explicitly adopted bindings are removed.
+    """Append after authenticated, adopted and self-bound bindings are removed.
 
-    Remaining Guard handlers have no proven owner; matching command syntax
-    alone cannot authorize their replacement or duplication.
+    A remaining Guard handler that names ``current_guard_home`` is an earlier
+    generation of this same installation, which a reinstall may replace. Any
+    other Guard handler has no proven owner, and matching command syntax alone
+    cannot authorize replacing or duplicating it.
     """
     for event_name in managed_groups:
         existing = hooks.get(event_name)
@@ -368,7 +371,14 @@ def install_managed_codex_hook_groups(
                     and _hook_entry_is_active(handler)
                     and isinstance((command := handler.get("command")), str)
                 ):
-                    require_codex_hook_owner(command, ownership="unmanaged")
+                    require_codex_hook_owner(
+                        command,
+                        ownership=(
+                            "self_install_binding"
+                            if codex_hook_binds_guard_home(command, current_guard_home)
+                            else "unmanaged"
+                        ),
+                    )
     for event_name, managed_group in managed_groups.items():
         existing = hooks.get(event_name)
         hooks[event_name] = [
