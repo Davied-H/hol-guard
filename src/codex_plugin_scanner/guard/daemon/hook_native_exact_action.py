@@ -89,6 +89,14 @@ def launch_cwd(payload: Mapping[str, object], workspace: Path | None) -> Path | 
     return resolved if os.path.isdir(resolved) else None
 
 
+def launch_path(payload: Mapping[str, object]) -> str | None:
+    """The ``PATH`` the hook stamped from the agent's own environment, if any."""
+
+    stamped = payload.get(HOOK_EXECUTION_ENVIRONMENT_KEY)
+    path = stamped.get("path") if isinstance(stamped, Mapping) else None
+    return path if isinstance(path, str) and path and "\0" not in path else None
+
+
 def _facts(native_result: Mapping[str, object]) -> dict[str, str | None]:
     action = native_result.get("action")
     action_type = action.get("action_type") if isinstance(action, Mapping) else None

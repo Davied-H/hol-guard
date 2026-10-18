@@ -177,6 +177,28 @@ def test_an_unrecognised_command_asks_for_its_connector(
     )
 
 
+def test_the_lookup_uses_the_path_the_agent_runs_with(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[object] = []
+
+    def lookup(**kwargs: object) -> SetupConnector:
+        seen.append(kwargs["path"])
+        return _CONNECTOR
+
+    monkeypatch.setattr("codex_plugin_scanner.guard.local_cli_hook.local_cli_setup_connector", lookup)
+    payload = {"tool_name": "Bash", "tool_input": {"command": "lanectl status"}, "cwd": str(tmp_path)}
+
+    for stamped in ({"path": "/home/dev/.local/bin:/usr/bin"}, {"path": "bad\0path"}, None):
+        native_review_connector.native_review_setup_connector(
+            object(),
+            payload={**payload, "guard_execution_environment": stamped},
+            native_result=_native_review(),
+            workspace=tmp_path,
+            home_dir=None,
+        )
+
+    assert seen == ["/home/dev/.local/bin:/usr/bin", None, None]
+
+
 def test_a_failed_lookup_leaves_an_ordinary_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def failing(**_kwargs: object) -> SetupConnector:
         raise TimeoutError("deadline")

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from .hook_native_exact_action import launch_cwd as _launch_cwd
+from .hook_native_exact_action import launch_path as _launch_path
 from .hook_request_parsing import pre_tool_command
 
 if TYPE_CHECKING:
@@ -25,7 +26,7 @@ _RECENT_TTL_SECONDS = 120.0
 _MAX_RECENT = 512
 
 _lock = threading.Lock()
-_pending: queue.Queue[tuple[object, str, Path, Path | None]] = queue.Queue(maxsize=_MAX_PENDING)
+_pending: queue.Queue[tuple[object, str, Path, Path | None, str | None]] = queue.Queue(maxsize=_MAX_PENDING)
 _worker: threading.Thread | None = None
 _recent: OrderedDict[tuple[str, str], float] = OrderedDict()
 
@@ -49,7 +50,7 @@ def observe_native_pre_tool_cli(
     if _seen_recently(key):
         return False
     try:
-        _pending.put_nowait((store, command, cwd, home_dir))
+        _pending.put_nowait((store, command, cwd, home_dir, _launch_path(payload)))
     except queue.Full:
         return False
     _remember(key)
@@ -86,9 +87,11 @@ def _drain() -> None:
     from ..local_cli_hook import observe_unlisted_cli
 
     while True:
-        store, command, cwd, home_dir = _pending.get()
+        store, command, cwd, home_dir, path = _pending.get()
         try:
-            observe_unlisted_cli(store=cast("GuardStore", store), command=command, cwd=cwd, home_dir=home_dir)
+            observe_unlisted_cli(
+                store=cast("GuardStore", store), command=command, cwd=cwd, home_dir=home_dir, path=path
+            )
         except Exception:
             _LOGGER.warning("native CLI observation failed", exc_info=True)
         finally:
