@@ -298,3 +298,51 @@ def test_a_writer_refusal_raises_the_writer_error_not_a_store_failure(
         writer.submit_native_decision_receipt({"decision_id": "d-1"})
 
     assert raised.value.reason == "native_hook_evidence_writer_writer_unavailable"
+
+
+def test_a_start_builds_the_writer_before_any_hook_submits(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    respond = _answer({"running": True, "policy_mutations": 0, "store_fatal": None})
+    _install(monkeypatch, respond)
+
+    assert writer.start() is True
+
+    # Building the writer is what replays its journal. The daemon asks for it
+    # at startup so the first hook to record a decision does not wait for it.
+    assert respond.sent[0]["action"] == "start"
+
+
+def test_a_start_the_resident_refuses_is_reported_rather_than_raised(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install(monkeypatch, _answer({"message": "no writer"}, status="error", code="writer_unavailable"))
+
+    # Warming the writer is not the daemon's to fail on. A resident that
+    # refuses here refuses the submission too, and that is where the caller
+    # that is recording something learns it.
+    assert writer.start() is False
+
+
+def test_a_start_recovers_a_store_failure_the_resident_is_holding(
+    writer: NativeHookEvidenceWriter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install(monkeypatch, _resident_holding_a_fatal_store({"running": True, "policy_mutations": 1}))
+
+    assert writer.start() is True
+
+    # The reply carries the signals every reply carries, so the warm-up reads
+    # them rather than leaving the failure for whatever calls next.
+    assert len(writer._store.recovered) == 1
+    assert writer.take_policy_mutations() == 1
+
+
+def test_an_unreachable_resident_reads_as_a_writer_that_stopped_running() -> None:
+    stats = native_hook_evidence_writer.unreachable_writer_stats()
+
+    # A health reader treats a started writer that is not running as a fault.
+    # A resident nobody can reach is that fault, not a reason to refuse the
+    # whole health report.
+    assert stats["started"] is True
+    assert stats["running"] is False
+    assert stats["degraded"] is True

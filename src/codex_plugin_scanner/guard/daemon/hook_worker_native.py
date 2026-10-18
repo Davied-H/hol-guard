@@ -27,6 +27,7 @@ from ..runtime.structured_output_mediation import (
 )
 from .hook_availability_policy import availability_harness_response
 from .hook_contained_grant import granted_containment_response
+from .hook_evidence_dispatch import run_hook_evidence
 from .hook_fail_closed import render_pre_tool, render_recording_only_pre_tool
 from .hook_native_cli_observer import observe_native_pre_tool_cli
 from .hook_native_local_cli import native_local_cli_block_response
@@ -137,6 +138,9 @@ class _HookWorkerNativeHost(Protocol):
     @property
     def activity_writer(self) -> object | None: ...
 
+    @property
+    def evidence_dispatch(self) -> object | None: ...
+
     _last_native_decision_receipt: dict[str, object] | None
     _native_policy_snapshot: Callable[..., dict[str, object] | None]
     _native_runtime_status: Callable[[], NativeRuntimeStatus]
@@ -188,17 +192,23 @@ def _record_native_pre_activity(
         response = {**response, OBSERVATION_FIELD: observation}
     submit = getattr(host.activity_writer, "submit_command_activity", None)
     if callable(submit):
-        with suppress(Exception):
-            submit(
+        receipt_id = receipt.get("decision_id") if receipt is not None else None
+        # The hook has its verdict; the activity row records it. The writer
+        # lives in the resident, so submitting here would spend a round trip
+        # in front of the response rather than behind it.
+        run_hook_evidence(
+            host,
+            lambda: submit(
                 harness=harness,
                 event="PreToolUse",
                 payload=payload,
                 succeeded=True,
                 policy_action=response.get("policy_action"),
-                receipt_id=receipt.get("decision_id") if receipt is not None else None,
+                receipt_id=receipt_id,
                 prompted=response.get("prompted") is True,
                 approval_reuse_status=response.get("approval_reuse_status", "not-applicable"),
-            )
+            ),
+        )
     return response
 
 
@@ -251,14 +261,16 @@ def _record_unavailable_native(
         writer = host.activity_writer
         submit = getattr(writer, "submit_command_activity", None)
         if callable(submit):
-            with suppress(Exception):
-                _ = submit(
+            run_hook_evidence(
+                host,
+                lambda: submit(
                     harness=harness,
                     event=event_name,
                     payload=payload,
                     succeeded=str(response.get("policy_action") or "") != "block",
                     policy_action=response.get("policy_action"),
-                )
+                ),
+            )
     return response
 
 
@@ -838,7 +850,8 @@ class HookWorkerNativeMixin:
         writer = self.activity_writer
         submit = getattr(writer, "submit_native_decision_receipt", None)
         if callable(submit):
-            with suppress(Exception):
-                submit(receipt=accepted)
+            # Ordered behind nothing and in front of this hook's activity row,
+            # which links to the receipt by its decision id.
+            run_hook_evidence(self, lambda: submit(receipt=accepted))
         self._last_native_decision_receipt = accepted
         return accepted

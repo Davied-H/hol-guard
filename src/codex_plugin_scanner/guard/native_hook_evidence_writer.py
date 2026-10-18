@@ -83,6 +83,37 @@ def _unavailable(reason: str) -> NativeHookEvidenceWriterUnavailableError:
     return error
 
 
+def unreachable_writer_stats() -> dict[str, Any]:
+    """The counters a reader gets when the resident cannot answer.
+
+    The writer lives in the resident now, so a reader that only wants to
+    report health can be refused where the in-process writer always answered.
+    Health is what someone consults once something is already wrong, so the
+    unreachable resident is reported as the fault it is — started and not
+    running — rather than as a refused health request.
+    """
+
+    return {
+        "queued": 0,
+        "queued_bytes": 0,
+        "accepted": 0,
+        "processed": 0,
+        "dropped": 0,
+        "failures": 0,
+        "recovered": 0,
+        "durable_pending": 0,
+        "degraded": True,
+        "running": False,
+        "started": True,
+        "receipt_accepted": 0,
+        "receipt_processed": 0,
+        "receipt_deduped": 0,
+        "receipt_dropped": 0,
+        "receipt_failures": 0,
+        "receipt_durable_pending": 0,
+    }
+
+
 class NativeHookEvidenceWriter:
     """The resident's writer for one Guard home, shaped like the Python one.
 
@@ -173,6 +204,24 @@ class NativeHookEvidenceWriter:
             _raise_for_code(code, payload)
         named = code if isinstance(code, str) and _CODE.fullmatch(code) else "unavailable"
         raise _unavailable(f"native_hook_evidence_writer_{named}")
+
+    def start(self) -> bool:
+        """Build the resident's writer for this home before a hook needs it.
+
+        Constructing the writer replays its journal. A caller that knows it
+        is about to record evidence, and that can afford the replay now
+        rather than on the submission that follows, warms the writer here.
+
+        Warming is not the caller's to fail on. A resident that refuses here
+        refuses the submission too, and that is where the caller learns it.
+        """
+
+        try:
+            payload = self._call({"action": "start"}, timeout_seconds=_TIMEOUT_SECONDS)
+        except Exception:
+            return False
+        self._consume_signals(payload)
+        return payload.get("running") is True
 
     def _queued(self, action: Mapping[str, object]) -> bool:
         payload = self._call(action, timeout_seconds=_TIMEOUT_SECONDS)

@@ -181,6 +181,61 @@ fn corepack_cache_is_granted_only_when_sealed_and_inside_home() {
 }
 
 #[test]
+fn the_go_module_cache_is_granted_only_when_sealed_and_inside_home() {
+    let tree = Tree::new();
+    let home = tree.dir("home", 0o755);
+    assert_eq!(go_module_cache(&home), None);
+    let cache = tree.dir("home/go/pkg/mod", 0o755);
+    assert_eq!(go_module_cache(&home), tree.sealed.then(|| cache.clone()));
+    fs::set_permissions(home.join("go/pkg"), fs::Permissions::from_mode(0o777)).unwrap();
+    assert_eq!(go_module_cache(&home), None);
+
+    // A GOPATH that leaves HOME takes the cache out of reach.
+    let other = tree.dir("other", 0o755);
+    let elsewhere = tree.dir("elsewhere/pkg/mod", 0o755);
+    symlink(
+        elsewhere.parent().unwrap().parent().unwrap(),
+        other.join("go"),
+    )
+    .unwrap();
+    assert_eq!(go_module_cache(&other), None);
+}
+
+#[test]
+fn the_cargo_caches_and_rustup_are_granted_only_when_sealed() {
+    let tree = Tree::new();
+    let home = tree.dir("home", 0o755);
+    assert!(cargo_caches(&home).is_empty());
+    assert_eq!(rustup_home(&home), None);
+
+    let registry = tree.dir("home/.cargo/registry", 0o755);
+    let git = tree.dir("home/.cargo/git", 0o755);
+    let rustup = tree.dir("home/.rustup", 0o755);
+    if !tree.sealed {
+        assert!(cargo_caches(&home).is_empty());
+        assert_eq!(rustup_home(&home), None);
+        return;
+    }
+    assert_eq!(
+        cargo_caches(&home),
+        vec![("registry", registry), ("git", git)]
+    );
+    assert_eq!(rustup_home(&home), Some(rustup));
+
+    // Credentials and the host config sit beside the caches and are never
+    // named, so neither reaches the run.
+    fs::write(tree.root.join("home/.cargo/credentials.toml"), "").unwrap();
+    fs::write(tree.root.join("home/.cargo/config.toml"), "").unwrap();
+    assert!(cargo_caches(&home)
+        .iter()
+        .all(|(name, _)| *name == "registry" || *name == "git"));
+
+    // A writable `.cargo` lets anything be dropped into the granted trees.
+    fs::set_permissions(home.join(".cargo"), fs::Permissions::from_mode(0o777)).unwrap();
+    assert!(cargo_caches(&home).is_empty());
+}
+
+#[test]
 fn shim_siblings_grant_the_machinery_a_shim_dispatches_to() {
     let tree = Tree::new();
     let home = tree.dir("home", 0o755);

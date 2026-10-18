@@ -151,12 +151,26 @@ fn try_home_states(
 /// Whether discovery finds a live resident that runs `digest`.
 fn live_resident_of_runtime(state_base: &Path, digest: &str) -> bool {
     // An unreadable state keeps the old behaviour of spending the budget.
+    // Discovery also returns this runtime's states whose process has exited,
+    // so a state counts as dead only when its process is provably gone or its
+    // PID now belongs to a process with another start marker. A process that
+    // cannot be inspected still counts as live.
     match discover_home_states_prefer(state_base, Some(digest)) {
         Ok(states) => states
             .iter()
-            .any(|(_, _, state)| state.runtime_sha256 == digest),
+            .any(|(_, _, state)| state.runtime_sha256 == digest && state_may_be_live(state)),
         Err(_) => true,
     }
+}
+
+fn state_may_be_live(state: &crate::resident_state::ResidentState) -> bool {
+    use crate::resident_state::{process_is_definitively_gone, process_start_marker};
+    if process_is_definitively_gone(state.process_id).unwrap_or(false) {
+        return false;
+    }
+    process_start_marker(state.process_id).map_or(true, |marker| {
+        crate::constant_time_eq(marker.as_bytes(), state.process_start_marker.as_bytes())
+    })
 }
 
 pub(super) fn client_request_with_deadline(
