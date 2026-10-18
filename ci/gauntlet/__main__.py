@@ -238,10 +238,12 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(rows, indent=2))
             return 0
         if args.command == "installed":
+            from .harness_case import require_account_database
             from .installed_lane import run_lane
 
             if not 1 <= args.repeat <= 100:
                 raise ValueError("--repeat is supported from 1 through 100")
+            require_account_database()
             evidence = run_lane(
                 runtime_path=args.runtime,
                 harnesses=list(args.harness),

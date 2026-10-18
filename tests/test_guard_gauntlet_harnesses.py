@@ -471,3 +471,25 @@ def test_harness_lane_refuses_a_runner_without_the_user_database(monkeypatch):
     monkeypatch.setattr(pwd, "getpwuid", missing)
     with pytest.raises(RuntimeError, match="cannot resolve its OS account"):
         require_account_database()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the account home comes from the POSIX user database")
+def test_installed_lane_refuses_a_runner_without_the_user_database_before_any_setup(monkeypatch, tmp_path, capsys):
+    # The installed lane takes the same lifecycle lock through its own managed
+    # installs, so it must name the account cause before building any lane.
+    import pwd
+
+    from ci.gauntlet import installed_lane
+    from ci.gauntlet.__main__ import main
+
+    def missing(uid: int) -> object:
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
+    def must_not_run(**kwargs: object) -> dict[str, object]:
+        raise AssertionError("the installed lane started setup without an OS account")
+
+    monkeypatch.setattr(pwd, "getpwuid", missing)
+    monkeypatch.setattr(installed_lane, "run_lane", must_not_run)
+    code = main(["installed", "--runtime", str(tmp_path / "hol-guard"), "--output", str(tmp_path / "out")])
+    assert code == 2
+    assert "cannot resolve its OS account" in capsys.readouterr().err
