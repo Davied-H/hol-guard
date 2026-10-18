@@ -47,8 +47,11 @@ fn cargo_builds_and_tests_the_package_inside_the_sandbox() {
         "cargo tree --depth 1",
     ] {
         for harness in ["codex", "claude-code", "omp"] {
-            let (reason, _) = outcome(harness, command, &ws);
+            let (reason, minimum) = outcome(harness, command, &ws);
             assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
+            if !host() {
+                assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+            }
         }
     }
 }
@@ -89,8 +92,11 @@ fn the_package_a_verb_compiles_moves_with_the_command() {
     std::fs::write(ws.join("crates/engine/Cargo.toml"), MANIFEST).unwrap();
     std::fs::create_dir_all(ws.join("docs")).unwrap();
     for harness in ["codex", "claude-code", "omp"] {
-        let (reason, _) = outcome(harness, "cd crates/engine && cargo test --offline", &ws);
+        let (reason, minimum) = outcome(harness, "cd crates/engine && cargo test --offline", &ws);
         assert_eq!(reason == CONTAINED, host(), "{reason} {harness}");
+        if !host() {
+            assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+        }
         let (reason, _) = outcome(harness, "cd docs && cargo test", &ws);
         assert_ne!(reason, CONTAINED, "{harness}");
     }

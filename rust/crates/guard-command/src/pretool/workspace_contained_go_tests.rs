@@ -40,8 +40,11 @@ fn go_builds_and_tests_the_module_inside_the_sandbox() {
         "go version",
     ] {
         for harness in ["codex", "claude-code", "omp"] {
-            let (reason, _) = outcome(harness, command, &ws);
+            let (reason, minimum) = outcome(harness, command, &ws);
             assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
+            if !host() {
+                assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+            }
         }
     }
 }
@@ -101,8 +104,11 @@ fn the_module_a_verb_builds_moves_with_the_command() {
     std::fs::write(ws.join("api/go.mod"), MODULE).unwrap();
     std::fs::create_dir_all(ws.join("docs")).unwrap();
     for harness in ["codex", "claude-code", "omp"] {
-        let (reason, _) = outcome(harness, "cd api && go build ./...", &ws);
+        let (reason, minimum) = outcome(harness, "cd api && go build ./...", &ws);
         assert_eq!(reason == CONTAINED, host(), "{reason} {harness}");
+        if !host() {
+            assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+        }
         // `docs` is no module, so go would resolve imports through the proxy.
         let (reason, _) = outcome(harness, "cd docs && go build ./...", &ws);
         assert_ne!(reason, CONTAINED, "{harness}");
@@ -136,8 +142,11 @@ fn a_fetching_flag_keeps_its_review_however_it_is_spelled() {
     // not a flag at all, are still ordinary local work.
     for command in ["go test -update ./...", "go list ./versions"] {
         for harness in ["codex", "claude-code", "omp"] {
-            let (reason, _) = outcome(harness, command, &ws);
+            let (reason, minimum) = outcome(harness, command, &ws);
             assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
+            if !host() {
+                assert_eq!(minimum, "review", "{reason}: no sandbox must require review");
+            }
         }
     }
 }
