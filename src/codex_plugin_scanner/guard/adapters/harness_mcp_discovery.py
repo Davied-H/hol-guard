@@ -220,9 +220,7 @@ def persist_discovered_harness_mcp_servers(
     return labels
 
 
-def observe_configured_mcp_servers(
-    store: object, *, context: HarnessContext, seen_at: str, stdio: bool = True
-) -> int:
+def observe_configured_mcp_servers(store: object, *, context: HarnessContext, seen_at: str, stdio: bool = True) -> int:
     """Record every configured MCP server so Protect lists it before first use.
 
     Best effort: setup commands must not fail because a harness config is
