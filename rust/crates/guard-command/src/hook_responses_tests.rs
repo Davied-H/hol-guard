@@ -168,7 +168,7 @@ fn every_watched_ecosystems_package_permission_keeps_the_containment_receipt() {
             "reason_code": "native_workspace_containment_required",
             "reason": "protected",
             "command_extensions": {
-                "binding": {"uncertainty_count": 0},
+                "binding": {"uncertainty_count": 0, "observations_digest": "sha256:fixture"},
                 "evaluation_error": null,
                 "observations": [],
                 "permission_observations": [{
@@ -187,6 +187,11 @@ fn every_watched_ecosystems_package_permission_keeps_the_containment_receipt() {
             assert_eq!(
                 rendered.get("required_execution_profile"),
                 Some(&json!("workspace-contained-v1")),
+                "{harness}: {extension}"
+            );
+            assert_eq!(
+                rendered.get("command_binding_digest"),
+                Some(&json!("sha256:fixture")),
                 "{harness}: {extension}"
             );
         }
