@@ -124,12 +124,37 @@ def _component_identity(component: str) -> _ComponentIdentity | None:
     return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode, link)
 
 
+_SEPARATORS = os.sep + (os.altsep or "")
+
+
+def _witnessable_spelling(path: str) -> str | None:
+    """This spelling when the walk below witnesses every component it names.
+
+    The walk reads the components a spelling writes down. A ``..`` segment is
+    not one of them: ``os.path.normpath`` removes it and the component before
+    it without touching the disk, while the runtime resolves it on disk, so
+    `/home/u/project/../x` is settled through `project` but would be witnessed
+    without it, and repointing that link would leave the old answer standing.
+    Only a spelling that is already the one the walk will witness, bar a
+    trailing separator, is witnessed at all.
+    """
+
+    if not os.path.isabs(path):
+        return None
+    trimmed = path.rstrip(_SEPARATORS)
+    if not os.path.splitdrive(trimmed)[1]:
+        # A root names itself; stripping its separator would leave nothing.
+        trimmed = path
+    return trimmed if os.path.normpath(trimmed) == trimmed else None
+
+
 def identity_witness(paths: Iterable[str]) -> IdentityWitness | None:
     """What every component of these paths is right now, or ``None``.
 
     ``None`` means nothing derived from these spellings may be remembered: a
     relative path names a different directory from a different working
-    directory, and a component that cannot be read says nothing at all. A
+    directory, a spelling that is not already in normal form hides components
+    from the walk, and a component that cannot be read says nothing at all. A
     symlink is witnessed by where it pointed, so a repointed link ends the
     reuse rather than preventing it; every component after it is read through
     it and witnessed by the object it reached.
@@ -137,9 +162,10 @@ def identity_witness(paths: Iterable[str]) -> IdentityWitness | None:
 
     seen: dict[str, _ComponentIdentity] = {}
     for path in paths:
-        if not os.path.isabs(path):
+        spelling = _witnessable_spelling(path)
+        if spelling is None:
             return None
-        for component in _component_prefixes(path):
+        for component in _component_prefixes(spelling):
             if component in seen:
                 continue
             identity = _component_identity(component)

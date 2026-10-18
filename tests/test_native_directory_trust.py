@@ -317,3 +317,31 @@ def test_a_spelling_this_process_must_not_resolve_is_never_remembered(
     for expected in (1, 2):
         native_directory_trust([("workspace", "~/project")], guard_home=guard_home, home_dir=home)
         assert asks == [expected]
+
+
+def test_a_spelling_that_hides_a_component_is_never_remembered(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A `..` segment resolves on disk but normalizes away lexically.
+
+    The witness walks the components a spelling writes down, so a spelling
+    whose `..` steps back through a symlink would be witnessed without that
+    link and would keep answering after the link was repointed. Such a
+    spelling is not remembered at all.
+    """
+
+    _force_available(monkeypatch)
+    home, guard_home, workspace = _install(tmp_path)
+    (home / "link").symlink_to(workspace, target_is_directory=True)
+    spelling = f"{home}/link/../project"
+    asks = [0]
+    monkeypatch.setattr(
+        module,
+        "native_resident_client_request",
+        _counting_responder([{"parameter": "workspace", "trusted": True, "path": str(workspace)}], asks),
+    )
+
+    def ask() -> list[module.DirectoryTrustVerdict]:
+        return native_directory_trust([("workspace", spelling)], guard_home=guard_home, home_dir=home)
+
+    assert ask()[0].path == str(workspace)
+    assert ask()[0].path == str(workspace)
+    assert asks == [2]
