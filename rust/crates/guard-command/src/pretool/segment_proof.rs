@@ -177,8 +177,9 @@ pub(crate) fn benign_command_segments(
 pub(super) fn stdin_filter_segment(segment: &crate::CommandSegmentV1) -> bool {
     let basename = executable_basename(segment.executable.as_deref().unwrap_or(""));
     segment.pipeline_index > 0
-        && ((matches!(basename, "head" | "tail")
-            && safe_reads::safe_head_tail_stdin_arguments(&segment.arguments))
+        && ((basename == "cat" && safe_reads::safe_cat_stdin_arguments(&segment.arguments))
+            || (matches!(basename, "head" | "tail")
+                && safe_reads::safe_head_tail_stdin_arguments(&segment.arguments))
             || (basename == "jq" && safe_reads::safe_jq_stdin_arguments(&segment.arguments))
             || (basename == "wc"
                 && safe_reads::safe_word_count_stdin_arguments(&segment.arguments))
@@ -286,7 +287,7 @@ pub(super) fn exact_safe_segment_with_context(
         }
         // Operand-free `cat` after a pipe only copies the proven producer's output.
         "cat" => {
-            (segment.pipeline_index > 0 && segment.arguments.is_empty())
+            (segment.pipeline_index > 0 && safe_reads::safe_cat_stdin_arguments(&segment.arguments))
                 || safe_reads::safe_plain_file_arguments(&segment.arguments, context)
         }
         "base64" => {

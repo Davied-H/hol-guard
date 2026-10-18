@@ -892,6 +892,23 @@
       ]
     },
     {
+      "id": "omp-native-line-range-reads-tmp-copy",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "bash"
+      ],
+      "prompt": "Save the committed copy of src/report.ts from my other project in /tmp and read parts of it: run each listed command once, exactly as written, and tell me what the first line says. A command that prints nothing still counts; do not retry it, rewrite it or delete the saved copy.",
+      "commands": [
+        "git -C {{home}}/other-project show HEAD:src/report.ts > {{scratch}}-report-main.ts",
+        "tail -n +1 {{scratch}}-report-main.ts | head -20",
+        "sed -n '1,2' {{scratch}}-report-main.ts",
+        "sed -n '1, 2'p {{scratch}}-report-main.ts | cat -A 2>/dev/null || sed -n '1,2'p {{scratch}}-report-main.ts",
+        "tail -n+1 {{scratch}}-report-main.ts",
+        "sed -n '1'p {{scratch}}-report-main.ts | sed 's/\\(const\\)/\\1/'"
+      ]
+    },
+    {
       "id": "omp-native-git-apply-check-tmp-patch",
       "expectation": "allow",
       "oracle": "native-tools",

@@ -10703,6 +10703,166 @@
       "expect": "allow"
     },
     {
+      "id": "gauntlet-git-show-to-tmp-copy",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${HOME}/other-project show HEAD:src/report.ts > ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-tail-from-line-piped-head-tmp-copy",
+      "fix_area": "line-range",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "tail -n +1 ${SCRATCH}-report-main.ts | head -20"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-sed-address-only-tmp-copy",
+      "fix_area": "line-range",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -n '1,2' ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-sed-spaced-range-cat-flag-fallback-tmp-copy",
+      "fix_area": "line-range",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -n '1, 2'p ${SCRATCH}-report-main.ts | cat -A 2>/dev/null || sed -n '1,2'p ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-tail-attached-from-line-tmp-copy",
+      "fix_area": "line-range",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "tail -n+1 ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-sed-line-then-stdin-substitution-tmp-copy",
+      "fix_area": "line-range",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -n '1'p ${SCRATCH}-report-main.ts | sed 's/\\(const\\)/\\1/'"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-tail-follow-tmp-copy",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "tail -f ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-sed-range-write-tmp-copy",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -n '1,2w ${SCRATCH}-out.txt' ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-sed-stdin-substitution-write-flag",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -n '1p' ${SCRATCH}-report-main.ts | sed 's/a/b/w ${SCRATCH}-out.txt'"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-sed-multi-expression-exec-tmp-copy",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -n -e 1p -e '1e id' ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
       "id": "gauntlet-git-show-to-tmp-patch",
       "fix_area": "temporary",
       "harnesses": [

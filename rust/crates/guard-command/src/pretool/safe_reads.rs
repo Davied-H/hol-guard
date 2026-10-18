@@ -124,23 +124,42 @@ pub(super) fn command_read_target(
     }
 }
 
-fn sed_program_and_targets(arguments: &[String]) -> Option<(bool, &str, &[String])> {
-    let (quiet, rest) = if arguments.first().is_some_and(|arg| arg == "-n") {
-        (true, &arguments[1..])
+/// Leading `-n`, `-E` and `-r` flags (alone or joined, as in `-nE`), then one
+/// script or one or more `-e SCRIPT` pairs, then the targets.
+fn sed_programs_and_targets(arguments: &[String]) -> Option<(bool, Vec<&str>, &[String])> {
+    let mut quiet = false;
+    let mut rest = arguments;
+    while let Some((flag, tail)) = rest.split_first() {
+        let Some(letters) = flag.strip_prefix('-').filter(|letters| {
+            !letters.is_empty() && letters.bytes().all(|b| matches!(b, b'n' | b'E' | b'r'))
+        }) else {
+            break;
+        };
+        quiet |= letters.contains('n');
+        rest = tail;
+    }
+    let mut programs = Vec::new();
+    if rest.first().is_some_and(|arg| arg == "-e") {
+        while let [flag, program, tail @ ..] = rest {
+            if flag != "-e" {
+                break;
+            }
+            programs.push(program.as_str());
+            rest = tail;
+        }
     } else {
-        (false, arguments)
-    };
-    let rest = if rest.first().is_some_and(|arg| arg == "-e") {
-        &rest[1..]
-    } else {
-        rest
-    };
-    let (program, targets) = rest.split_first()?;
-    Some((quiet, program, targets))
+        let (program, targets) = rest.split_first()?;
+        programs.push(program.as_str());
+        rest = targets;
+    }
+    if programs.is_empty() {
+        return None;
+    }
+    Some((quiet, programs, rest))
 }
 
 pub(super) fn safe_sed_stdin_arguments(arguments: &[String]) -> bool {
-    let Some((_, _, targets)) = sed_program_and_targets(arguments) else {
+    let Some((_, _, targets)) = sed_programs_and_targets(arguments) else {
         return false;
     };
     (targets.is_empty() || matches!(targets, [target] if target == "-"))
@@ -155,41 +174,61 @@ pub(super) fn safe_sed_arguments(
     piped_input: bool,
     context: super::PathContext<'_>,
 ) -> bool {
-    let Some((quiet, program, targets)) = sed_program_and_targets(arguments) else {
+    let Some((quiet, programs, targets)) = sed_programs_and_targets(arguments) else {
         return false;
     };
-    if program.len() > 256 || program.contains(['\n', '\r', '\\']) {
+    if programs
+        .iter()
+        .any(|program| program.len() > 256 || program.contains(['\n', '\r']))
+    {
         return false;
     }
     // `1,12p;28,40p` prints several line ranges, as the Codex output proof
-    // already allows. Every statement must be a numeric or `$` range print,
-    // so no w/W/e/r command, label or regex address can join it.
+    // already allows, and `-e 5p -e 9p` is the same program. Every statement
+    // must be a numeric or `$` range print, so no w/W/e/r command, label or
+    // regex address can join it.
+    let statements: Vec<&str> = programs
+        .iter()
+        .flat_map(|program| program.split(';'))
+        .collect();
     let bounded_print = quiet
-        && program.split(';').count() <= MAX_PRINT_RANGES
-        && program.split(';').all(|statement| {
-            statement.trim().strip_suffix('p').is_some_and(|range| {
-                let counts: Vec<_> = range.trim_end().split(',').collect();
-                (1..=2).contains(&counts.len())
-                    && counts.iter().all(|count| {
-                        *count == "$"
-                            || (!count.is_empty()
-                                && count.len() <= 6
-                                && count.bytes().all(|byte| byte.is_ascii_digit())
-                                && count.parse::<u32>().is_ok_and(|count| count > 0))
-                    })
-            })
-        });
+        && statements.len() <= MAX_PRINT_RANGES
+        && statements
+            .iter()
+            .all(|statement| bounded_print_statement(statement));
     // Exactly one substitution with inert flags. No e/w commands, program
     // files, in-place edits, or additional statements can enter this proof.
     let substitution = !quiet
-        && !program.contains(';')
-        && program.strip_prefix("s/").is_some_and(|body| {
-            let parts: Vec<_> = body.split('/').collect();
-            parts.len() == 3 && matches!(parts[2], "" | "g")
-        });
+        && matches!(programs.as_slice(), [program]
+        if !program.contains(';')
+            && program.strip_prefix("s/").is_some_and(|body| {
+                let parts: Vec<_> = body.split('/').collect();
+                parts.len() == 3 && matches!(parts[2], "" | "g")
+            }));
     (bounded_print || substitution)
         && (matches!(targets, [target] if (target == "-" && piped_input) || (!target.starts_with('-') && command_read_target(target, context, false)))
             || (targets.is_empty() && piped_input))
+}
+
+/// One `sed -n` statement that only names lines: `5p`, `$p`, `36,39p`,
+/// `36, 39p`. A range with no command, such as `36,37`, is a sed syntax error
+/// that prints nothing, so it reads no more than the print does.
+fn bounded_print_statement(statement: &str) -> bool {
+    let statement = statement.trim_matches([' ', '\t']);
+    let range = statement
+        .strip_suffix('p')
+        .unwrap_or(statement)
+        .trim_end_matches([' ', '\t']);
+    let counts: Vec<_> = range.split(',').collect();
+    (1..=2).contains(&counts.len())
+        && counts.iter().all(|count| {
+            let count = count.trim_matches([' ', '\t']);
+            count == "$"
+                || (!count.is_empty()
+                    && count.len() <= 6
+                    && count.bytes().all(|byte| byte.is_ascii_digit())
+                    && count.parse::<u32>().is_ok_and(|count| count > 0))
+        })
 }
 
 /// Upper bound on `cat` file operands. Each operand needs its own path proof,
@@ -220,11 +259,12 @@ pub(super) fn safe_plain_file_arguments(
             return false;
         }
         if argument.starts_with('-') {
-            if argument
-                .bytes()
-                .skip(1)
-                .all(|byte| matches!(byte, b'A' | b'b' | b'E' | b'n' | b's' | b'T' | b'v'))
-            {
+            if argument.bytes().skip(1).all(|byte| {
+                matches!(
+                    byte,
+                    b'A' | b'b' | b'E' | b'e' | b'n' | b's' | b'T' | b't' | b'u' | b'v'
+                )
+            }) {
                 continue;
             }
             return false;
@@ -235,6 +275,22 @@ pub(super) fn safe_plain_file_arguments(
         targets += 1;
     }
     (1..=MAX_PLAIN_FILE_TARGETS).contains(&targets)
+}
+
+/// `cat -A`, `cat -n` and the like after a pipe: only display flags, no file
+/// operand, so it copies the proven producer's output and reads nothing else.
+pub(super) fn safe_cat_stdin_arguments(arguments: &[String]) -> bool {
+    arguments.iter().all(|argument| {
+        argument.strip_prefix('-').is_some_and(|flags| {
+            !flags.is_empty()
+                && flags.bytes().all(|byte| {
+                    matches!(
+                        byte,
+                        b'A' | b'b' | b'E' | b'e' | b'n' | b's' | b'T' | b't' | b'u' | b'v'
+                    )
+                })
+        })
+    })
 }
 
 pub(super) fn safe_head_tail_arguments(
@@ -443,6 +499,12 @@ fn safe_jq_filter_arguments(arguments: &[String]) -> bool {
     jq_filter::safe_filter(filter)
 }
 
+/// A head/tail count: `20`, or `+31` for "from line 31" (`tail -n +31`).
+fn head_tail_count(value: &str) -> bool {
+    let digits = value.strip_prefix('+').unwrap_or(value);
+    !digits.is_empty() && digits.len() <= 6 && digits.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn safe_head_tail_with_targets(
     arguments: &[String],
     piped_input: bool,
@@ -454,10 +516,7 @@ fn safe_head_tail_with_targets(
     let mut after_options = false;
     for argument in arguments {
         if expect_count {
-            if !argument.bytes().all(|byte| byte.is_ascii_digit())
-                || argument.is_empty()
-                || argument.len() > 6
-            {
+            if !head_tail_count(argument) {
                 return false;
             }
             expect_count = false;
@@ -486,19 +545,21 @@ fn safe_head_tail_with_targets(
             .strip_prefix("--lines=")
             .or_else(|| argument.strip_prefix("--bytes="))
         {
-            if value.is_empty()
-                || value.len() > 6
-                || !value.bytes().all(|byte| byte.is_ascii_digit())
-            {
+            if !head_tail_count(value) {
                 return false;
             }
             continue;
         }
-        if argument.starts_with('-')
-            && argument.len() > 1
-            && argument.len() <= 7
-            && argument.bytes().skip(1).all(|byte| byte.is_ascii_digit())
-        {
+        // `-20`, and the attached `-n+31` and `-c10` spellings.
+        if let Some(value) = argument.strip_prefix('-') {
+            if value.strip_prefix(['n', 'c']).is_some_and(head_tail_count)
+                || (!value.starts_with('+') && head_tail_count(value))
+            {
+                continue;
+            }
+        }
+        // BSD `tail +31 FILE`, an obsolete spelling of `tail -n +31 FILE`.
+        if argument.starts_with('+') && head_tail_count(argument) {
             continue;
         }
         if argument.starts_with('-') {
