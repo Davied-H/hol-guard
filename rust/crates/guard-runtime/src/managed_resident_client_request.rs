@@ -152,12 +152,13 @@ fn try_home_states(
 fn live_resident_of_runtime(state_base: &Path, digest: &str) -> bool {
     // An unreadable state keeps the old behaviour of spending the budget.
     // Discovery also returns this runtime's states whose process has exited,
-    // so a leftover state file must not count as a live resident.
+    // so a state counts as dead only when its process is provably gone; a
+    // process that cannot be inspected still counts as live.
     match discover_home_states_prefer(state_base, Some(digest)) {
         Ok(states) => states.iter().any(|(_, _, state)| {
             state.runtime_sha256 == digest
-                && validate_package_process_identity(state.process_id, &state.process_start_marker)
-                    .is_ok()
+                && !crate::resident_state::process_is_definitively_gone(state.process_id)
+                    .unwrap_or(false)
         }),
         Err(_) => true,
     }

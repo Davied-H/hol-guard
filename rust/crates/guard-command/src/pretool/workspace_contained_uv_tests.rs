@@ -1,6 +1,7 @@
 //! uv's local verbs run inside the workspace sandbox; its installing verbs
-//! keep the admission they have.
-use crate::pretool::workspace_contained_tests::{controls, workspace, CONTAINED};
+//! keep the admission they have. A host without the sandbox, such as
+//! Windows, keeps the admission for local verbs too.
+use crate::pretool::workspace_contained_tests::{controls, host, workspace, CONTAINED};
 
 const PROJECT: &str = "[project]\nname = \"app-portal\"\nversion = \"0.1.0\"\n";
 
@@ -40,7 +41,7 @@ fn uv_runs_the_project_environment_inside_the_sandbox() {
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, _) = outcome(harness, command, &ws);
-            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+            assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
         }
     }
 }
@@ -140,7 +141,7 @@ fn a_script_carrying_its_own_dependencies_keeps_its_review() {
         assert_ne!(reason, CONTAINED, "{harness}");
         assert_eq!(minimum, "review", "{harness} ({reason})");
         let (reason, _) = outcome(harness, "uv run plain.py", &ws);
-        assert_eq!(reason, CONTAINED, "{harness}");
+        assert_eq!(reason == CONTAINED, host(), "{reason} {harness}");
     }
 }
 
@@ -157,7 +158,7 @@ fn the_options_of_the_program_uv_starts_are_not_uvs_own() {
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, _) = outcome(harness, command, &ws);
-            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+            assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
         }
     }
 }
@@ -172,7 +173,7 @@ fn the_global_options_before_a_verb_are_read_past() {
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, _) = outcome(harness, command, &ws);
-            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+            assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
         }
     }
     // An option this module does not know could move or re-resolve the
@@ -197,7 +198,7 @@ fn the_project_a_verb_works_on_moves_with_the_command() {
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, _) = outcome(harness, command, &ws);
-            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+            assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
         }
     }
     // `web` has no environment of its own, so a run there would install.
@@ -240,7 +241,7 @@ fn an_option_that_takes_a_value_does_not_hide_what_follows_it() {
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, _) = outcome(harness, command, &ws);
-            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+            assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
         }
     }
 }
@@ -288,7 +289,7 @@ fn a_script_is_read_where_the_run_will_stand() {
         let (reason, _) = outcome(harness, "uv --directory api run report.py", &ws);
         assert_ne!(reason, CONTAINED, "{harness}");
         let (reason, _) = outcome(harness, "uv --directory api run plain.py", &ws);
-        assert_eq!(reason, CONTAINED, "{harness}");
+        assert_eq!(reason == CONTAINED, host(), "{reason} {harness}");
     }
 }
 
@@ -316,7 +317,7 @@ fn the_project_is_read_from_the_directory_the_run_enters() {
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, _) = outcome(harness, command, &ws);
-            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+            assert_eq!(reason == CONTAINED, host(), "{reason} {harness}: {command}");
         }
     }
 }
