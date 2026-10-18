@@ -119,6 +119,7 @@ pub mod pretool_jq_sibling_filters;
 pub mod pretool_link_chains;
 pub mod pretool_linked_writes;
 pub mod pretool_links_removals;
+pub mod pretool_literal_route_reads;
 pub mod pretool_literal_route_writes;
 pub mod pretool_lockfile_install;
 pub mod pretool_lockfile_install_forms;
