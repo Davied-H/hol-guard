@@ -10,6 +10,13 @@
 //! for the first, the daemon's version line. Neither starts a container or
 //! reads a project file.
 //!
+//! `docker buildx ls` prints the builder instances named in the client's own
+//! configuration directory, with their endpoints and platforms. It bootstraps
+//! nothing: only `buildx inspect --bootstrap` starts a builder, and that stays
+//! reviewed. `docker compose ls` prints the projects the daemon already labels
+//! its running containers with, so unlike `compose ps` it never resolves a
+//! compose file, its `.env` or its `include` sources.
+//!
 //! Still reviewed:
 //! - any option before the subcommand. `-H`/`--host`, `--context` and
 //!   `--config` move the client to another daemon or configuration, and
@@ -34,18 +41,28 @@ const CONTAINER_FLAGS: [&str; 4] = ["-s", "--size", "-l", "--latest"];
 /// Image-listing flags that take no value.
 const IMAGE_FLAGS: [&str; 1] = ["--digests"];
 
+/// Builder and project listings print a fixed summary and take no flag of
+/// their own beyond the shared ones.
+const NO_FLAGS: [&str; 0] = [];
+
 /// Options whose value only filters, bounds or formats the printed summary.
 const CONTAINER_VALUES: [&str; 5] = ["-n", "--last", "-f", "--filter", "--format"];
 const IMAGE_VALUES: [&str; 3] = ["-f", "--filter", "--format"];
+const BUILDER_VALUES: [&str; 1] = ["--format"];
+const PROJECT_VALUES: [&str; 3] = ["-f", "--filter", "--format"];
 
 /// Single-letter flags that may be clustered (`-aq`).
 const CONTAINER_SHORT: &str = "aqsl";
 const IMAGE_SHORT: &str = "aq";
+const BUILDER_SHORT: &str = "";
+const PROJECT_SHORT: &str = "aq";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Listing {
     Containers,
     Images,
+    Builders,
+    Projects,
 }
 
 pub(super) fn safe_docker_segment(
@@ -83,7 +100,10 @@ pub(super) fn safe_docker_arguments(arguments: &[String]) -> bool {
     // Compose plugin prints its banner without loading a project file.
     if matches!(
         words.as_slice(),
-        ["version"] | ["compose", "version"] | ["compose", "version", "--short"]
+        ["version"]
+            | ["compose", "version"]
+            | ["compose", "version", "--short"]
+            | ["buildx", "version"]
     ) {
         return true;
     }
@@ -92,6 +112,8 @@ pub(super) fn safe_docker_arguments(arguments: &[String]) -> bool {
         ["container", "ls" | "list" | "ps", rest @ ..] => (Listing::Containers, rest),
         ["images", rest @ ..] => (Listing::Images, rest),
         ["image", "ls" | "list", rest @ ..] => (Listing::Images, rest),
+        ["buildx", "ls", rest @ ..] => (Listing::Builders, rest),
+        ["compose", "ls" | "list", rest @ ..] => (Listing::Projects, rest),
         _ => return super::docker_start::safe_start_arguments(&words),
     };
     listing_options_safe(listing, rest)
@@ -101,6 +123,8 @@ fn listing_options_safe(listing: Listing, words: &[&str]) -> bool {
     let (flags, values, short): (&[&str], &[&str], &str) = match listing {
         Listing::Containers => (&CONTAINER_FLAGS[..], &CONTAINER_VALUES[..], CONTAINER_SHORT),
         Listing::Images => (&IMAGE_FLAGS[..], &IMAGE_VALUES[..], IMAGE_SHORT),
+        Listing::Builders => (&NO_FLAGS[..], &BUILDER_VALUES[..], BUILDER_SHORT),
+        Listing::Projects => (&NO_FLAGS[..], &PROJECT_VALUES[..], PROJECT_SHORT),
     };
     let mut positionals = 0usize;
     let mut index = 0;
@@ -144,7 +168,7 @@ fn listing_options_safe(listing: Listing, words: &[&str]) -> bool {
     // `docker images <repository[:tag]>` filters by one reference; the
     // container listing takes none.
     match listing {
-        Listing::Containers => positionals == 0,
+        Listing::Containers | Listing::Builders | Listing::Projects => positionals == 0,
         Listing::Images => positionals <= 1,
     }
 }
