@@ -55,8 +55,9 @@ fn unsafe_root(value: &str, context: ReadContext<'_>) -> bool {
             // An agent in one repository names a neighbour to find a file by
             // name. `fd` skips the same hidden and ignored entries `rg` skips,
             // and prints names rather than contents, so the walk that proves an
-            // `rg` root proves this listing too.
-            && !sibling::rg_sibling_repository_root(value, context))
+            // `rg` root proves this listing too, once it reads the ignore files
+            // `fd` reads rather than the ones `rg` reads.
+            && !sibling::fd_sibling_repository_root(value, context))
 }
 
 fn unsafe_value(role: SearchValueRole, value: &str, context: ReadContext<'_>) -> bool {

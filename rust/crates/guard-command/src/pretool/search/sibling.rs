@@ -32,6 +32,10 @@ const MAX_ENTRIES: usize = 10_000;
 const MAX_DEPTH: usize = 64;
 const MAX_IGNORE_BYTES: u64 = 64 * 1024;
 const WHITELISTING_FILES: [&str; 2] = [".ignore", ".rgignore"];
+/// `fd` reads `.ignore` like `rg` does, `.fdignore` in place of `.rgignore`,
+/// and a global ignore file of its own.
+const FD_WHITELISTING_FILES: [&str; 3] = [".ignore", ".rgignore", ".fdignore"];
+const FD_GLOBAL_IGNORE: &str = ".config/fd/ignore";
 
 /// True when `value` names a directory of a git working tree strictly below
 /// home and every file `rg` would search there clears the descendant screen.
@@ -39,6 +43,23 @@ pub(in crate::pretool) fn rg_sibling_repository_root(
     value: &str,
     context: ReadContext<'_>,
 ) -> bool {
+    sibling_repository_root(value, context, &WHITELISTING_FILES)
+}
+
+/// [`rg_sibling_repository_root`] for `fd`, which reads its own ignore files.
+/// A negation in a `.fdignore` re-includes an entry the walk pruned, and the
+/// global ignore file can do the same for every search, so both send the
+/// listing to review.
+pub(in crate::pretool) fn fd_sibling_repository_root(
+    value: &str,
+    context: ReadContext<'_>,
+) -> bool {
+    context.home_dir.is_some_and(|home| {
+        std::fs::symlink_metadata(Path::new(home).join(FD_GLOBAL_IGNORE)).is_err()
+    }) && sibling_repository_root(value, context, &FD_WHITELISTING_FILES)
+}
+
+fn sibling_repository_root(value: &str, context: ReadContext<'_>, whitelisting: &[&str]) -> bool {
     if value.is_empty()
         || value.len() > 4096
         || value.contains(tree::HAZARDS)
@@ -61,11 +82,11 @@ pub(in crate::pretool) fn rg_sibling_repository_root(
     };
     operand.is_dir()
         && super::super::git_routes::repository_below_home(root, context)
-        && no_whitelisting_ancestor(&operand, context)
+        && no_whitelisting_ancestor(&operand, context, whitelisting)
         && match ignored_names(root) {
             Some(mut ignored) => {
                 reachable_by_default(root, &operand, &mut ignored)
-                    && walk(root, &operand, &mut ignored)
+                    && walk(root, &operand, &mut ignored, whitelisting)
             }
             None => false,
         }
@@ -104,7 +125,11 @@ fn reachable_by_default(root: &Path, operand: &Path, ignored: &mut Ignored) -> b
 }
 
 /// `rg` also reads `.ignore` and `.rgignore` files in parent directories.
-fn no_whitelisting_ancestor(operand: &Path, context: ReadContext<'_>) -> bool {
+fn no_whitelisting_ancestor(
+    operand: &Path,
+    context: ReadContext<'_>,
+    whitelisting: &[&str],
+) -> bool {
     let Some(home) = context
         .home_dir
         .and_then(|home| std::fs::canonicalize(home).ok())
@@ -116,7 +141,7 @@ fn no_whitelisting_ancestor(operand: &Path, context: ReadContext<'_>) -> bool {
         .skip(1)
         .take_while(|path| path.starts_with(&home))
         .all(|path| {
-            WHITELISTING_FILES
+            whitelisting
                 .iter()
                 .all(|name| std::fs::symlink_metadata(path.join(name)).is_err())
         })
@@ -266,7 +291,7 @@ fn ignore_lines(path: &Path) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn walk(root: &Path, operand: &Path, ignored: &mut Ignored) -> bool {
+fn walk(root: &Path, operand: &Path, ignored: &mut Ignored, whitelisting: &[&str]) -> bool {
     let mut pending: Vec<(PathBuf, usize)> = vec![(operand.to_path_buf(), 0)];
     let mut inspected = 0_usize;
     while let Some((directory, depth)) = pending.pop() {
@@ -291,7 +316,7 @@ fn walk(root: &Path, operand: &Path, ignored: &mut Ignored) -> bool {
             let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
                 return false;
             };
-            if WHITELISTING_FILES.contains(&name) {
+            if whitelisting.contains(&name) {
                 return false;
             }
             // `rg` skips hidden entries unless a negated pattern re-includes

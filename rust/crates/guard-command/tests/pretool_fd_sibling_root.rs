@@ -65,3 +65,35 @@ fn an_option_that_widens_the_listing_keeps_its_review() {
         assert_decision(&cwd, &layout.home, command, false);
     }
 }
+
+/// `fd` reads `.fdignore` and a global ignore file of its own, and a negation
+/// in either re-includes an entry the walk pruned, so the listing would print
+/// a name nothing screened.
+#[test]
+fn an_fd_ignore_file_that_could_re_include_an_entry_keeps_its_review() {
+    let layout = layout("fd-sibling-fdignore");
+    let sibling = layout.org.join("service-api");
+    write(sibling.join(".gitignore"), ".secrets/\n");
+    write(sibling.join(".fdignore"), "!.secrets/\n");
+    write(sibling.join(".secrets/deploy.key"), "fixture\n");
+    let cwd = layout.org.join("app-portal");
+    for command in ["fd . ~/Code/org/service-api", "fd . ../service-api"] {
+        assert_decision(&cwd, &layout.home, command, false);
+    }
+    // `rg` reads none of those files, so the same tree keeps its allow.
+    assert_decision(&cwd, &layout.home, "rg -n fixture ../service-api", true);
+}
+
+/// The global ignore file applies to every `fd` run on the machine, so no
+/// walk of one repository can answer for what it re-includes.
+#[test]
+fn a_global_fd_ignore_file_keeps_every_sibling_listing_reviewed() {
+    let layout = layout("fd-sibling-global-fdignore");
+    write(
+        layout.org.join("service-api/app/badge/page.tsx"),
+        "export const x = 1;\n",
+    );
+    write(layout.home.join(".config/fd/ignore"), "!.env\n");
+    let cwd = layout.org.join("app-portal");
+    assert_decision(&cwd, &layout.home, "fd . ~/Code/org/service-api", false);
+}
