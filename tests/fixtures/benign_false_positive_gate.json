@@ -10575,6 +10575,134 @@
       "expect": "allow"
     },
     {
+      "id": "git-show-to-tmp-then-wc",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/app-portal show HEAD:scripts/report.ts > ${PRIVATE_TMP}/report-main.ts && wc -l ${PRIVATE_TMP}/report-main.ts"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "stat-format-then-file-on-tmp-copy",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "stat -f \"%N %Sm\" ${PRIVATE_TMP}/notes.txt; file ${PRIVATE_TMP}/notes.txt"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-git-show-to-tmp-then-run",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/app-portal show HEAD:scripts/report.ts > ${PRIVATE_TMP}/report-main.ts && sh ${PRIVATE_TMP}/report-main.ts"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-git-status-to-tmp-chain",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/app-portal status --short > ${PRIVATE_TMP}/status.txt; cat ${PRIVATE_TMP}/status.txt"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "gauntlet-rg-replace-trailing-flag",
+      "fix_area": "shell",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n \"report|window\" ${HOME}/other-project/src/report.ts ${HOME}/other-project/package.json -r | head -30"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-rg-replace-grep-only-include",
+      "fix_area": "shell",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -rn \"report\\b|window.*ms\\b\" ${HOME}/other-project/src/report.ts 2>/dev/null | head -10; rg -rn \"report\\(|window\" ${HOME}/other-project/src --include=\"*.ts\" -l | head -8"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-git-show-tmp-copy-then-wc",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${HOME}/other-project show HEAD:src/report.ts > ${SCRATCH}-report-main.ts && wc -l ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-stat-format-then-file-tmp-copy",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "stat -f \"%N %Sm\" ${SCRATCH}-report-main.ts; file ${SCRATCH}-report-main.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "session-claude-ask-user-question-answered",
       "fix_area": "read",
       "harnesses": [

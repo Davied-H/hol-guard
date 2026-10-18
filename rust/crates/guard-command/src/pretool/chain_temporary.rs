@@ -29,6 +29,41 @@ pub(super) fn peers_only(model: &CanonicalCommandV1) -> bool {
     plain_chain(model, &[])
 }
 
+/// Git subcommands that only read objects and history. None writes a file
+/// outside the repository, changes directory, renames a file or creates a
+/// link, so one may share a chain with a temporary file it fills or reads:
+/// `git -C ../app show <rev>:src/a.ts > /tmp/a.ts && wc -l /tmp/a.ts`. A
+/// working-tree command (`status`, `checkout`, `pull`) or a `--output` flag
+/// stays out, and each Git segment still needs its own proof.
+const GIT_OBJECT_READERS: &[&str] = &[
+    "cat-file",
+    "diff",
+    "log",
+    "ls-files",
+    "ls-tree",
+    "merge-base",
+    "rev-list",
+    "rev-parse",
+    "show",
+    "show-ref",
+];
+
+/// Plain peers beside Git object reads. This is the guard for a temporary file
+/// a chain writes or reads; [`peers_only`] stays the guard for copies.
+pub(super) fn temporary_peers(model: &CanonicalCommandV1) -> bool {
+    peers_only(model)
+        || (plain_chain(model, &["git"])
+            && model.segments.iter().all(|segment| {
+                segment.executable.as_deref() != Some("git")
+                    || (directory_copies::git_subcommand(segment)
+                        .is_some_and(|name| GIT_OBJECT_READERS.contains(&name))
+                        && !segment
+                            .arguments
+                            .iter()
+                            .any(|argument| argument.starts_with("--output")))
+            }))
+}
+
 /// Like [`peers_only`], but `extra` names may also appear in the chain.
 pub(super) fn plain_chain(model: &CanonicalCommandV1, extra: &[&str]) -> bool {
     model.confidence == "exact"
@@ -86,7 +121,7 @@ pub(super) fn absent_reads_bounded(
     context: super::PathContext<'_>,
 ) -> bool {
     model.segments.len() == 1
-        || peers_only(model)
+        || temporary_peers(model)
         || !model.segments.iter().any(|segment| {
             segment.arguments.iter().any(|argument| {
                 absent_temporary_read_target(argument, context.home_dir, context.cwd)

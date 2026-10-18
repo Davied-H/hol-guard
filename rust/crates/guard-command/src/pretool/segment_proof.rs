@@ -298,9 +298,7 @@ pub(super) fn exact_safe_segment_with_context(
         "df" => super::metadata_reads::safe_df_arguments(&segment.arguments),
         "diff" => super::metadata_reads::safe_diff_arguments(&segment.arguments, context),
         "file" => super::metadata_reads::safe_file_arguments(&segment.arguments, context),
-        "stat" => matches!(segment.arguments.as_slice(), [target]
-            if !target.starts_with('-')
-                && safe_reads::bounded_read_target(target, context.home_dir, context.cwd, false)),
+        "stat" => super::metadata_reads::safe_stat_arguments(&segment.arguments, context),
         "cp" => {
             super::chain_temporary::copy_segments_allowed(model, segment, context)
                 && super::directory_targets::drive_targets_quoted(segment)

@@ -39,6 +39,7 @@ pub mod pretool_agent_metadata;
 pub mod pretool_brew_reads;
 pub mod pretool_bun_eval;
 pub mod pretool_cd_canonical_workspace;
+pub mod pretool_chain_git_temporary;
 pub mod pretool_chain_temporary_files;
 pub mod pretool_cline_dual_copies;
 pub mod pretool_contained_exec_roots;

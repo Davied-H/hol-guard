@@ -24,6 +24,11 @@
 //! or name lists from another path (`-m`, `-f`), compile magic (`-C`), touch
 //! access times (`-p`), open devices (`-s`), run decompressors (`-z`) or take
 //! a value are not admitted.
+//!
+//! `stat` prints the metadata of each operand and never opens it. A format
+//! option (`-f`/`-t` on BSD, `-c`/`--format`/`--printf` on GNU) only shapes
+//! that text. Every operand gets the ordinary read proof, or the absent
+//! chain-local temporary file proof, so a credential path stays reviewed.
 use super::{safe_reads, search};
 
 const MAX_OPERANDS: usize = 16;
@@ -185,6 +190,51 @@ fn diff_option(option: &str) -> bool {
         || option[1..]
             .bytes()
             .all(|flag| b"uqrNbwBiastpyEZ".contains(&flag))
+}
+
+pub(super) fn safe_stat_arguments(arguments: &[String], context: super::PathContext<'_>) -> bool {
+    let mut operands = Vec::new();
+    let mut after_options = false;
+    let mut values = arguments.iter();
+    while let Some(argument) = values.next() {
+        let option = argument.as_str();
+        if after_options || !option.starts_with('-') || option == "-" {
+            operands.push(option);
+        } else if option == "--" {
+            after_options = true;
+        } else if matches!(option, "-f" | "-c" | "-t") {
+            // The next word is the output format, never a path.
+            if !values.next().is_some_and(|format| stat_format(format)) {
+                return false;
+            }
+        } else if let Some(long) = option.strip_prefix("--") {
+            let allowed = match long.split_once('=') {
+                Some(("format" | "printf", format)) => stat_format(format),
+                Some(_) => false,
+                None => matches!(long, "dereference" | "terse"),
+            };
+            if !allowed {
+                return false;
+            }
+        } else if !option[1..].bytes().all(|flag| b"FLlnqrsx".contains(&flag)) {
+            return false;
+        }
+    }
+    !operands.is_empty()
+        && operands.len() <= MAX_OPERANDS
+        && operands.iter().all(|operand| {
+            safe_reads::bounded_read_target(operand, context.home_dir, context.cwd, true)
+                || super::chain_temporary::absent_temporary_read_target(
+                    operand,
+                    context.home_dir,
+                    context.cwd,
+                )
+        })
+}
+
+/// An output format is printed, never run: bounded, single-line text.
+fn stat_format(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 256 && !value.contains(['\n', '\r', '\0'])
 }
 
 pub(super) fn safe_file_arguments(arguments: &[String], context: super::PathContext<'_>) -> bool {

@@ -117,6 +117,12 @@ class BenignFixture:
         shutil.rmtree(self.tmp_worktree.parent, ignore_errors=True)
         shutil.rmtree(self.tmp_org.parent, ignore_errors=True)
         shutil.rmtree(self.scratch, ignore_errors=True)
+        self.scratch_copy.unlink(missing_ok=True)
+
+    @property
+    def scratch_copy(self) -> Path:
+        """A saved file straight in /tmp, next to the scratch leaf, that a chain may inspect."""
+        return Path(f"{self.scratch}-report-main.ts")
 
     @property
     def contained_requests(self) -> Path:
@@ -465,9 +471,11 @@ def build_fixture(root: Path) -> BenignFixture:
     _git(bench, "commit", "--quiet", "-m", "bench base", home=home)
     # A leaf directly in /tmp that does not exist yet, as a throwaway checkout destination.
     scratch = Path(_system_tmp()) / f"hg-fp-scratch-{os.getpid()}-{secrets.token_hex(4)}"
-    return BenignFixture(
+    fixture = BenignFixture(
         root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org, scratch
     )
+    _write(fixture.scratch_copy, "export const reportWindow = 'report-window-marker';\n")
+    return fixture
 
 
 def route_codex(result: dict[str, object], payload: dict[str, object], fixture: BenignFixture) -> dict[str, object]:
