@@ -866,7 +866,7 @@ class LocalCliApiService:
             if fresh:
                 # A forced refresh reads the configuration as it is now.
                 self._discovery_cache = self._remote_discovery_cache = None
-            servers = self._discovered_servers(strict=strict)
+            servers = self._discovered_servers(strict=True) if strict else self._discovered_servers()
             remote, remote_harnesses = self._remote_scan()
             return persist_discovered_harness_mcp_servers(
                 self._store,
