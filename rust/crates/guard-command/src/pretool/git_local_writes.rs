@@ -355,7 +355,7 @@ fn proven(
         || ((merging || rebasing) && !merge::inert(&effective, &repository))
         || !rebases
             .iter()
-            .all(|index| rebase::proven(&probe, &model.segments[*index].arguments, &effective))
+            .all(|index| rebase::proven(&probe, &model.segments[*index], &effective))
         || (signs
             && !signing::trusted(
                 &effective,

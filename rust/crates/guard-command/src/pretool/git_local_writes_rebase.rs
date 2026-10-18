@@ -12,6 +12,7 @@
 
 use super::super::git_remote_config::GitConfig;
 use super::super::git_session_probe::Probe;
+use crate::CommandSegmentV1;
 use std::fs;
 
 /// The hooks the replayed commits run, plus `post-checkout`.
@@ -119,12 +120,14 @@ pub(super) fn start(rest: &[&str]) -> bool {
     upstream.is_some()
 }
 
-/// Whether the repository holds what the rebase form in `arguments` needs: a
+/// Whether the repository holds what the rebase form in `original` needs: a
 /// resume needs a merge-backend rebase in progress carrying only the state
 /// files above, and a start needs no rebase in progress at all, so no saved
 /// todo list or strategy reaches it.
-pub(super) fn proven(probe: &Probe, arguments: &[String], effective: &GitConfig) -> bool {
-    let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
+pub(super) fn proven(probe: &Probe, original: &CommandSegmentV1, effective: &GitConfig) -> bool {
+    let stripped = super::super::segment_proof::without_stderr_merge(original);
+    let segment = stripped.as_ref().unwrap_or(original);
+    let words: Vec<&str> = segment.arguments.iter().map(String::as_str).collect();
     let Some((&"rebase", rest)) = words.split_first() else {
         return false;
     };
