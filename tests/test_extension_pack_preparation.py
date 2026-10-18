@@ -166,6 +166,7 @@ def test_preparation_is_inert_until_explicit_selection_and_includes_permission_c
     )
     assert result.selected == {"command.core"}
     assert not any(delivery.archives["command.external"] in target["member"] for target in delivery.calls)
+
     assert not any(delivery.archives["command.unused"] in target["member"] for target in delivery.calls)
     expanded = preparation.prepare(
         delivery.verified(), ["command.external"], delivery.cache, engine="1" * 64, now=1500, fetch=delivery.fetch
@@ -177,6 +178,21 @@ def test_preparation_is_inert_until_explicit_selection_and_includes_permission_c
     assert not hasattr(expanded, "active")
     with pytest.raises(AttributeError):
         expanded.source_sha = "0" * 40
+
+
+@pytest.mark.parametrize("forged_copy", [False, True])
+def test_defaults_cannot_disguise_an_external_transport_record(delivery, forged_copy):
+    policy = delivery.value["policy"]
+    record = preparation.lookup(delivery.store, policy["root"], policy["transport"], "command.external")
+    if forged_copy:
+        record = {**record, "trust_class": "first-party"}
+    reference = delivery.store.put_json(record)
+    policy["defaults"] = {"count": 1, "index": delivery.store.index({"command.external": reference})}
+    delivery.plan.finish()
+    with pytest.raises(ValueError, match=r"external policy|default policy reference"):
+        preparation.prepare(delivery.verified(), [], delivery.cache, engine="1" * 64, now=1500, fetch=delivery.fetch)
+    assert delivery.native_calls == []
+    assert not any(delivery.archives["command.external"] in target["member"] for target in delivery.calls)
 
 
 def test_unverified_expired_and_incompatible_roots_do_no_preparation(delivery):

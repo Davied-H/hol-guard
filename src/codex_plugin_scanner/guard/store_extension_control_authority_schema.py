@@ -185,4 +185,8 @@ def ensure_extension_control_authority_schema(
             )
             """
         )
+        _ = connection.execute("""create table if not exists extension_control_pack_reservation_archive (
+            archive_id text primary key,
+            reservations_json text not null
+        )""")
     return True

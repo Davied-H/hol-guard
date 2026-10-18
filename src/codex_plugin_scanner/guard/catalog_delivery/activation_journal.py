@@ -60,6 +60,10 @@ def reserve(store, connection, draft, *, control_revision, snapshot_digest, cata
         previous_digest = current["record_digest"]
     if previous_digest != draft.previous_digest or header["previous_digest"] != previous_digest:
         raise NativePolicySnapshotError("native_command_pack_activation_conflict")
+    if connection.execute(
+        "select 1 from extension_command_pack_pending where control_revision=?", (control_revision,)
+    ).fetchone():
+        raise NativePolicySnapshotError("native_command_pack_reservation_conflict")
     # The link is authenticated separately from both the data and control
     # records. Copying a draft to another approved transition cannot reuse it.
     data, digest, mac = authenticated_record(
@@ -86,7 +90,6 @@ def finish(store, connection, transition):
     It may finish offline after expiry, just as an already committed active
     snapshot remains usable offline. Unanchored reservations grant no authority.
     """
-    require_exclusive_command_control_mutation_lease(store.guard_home)
     authority_key = store._authority_key(required=True)
     control = verify_authenticated_record(
         transition["transition_json"],
@@ -105,6 +108,7 @@ def finish(store, connection, transition):
     )
     if expected_pack is None and row is None:
         return
+    require_exclusive_command_control_mutation_lease(store.guard_home)
     if row is None or row["record_digest"] != expected_pack:
         raise NativePolicySnapshotError("native_command_pack_transition_missing")
     anchor = store._read_anchor(key=authority_key)
@@ -152,3 +156,19 @@ def abandon(connection, revision):
     """An unanchored reservation never changes the active slot."""
     if _exists(connection):
         connection.execute("delete from extension_command_pack_pending where control_revision=?", (revision,))
+
+
+def abandon_all(connection, *, archive_id=None):
+    """Reset archives reservations and discards them with their transitions."""
+    if _exists(connection):
+        if archive_id is not None:
+            import json
+
+            rows = connection.execute(
+                "select * from extension_command_pack_pending order by control_revision"
+            ).fetchall()
+            connection.execute(
+                "insert into extension_control_pack_reservation_archive values (?,?)",
+                (archive_id, json.dumps([dict(row) for row in rows], sort_keys=True, separators=(",", ":"))),
+            )
+        connection.execute("delete from extension_command_pack_pending")

@@ -31,9 +31,9 @@ from tests.test_native_command_control_binding_publisher import (
 )
 
 
-@pytest.mark.parametrize("crash_after_anchor", [False, True])
+@pytest.mark.parametrize("failure", [None, "crash", "missing", "corrupt"])
 def test_approved_control_commit_and_anchored_retry_install_the_same_pack_record(
-    delivery, tmp_path, monkeypatch, crash_after_anchor
+    delivery, tmp_path, monkeypatch, failure
 ):
     store = _store(tmp_path, MemorySecretStore())
     prepared = preparation.prepare(
@@ -73,7 +73,7 @@ def test_approved_control_commit_and_anchored_retry_install_the_same_pack_record
     )
     monkeypatch.setattr("codex_plugin_scanner.guard.catalog_delivery.activation_journal.time.time", lambda: 1500)
     write_anchor = store._write_and_verify_anchor
-    if crash_after_anchor:
+    if failure is not None:
 
         def crash(anchor, *, key):
             write_anchor(anchor, key=key)
@@ -85,12 +85,44 @@ def test_approved_control_commit_and_anchored_retry_install_the_same_pack_record
             store.commit_extension_control_layers((), **arguments)
         assert activation_store.read(store) is None
         monkeypatch.setattr(store, "_write_and_verify_anchor", write_anchor)
+        if failure in {"missing", "corrupt"}:
+            with store._connect() as connection:
+                if failure == "missing":
+                    connection.execute("delete from extension_command_pack_pending")
+                else:
+                    connection.execute("update extension_command_pack_pending set record_mac=?", ("f" * 64,))
+            recovered = store.recover_extension_control_authority(
+                catalog_digest=registry.catalog_digest, migration_registry=registry
+            )
+            assert recovered.health is AuthorityHealth.PROTECTED
+            assert recovered.revision == 0
+            with store._connect() as connection:
+                assert connection.execute("select count(*) from extension_command_pack_pending").fetchone()[0] == 0
+                assert (
+                    connection.execute("select count(*) from extension_control_pack_reservation_archive").fetchone()[0]
+                    == 1
+                )
+            arguments["pack_activation"] = None
+            arguments["proof"] = _proof(
+                store,
+                (),
+                revision=0,
+                key="after-reset",
+                actor_id="unit-admin",
+                nonce="after-reset-nonce",
+                catalog_digest=registry.catalog_digest,
+            )
+            arguments["idempotency_key"] = "after-reset"
+            arguments["nonce"] = "after-reset-nonce"
     view = store.commit_extension_control_layers((), **arguments)
     assert view.health is AuthorityHealth.PROTECTED
     assert view.revision == 1
     active = activation_store.read(store)
-    assert active.record_digest == draft.digest
-    assert active.metadata == prepared.metadata
+    if failure in {"missing", "corrupt"}:
+        assert active is None
+    else:
+        assert active.record_digest == draft.digest
+        assert active.metadata == prepared.metadata
     with store._connect() as connection:
         assert connection.execute("select count(*) from extension_command_pack_pending").fetchone()[0] == 0
         assert connection.execute("select version from extension_control_schema_migration").fetchone()[0] == 5

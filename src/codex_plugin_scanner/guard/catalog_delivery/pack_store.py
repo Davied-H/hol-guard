@@ -53,10 +53,12 @@ def publish_object(directory: Path, sha256: str, data: bytes) -> bool:
             stream.close()
             try:
                 os.link(temporary, path)
+                durable_directory(directory)
                 return True
             except FileExistsError:
                 if path.is_symlink() or read_object(path) != data:
                     raise ValueError("existing pack cache object failed integrity") from None
+                durable_directory(directory)
                 return False
         finally:
             temporary.unlink(missing_ok=True)

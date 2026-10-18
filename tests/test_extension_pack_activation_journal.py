@@ -90,6 +90,29 @@ def test_first_activation_cannot_omit_the_installed_source_floor(journal):
         activation_transition.stage(None, journal.prepared, verifier_key=_key(journal.store), now=1500)
 
 
+def test_packless_transition_does_not_add_an_exclusive_lease_requirement(journal):
+    data, digest, mac = authenticated_record({}, key=b"a" * 32, purpose=TRANSITION_PURPOSE)
+    transition = {**journal.transition, "transition_json": data, "transition_digest": digest, "transition_mac": mac}
+    with hold_command_control_authority_lock(journal.store.guard_home, shared=True):
+        activation_journal.finish(journal.store, journal.connection, transition)
+
+
+def test_published_object_entry_is_durable_for_both_new_and_competing_writers(tmp_path, monkeypatch):
+    import hashlib
+
+    from codex_plugin_scanner.guard.catalog_delivery import pack_store
+
+    directory = tmp_path / "objects"
+    directory.mkdir()
+    data = b'{"fixture":true}\n'
+    digest = hashlib.sha256(data).hexdigest()
+    synchronized = []
+    monkeypatch.setattr(pack_store, "durable_directory", lambda path: synchronized.append(path))
+    assert pack_store.publish_object(directory, digest, data) is True
+    assert pack_store.publish_object(directory, digest, data) is False
+    assert synchronized == [directory, directory]
+
+
 def test_reservation_fences_old_writers_but_keeps_the_authenticated_legacy_baseline(journal):
     value = journal
     with hold_command_control_authority_lock(value.store.guard_home), value.connection:

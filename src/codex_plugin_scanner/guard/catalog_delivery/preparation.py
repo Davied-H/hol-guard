@@ -133,11 +133,10 @@ def prepare(
     if defaults["count"] > MAX_SELECTED:
         raise ValueError("default pack selection exceeds admission budget")
     default_ids = set()
+    default_references = {}
     for identity, reference in entries(store, defaults["index"], defaults["count"]) if defaults["count"] else ():
-        record = store.json(reference)
-        if record.get("trust_class") == "external":
-            raise ValueError("external policy cannot be selected by defaults")
         default_ids.add(identity)
+        default_references[identity] = reference
     pending = deque(sorted(default_ids | requested))
     queued = set(pending)
     details = {}
@@ -149,9 +148,13 @@ def prepare(
             return details[identity]
         if len(details) >= MAX_SELECTED:
             raise ValueError("pack interface expansion exceeds admission budget")
-        record = lookup(store, policy["root"], policy["transport"], identity)
+        record = lookup(
+            store, policy["root"], policy["transport"], identity, expected_reference=default_references.get(identity)
+        )
         if record is None:
             raise ValueError("selected policy is not available in the authenticated release")
+        if identity in default_ids and record["trust_class"] == "external":
+            raise ValueError("external policy cannot be selected by defaults")
         catalog = store.json(record["catalog_metadata"])
         catalog_bytes += len(encoded(catalog))
         if catalog_bytes > MAX_CATALOG_BYTES or not isinstance(catalog, list) or len(catalog) != 1:
