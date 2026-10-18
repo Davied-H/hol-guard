@@ -182,6 +182,29 @@ fn standard_libraries(prefix: &Path) -> Vec<PathBuf> {
 /// `/usr/local` or `/opt/homebrew`, is not one: it holds every program and
 /// configuration file installed below it, and a `pyvenv.cfg` in the workspace
 /// chooses the `home` this prefix comes from.
+/// Whether the configured `home` is an install's launcher directory: a `bin`
+/// that holds a runnable interpreter.
+///
+/// `pyvenv.cfg` sits in the workspace, so its `home` is the repository's
+/// choice. Without this, any directory below a trusted root could name itself
+/// the runtime and have its whole prefix granted; with it, the directory has
+/// to be one an install actually starts Python from.
+fn interpreter_home(home: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    if home.file_name() != Some(OsStr::new("bin")) {
+        return false;
+    }
+    let Ok(entries) = fs::read_dir(home) else {
+        return false;
+    };
+    entries.flatten().take(256).any(|entry| {
+        python_named(&entry.path())
+            && entry.path().metadata().is_ok_and(|metadata| {
+                metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+            })
+    })
+}
+
 fn managed_prefix(prefix: &Path) -> bool {
     approved_user_python_runtime(prefix)
         || TRUSTED_EXECUTABLE_ROOTS
@@ -215,7 +238,7 @@ pub(super) fn workspace_base_roots(bin: &Path, workspace: &Path) -> Vec<PathBuf>
     let Some(prefix) = home.parent().map(Path::to_path_buf) else {
         return Vec::new();
     };
-    if !approved_runtime(&home) || path_is_within(&prefix, workspace) {
+    if !approved_runtime(&home) || !interpreter_home(&home) || path_is_within(&prefix, workspace) {
         return Vec::new();
     }
     if managed_prefix(&prefix) {

@@ -61,8 +61,14 @@ fn managed_prefix_install() -> Option<(PathBuf, PathBuf)> {
             let prefix = entry.path().canonicalize().ok()?;
             let bin = prefix.join("bin").canonicalize().ok()?;
             let library = prefix.join("lib").is_dir();
-            (library && bin.parent() == Some(prefix.as_path()) && managed_prefix(&prefix))
-                .then_some((prefix, bin))
+            let interpreter = fs::read_dir(&bin).ok()?.flatten().any(|entry| {
+                entry.file_name().to_string_lossy().starts_with("python") && entry.path().is_file()
+            });
+            (library
+                && interpreter
+                && bin.parent() == Some(prefix.as_path())
+                && managed_prefix(&prefix))
+            .then_some((prefix, bin))
         })
         .next()
 }
@@ -292,6 +298,19 @@ fn a_workspace_venv_grants_the_install_its_launchers_run() {
     // Only a venv's `bin`, and only a venv the workspace holds.
     assert!(workspace_base_roots(&venv, &workspace).is_empty());
     assert!(workspace_base_roots(&venv_bin, &fixture.0.join("elsewhere")).is_empty());
+    // A directory below a trusted root that no install starts Python from is
+    // not a runtime, however the workspace's own `pyvenv.cfg` names it.
+    for sibling in ["lib", "etc", "share"] {
+        let candidate = prefix.join(sibling);
+        if candidate.is_dir() {
+            home(&candidate);
+            assert!(
+                workspace_base_roots(&venv_bin, &workspace).is_empty(),
+                "{candidate:?}"
+            );
+        }
+    }
+    home(&bin);
     // A home that is not an approved runtime grants nothing.
     let plain = fixture.0.join("base/bin");
     fs::create_dir_all(&plain).unwrap();
