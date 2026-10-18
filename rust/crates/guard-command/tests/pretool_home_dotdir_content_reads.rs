@@ -29,7 +29,8 @@ fn home(name: &str) -> PathBuf {
     let home = root.join("home");
     for directory in [
         ".agents/skills/release-check/scripts",
-        ".cargo/registry/src/index.crates.io/serde-1.0.0/src",
+        ".cargo/registry/src/index.crates.io/serde-1.0.0/src/bin",
+        ".bun/install/global/node_modules/pkg/bin",
         ".certs",
         ".claude/projects/app",
         ".claude/shell-snapshots",
@@ -66,6 +67,14 @@ fn home(name: &str) -> PathBuf {
         (
             ".cargo/registry/src/index.crates.io/serde-1.0.0/src/lib.rs",
             "pub fn parse() {}\n",
+        ),
+        (
+            ".cargo/registry/src/index.crates.io/serde-1.0.0/src/bin/cli.rs",
+            "fn main() {}\n",
+        ),
+        (
+            ".bun/install/global/node_modules/pkg/bin/cli.js",
+            "export const run = () => {};\n",
         ),
         (".bun/bin/bun", "\u{7f}ELF\n"),
         (".alohajet/bin/cdp-shim.js", "export const port = 9303;\n"),
@@ -305,6 +314,33 @@ fn the_users_own_command_drawer_keeps_review() {
         );
         for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
             assert_ne!(
+                native_action(&home, harness, tool, path),
+                "allow",
+                "{harness} {tool} {path}"
+            );
+        }
+    }
+}
+
+/// A package manager's drawer is the `bin` directly below its root. Deeper
+/// down is the package content it unpacked, where `bin` names the package's
+/// own entry point: a crate's `src/bin/cli.rs` and an installed module's
+/// `bin/cli.js` are the same source as the files beside them, which this
+/// screen already reads.
+#[test]
+fn an_unpacked_packages_entry_point_reads_like_its_source() {
+    let home = home("unpacked-entry-points");
+    for path in [
+        ".cargo/registry/src/index.crates.io/serde-1.0.0/src/bin/cli.rs",
+        ".bun/install/global/node_modules/pkg/bin/cli.js",
+    ] {
+        assert_eq!(
+            action(&home, "codex", &format!("cat ~/{path}")),
+            "allow",
+            "{path}"
+        );
+        for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+            assert_eq!(
                 native_action(&home, harness, tool, path),
                 "allow",
                 "{harness} {tool} {path}"

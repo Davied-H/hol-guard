@@ -324,29 +324,37 @@ fn program_directory(parents: &[String], name: &str) -> bool {
         && (shared_command_drawer(parents) || !crate::source_path::source_extension(name))
 }
 
-/// Drawers whose `bin` holds commands that came from somewhere else: the
-/// shared roots of [`tool_root_depth`], and the directories a package manager
-/// installs other people's programs into. `cargo install`, `go install`,
-/// `bun add -g` and `deno install` all write a third party's command into
-/// their own hidden directory, so a script there is no more the manager's own
-/// source than one the user dropped in `~/.local/bin`, and reading it needs
-/// the same review.
-const SHARED_COMMAND_ROOTS: [&str; 7] = [
-    ".local",
-    ".config",
-    ".bun",
-    ".cargo",
-    ".deno",
-    ".npm-global",
-    "go",
-];
+/// Roots shared by every tool, per [`tool_root_depth`]. Nothing below them
+/// belongs to the tool that reads it: `~/.local/bin` is where the user keeps
+/// their own commands, so a `bin` at any depth under one of these is a drawer
+/// rather than an install the tool owns.
+const SHARED_COMMAND_ROOTS: [&str; 2] = [".local", ".config"];
+
+/// Hidden directories a package manager installs other people's programs
+/// into. `cargo install`, `bun add -g` and `deno install` each write a third
+/// party's command into the `bin` directly below the root, so a script there
+/// is no more the manager's own source than one the user dropped in
+/// `~/.local/bin`.
+///
+/// Only that one directory. Deeper down is the package content the manager
+/// unpacked, where `bin` names the package's own entry point:
+/// `~/.cargo/registry/src/index.crates.io/serde-1.0.0/src/bin/cli.rs` is a
+/// crate's source and `~/.bun/install/global/node_modules/pkg/bin/cli.js` is
+/// an installed package's file, both of which this screen reads already one
+/// directory over.
+const PACKAGE_COMMAND_ROOTS: [&str; 4] = [".bun", ".cargo", ".deno", ".npm-global"];
 
 /// Whether a program directory sits below a drawer shared by every tool
 /// rather than inside the directory of the tool that installed it.
 fn shared_command_drawer(parents: &[String]) -> bool {
-    parents
-        .first()
-        .is_some_and(|first| SHARED_COMMAND_ROOTS.contains(&first.as_str()))
+    let Some(first) = parents.first().map(String::as_str) else {
+        return false;
+    };
+    SHARED_COMMAND_ROOTS.contains(&first)
+        || PACKAGE_COMMAND_ROOTS.contains(&first)
+            && parents
+                .get(1)
+                .is_some_and(|directory| directory == "bin" || directory == "sbin")
 }
 
 /// How deep the directory a tool owns sits below the home directory.
