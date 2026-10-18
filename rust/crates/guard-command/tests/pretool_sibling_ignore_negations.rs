@@ -111,7 +111,7 @@ fn a_globbed_negation_naming_ordinary_files_is_allowed() {
 
 #[test]
 fn sibling_search_whose_negations_could_reach_a_secret_is_reviewed() {
-    let cases: [(&str, &[(&str, &str)]); 12] = [
+    let cases: [(&str, &[(&str, &str)]); 14] = [
         (
             "env-example",
             &[
@@ -134,6 +134,24 @@ fn sibling_search_whose_negations_could_reach_a_secret_is_reviewed() {
             &[
                 (".gitignore", "dist/\n!di*\n"),
                 ("dist/.env", "TOKEN=fixture\n"),
+            ],
+        ),
+        // A negated character class re-includes what the case-folded matcher
+        // would read as excluded, so the negation is not read at all.
+        (
+            "glob-negated-class",
+            &[
+                (".gitignore", ".*\n!.[!A-Z]*\n"),
+                (".env", "TOKEN=fixture\n"),
+            ],
+        ),
+        // A POSIX class the matcher reads as a flat class is refused the same
+        // way.
+        (
+            "glob-posix-class",
+            &[
+                (".gitignore", ".*\n!.[[:alpha:]]*\n"),
+                (".env", "TOKEN=fixture\n"),
             ],
         ),
         // A hidden environment file a glob re-includes is still a secret.

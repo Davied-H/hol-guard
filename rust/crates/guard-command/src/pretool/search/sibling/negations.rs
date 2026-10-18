@@ -82,6 +82,13 @@ pub(super) fn admit(
         let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
         let components: Vec<&str> = pattern.split('/').collect();
         let literal = components.iter().all(|component| plain_name(component));
+        // The matcher below folds case so a pattern matches at least what git
+        // matches. A character class inverts that: folding `[!A-Z]` to
+        // `[!a-z]` narrows it, and the walk would then skip an entry git
+        // re-includes. Such a negation is not read at all.
+        if !literal && pattern.contains('[') {
+            return false;
+        }
         if (!anchored && components.len() != 1)
             || reaches_pruned(&components, literal, anywhere, at_root)
         {
