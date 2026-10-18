@@ -49,8 +49,9 @@ EXACT_FIXTURES = (
 # Both must be exact and must run the same program with the same arguments.
 NORMALIZED_WRAPPER_FIXTURES = (("time tool", "time"),)
 # A plain inline script is modeled as the words it runs, so the native shadow
-# reads `sh -c '<script>'` as the program inside it.
-INLINE_SCRIPT_FIXTURES = (("sh -c 'rm -rf /tmp/example'", "rm"),)
+# reads `sh -c '<script>'` as the program inside it, with the same arguments
+# it reads for the script on its own.
+INLINE_SCRIPT_FIXTURES = (("sh -c 'rm -rf /tmp/example'", "rm -rf /tmp/example"),)
 UNCERTAIN_FIXTURES = (
     "echo $(uname)",
     "echo `uname`",
@@ -160,10 +161,14 @@ def main() -> int:
         assert wrapper in python_model["wrapper_chain"], fixture
         assert _programs(native_model) == _programs(python_model), fixture
 
-    for fixture, program in INLINE_SCRIPT_FIXTURES:
+    for fixture, script in INLINE_SCRIPT_FIXTURES:
         native_model = _native(args.binary, fixture)
+        direct_model = _native(args.binary, script)
         assert native_model["confidence"] == "exact", fixture
-        assert program in {segment["executable"] for segment in native_model["segments"]}, fixture
+        assert direct_model["confidence"] == "exact", script
+        launched = [(segment["executable"], segment["arguments"]) for segment in native_model["segments"]]
+        for segment in direct_model["segments"]:
+            assert (segment["executable"], segment["arguments"]) in launched, fixture
 
     for fixture in UNCERTAIN_FIXTURES:
         native_model = _native(args.binary, fixture)
