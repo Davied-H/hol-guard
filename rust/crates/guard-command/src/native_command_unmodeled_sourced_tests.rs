@@ -257,10 +257,19 @@ fn a_function_the_file_calls_keeps_the_programs_in_its_body() {
 
 #[test]
 fn a_body_this_scan_cannot_delimit_keeps_the_command_unowned() {
-    // A brace inside the body leaves the end of the definition unclear, so
-    // the body stays in the text the rest of the scan reads.
-    let text = "helper () {\n    python -c 'print({})'\n}\n";
+    // A brace of the shell's own leaves the end of the definition unclear,
+    // so the body stays in the text the rest of the scan reads and the
+    // interpreter in it is seen.
+    let text = "helper () {\n    { python -c print ; }\n}\n";
     assert!(!super::bounds_its_owners(text, "source ./f"));
+    // A brace inside quotes is text the shell passes along, not a group it
+    // runs, so it does not hide the end of a definition nothing calls.
+    for text in [
+        "helper () {\n    python -c 'print({})'\n}\n",
+        "helper () {\n    python -c \"print({})\"\n}\n",
+    ] {
+        assert!(super::bounds_its_owners(text, "source ./f"), "{text}");
+    }
 }
 
 #[test]
