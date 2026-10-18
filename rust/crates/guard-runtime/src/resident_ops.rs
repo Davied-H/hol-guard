@@ -595,6 +595,7 @@ pub(crate) fn evaluate_resident_bytes(
 fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
     match operation {
         ResidentOperationV1::ArchiveAcquisition(request) => Some(&request.guard_home),
+        ResidentOperationV1::DirectoryTrust(request) => Some(&request.guard_home),
         ResidentOperationV1::HookDirect(request) => Some(&request.guard_home),
         ResidentOperationV1::HookDirectEvidenceDrain(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRelayDecide(request) => Some(&request.guard_home),

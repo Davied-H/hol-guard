@@ -79,7 +79,9 @@ def test_server_deadline_includes_elapsed_admission_and_missing_policy_blocks(
         _daemon_server=lambda: daemon,
         _optional_string=lambda value: value if isinstance(value, str) else None,
         _settled_hook_directories=lambda *candidates, **kwargs: _SettledDirectories(candidates),
-        _validated_hook_guard_home=lambda value: value,
+        # These tests send no `guard-home`, so the lane's home check is not
+        # what they are about.
+        _hook_guard_home_query_is_this_home=lambda *_args: True,
         _hook_workspace_spelling=lambda value: value,
         _runtime_hook_exec_command_workdir=lambda payload: (False, None),
         _runtime_hook_fail_safe_response=lambda *args, **kwargs: {

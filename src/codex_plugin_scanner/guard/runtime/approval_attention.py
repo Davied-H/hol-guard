@@ -62,8 +62,13 @@ class ApprovalAttentionCoordinator:
         opener: Callable[[str], object],
         clock: Callable[[], float] = time.monotonic,
         cooldown_seconds: float = _BROWSER_OPEN_COOLDOWN_SECONDS,
+        home_dir: Path | None = None,
     ) -> None:
         self._store = store
+        # The home the daemon serves, which the runtime expands `~` against and
+        # trusts as a root. Without it the settlement falls back to the home of
+        # whichever account this process runs as.
+        self._home_dir = home_dir
         self._runtime = runtime
         self._opener = opener
         self._clock = clock
@@ -229,7 +234,11 @@ class ApprovalAttentionCoordinator:
 
         if value is None:
             return None
-        verdict = native_directory_trust([("workspace", value)], guard_home=self._store.guard_home)[0]
+        verdict = native_directory_trust(
+            [("workspace", value)],
+            guard_home=self._store.guard_home,
+            home_dir=self._home_dir,
+        )[0]
         if verdict.path is None:
             raise NativeDirectoryTrustError(verdict.reason or "unexpected_root")
         return Path(verdict.path)

@@ -40,8 +40,7 @@ pub(crate) fn expanduser(value: &str, home_dir: &str) -> Result<String, PathErro
     };
     for prefix in separators {
         if let Some(rest) = value.strip_prefix(prefix) {
-            let home = home_dir
-                .trim_end_matches(|character| character == '/' || is_windows_separator(character));
+            let home = home_dir.trim_end_matches(is_separator);
             return Ok(format!("{home}{}{rest}", &prefix[1..]));
         }
     }
@@ -54,6 +53,11 @@ pub(crate) fn expanduser(value: &str, home_dir: &str) -> Result<String, PathErro
 /// Whether this target treats `character` as a path separator.
 fn is_windows_separator(character: char) -> bool {
     cfg!(windows) && character == '\\'
+}
+
+/// Whether `character` separates path components here, as `os.path` sees it.
+pub(crate) fn is_separator(character: char) -> bool {
+    character == '/' || is_windows_separator(character)
 }
 
 /// Lexical `os.path.normpath` for an absolute path. Relative paths and the

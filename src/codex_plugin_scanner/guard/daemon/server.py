@@ -589,6 +589,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
                 store=self.store,
                 runtime=self.runtime,
                 opener=open_browser_url,
+                home_dir=self.home_dir,
             )
             self.general_request_executor = _BoundedRequestExecutor(
                 name="general",
@@ -1863,7 +1864,34 @@ class _GuardDaemonHandler(
         )
         payload = {key: value for key, value in payload.items() if key != "hook_env"}
         daemon_server = self._daemon_server()
-        paths_validated = False
+        # Oh My Pi has no bridge to ask the resident first, so ask it here.
+        # The raw `home` query goes with the raw workspace: the resident
+        # settles both against the lane it bound, and a home it cannot settle
+        # defers to the daemon path below, which refuses and audits it. Asking
+        # the runtime to settle directories first would spend a round trip per
+        # hook on the answer path, where nothing here reads the result.
+        #
+        # A `guard-home` query is the exception, because the lane never sends
+        # it: it answers out of the home it bound, so a request naming another
+        # Guard home would be answered without that claim being refused or
+        # audited. Spelling it the same way as this daemon's own home is the
+        # only claim the lane may answer, and this comparison costs no round
+        # trip. A spelling that merely looks different -- a link, a relative
+        # path -- is not refused here; it goes down the daemon path, which
+        # settles it properly and refuses or admits it there.
+        if self._hook_guard_home_query_is_this_home(params, daemon_server):
+            direct_response = pi_direct_answer(
+                getattr(daemon_server, "hook_worker", None),
+                default_harness=default_harness,
+                params=params,
+                payload=payload,
+                home_dir=self._optional_string(params.get("home", [None])[-1]),
+                deadline=hook_deadline.expires_at,
+            )
+            if direct_response is not None:
+                self._write_json(direct_response)
+                return
+
         try:
             action_workdir_provided, action_workdir_spelling = self._runtime_hook_exec_command_workdir(payload)
             # One call settles every directory this request named, including
@@ -1892,7 +1920,6 @@ class _GuardDaemonHandler(
                 or directories.require("workspace-payload", reported_as="workspace")
                 or directories.require("workspace-query", reported_as="workspace")
             )
-            paths_validated = True
         except _HookPathValidationError as error:
             # The Rust edge still receives the complete raw payload. Use
             # daemon-owned metadata when an optional caller context is
@@ -1902,20 +1929,6 @@ class _GuardDaemonHandler(
             home_dir = str(daemon_server.home_dir)
             guard_home = str(daemon_server.store.guard_home)
             workspace = None
-
-        if paths_validated:
-            # Oh My Pi has no bridge to ask the resident first, so ask it here.
-            direct_response = pi_direct_answer(
-                getattr(daemon_server, "hook_worker", None),
-                default_harness=default_harness,
-                params=params,
-                payload=payload,
-                home_dir=home_dir,
-                deadline=hook_deadline.expires_at,
-            )
-            if direct_response is not None:
-                self._write_json(direct_response)
-                return
 
         if not prepare_native_hook_policy(
             self, daemon_server, payload, params, default_harness, workspace, hook_deadline.expires_at
@@ -1949,6 +1962,7 @@ class _GuardDaemonHandler(
                     default_harness=default_harness,
                     reason="HOL Guard could not authenticate the local hook payload.",
                     reason_code="invalid_hook_payload_reference",
+                    hook_deadline=hook_deadline.expires_at,
                 )
             )
             return
@@ -1965,6 +1979,7 @@ class _GuardDaemonHandler(
                     params,
                     default_harness=default_harness,
                     reason_code=reservation_reason,
+                    hook_deadline=hook_deadline.expires_at,
                 )
             )
             return
@@ -2074,6 +2089,7 @@ class _GuardDaemonHandler(
         *,
         default_harness: str,
         reason_code: RuntimeHookAdmissionReason | None = None,
+        hook_deadline: float | None = None,
     ) -> dict[str, object]:
         resolved_reason_code = reason_code or "daemon_hook_queue_capacity"
         if resolved_reason_code == "daemon_hook_deadline_exhausted":
@@ -2086,6 +2102,7 @@ class _GuardDaemonHandler(
             default_harness=default_harness,
             reason=reason,
             reason_code=resolved_reason_code,
+            hook_deadline=hook_deadline,
         )
 
     def _runtime_hook_fail_safe_response(
@@ -2096,12 +2113,13 @@ class _GuardDaemonHandler(
         default_harness: str,
         reason: str,
         reason_code: str,
+        hook_deadline: float | None = None,
     ) -> dict[str, object]:
         runtime_harness = self._optional_string(params.get("runtime-harness", [None])[-1])
         harness = (runtime_harness or default_harness).strip().lower().replace("_", "-")
         event = self._optional_string(payload.get("hook_event_name", payload.get("event"))) or "PreToolUse"
         daemon_server = getattr(self, "server", None)
-        workspace_path, home_path = self._validated_fail_safe_hook_paths(params)
+        workspace_path, home_path = self._validated_fail_safe_hook_paths(params, hook_deadline=hook_deadline)
         guard_home = None if daemon_server is None else cast(_GuardDaemonHttpServer, daemon_server).store.guard_home
         from ..native_policy_snapshot_acked import recording_only_from_acked_snapshot
         from .hook_availability_policy import availability_harness_response
@@ -2122,6 +2140,8 @@ class _GuardDaemonHandler(
     def _validated_fail_safe_hook_paths(
         self,
         params: Mapping[str, list[str]],
+        *,
+        hook_deadline: float | None = None,
     ) -> tuple[Path | None, Path | None]:
         """Return workspace and home directories that passed hook path validation.
 
@@ -2130,11 +2150,18 @@ class _GuardDaemonHandler(
         a fail-safe response must not wait on the runtime it is standing in for.
         """
 
+        deadline = time.monotonic() + _FAIL_SAFE_DIRECTORY_TRUST_SECONDS
+        if hook_deadline is not None:
+            deadline = min(deadline, hook_deadline)
+        if time.monotonic() >= deadline:
+            # A fail-safe answer must not start another RPC after the hook
+            # budget expires; omitting unverified paths remains fail closed.
+            return (None, None)
         try:
             directories = self._settled_hook_directories(
                 ("workspace", self._optional_string(params.get("workspace", [None])[-1])),
                 ("home", self._optional_string(params.get("home", [None])[-1])),
-                deadline_monotonic=time.monotonic() + _FAIL_SAFE_DIRECTORY_TRUST_SECONDS,
+                deadline_monotonic=deadline,
             )
         except _HookPathValidationError:
             return (None, None)
@@ -2184,15 +2211,17 @@ class _GuardDaemonHandler(
                     default_harness=default_harness,
                     reason="HOL Guard could not complete the native hook decision safely.",
                     reason_code="native_hook_worker_unavailable",
+                    hook_deadline=deadline,
                 )
-            elif deadline is not None and time.monotonic() >= deadline:
-                result = self._runtime_hook_fail_safe_response(
-                    payload,
-                    params,
-                    default_harness=default_harness,
-                    reason="HOL Guard could not complete local review within the hook deadline. Retry this action.",
-                    reason_code="daemon_hook_deadline_exhausted",
-                )
+            # A review that finished late still finished: the answer carries the
+            # same decision the native edge would have sent on time, so send it
+            # rather than a block. The client owns the real timeout -- it stops
+            # waiting on its own clock and ignores whatever arrives after -- and
+            # discarding a completed decision here only turns a slow host into a
+            # blocked one, which is how a cold or contended machine ends up
+            # refusing `grep`. The deadline still bounds the work itself: it
+            # caps storage waits and the native edge's own evaluation, and a
+            # review that produces nothing fails safe above.
         # The decision is final. Free its review slot before the answer is
         # sent: a client holding its answer must never see the slot still
         # busy, and a slow reader must not occupy review capacity.
@@ -2424,6 +2453,29 @@ class _GuardDaemonHandler(
             "daemon.auth.query_token_rejected",
             {"method": self.command, "path": urlparse(self.path).path, "has_query_token": True},
         )
+
+    def _hook_guard_home_query_is_this_home(
+        self,
+        params: Mapping[str, list[str]],
+        daemon_server: object,
+    ) -> bool:
+        """Whether a `guard-home` query, if one was sent, names this daemon's home.
+
+        Answering from the direct lane skips settling directories, so a claim
+        about which Guard home a request belongs to has nothing to check it.
+        Naming no home at all claims nothing and is fine; naming this one is
+        the claim the lane is allowed to answer. Everything else keeps the
+        daemon path, which settles the spelling and records the rejection.
+        """
+        query = self._optional_string(params.get("guard-home", [None])[-1])
+        if query is None:
+            return True
+        try:
+            claimed = os.path.normpath(os.path.expanduser(query))
+            own = os.path.normpath(str(daemon_server.store.guard_home))  # pyright: ignore[reportAttributeAccessIssue]
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return claimed == own
 
     def _record_hook_path_rejection(self, *, parameter: str, reason: str) -> None:
         self._record_bounded_denial_event(
@@ -2921,9 +2973,16 @@ class _GuardDaemonHandler(
         if not asked:
             return _HookDirectories(())
         try:
+            daemon_server = self._daemon_server()
             verdicts = native_directory_trust(
                 asked,
-                guard_home=self._daemon_server().store.guard_home,
+                guard_home=daemon_server.store.guard_home,
+                # The home this daemon was configured with, not whichever home
+                # the process happens to be running as: the runtime expands `~`
+                # against it and treats it as a trusted root, so letting it
+                # fall back to `Path.home()` would settle these paths against a
+                # different home than the one the rest of the route uses.
+                home_dir=daemon_server.home_dir,
                 deadline_monotonic=deadline_monotonic,
             )
         except NativeDirectoryTrustError as error:
