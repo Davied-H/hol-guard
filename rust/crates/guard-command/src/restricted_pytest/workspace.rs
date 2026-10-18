@@ -236,33 +236,48 @@ pub fn workspace_script_reads(text: &str, workspace: &Path) -> Option<Vec<PathBu
 /// Whether this run has a reason to read the Go module cache.
 ///
 /// A text that names the toolchain does, and so does any run inside a module
-/// the workspace root holds: `make test` and `./scripts/ci.sh` drive `go`
+/// or workspace the root holds: `make test` and `./scripts/ci.sh` drive `go`
 /// without naming it, and a build that cannot read its dependencies fails
-/// where it used to pass. A workspace with no module at its root and no `go`
-/// in its text - a Node or Python project - has no such reason.
+/// where it used to pass. A multi-module repository carries only `go.work` at
+/// its root, with every `go.mod` in a subdirectory, so reading `go.mod` alone
+/// would strand exactly those builds. A workspace with neither marker and no
+/// `go` in its text - a Node or Python project - has no such reason.
 fn reaches_go_modules(text: &str, workspace: &Path) -> bool {
-    runs_go(text) || workspace.join("go.mod").is_file()
+    runs_go(text) || workspace.join("go.mod").is_file() || workspace.join("go.work").is_file()
 }
 
-/// Whether the command names the Go toolchain.
+/// Whether the command runs the Go toolchain.
 ///
 /// The module cache below the real HOME is dependency source a Go build
 /// compiles, and the plan grants it beside the workspace. Nothing else a
 /// workspace runs reads it, and it holds whatever `go mod download` fetched,
-/// a private module included, so a text that never names `go` does not get
-/// it. Reading the whole text rather than the contained remainder keeps a
-/// toolchain named in a bootstrap or a publish suffix in view.
+/// a private module included, so a text that never runs `go` does not get
+/// it. Only a command word counts: `pytest -k go` and `rg go` pass the name
+/// as an argument and compile nothing. Reading the whole text rather than the
+/// contained remainder keeps a toolchain named in a bootstrap or a publish
+/// suffix in view, so each stage of the text is read in turn.
 fn runs_go(text: &str) -> bool {
-    text.split(|character: char| {
-        character.is_whitespace() || matches!(character, ';' | '&' | '|' | '(' | ')')
-    })
-    .any(|word| {
-        word.trim_matches(['"', '\''])
-            .rsplit('/')
-            .next()
-            .is_some_and(|name| name == "go")
-    })
+    text.split(|character: char| matches!(character, ';' | '&' | '|' | '(' | ')' | '\n'))
+        .any(|stage| {
+            stage
+                .split_whitespace()
+                .map(|word| word.trim_matches(['"', '\'']))
+                // `FOO=bar sudo go build` runs the toolchain, and so does a
+                // stage a `then` or a `do` opens. None of those words is the
+                // program itself.
+                .find(|word| {
+                    !(GO_PREFIXES.contains(word) || (word.contains('=') && !word.starts_with('-')))
+                })
+                .and_then(|word| word.rsplit('/').next())
+                .is_some_and(|name| name == "go")
+        })
 }
+
+/// Words that stand where the program stands without being the program.
+const GO_PREFIXES: &[&str] = &[
+    "do", "then", "else", "elif", "!", "time", "command", "builtin", "nohup", "sudo", "env",
+    "exec", "nice", "ionice", "stdbuf",
+];
 
 pub(super) fn evaluate(operation: &str, input: &Value) -> Option<Value> {
     if operation != "prepare_workspace_contained" {

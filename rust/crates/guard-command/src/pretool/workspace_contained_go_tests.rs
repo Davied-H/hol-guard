@@ -83,6 +83,7 @@ fn a_verb_reaching_the_module_proxy_keeps_its_review() {
         // These ask the proxy what else a module has.
         "go list -m -u all",
         "go list -m -versions golang.org/x/text",
+        "go list -m -retracted golang.org/x/text",
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, minimum) = outcome(harness, command, &ws);
@@ -120,6 +121,10 @@ fn a_fetching_flag_keeps_its_review_however_it_is_spelled() {
         "go list -m --u=false all",
         "go list -m -versions all",
         "go list -m --versions=true all",
+        // Retraction notices come from the proxy too when the latest module
+        // metadata is not already cached.
+        "go list -m -retracted all",
+        "go list -m --retracted=true all",
     ] {
         for harness in ["codex", "claude-code", "omp"] {
             let (reason, _) = outcome(harness, command, &ws);

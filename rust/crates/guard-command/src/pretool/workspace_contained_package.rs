@@ -204,7 +204,8 @@ const REGISTRY_VERBS: &[&str] = &[
 /// network to resolve a package by import path, so they keep the admission
 /// they have. A version an argument names is one go resolves through the
 /// module proxy, and `go list`'s `-u` and `-versions` ask the proxy what else
-/// a module has, so each of those keeps that admission too.
+/// a module has, as does `-retracted`, so each of those keeps that admission
+/// too.
 fn local_go_work(arguments: &[&str], directory: &Path) -> bool {
     let Some((verb, rest)) = arguments.split_first() else {
         return false;
@@ -228,7 +229,7 @@ fn names_a_go_fetch(argument: &str) -> bool {
     }
     matches!(
         name.split_once('=').map_or(name, |(name, _)| name),
-        "u" | "versions"
+        "u" | "versions" | "retracted"
     )
 }
 
