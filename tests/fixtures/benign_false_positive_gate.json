@@ -10703,6 +10703,102 @@
       "expect": "allow"
     },
     {
+      "id": "gauntlet-git-show-to-tmp-patch",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${HOME}/other-project show HEAD > ${SCRATCH}-fix.patch"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-cd-git-apply-check-tmp-patch",
+      "fix_area": "git-apply",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${HOME}/other-project && git apply --check ${SCRATCH}-fix.patch 2>&1 | head -10"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-git-apply-numstat-tmp-patch",
+      "fix_area": "git-apply",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${HOME}/other-project apply --numstat ${SCRATCH}-fix.patch"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "git-apply-check-tmp-patch-and-source-operand",
+      "fix_area": "git-apply",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/app-portal apply --check ${SCRATCH}-fix.patch ${ORG}/app-portal/scripts/report.ts"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-git-apply-tmp-patch-writes",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${HOME}/other-project apply ${SCRATCH}-fix.patch"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-git-apply-check-index-tmp-patch",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${HOME}/other-project apply --check --index ${SCRATCH}-fix.patch"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
       "id": "session-claude-ask-user-question-answered",
       "fix_area": "read",
       "harnesses": [

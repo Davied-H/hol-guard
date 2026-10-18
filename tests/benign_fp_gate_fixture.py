@@ -118,6 +118,12 @@ class BenignFixture:
         shutil.rmtree(self.tmp_org.parent, ignore_errors=True)
         shutil.rmtree(self.scratch, ignore_errors=True)
         self.scratch_copy.unlink(missing_ok=True)
+        self.scratch_patch.unlink(missing_ok=True)
+
+    @property
+    def scratch_patch(self) -> Path:
+        """A patch kept straight in /tmp, as agents keep one to check before applying."""
+        return Path(f"{self.scratch}-fix.patch")
 
     @property
     def scratch_copy(self) -> Path:
@@ -475,6 +481,11 @@ def build_fixture(root: Path) -> BenignFixture:
         root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org, scratch
     )
     _write(fixture.scratch_copy, "export const reportWindow = 'report-window-marker';\n")
+    _write(
+        fixture.scratch_patch,
+        "diff --git a/src/report.ts b/src/report.ts\n--- a/src/report.ts\n+++ b/src/report.ts\n"
+        "@@ -1 +1 @@\n-export const reportWindow = 'report-window-marker';\n+export const reportWindow = '24h';\n",
+    )
     return fixture
 
 
