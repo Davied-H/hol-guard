@@ -73,6 +73,7 @@ pub(crate) fn upgrade_recorded_contract(item: &ApprovalScopeItemV1, want: &mut V
 /// review (`docs/guard/approval-invariant.md`). A recorded Guard-control
 /// review now expects the contract of the same request under an ordinary
 /// action type, and a recorded terminal verdict reports `non_overridable`.
+/// Returns whether the review migration replaced the whole contract.
 fn upgrade_guard_control(item: &ApprovalScopeItemV1, want: &mut Value) -> bool {
     let Some(envelope) = item
         .action_envelope_json
@@ -96,7 +97,8 @@ fn upgrade_guard_control(item: &ApprovalScopeItemV1, want: &mut Value) -> bool {
         if want["once_only_reason"] == json!("guard_control") {
             want["once_only_reason"] = json!("non_overridable");
         }
-        return true;
+        // The rest of a terminal verdict's contract migrates as before.
+        return false;
     }
     let mut ordinary = item.clone();
     let mut envelope = envelope.clone();
