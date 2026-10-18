@@ -221,7 +221,7 @@ fn snapshot_budget_fails_closed() {
 }
 
 #[test]
-fn hardlinked_files_fail_closed() {
+fn hardlinked_files_are_left_out_of_the_snapshot() {
     let (_directory, workspace) = workspace();
     let outside = tempfile::tempdir().unwrap();
     let secret = outside.path().join("credentials");
@@ -229,23 +229,33 @@ fn hardlinked_files_fail_closed() {
     fs::hard_link(&secret, workspace.join("notes.txt")).unwrap();
     let cancel = AtomicBool::new(false);
     let withhold = |_: &Path| false;
-    let result = run_readonly_snapshot(ReadonlySnapshotRun {
+    let arguments = ["/d", "/c", "dir", "/b"].map(OsString::from);
+    let output = run_readonly_snapshot(ReadonlySnapshotRun {
         workspace: &workspace,
         cwd: &workspace,
         executable: Path::new(r"C:\Windows\System32\cmd.exe"),
-        arguments: &[],
+        arguments: &arguments,
         environment: &[],
         withhold: &withhold,
         max_entries: 100,
         max_bytes: 1024 * 1024,
-        output_cap: 1024,
+        output_cap: 4096,
         deadline: Instant::now() + Duration::from_secs(60),
         cancel: &cancel,
         job_limits: Default::default(),
         build: None,
         stage_executable: false,
-    });
-    assert!(result.is_err());
+    })
+    .unwrap();
+    let listing = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.exit_code,
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(listing.contains("visible.txt"), "{listing}");
+    assert!(!listing.contains("notes.txt"), "{listing}");
 }
 
 fn node_on_path() -> Option<PathBuf> {

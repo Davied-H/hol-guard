@@ -151,10 +151,14 @@ fn try_home_states(
 /// Whether discovery finds a live resident that runs `digest`.
 fn live_resident_of_runtime(state_base: &Path, digest: &str) -> bool {
     // An unreadable state keeps the old behaviour of spending the budget.
+    // Discovery also returns this runtime's states whose process has exited,
+    // so a leftover state file must not count as a live resident.
     match discover_home_states_prefer(state_base, Some(digest)) {
-        Ok(states) => states
-            .iter()
-            .any(|(_, _, state)| state.runtime_sha256 == digest),
+        Ok(states) => states.iter().any(|(_, _, state)| {
+            state.runtime_sha256 == digest
+                && validate_package_process_identity(state.process_id, &state.process_start_marker)
+                    .is_ok()
+        }),
         Err(_) => true,
     }
 }
