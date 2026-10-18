@@ -212,7 +212,7 @@ fn the_project_a_verb_works_on_moves_with_the_command() {
 #[test]
 fn an_option_that_takes_a_value_does_not_hide_what_follows_it() {
     let ws = project("uv-values");
-    std::fs::write(ws.join(".env"), "TOKEN=\n").unwrap();
+    std::fs::write(ws.join("vars.txt"), "LEVEL=debug\n").unwrap();
     std::fs::write(
         ws.join("report.py"),
         "# /// script\n# dependencies = [\"httpx\"]\n# ///\nprint(1)\n",
@@ -221,9 +221,9 @@ fn an_option_that_takes_a_value_does_not_hide_what_follows_it() {
     // The value belongs to the option, so the fetching option behind it is
     // still read and the operand is still the script uv would run.
     for command in [
-        "uv run --env-file .env --with httpx pytest",
+        "uv run --env-file vars.txt --with httpx pytest",
         "uv run --package api --refresh pytest",
-        "uv run --env-file .env report.py",
+        "uv run --env-file vars.txt report.py",
         "uv run --mystery pytest",
         "uv tree --outdated",
         "uv run --group test pytest",
@@ -234,7 +234,7 @@ fn an_option_that_takes_a_value_does_not_hide_what_follows_it() {
         }
     }
     for command in [
-        "uv run --env-file .env pytest",
+        "uv run --env-file vars.txt pytest",
         "uv run --frozen pytest",
         "uv tree --depth 2 --invert",
     ] {
@@ -289,5 +289,34 @@ fn a_script_is_read_where_the_run_will_stand() {
         assert_ne!(reason, CONTAINED, "{harness}");
         let (reason, _) = outcome(harness, "uv --directory api run plain.py", &ws);
         assert_eq!(reason, CONTAINED, "{harness}");
+    }
+}
+
+#[test]
+fn the_project_is_read_from_the_directory_the_run_enters() {
+    let ws = project("uv-project-order");
+    // uv enters `--directory` first and reads `--project` from there, however
+    // the two stand, and only the last of each counts. A project below the
+    // starting directory does not make the one uv would read materialized.
+    for command in [
+        "uv --project api --directory sub run pytest",
+        "uv --directory sub --project api run pytest",
+        "uv --directory api --directory sub run pytest",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_ne!(reason, CONTAINED, "{harness}: {command}");
+        }
+    }
+    std::fs::create_dir_all(ws.join("sub/api/.venv/bin")).unwrap();
+    std::fs::write(ws.join("sub/api/pyproject.toml"), PROJECT).unwrap();
+    for command in [
+        "uv --project api --directory sub run pytest",
+        "uv --directory sub --project api run pytest",
+    ] {
+        for harness in ["codex", "claude-code", "omp"] {
+            let (reason, _) = outcome(harness, command, &ws);
+            assert_eq!(reason, CONTAINED, "{harness}: {command}");
+        }
     }
 }
