@@ -2,6 +2,7 @@
 
 use std::time::Instant;
 
+use guard_command::hook_adapter_envelope_text::is_shell_tool;
 use guard_contracts::{NativeExactActionQueryV1, NativePolicyBindingV1, NativeReviewFactsV1};
 use serde_json::{json, Value};
 
@@ -93,8 +94,9 @@ pub(super) fn approval_token(
     exact_action(query, deadline, engines).or_else(|reason| command_hash(query).map_err(|_| reason))
 }
 
-/// The hash of the command a review paused: harness, tool, command text (or
-/// the tool input as sent, empty only when the tool took none), working
+/// The hash of the command a review paused: harness, tool, a shell's command
+/// text (or any other tool's input as sent, empty only when the tool took
+/// none), working
 /// directory and workspace. Nothing else enters it, so an
 /// approval saved under it holds until the command changes or the user
 /// revokes it. Only a review the user can answer has one.
@@ -118,18 +120,24 @@ pub(super) fn command_hash(query: &NativeExactActionQueryV1) -> Proof<String> {
     {
         return Err(NON_OVERRIDABLE);
     }
+    let input = match (tool_input, raw_tool_input) {
+        (Some(pairs), _) => {
+            let fields: serde_json::Map<String, Value> = pairs.iter().cloned().collect();
+            json!({"tool_input": fields})
+        }
+        // An input that is not an object is hashed as it was sent.
+        (None, Some(raw)) => json!({"raw_tool_input": raw}),
+        // Only a tool called with no input at all hashes as an empty one.
+        (None, None) => json!({"tool_input": {}}),
+    };
     let content = match command.as_deref().filter(|text| !text.trim().is_empty()) {
-        Some(text) => json!({"command": text}),
-        None => match (tool_input, raw_tool_input) {
-            (Some(pairs), _) => {
-                let fields: serde_json::Map<String, Value> = pairs.iter().cloned().collect();
-                json!({"tool_input": fields})
-            }
-            // An input that is not an object is hashed as it was sent.
-            (None, Some(raw)) => json!({"raw_tool_input": raw}),
-            // Only a tool called with no input at all hashes as an empty one.
-            (None, None) => json!({"tool_input": {}}),
-        },
+        // A shell runs only its command text; its other fields (a description,
+        // a timeout) do not change what runs.
+        Some(text) if is_shell_tool(Some(tool_name.as_str())) => json!({"command": text}),
+        // Any other tool's fields can change what its `command` does, so the
+        // whole input binds the hash.
+        Some(text) => json!({"command": text, "input": input}),
+        None => input,
     };
     let cwd = payload_cwd
         .as_deref()

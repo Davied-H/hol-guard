@@ -119,6 +119,28 @@ fn a_tool_called_with_no_input_can_be_approved() {
 }
 
 #[test]
+fn every_field_of_a_non_shell_tool_binds_the_hash() {
+    let call = |host: &str| {
+        token(&root(), move |query| {
+            query["tool_name"] = json!("mcp__remote__run");
+            query["command"] = json!("ls");
+            query["tool_input"] = json!([["command", "ls"], ["host", host]]);
+        })
+        .unwrap()
+    };
+    assert_eq!(call("staging"), call("staging"));
+    assert_ne!(call("staging"), call("prod"));
+    // A shell's other fields do not change what it runs.
+    let shell = |description: &str| {
+        token(&root(), move |query| {
+            query["tool_input"] = json!([["command", UNPROVABLE], ["description", description]]);
+        })
+        .unwrap()
+    };
+    assert_eq!(shell("list tabs"), shell("show tabs"));
+}
+
+#[test]
 fn guard_control_and_package_reviews_can_be_approved() {
     let root = root();
     for kind in ["guard_control", "guard-control-operation", "package"] {

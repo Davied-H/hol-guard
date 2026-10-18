@@ -24,6 +24,11 @@ approval the user has given.
    An approval saved under the command hash survives a rule change, a new
    extension, a different reason code or a change of environment.
 
+Requests queued by a release that predates retry bindings are the one
+exception. They carry `retry_cannot_reuse_approval` and no exact-action
+binding, so the card cannot offer Allow once for them. Let the agent retry the
+command: the fresh request is queued under this rule and offers both choices.
+
 Only terminal verdicts are excluded. `block`, `sandbox-required` and `allow`
 are not reviews, so there is nothing to approve.
 
@@ -43,8 +48,10 @@ falls back to `native-command-hash-v1`. That hash covers:
 - tool name
 - workspace
 - working directory (the payload `cwd`, else the workspace)
-- command text, or the tool input for non-shell tools as it was sent, even
-  when it is not an object (empty only when the tool takes none)
+- for a shell tool, the command text
+- for any other tool, its whole input as it was sent, including a `command`
+  field and any other field, even when the input is not an object (empty only
+  when the tool takes none)
 
 Changing any of these produces a new command, and Guard asks again.
 
