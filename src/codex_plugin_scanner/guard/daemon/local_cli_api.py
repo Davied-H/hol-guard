@@ -19,6 +19,7 @@ from ..adapters.harness_mcp_discovery import (
     discovered_server_for_observation,
     extra_env_for_mcp_launch,
     persist_discovered_harness_mcp_servers,
+    remote_scan_harnesses,
 )
 from ..approval_gate import (
     ApprovalGateError,
@@ -139,6 +140,7 @@ class LocalCliApiService:
         self._codex_host_inventory = CodexHostInventoryCache()
         self._discovery_cache: tuple[float, tuple[DiscoveredHarnessMcpServer, ...]] | None = None
         self._remote_discovery_cache: tuple[float, tuple[DiscoveredRemoteMcpServer, ...]] | None = None
+        self._remote_scan_harnesses: tuple[str, ...] | None = None
         self._discovery_jobs = McpDiscoveryJobs()
         self._registry_setup_lock = threading.Lock()
         self._registry_setup_undo = RegistrySetupUndo(store)
@@ -858,11 +860,14 @@ class LocalCliApiService:
 
     def _observe_harness_mcp_servers(self, *, strict: bool = False) -> dict[str, str]:
         try:
+            servers = self._discovered_servers(strict=True) if strict else self._discovered_servers()
+            remote = self._discovered_remote_servers()
             return persist_discovered_harness_mcp_servers(
                 self._store,
-                self._discovered_servers(strict=True) if strict else self._discovered_servers(),
+                servers,
                 seen_at=utc_now(),
-                remote=self._discovered_remote_servers(),
+                remote=remote,
+                remote_harnesses=self._remote_scan_harnesses,
             )
         except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
             if strict:
@@ -912,9 +917,12 @@ class LocalCliApiService:
                 workspace_dir=workspace_dir,
                 detections=detections,
             )
+            harnesses = remote_scan_harnesses(detections, remote)
         except (OSError, RuntimeError, TypeError, ValueError, KeyError, UnicodeError, sqlite3.Error):
-            remote = ()
+            # A failed read lists none and must not forget any declaration.
+            remote, harnesses = (), None
         self._remote_discovery_cache = (now, remote)
+        self._remote_scan_harnesses = harnesses
         return servers
 
     def _live_mcp_launch_command(self, payload: dict[str, object]) -> str | None:
