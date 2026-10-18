@@ -10907,7 +10907,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "source .venv/bin/activate && pytest -q 2>&1 | tail -5"
+        "command": "source .venv/bin/activate && pytest -q"
       },
       "cwd": "worktree",
       "expect": "allow"

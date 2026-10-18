@@ -213,6 +213,15 @@ VENV_PYTEST_STUB = (
 )
 
 
+VENV_PYTEST_STUB_PYTHON = (
+    "import os, sys\n"
+    "if not os.environ.get('VIRTUAL_ENV'):\n"
+    "    sys.exit(1)\n"
+    "print('.....')\n"
+    "print('5 passed in 0.12s')\n"
+)
+
+
 def activate_script(venv: Path) -> str:
     """The activation script a virtualenv generates for ``venv``."""
     return ACTIVATE.replace("__VIRTUAL_ENV__", str(venv))
@@ -286,4 +295,4 @@ def add_worktree_venv(worktree: Path) -> None:
     _write(venv / "bin/activate", activate_script(venv))
     _write(venv / "bin/python", VENV_PYTHON_STUB, 0o755)
     _write(venv / "bin/pytest", VENV_PYTEST_STUB, 0o755)
-    write_windows_launcher(venv / "bin", "pytest", "print('5 passed in 0.12s')\n")
+    write_windows_launcher(venv / "bin", "pytest", VENV_PYTEST_STUB_PYTHON)

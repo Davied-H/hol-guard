@@ -905,7 +905,7 @@
       ],
       "prompt": "Run the project's tests in its virtualenv: run the listed command once and tell me whether they passed.",
       "commands": [
-        "source .venv/bin/activate && pytest -q 2>&1 | tail -5"
+        "source .venv/bin/activate && pytest -q"
       ]
     },
     {
