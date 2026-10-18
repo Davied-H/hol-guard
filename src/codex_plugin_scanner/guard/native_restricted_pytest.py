@@ -189,8 +189,9 @@ def decode_native_plan(result: dict[str, Any], profiles: tuple[str, ...]):
         or result["profile_version"] not in profiles
         or not (
             result["backend"] in {"macos-seatbelt", "linux-bubblewrap"}
-            # The Windows runner contains an installed Python interpreter or a
-            # staged Vite build.
+            # The Windows runner contains an installed Python interpreter, or
+            # a staged local Node tool: a Vite build, or a lint, typecheck or
+            # format check that publishes nothing back.
             or (
                 result["backend"] == "windows-appcontainer"
                 and sys.platform == "win32"
@@ -199,6 +200,7 @@ def decode_native_plan(result: dict[str, Any], profiles: tuple[str, ...]):
                     "python-eval-readonly-v1",
                     "node-eval-readonly-v1",
                     "node-build-output-v1",
+                    "node-tool-readonly-v1",
                 }
             )
         )
