@@ -58,6 +58,8 @@ request starts with an eight-byte big-endian stream length followed by the HGPS
 stream; individual records keep their original limits. Object records and a
 compilation-count record precede the unchanged release root. Closing stdin drops
 the process and all cached values. Truncated or invalid requests end the session.
+One request owns the entire build transaction. Concurrent use is rejected; a
+failure closes the session so unread output cannot be consumed by a later build.
 
 Only results compiled by that process may enter its cache. A hit requires the
 current native source/trust/interface build key after global validation. The cache

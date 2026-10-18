@@ -96,6 +96,13 @@ def safe_directory(path: Path) -> None:
 
 
 def stage(compiler: Path, destination: Path, *, session: PackCompilerSession | None = None) -> dict:
+    if session:
+        with session.request():
+            return _stage(compiler, destination, session=session)
+    return _stage(compiler, destination)
+
+
+def _stage(compiler: Path, destination: Path, *, session: PackCompilerSession | None = None) -> dict:
     safe_directory(destination)
     objects = destination / "objects"
     safe_directory(objects)

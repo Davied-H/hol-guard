@@ -222,3 +222,72 @@ def test_bootstrap_target_is_resolved_from_repository_not_calling_directory(gene
     assert command[-2:] == ["-p", "guard-pack-compiler"]
     assert "--locked" in command and "+1.88.0" in command
     assert options == {"cwd": tmp_path, "check": True}
+
+
+def compiler_session(generator, monkeypatch, *, invalid=False, broken_pipe=False):
+    rows = [{"kind": "compilation", "stats": {"compiled": 1, "reused": 0, "retained_encoded_bytes": 0}}, *valid_rows()]
+    data = b"".join(json.dumps(row).encode() + b"\n" for row in rows)
+    if invalid:
+        data = b'{"kind":"unexpected"}\n' + data
+
+    class Input(io.BytesIO):
+        def write(self, data):
+            if broken_pipe:
+                raise BrokenPipeError("compiler rejected early")
+            return super().write(data)
+
+    class Process:
+        def __init__(self):
+            self.stdin = Input()
+            self.stdout = io.BytesIO(b'{"ok":false,"code":"command_pack_metadata_invalid"}\n' if broken_pipe else data)
+            self.returncode = None
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, **kwargs):
+            self.returncode = 2 if broken_pipe else 0
+            return self.returncode
+
+    process = Process()
+    monkeypatch.setattr(generator.subprocess, "Popen", lambda *args, **kwargs: process)
+    return generator.PackCompilerSession(Path("compiler")), process
+
+
+def test_failed_session_cannot_publish_leftover_root_on_a_later_build(generator, monkeypatch, tmp_path):
+    session, process = compiler_session(generator, monkeypatch, invalid=True)
+    destination = tmp_path / "packs"
+    destination.mkdir()
+    previous = b'{"previous":"complete"}'
+    (destination / "release.json").write_bytes(previous)
+    with session:
+        with pytest.raises(ValueError, match="compilation failed"):
+            generator.stage(Path("compiler"), destination, session=session)
+        assert session.closed and process.stdout.closed
+        with pytest.raises(ValueError, match="closed"):
+            generator.stage(Path("compiler"), destination, session=session)
+    assert (destination / "release.json").read_bytes() == previous
+
+
+def test_concurrent_session_request_is_rejected_without_poisoning_owner(generator, monkeypatch, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    session, _ = compiler_session(generator, monkeypatch)
+    with session:
+        with session.request(), ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(generator.stage, Path("compiler"), tmp_path / "concurrent", session=session)
+            with pytest.raises(ValueError, match="request in progress"):
+                future.result()
+        assert not session.closed
+        report = generator.stage(Path("compiler"), tmp_path / "packs", session=session)
+        assert report["extensions"] == 1
+        assert report["compilation"]["compiled"] == 1
+
+
+def test_early_native_rejection_retains_diagnostic_and_closes_session(generator, monkeypatch, tmp_path):
+    session, _ = compiler_session(generator, monkeypatch, broken_pipe=True)
+    with session:
+        with pytest.raises(ValueError, match="command_pack_metadata_invalid"):
+            generator.stage(Path("compiler"), tmp_path / "packs", session=session)
+        assert session.closed
+    assert not (tmp_path / "packs/release.json").exists()
