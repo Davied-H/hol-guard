@@ -109,6 +109,7 @@ pub(super) fn command_read_target(
                     context.home_dir,
                     context.cwd,
                 ))
+            || (!allow_directory && super::search::safe_literal_bracket_read_target(value, context))
             // `grep` and `rg` already open a file named inside a repository
             // beside the session's own through this screen, including a name
             // that is not there yet: an agent spells one whenever it guesses
