@@ -3590,7 +3590,12 @@ function LocalCliCapabilities(props) {
   const suggested = props.item.suggested_capability;
   const request2 = reactExports.useCallback(async (change) => {
     setError(null);
-    await refreshApprovalGate();
+    try {
+      await refreshApprovalGate({ failClosed: true });
+    } catch {
+      setError("Guard could not load your approval settings. Try again.");
+      return;
+    }
     setPending(change);
   }, [refreshApprovalGate]);
   const cancel = reactExports.useCallback(() => {
