@@ -17,7 +17,11 @@ def test_unavailable_resident_reports_workspace_not_internal_label(
         raise module.NativeDirectoryTrustError("native_directory_trust_unavailable")
 
     monkeypatch.setattr(module, "native_directory_trust", unavailable)
-    handler = SimpleNamespace(_daemon_server=lambda: SimpleNamespace(store=SimpleNamespace(guard_home=tmp_path)))
+    daemon_server = SimpleNamespace(
+        store=SimpleNamespace(guard_home=tmp_path / "guard-home"),
+        home_dir=tmp_path / "home",
+    )
+    handler = SimpleNamespace(_daemon_server=lambda: daemon_server)
     with pytest.raises(module._HookPathValidationError) as error:
         module._GuardDaemonHandler._settled_hook_directories(handler, (label, "project", "hook-workspace"))
     assert error.value.parameter == "workspace"
