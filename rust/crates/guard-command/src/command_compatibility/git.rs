@@ -74,23 +74,15 @@ fn bounded_inspection(arguments: &[String]) -> bool {
     if arguments == ["rev-parse", "--show-toplevel"] {
         return true;
     }
-    let [command, mode, patch] = arguments else {
+    let Some((command, rest)) = arguments.split_first() else {
         return false;
     };
-    // These fixed built-ins cannot be replaced by aliases. This admits their
-    // capability attribution only; patch read and workspace proofs remain the
-    // responsibility of the ordinary command decision, not this classifier.
-    command == "apply"
-        && mode == "--check"
-        && !patch.is_empty()
-        && patch.len() <= 4096
-        && !patch.starts_with(['-', '/', '\\'])
-        && patch
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._-/".contains(&byte))
-        && patch
-            .split('/')
-            .all(|part| !matches!(part, "" | "." | ".."))
+    // These fixed built-ins cannot be replaced by aliases. The check grammar
+    // proves the invocation writes nothing, whichever of its options the
+    // caller spelled. This admits their capability attribution only; patch
+    // read and workspace proofs remain the responsibility of the ordinary
+    // command decision, not this classifier.
+    command == "apply" && crate::pretool::git_apply_check::is_check_only(rest)
 }
 
 /// A staged-index diff that prints to stdout like `git diff HEAD`, which the
