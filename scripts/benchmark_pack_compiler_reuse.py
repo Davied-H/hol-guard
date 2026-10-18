@@ -104,8 +104,10 @@ def run_worker(compiler, source, cache, reuse=False):
         ],
         capture_output=True,
         text=True,
-        check=True,
+        check=False,
     )
+    if result.returncode:
+        raise ValueError("offline compiler benchmark worker failed: " + result.stderr[-4096:])
     return json.loads(result.stdout)
 
 
@@ -131,7 +133,7 @@ def main():
     results = []
     for factor in args.factors:
         with tempfile.TemporaryDirectory(prefix="pack-reuse-benchmark-") as temporary:
-            source, cache = Path(temporary) / "source", Path(temporary) / "cache"
+            source, cache = Path(temporary).resolve() / "source", Path(temporary).resolve() / "cache"
             source_tree(packs.legacy.ROOT, source, baseline * factor)
             cold = run_worker(args.compiler, source, cache)
             warm = run_worker(args.compiler, source, cache, True)
@@ -147,7 +149,7 @@ def main():
                 "reused": baseline * factor - 1,
                 "retained_encoded_bytes": 0,
             }
-            clean = run_worker(args.compiler, source, Path(temporary) / "clean")
+            clean = run_worker(args.compiler, source, Path(temporary).resolve() / "clean")
             assert clean["stream_sha256"] == changed["stream_sha256"] and clean["root"] == changed["root"]
             for report in (cold, warm, changed, clean):
                 report.pop("root")
