@@ -2114,14 +2114,15 @@ class _GuardDaemonHandler(
                     reason="HOL Guard could not complete the native hook decision safely.",
                     reason_code="native_hook_worker_unavailable",
                 )
-            elif deadline is not None and time.monotonic() >= deadline:
-                result = self._runtime_hook_fail_safe_response(
-                    payload,
-                    params,
-                    default_harness=default_harness,
-                    reason="HOL Guard could not complete local review within the hook deadline. Retry this action.",
-                    reason_code="daemon_hook_deadline_exhausted",
-                )
+            # A review that finished late still finished: the answer carries the
+            # same decision the native edge would have sent on time, so send it
+            # rather than a block. The client owns the real timeout -- it stops
+            # waiting on its own clock and ignores whatever arrives after -- and
+            # discarding a completed decision here only turns a slow host into a
+            # blocked one, which is how a cold or contended machine ends up
+            # refusing `grep`. The deadline still bounds the work itself: it
+            # caps storage waits and the native edge's own evaluation, and a
+            # review that produces nothing fails safe above.
         # The decision is final. Free its review slot before the answer is
         # sent: a client holding its answer must never see the slot still
         # busy, and a slow reader must not occupy review capacity.

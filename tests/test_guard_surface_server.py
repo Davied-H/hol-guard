@@ -1565,7 +1565,10 @@ class TestGuardSurfaceServer:
         assert captured["workspace"] is None
 
     @pytest.mark.usefixtures("native_hook_force")
-    def test_guard_daemon_pi_hook_endpoint_rejects_worker_payload_after_deadline(self, tmp_path, monkeypatch) -> None:
+    def test_guard_daemon_pi_hook_endpoint_sends_a_worker_decision_finished_after_the_deadline(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        """A late review still answers: a slow host must not turn an allow into a block."""
         home_dir = tmp_path / "home"
         workspace_dir = tmp_path / "workspace"
         home_dir.mkdir()
@@ -1619,8 +1622,7 @@ class TestGuardSurfaceServer:
             daemon.stop()
 
         assert response.status == 200
-        assert payload["decision"] == "deny"
-        assert payload["reason_code"] == "daemon_hook_deadline_exhausted"
+        assert payload == {"decision": "allow"}
 
     @pytest.mark.usefixtures("native_hook_force")
     def test_expired_worker_result_does_not_restart_fail_safe_storage_wait(self, tmp_path, monkeypatch) -> None:
@@ -1635,7 +1637,10 @@ class TestGuardSurfaceServer:
         store = GuardStore(tmp_path / "guard")
         handler = object.__new__(daemon_server_module._GuardDaemonHandler)
         handler.server = SimpleNamespace(store=store, home_dir=home)
-        monkeypatch.setattr(handler, "_handle_runtime_hook_fast", lambda *_args, **_kwargs: {"decision": "allow"})
+        # The fail-safe rendering is what this guards: a review that produces
+        # no decision still has to answer, and an already-expired deadline must
+        # not restart the storage wait while it renders that answer.
+        monkeypatch.setattr(handler, "_handle_runtime_hook_fast", lambda *_args, **_kwargs: None)
         responses = []
         monkeypatch.setattr(handler, "_write_json", responses.append)
         held = threading.Event()
