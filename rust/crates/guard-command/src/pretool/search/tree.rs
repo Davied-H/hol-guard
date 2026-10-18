@@ -203,12 +203,22 @@ pub(in crate::pretool) fn safe_literal_bracket_search_target(
     context: ReadContext<'_>,
 ) -> bool {
     value.contains('[')
-        && !value.contains(['*', '?', '!'])
+        && inert_bracket_class(value, context)
+        && literal_bracket_walk(value, context)
+}
+
+/// Whether a word carrying a bracket class reaches the program as it was
+/// typed. The class has to match no entry, with case folded too, since under
+/// `nocaseglob` `app/[slug]` would expand to a directory named `S` rather
+/// than reach the literal route directory. A class this matcher would read
+/// differently from the shell, and a word carrying another glob
+/// metacharacter, prove nothing.
+fn inert_bracket_class(value: &str, context: ReadContext<'_>) -> bool {
+    !value.contains(['*', '?', '!'])
         && !super::glob_class::bracket_fallback_unsafe(value)
         && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
         && glob_expand::expand_glob_matches_folded(value, context)
             .is_some_and(|matches| matches.is_empty())
-        && literal_bracket_walk(value, context)
 }
 
 fn literal_bracket_walk(value: &str, context: ReadContext<'_>) -> bool {
@@ -258,12 +268,7 @@ pub(in crate::pretool) fn safe_unmatched_glob_operand(
             && glob_expand::expand_glob_matches_strict(value, context)
                 .is_some_and(|matches| matches.is_empty());
     }
-    !value.contains(['*', '?', '!'])
-        && !super::glob_class::bracket_fallback_unsafe(value)
-        && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
-        && glob_expand::expand_glob_matches_folded(value, context)
-            .is_some_and(|matches| matches.is_empty())
-        && safe_literal_bracket_tree(value, context, recursive)
+    inert_bracket_class(value, context) && safe_literal_bracket_tree(value, context, recursive)
 }
 
 /// Content-search glob operand: every match is walked, and matches inside an

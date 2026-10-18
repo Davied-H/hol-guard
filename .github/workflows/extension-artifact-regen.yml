@@ -141,6 +141,7 @@ jobs:
           path: |
             extension-distribution/extension-distribution.v2.json
             extension-distribution/extension-distribution.intoto.jsonl
+            extension-distribution/compilation-report.json
           if-no-files-found: error
           retention-days: 14
       - name: Publish complete immutable distribution and compatibility snapshot
