@@ -64,6 +64,14 @@ fn fixture() -> Fixture {
     write(badges.join("app/S/page.tsx"), "export default 3;\n");
     write(badges.join(".gitignore"), "dist/\n");
 
+    // The sibling agents really name sits a directory below home.
+    let nested = home.join("projects/listing-badges");
+    std::fs::create_dir_all(nested.join(".git")).unwrap();
+    write(
+        nested.join("app/blog/[slug]/blog-post-content.tsx"),
+        "export const a = 1;\n",
+    );
+
     // A sibling whose ignore file can re-include anything.
     let tools = home.join("tools");
     std::fs::create_dir_all(tools.join(".git")).unwrap();
@@ -114,6 +122,10 @@ fn bracketed_routes_in_a_sibling_repository_are_searched() {
         format!("rg -n export {route}"),
         format!("rg -n \"export|default\" \"{route}\""),
         format!("rg -ln export {}/app/[locale]", badges.display()),
+        format!(
+            "rg -n \"rel=|target=\" {}/app/blog/[slug]/blog-post-content.tsx",
+            f.home.join("projects/listing-badges").display()
+        ),
     ] {
         check(&f, &command, true);
     }
