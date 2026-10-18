@@ -159,6 +159,22 @@ async function run() {
     stale: notices.splice(0).length,
     current: currentNotices.length,
   };
+  sent.splice(0); notices.splice(0);
+  for (const outcome of ['timeout', 'transport']) {
+    pollQueue = [outcome];
+    scheduleToolApprovalResume(blocked(`stopped-${outcome}`), ctx(), snapshot({ memory: outcome }));
+    await settle();
+  }
+  const stoppedNotices = notices.splice(0);
+  pollQueue = ['timeout'];
+  scheduleToolApprovalResume(blocked('stopped-moved-on'), ctx(), snapshot({ memory: 'moved on' }));
+  invalidateToolApprovalResumes();
+  await settle();
+  results.stopped = { notices: stoppedNotices, moved_on: notices.splice(0), sent: sent.splice(0).length };
+  pollQueue = ['allow'];
+  scheduleToolApprovalResume(blocked('stopped-timeout'), ctx(), snapshot({ memory: 'timeout' }));
+  await settle();
+  results.rewatched = sent.splice(0).length;
   console.log(JSON.stringify(results));
 }
 run();
@@ -202,7 +218,9 @@ run();
     assert capped["polls"] == 5, "four watched at once, then a fifth once the user moved on from them"
     ((kind, message),) = capped["notices"]
     assert kind == "warning" and "will not rerun this one on its own" in message
-    assert capped["after_moving_on"] == [], "a watcher the user moved on from no longer holds a slot"
+    assert not any("already watching" in message for _, message in capped["after_moving_on"]), (
+        "a watcher the user moved on from no longer holds a slot"
+    )
 
     assert results["session_events"] == {
         "session_start": 0,
@@ -215,6 +233,13 @@ run();
     assert results["reissued"] == {"sent": ["r"], "polls": 2}, (
         "the same request blocked again after the user moved on is watched afresh"
     )
+    stopped = results["stopped"]
+    assert isinstance(stopped, dict)
+    assert stopped["sent"] == 0
+    assert [kind for kind, _ in stopped["notices"]] == ["warning", "warning"]
+    assert all("will not rerun it on its own" in message for _, message in stopped["notices"])
+    assert stopped["moved_on"] == [], "a watcher the user moved on from ends silently"
+    assert results["rewatched"] == 1, "a request whose watcher stopped is watched again"
     assert results["two_views"] == {"sent": 1, "polls": 2, "stale": 0, "current": 1}, (
         "only a request's current watcher may act on it"
     )
