@@ -234,6 +234,7 @@ pub(super) fn workspace_exec_roots(
     search_path: &str,
     home: Option<&Path>,
     workspace: &Path,
+    go: bool,
 ) -> (Vec<PathBuf>, String) {
     let mut roots: Vec<PathBuf> = Vec::new();
     let mut entries: Vec<String> = Vec::new();
@@ -282,10 +283,14 @@ pub(super) fn workspace_exec_roots(
     }
     // A Go build compiles the dependency sources in the module cache; the
     // launch environment points `GOMODCACHE` there and writes its own build
-    // cache into the private directory instead.
-    if let Some(cache) = host_go_module_cache() {
-        if !roots.contains(&cache) {
-            roots.push(cache);
+    // cache into the private directory instead. Only a run that names the
+    // toolchain gets it: the cache holds whatever `go mod download` fetched,
+    // private modules included, and nothing else in a workspace reads it.
+    if go {
+        if let Some(cache) = host_go_module_cache() {
+            if !roots.contains(&cache) {
+                roots.push(cache);
+            }
         }
     }
     (roots, entries.join(":"))
@@ -378,8 +383,22 @@ mod tests {
             &format!("{}:relative/bin", link.display()),
             Some(&home.0),
             Path::new("/nonexistent-workspace"),
+            false,
         );
         assert!(!roots.contains(&outside.0) && !roots.contains(&link));
         assert_eq!(path, "/usr/bin:/bin");
+    }
+
+    #[test]
+    fn the_go_module_cache_is_an_executable_root_only_for_a_go_run() {
+        // The cache holds whatever `go mod download` fetched, a private
+        // module included, and the plan grants each root as executable.
+        let Some(cache) = host_go_module_cache() else {
+            return;
+        };
+        let (without, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), false);
+        let (with, _) = workspace_exec_roots("", None, Path::new("/nonexistent"), true);
+        assert!(!without.contains(&cache));
+        assert!(with.contains(&cache));
     }
 }

@@ -32,7 +32,10 @@ pub(crate) fn launches_outside_exec_roots<'a>(
     home: Option<&Path>,
     workspace: &Path,
 ) -> bool {
-    let (roots, sandbox_path) = workspace_exec_roots(search_path, home, workspace);
+    // Reachability, not a grant: this asks whether the sandbox could run what
+    // the command launches, so the Go module cache stays in view and a Go run
+    // is not judged unreachable before the plan decides whether to grant it.
+    let (roots, sandbox_path) = workspace_exec_roots(search_path, home, workspace, true);
     let mut executable = executable_roots(workspace, roots);
     executable.extend(linked_checkout(workspace, home));
     let reaches = |path: &Path| path_is_within_any(path, &executable);

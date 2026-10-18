@@ -22,3 +22,27 @@ fn another_program_in_the_same_shell_names_no_sole_program() {
         assert_eq!(sole_program(text), None, "{text}");
     }
 }
+
+#[test]
+fn only_a_text_that_names_the_toolchain_reaches_the_go_module_cache() {
+    // The cache below the real HOME holds whatever `go mod download` fetched,
+    // a private module included, and the plan grants it as an executable
+    // root. A workspace run that never names `go` has no reason to reach it.
+    for text in [
+        "go build ./...",
+        "go test ./... && go vet ./...",
+        "/usr/local/go/bin/go build ./...",
+        "cd services/api && go test ./...",
+    ] {
+        assert!(runs_go(text), "{text}");
+    }
+    for text in [
+        "pnpm test",
+        "cargo build",
+        "pytest -q",
+        "npm run golden",
+        "./scripts/gogo.sh",
+    ] {
+        assert!(!runs_go(text), "{text}");
+    }
+}
