@@ -60,7 +60,8 @@ function canonicalJson(value: unknown): string | null { return JSON.stringify(va
 function ompInteractiveContext(ctx: any): boolean { return ctx.mode === 'tui'; }
 function contextSessionId(ctx: any): string | null { return ctx.sessionId; }
 function contextCwd(ctx: any): string | null { return ctx.cwd; }
-function loadGuardDaemonConnection() { return { stateId: 'daemon-a' }; }
+let daemonState: string | null = 'daemon-a';
+function loadGuardDaemonConnection() { return daemonState === null ? null : { stateId: daemonState }; }
 async function pollApprovalResolution(_id: string, _path: string, _signal: unknown, isActive: () => boolean) {
   polls += 1;
   await new Promise((resolve) => setTimeout(resolve, 5));
@@ -175,6 +176,15 @@ async function run() {
   scheduleToolApprovalResume(blocked('stopped-timeout'), ctx(), snapshot({ memory: 'timeout' }));
   await settle();
   results.rewatched = sent.splice(0).length;
+  notices.splice(0);
+  for (const state of [null, 'daemon-b']) {
+    pollQueue = ['allow'];
+    scheduleToolApprovalResume(blocked(`daemon-${state}`), ctx(), snapshot({ memory: String(state) }));
+    daemonState = state;
+    await settle();
+    daemonState = 'daemon-a';
+  }
+  results.daemon_changed = { notices: notices.splice(0), sent: sent.splice(0).length };
   console.log(JSON.stringify(results));
 }
 run();
@@ -240,6 +250,12 @@ run();
     assert all("will not rerun it on its own" in message for _, message in stopped["notices"])
     assert stopped["moved_on"] == [], "a watcher the user moved on from ends silently"
     assert results["rewatched"] == 1, "a request whose watcher stopped is watched again"
+    daemon_changed = results["daemon_changed"]
+    assert isinstance(daemon_changed, dict)
+    assert daemon_changed["sent"] == 0, "an approval read from a lost or replaced daemon never resumes"
+    assert [kind for kind, _ in daemon_changed["notices"]] == ["warning", "warning"], (
+        "losing or replacing the daemon is reported, not silent"
+    )
     assert results["two_views"] == {"sent": 1, "polls": 2, "stale": 0, "current": 1}, (
         "only a request's current watcher may act on it"
     )

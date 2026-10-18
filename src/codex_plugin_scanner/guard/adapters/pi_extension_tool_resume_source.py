@@ -15,8 +15,8 @@ The watchers have their own lifecycle:
   input, a session start, switch, branch, tree move or shutdown, a cwd change
   or a replaced daemon does.
 - A request whose decision was acted on is never acted on again.
-- A watcher that times out or loses the daemon tells the user the retry will
-  not come; one the user moved on from ends silently.
+- A watcher that times out, loses the daemon or sees it replaced tells the
+  user the retry will not come; one the user moved on from ends silently.
 """
 
 from __future__ import annotations
@@ -112,6 +112,12 @@ TOOL_APPROVAL_RESUME_SOURCE = (
     "    const isActive = () => toolApprovalResumeBindingIsActive(ctx, binding);\n"
     "    // Only the request's current watcher acts; one dropped from the map stays silent.\n"
     "    const mayAct = () => toolApprovalResumeWatchers.get(requestId) === binding && isActive();\n"
+    "    // The user has not moved on: same watcher, prompt generation, session and cwd.\n"
+    "    // The daemon is left out, so its loss or replacement is still reported.\n"
+    "    const userStillWaiting = () => toolApprovalResumeWatchers.get(requestId) === binding &&\n"
+    "      binding.generation === toolApprovalResumeGeneration &&\n"
+    "      contextSessionId(ctx) === binding.sessionId &&\n"
+    "      contextCwd(ctx) === binding.cwd;\n"
     "    const pollPath = typeof record.poll_path === 'string' && record.poll_path.startsWith('/v1/requests/')\n"
     "      ? record.poll_path\n"
     "      : `/v1/requests/${encodeURIComponent(requestId)}`;\n"
@@ -140,12 +146,13 @@ TOOL_APPROVAL_RESUME_SOURCE = (
     "        } else if (action === 'block' && mayAct()) {\n"
     "          settleToolApprovalResume(requestId);\n"
     "          ctx.ui.notify('HOL Guard kept this request blocked. Oh My Pi will not run it.', 'warning');\n"
-    "        } else if ((action === 'timeout' || action === 'transport') && mayAct()) {\n"
-    "          // The user still expects a retry; say it will not come. Not settled,\n"
+    "        } else if (userStillWaiting()) {\n"
+    "          // Timed out, lost the daemon, or read a decision from a replaced one:\n"
+    "          // the user still expects a retry, so say it will not come. Not settled,\n"
     "          // so the same request blocked again is watched afresh.\n"
     "          ctx.ui.notify(\n"
     "            'HOL Guard stopped watching this request, so Oh My Pi will not rerun it on its own. '\n"
-    "              + 'After you approve it, ask Oh My Pi to run it again.',\n"
+    "              + 'Once it is approved, ask Oh My Pi to run it again.',\n"
     "            'warning',\n"
     "          );\n"
     "        }\n"
