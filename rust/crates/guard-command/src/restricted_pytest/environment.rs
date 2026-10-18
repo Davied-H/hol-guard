@@ -220,7 +220,7 @@ pub(super) fn filter(
     // take its locks in. The toolchain resolves through the real rustup
     // installation, and the offline flag turns a missing crate into an
     // immediate error rather than a blocked fetch.
-    if allowed.is_empty() && !super::toolchains::private_links(private_tmp).is_empty() {
+    if allowed.is_empty() && !super::toolchains::host_cargo_caches().is_empty() {
         result.insert(
             "CARGO_HOME".to_owned(),
             cargo_home(private_tmp).to_string_lossy().into_owned(),

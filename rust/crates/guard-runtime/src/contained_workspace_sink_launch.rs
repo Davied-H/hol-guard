@@ -273,18 +273,13 @@ impl PrivateRoot {
 /// The largest safety guide copied into the private home.
 const MAX_SAFETY_GUIDE_BYTES: u64 = 64 * 1024;
 
-/// Copy Guard's safety guide into the private home, so the
-/// `~/.hol-support/SAFETY.md` that classification admits reads the same text
-/// inside the sandbox. `.hol-support` and the guide are opened relative to
-/// descriptors without following links, and only a regular file with one link
-/// is copied: a link or directory swapped in at either step would otherwise
-/// put another file in reach of the sandboxed command. A guide that cannot be
-/// copied is left out and the read fails in the sandbox.
 /// Link the host caches a contained run reads into the tree it owns.
 ///
 /// Cargo takes its locks inside `CARGO_HOME`, so a contained run needs one it
 /// can write; the fetched crate sources it only reads stay where the host
-/// keeps them, linked in under the names cargo looks for. Nothing is linked
+/// keeps them, linked in under the names cargo looks for. A link may name an
+/// entry below a cache rather than the cache itself, which leaves the
+/// directory holding it one the run owns and can add to. Nothing is linked
 /// when the native side grants no cache.
 fn link_private_caches(private_tmp: &str) -> Outcome<()> {
     let Value::Array(links) = native("private_links", json!({ "private_tmp": private_tmp }))?
@@ -315,6 +310,13 @@ fn link_private_caches(private_tmp: &str) -> Outcome<()> {
     Ok(())
 }
 
+/// Copy Guard's safety guide into the private home, so the
+/// `~/.hol-support/SAFETY.md` that classification admits reads the same text
+/// inside the sandbox. `.hol-support` and the guide are opened relative to
+/// descriptors without following links, and only a regular file with one link
+/// is copied: a link or directory swapped in at either step would otherwise
+/// put another file in reach of the sandboxed command. A guide that cannot be
+/// copied is left out and the read fails in the sandbox.
 pub(super) fn seed_safety_guide(home: &Path, private_home: &Path) {
     use nix::fcntl::{open, openat, OFlag};
     use nix::sys::stat::Mode;

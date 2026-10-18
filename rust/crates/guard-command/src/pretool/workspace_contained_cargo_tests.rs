@@ -78,3 +78,19 @@ fn the_registry_verbs_and_a_bare_directory_keep_their_review() {
         assert_ne!(reason, CONTAINED, "{harness}");
     }
 }
+
+/// Which package a verb compiles moves with a `cd` ahead of it, so a member
+/// of the workspace counts and a directory holding no manifest does not.
+#[test]
+fn the_package_a_verb_compiles_moves_with_the_command() {
+    let ws = package("cargo-nested");
+    std::fs::create_dir_all(ws.join("crates/engine")).unwrap();
+    std::fs::write(ws.join("crates/engine/Cargo.toml"), MANIFEST).unwrap();
+    std::fs::create_dir_all(ws.join("docs")).unwrap();
+    for harness in ["codex", "claude-code", "omp"] {
+        let (reason, _) = outcome(harness, "cd crates/engine && cargo test --offline", &ws);
+        assert_eq!(reason, CONTAINED, "{harness}");
+        let (reason, _) = outcome(harness, "cd docs && cargo test", &ws);
+        assert_ne!(reason, CONTAINED, "{harness}");
+    }
+}
