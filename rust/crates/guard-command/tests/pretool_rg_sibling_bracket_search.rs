@@ -31,6 +31,13 @@ fn write(path: PathBuf, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
+/// An unquoted operand spelling of a fixture path. Whitespace in the checkout
+/// path would otherwise split the word, and only the brackets are meant to
+/// reach the shell unescaped.
+fn bare(path: &str) -> String {
+    path.replace(' ', "\\ ")
+}
+
 fn fixture() -> Fixture {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/pretool-rg-sibling-bracket")
@@ -117,15 +124,25 @@ fn bracketed_routes_in_a_sibling_repository_are_searched() {
     }
     // The absolute spelling, quoted and bare, is the one agents write most.
     let badges = f.home.join("badges");
-    let route = badges.join("app/badge/[slug]/page.tsx");
-    let route = route.display();
+    let route = bare(
+        &badges
+            .join("app/badge/[slug]/page.tsx")
+            .display()
+            .to_string(),
+    );
     for command in [
         format!("rg -n export {route}"),
-        format!("rg -n \"export|default\" \"{route}\""),
-        format!("rg -ln export {}/app/[locale]", badges.display()),
+        format!(
+            "rg -n \"export|default\" \"{}\"",
+            badges.join("app/badge/[slug]/page.tsx").display()
+        ),
+        format!(
+            "rg -ln export {}/app/[locale]",
+            bare(&badges.display().to_string())
+        ),
         format!(
             "rg -n \"rel=|target=\" {}/app/blog/[slug]/blog-post-content.tsx",
-            f.home.join("projects/listing-badges").display()
+            bare(&f.home.join("projects/listing-badges").display().to_string())
         ),
     ] {
         check(&f, &command, true);
