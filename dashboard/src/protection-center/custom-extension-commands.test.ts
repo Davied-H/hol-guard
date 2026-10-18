@@ -160,6 +160,11 @@ console.log("custom-extension-commands.test.ts: all assertions passed");
   assert.equal(item.remote_origin, "https://mcp.example.test/mcp");
   assert.equal(mcpCatalogCopy(item)?.title, "Remote connector");
   assert.match(mcpCatalogCopy(item)?.description ?? "", /does not connect to remote servers/);
+  const longOrigin = `https://mcp.example.test/${"p".repeat(512 - "https://mcp.example.test/".length)}`;
+  assert.equal(remote(longOrigin).remote_origin, longOrigin);
+  assert.equal(remote(`${longOrigin}p`).remote_origin, undefined);
+  const allowed = normalizeLocalCliItem({ ...item, state: "allowed", grant_revision: 1 });
+  assert.match(customExtensionStateLabel(allowed), /Use one of its tools in your host app/);
   for (const invalid of ["mcp.example.test", "https://user@mcp.example.test", "https://mcp.example.test/?k=1", 7]) {
     assert.equal(remote(invalid).remote_origin, undefined);
     assert.equal(mcpCatalogCopy(remote(invalid))?.title, "Inventory not checked");

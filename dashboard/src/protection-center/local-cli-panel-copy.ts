@@ -160,7 +160,9 @@ export function customExtensionStateLabel(item: LocalCliItem): string {
   if (item.state === "allowed") {
     if (item.surface === "mcp") {
       const tools = item.commands.filter((command) => command.command_id !== "other");
-      if (tools.length === 0) return "No tools allowed yet. List the inventory to choose permissions.";
+      if (tools.length === 0) return item.remote_origin
+        ? "No tools seen yet. Use one of its tools in your host app, then choose permissions here."
+        : "No tools allowed yet. List the inventory to choose permissions.";
       const allowed = tools.filter((command) => command.state === "allow" && mcpToolCanReceiveDirectAllow(command)).length;
       const denied = tools.filter((command) => command.state === "block").length;
       const ask = tools.filter((command) => command.state === "review"

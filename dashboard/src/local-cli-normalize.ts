@@ -58,7 +58,8 @@ export function normalizeLocalCliItem(value: unknown): LocalCliItem {
     ...(providerCatalog ? { provider_catalog: providerCatalog } : {}),
     ...(["configured-connection", "host-namespace", "legacy-device"].includes(String(value.permission_scope))
       ? { permission_scope: value.permission_scope as LocalCliItem["permission_scope"] } : {}),
-    ...(typeof value.remote_origin === "string" && /^https?:\/\/[^\s?#@]{1,500}$/.test(value.remote_origin)
+    ...(typeof value.remote_origin === "string" && value.remote_origin.length <= 512
+      && /^https?:\/\/[^\s?#@]+$/.test(value.remote_origin)
       ? { remote_origin: value.remote_origin } : {}),
     ...normalizeProfileFields(value),
     ...normalizeCapabilityFields(value),

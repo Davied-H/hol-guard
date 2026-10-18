@@ -409,7 +409,8 @@ assert.equal(addedCustomExtensions(mixedValidity.items).length, 2);
 
 {
   const failure = (status: number, body: unknown) => readJson(new Response(JSON.stringify(body), { status }));
-  await assert.rejects(failure(401, { error: "unauthorized" }), /dashboard session expired\. Reload this page/);
+  await assert.rejects(failure(401, { error: "unauthorized" }), /could not confirm this dashboard session\. Reload this page/);
+  await assert.rejects(failure(401, { error: "unauthorized", message: " " }), /could not confirm this dashboard session/);
   await assert.rejects(failure(409, { error: "revision_conflict", message: "Reload first." }), /Reload first\./);
   await assert.rejects(failure(500, { error: "internal" }), /could not update this custom extension/);
 }

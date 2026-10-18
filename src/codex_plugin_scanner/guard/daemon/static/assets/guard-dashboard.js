@@ -1,4 +1,4 @@
-const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/chunks/home-dashboard-BIeHiHGS.js","assets/chunks/home-protection-module-BHaRlMcA.js","assets/chunks/fleet-workspace-D66UK_ED.js","assets/chunks/settings-save-proof-modal-BDRsuu6u.js","assets/chunks/harness-version-label-Dfq_fTOf.js","assets/chunks/connect-guard-cloud-button-Ce_NW13Z.js","assets/chunks/settings-workspace-ybfm3vkn.js","assets/chunks/confirm-dialog-Cxs3dXTD.js","assets/chunks/extensions-workspace-DhRVxRkc.js","assets/chunks/app-detail-workspace-CeHXFk-9.js","assets/chunks/policy-workspace-page-Borpv-IL.js"])))=>i.map(i=>d[i]);
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/chunks/home-dashboard-BIeHiHGS.js","assets/chunks/home-protection-module-BHaRlMcA.js","assets/chunks/fleet-workspace-D66UK_ED.js","assets/chunks/settings-save-proof-modal-BDRsuu6u.js","assets/chunks/harness-version-label-Dfq_fTOf.js","assets/chunks/connect-guard-cloud-button-Ce_NW13Z.js","assets/chunks/settings-workspace-ybfm3vkn.js","assets/chunks/confirm-dialog-Cxs3dXTD.js","assets/chunks/extensions-workspace-CQY8-ycH.js","assets/chunks/app-detail-workspace-CeHXFk-9.js","assets/chunks/policy-workspace-page-Borpv-IL.js"])))=>i.map(i=>d[i]);
 (function polyfill() {
   const relList = document.createElement("link").relList;
   if (relList && relList.supports && relList.supports("modulepreload")) return;
@@ -33404,7 +33404,7 @@ function normalizeLocalCliItem(value) {
     ...catalog ? { mcp_catalog: catalog } : {},
     ...providerCatalog ? { provider_catalog: providerCatalog } : {},
     ...["configured-connection", "host-namespace", "legacy-device"].includes(String(value.permission_scope)) ? { permission_scope: value.permission_scope } : {},
-    ...typeof value.remote_origin === "string" && /^https?:\/\/[^\s?#@]{1,500}$/.test(value.remote_origin) ? { remote_origin: value.remote_origin } : {},
+    ...typeof value.remote_origin === "string" && value.remote_origin.length <= 512 && /^https?:\/\/[^\s?#@]+$/.test(value.remote_origin) ? { remote_origin: value.remote_origin } : {},
     ...normalizeProfileFields(value),
     ...normalizeCapabilityFields(value)
   };
@@ -33748,7 +33748,7 @@ async function readJson(response) {
   if (!response.ok) {
     const record2 = isRecord(payload) ? payload : {};
     const code = typeof record2.error === "string" ? record2.error : "local_cli_request_failed";
-    const message = typeof record2.message === "string" ? record2.message : response.status === 401 ? "Your Guard dashboard session expired. Reload this page, then try again." : "Guard could not update this custom extension.";
+    const message = typeof record2.message === "string" && record2.message.trim() ? record2.message : response.status === 401 ? "Guard could not confirm this dashboard session. Reload this page, then try again." : "Guard could not update this custom extension.";
     throw new LocalCliApiError(code, message);
   }
   if (payload === null) {
@@ -35564,7 +35564,7 @@ const FleetWorkspace = lazyWorkspace("fleet-workspace", () => __vitePreload(() =
 const SettingsWorkspace = lazyWorkspace("settings-workspace", () => __vitePreload(() => import("./chunks/settings-workspace-ybfm3vkn.js"), true ? __vite__mapDeps([6,3,7,5]) : void 0).then((m) => ({ default: m.SettingsWorkspace })));
 const ExtensionsWorkspace = lazyWorkspace(
   "extensions-workspace",
-  () => __vitePreload(() => import("./chunks/extensions-workspace-DhRVxRkc.js"), true ? __vite__mapDeps([8,7]) : void 0).then((module) => ({ default: module.ExtensionsWorkspace }))
+  () => __vitePreload(() => import("./chunks/extensions-workspace-CQY8-ycH.js"), true ? __vite__mapDeps([8,7]) : void 0).then((module) => ({ default: module.ExtensionsWorkspace }))
 );
 const AppDetailWorkspace = lazyWorkspace("app-detail-workspace", () => __vitePreload(() => import("./chunks/app-detail-workspace-CeHXFk-9.js"), true ? __vite__mapDeps([9,4]) : void 0).then((m) => ({ default: m.AppDetailWorkspace })));
 const HelpModal = lazyWorkspace("help-modal", () => __vitePreload(() => import("./chunks/help-modal-Br79wbUv.js"), true ? [] : void 0).then((m) => ({ default: m.HelpModal })));

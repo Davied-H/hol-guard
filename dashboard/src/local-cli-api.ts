@@ -357,8 +357,8 @@ export async function readJson(response: Response): Promise<unknown> {
   if (!response.ok) {
     const record = isRecord(payload) ? payload : {};
     const code = typeof record.error === "string" ? record.error : "local_cli_request_failed";
-    const message = typeof record.message === "string" ? record.message : response.status === 401
-      ? "Your Guard dashboard session expired. Reload this page, then try again."
+    const message = typeof record.message === "string" && record.message.trim() ? record.message : response.status === 401
+      ? "Guard could not confirm this dashboard session. Reload this page, then try again."
       : "Guard could not update this custom extension.";
     throw new LocalCliApiError(code, message);
   }
