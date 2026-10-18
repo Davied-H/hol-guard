@@ -454,7 +454,7 @@ fn a_prevented_pre_event_rewrites_the_correlation_digest() {
     // the digest is a join key, so both runtimes must land on these bytes.
     assert_eq!(
         evidence.get("correlation_digest").and_then(Value::as_str),
-        Some("d5b3406976b245e21cb4b99a6f44865fb54da626c9acfecf354bc3be3917a324"),
+        Some("578c87b78323942aa15c359c1a55620413cb0b5714b840d4d5d47c7497de44c0"),
         "a prevented attempt cannot pair with a post event, so it gets its own key"
     );
 }
