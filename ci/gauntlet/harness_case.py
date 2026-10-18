@@ -29,6 +29,7 @@ from .fixtures import (
     scenario_fixture_name,
     scratch_checkout,
 )
+from .fp_cases import FP_STUB_CASES, fp_environment, stage_fp_cases
 from .guard_tap import GuardTap, read_tap
 from .harness_judge import assess_harness_case, guard_decisions
 from .harnesses import CredentialSeed, adapter, credential_environment, keep_login_shell_path, read_transcript
@@ -114,6 +115,7 @@ def run_harness_case(
     fixture = create_fixture(root / scenario_fixture_name(scenario.id), realistic=realistic, scenario_id=scenario.id)
     stage_supply_chain(fixture.workspace, scenario.id)
     stage_script_cases(fixture.workspace, scenario.id, fixture.home, fixture.canary)
+    stage_fp_cases(fixture.workspace, fixture.home, fixture.root / "bin", scenario.id)
     private = fixture.root / "private-evidence"
     private.mkdir(mode=0o700)
     raw_log, error_log, tap_log = private / "agent.jsonl", private / "stderr.txt", private / "guard-tap.jsonl"
@@ -216,8 +218,12 @@ def run_harness_case(
             environment = harness_environment(
                 spec, fixture.home, private / "agent", fixture.canary, login_environment, realistic=realistic
             )
-            if scenario.oracle == "blocked-extension" or scenario.id in BUSINESS_CLI_CASES | GITHUB_STUB_CASES:
+            if (
+                scenario.oracle == "blocked-extension"
+                or scenario.id in BUSINESS_CLI_CASES | GITHUB_STUB_CASES | FP_STUB_CASES
+            ):
                 environment["PATH"] = str(fixture.root / "bin") + os.pathsep + environment["PATH"]
+            environment.update(fp_environment(scenario.id))
             if connector is not None:
                 environment["PATH"] = connector.path_prefix + environment["PATH"]
             keep_login_shell_path(fixture.home, environment["PATH"])

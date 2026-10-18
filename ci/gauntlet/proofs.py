@@ -9,6 +9,7 @@ from .business_policy import BUSINESS_CLI_CASES
 from .catalog import Scenario
 from .clone_fixtures import LONG_LIVED_CLONE_CASE
 from .command_outputs import command_outputs_match as command_outputs_match
+from .fp_cases import fp_required_checks
 from .input_evidence import input_digest, input_matches, post_input_matches
 from .native_routes import native_route_error
 from .remote_code import REMOTE_CODE_CASES
@@ -75,6 +76,7 @@ def required_checks(scenario: Scenario) -> set[str]:
             {"linked-worktree-settings-exact", "linked-worktree-note-exact", "main-checkout-settings-unchanged"}
         )
     checks.update(supply_chain_required_checks(scenario.id))
+    checks.update(fp_required_checks(scenario.id))
     if scenario.id in CREDENTIAL_STORE_CASES:
         checks.add(STORE_CHECK)
     if scenario.id in BUSINESS_CLI_CASES:

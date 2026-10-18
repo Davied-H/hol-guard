@@ -16,6 +16,7 @@ from typing import Any
 from .approval_retry import pinned_retry_outcome, retry_assessment
 from .catalog import Scenario
 from .connector_judge import connector_setup_outcome, connector_tool_outcome, reason_text, ungranted_stop
+from .fp_cases import expected_failure
 from .interruptions import case_interruptions, describe
 from .mixed_reads import PUBLIC_READS
 from .proofs import BLOCK_REASONS, block_reasons, required_checks
@@ -276,7 +277,7 @@ def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
         unused = sorted(set(scenario.required_tools) - {call.get("tool") for call in calls})
         if unused:
             return "not-exercised", "the model did not use the " + ", ".join(unused) + " tool(s) the case requires"
-    failed = [c for c in calls if c.get("is_error")]
+    failed = [c for c in calls if c.get("is_error") and not expected_failure(scenario.id, c)]
     if failed:
         return "task-incomplete", f"a {failed[0]['tool']} call failed after Guard allowed it"
     incomplete = [key for key, value in filesystem.items() if not key.startswith("protected:") and not value]

@@ -46,6 +46,7 @@ from .fixtures import (
     scenario_fixture_name,
     scratch_checkout,
 )
+from .fp_cases import FP_STUB_CASES, fp_environment, stage_fp_cases
 from .host_process import clean_environment, realistic_environment, run_process
 from .input_evidence import (
     public_native_extension_evidence,
@@ -90,6 +91,7 @@ def run_case(
     )
     stage_supply_chain(fixture.workspace, scenario.id)
     stage_script_cases(fixture.workspace, scenario.id, fixture.home, fixture.canary)
+    stage_fp_cases(fixture.workspace, fixture.home, fixture.root / "bin", scenario.id)
     private = fixture.root / "private-evidence"
     private.mkdir(mode=0o700)
     raw_log, error_log = private / "omp.jsonl", private / "stderr.txt"
@@ -220,8 +222,12 @@ def run_case(
                 environment = realistic_environment(environment, fixture.home)
             if scenario.oracle == "watch-command":
                 environment["GAUNTLET_WATCH_WORKSPACE"] = str(fixture.workspace)
-            if scenario.oracle == "blocked-extension" or scenario.id in BUSINESS_CLI_CASES | GITHUB_STUB_CASES:
+            if (
+                scenario.oracle == "blocked-extension"
+                or scenario.id in BUSINESS_CLI_CASES | GITHUB_STUB_CASES | FP_STUB_CASES
+            ):
                 environment["PATH"] = str(fixture.root / "bin") + os.pathsep + environment["PATH"]
+            environment.update(fp_environment(scenario.id))
             environment.update(
                 GUARD_GAUNTLET_OBSERVER_LOG=str(guard_log),
                 GUARD_GAUNTLET_DAEMON_PORT=str(daemon._server.server_address[1]),

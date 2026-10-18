@@ -400,6 +400,16 @@ def build_fixture(root: Path) -> BenignFixture:
         if name == "service-api":
             _git(repository, "remote", "add", "origin", "https://github.com/example-org/service-api.git", home=home)
             _git(repository, "update-ref", "refs/remotes/origin/main", "HEAD", home=home)
+    # The sibling project the Gauntlet sibling-read case lists with relative globs.
+    sibling = org / "other-project"
+    sibling.mkdir(parents=True)
+    _git(sibling, "init", "--quiet", "--initial-branch=main", home=home)
+    _write(sibling / "src" / "a.ts", "export const a = 1;\n")
+    _write(sibling / "src" / "b.ts", "export const b = 2;\n")
+    _write(sibling / "node_modules" / ".bin" / "vite", "#!/usr/bin/env node\n")
+    _write(sibling / ".gitignore", "node_modules/\n")
+    _git(sibling, "add", "-A", home=home)
+    _git(sibling, "commit", "--quiet", "-m", "other-project base", home=home)
     _session_worktree(org, home)
     _stopped_rebase(org, home, "app-portal-rebase")
     # A rebase started with an `exec` step keeps that program in its saved todo list.
