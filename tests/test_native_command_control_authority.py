@@ -8,6 +8,8 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 from copy import deepcopy
 from pathlib import Path
 
@@ -31,6 +33,7 @@ from codex_plugin_scanner.guard.native_command_control_authority import (
     validate_control_floor,
 )
 from codex_plugin_scanner.guard.native_command_control_authority_io import (
+    NativeCommandControlAuthorityUnavailableError,
     NativeCommandControlMutationRequiredError,
     hold_command_control_authority_lock,
     read_private_state,
@@ -38,6 +41,8 @@ from codex_plugin_scanner.guard.native_command_control_authority_io import (
     write_private_state,
 )
 from codex_plugin_scanner.guard.native_policy_snapshot_constants import NativePolicySnapshotError
+
+READER_COUNT = 6
 
 KEY = b"k" * 32
 
@@ -279,3 +284,104 @@ with (pathlib.Path(sys.argv[1]) / 'extension-control-authority.lock').open('r+b'
         if process.poll() is None:
             process.kill()
             process.wait(timeout=5)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows fs2/msvcrt overlap is qualified by the native integration suite")
+def test_waiting_mutation_is_not_starved_by_overlapping_shared_leases(tmp_path: Path) -> None:
+    """A publisher that keeps re-reading must not hold a mutation out forever."""
+
+    with hold_command_control_authority_lock(tmp_path, shared=True):
+        pass
+    stop = threading.Event()
+    entered = threading.Barrier(READER_COUNT + 1)
+
+    def reader() -> None:
+        entered.wait()
+        while not stop.is_set():
+            with hold_command_control_authority_lock(tmp_path, shared=True):
+                time.sleep(0.05)
+
+    readers = [threading.Thread(target=reader, daemon=True) for _ in range(READER_COUNT)]
+    for thread in readers:
+        thread.start()
+    try:
+        entered.wait()
+        time.sleep(0.2)
+        started = time.monotonic()
+        with hold_command_control_authority_lock(tmp_path, timeout_seconds=20.0):
+            waited = time.monotonic() - started
+    finally:
+        stop.set()
+        for thread in readers:
+            thread.join(timeout=5)
+    # The readers hold overlapping leases for the whole interval, so a
+    # nonblocking exclusive request would still be polling here.
+    assert waited < 5.0
+
+
+def test_reader_and_writer_leases_still_exclude_each_other(tmp_path: Path) -> None:
+    with hold_command_control_authority_lock(tmp_path, shared=True):
+        pass
+    held = threading.Event()
+    release = threading.Event()
+
+    def holder() -> None:
+        with hold_command_control_authority_lock(tmp_path, shared=True):
+            held.set()
+            release.wait(timeout=10)
+
+    thread = threading.Thread(target=holder, daemon=True)
+    thread.start()
+    try:
+        assert held.wait(timeout=10)
+        with (
+            pytest.raises(TimeoutError),
+            hold_command_control_authority_lock(tmp_path, timeout_seconds=0.2),
+        ):
+            pytest.fail("a mutation overlapped a live shared lease")
+    finally:
+        release.set()
+        thread.join(timeout=10)
+    with hold_command_control_authority_lock(tmp_path, timeout_seconds=1.0):
+        pass
+
+
+def test_lease_timeout_reports_unavailability_rather_than_a_verdict(tmp_path: Path) -> None:
+    from codex_plugin_scanner.guard.store_extension_control_authority_reads import (
+        ExtensionControlAuthorityReadsMixin,
+    )
+
+    class _Registry:
+        catalog_digest = "0" * 64
+
+    class _Store(ExtensionControlAuthorityReadsMixin):
+        def __init__(self, error: Exception) -> None:
+            self.error = error
+            self.verdicts = 0
+
+        def _extension_control_authority_lock(self, *, shared: bool = False):
+            raise self.error
+
+        def _catalog_target_manifest(self, registry: object) -> dict[str, str]:
+            return {}
+
+        def _degraded_view(self, catalog_digest: str) -> str:
+            self.verdicts += 1
+            return "degraded"
+
+        def _tampered_view(self, catalog_digest: str) -> str:
+            self.verdicts += 1
+            return "tampered"
+
+    outage = NativeCommandControlAuthorityUnavailableError(shared=False)
+    for store in (_Store(outage), _Store(outage)):
+        with pytest.raises(NativeCommandControlAuthorityUnavailableError):
+            store.read_extension_control_authority(catalog_digest="0" * 64)
+        with pytest.raises(NativeCommandControlAuthorityUnavailableError):
+            store.read_extension_control_authority_for_registry(_Registry())
+        assert store.verdicts == 0
+
+    # Every other failure keeps its existing verdict.
+    failing = _Store(RuntimeError("database is locked"))
+    assert failing.read_extension_control_authority(catalog_digest="0" * 64) == "degraded"
+    assert failing.verdicts == 1

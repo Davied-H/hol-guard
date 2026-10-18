@@ -112,6 +112,8 @@ class _ExtensionControlAuthoritySupportMixin:
     def read_persisted_extension_control_authority(self) -> ExtensionControlAuthorityView:
         """Read the authenticated authority using its persisted catalog identity."""
 
+        from .native_command_control_authority_io import NativeCommandControlAuthorityUnavailableError
+
         catalog_digest = self._extension_control_last_catalog_digest
         try:
             with self._extension_control_authority_lock():
@@ -123,6 +125,9 @@ class _ExtensionControlAuthoritySupportMixin:
                 if row is not None:
                     catalog_digest = _row_str(row, "catalog_digest")
                 return self._read_extension_control_authority_locked(catalog_digest)
+        except NativeCommandControlAuthorityUnavailableError:
+            # A busy lease is an outage, not a verdict on this authority.
+            raise
         except ExtensionControlAuthorityError:
             return self._tampered_view(catalog_digest)
         except Exception:

@@ -49,9 +49,16 @@ class ExtensionControlAuthorityReadsMixin:
 
     def read_extension_control_authority(self, *, catalog_digest: str) -> ExtensionControlAuthorityView:
         self._extension_control_last_catalog_digest = catalog_digest
+        from .native_command_control_authority_io import NativeCommandControlAuthorityUnavailableError
+
         try:
             with self._extension_control_authority_lock():
                 return self._read_extension_control_authority_locked(catalog_digest)
+        except NativeCommandControlAuthorityUnavailableError:
+            # The lease was busy, so nothing about this authority was read. An
+            # outage never reads as a verdict: report it instead of claiming a
+            # health state this call never observed.
+            raise
         except ExtensionControlAuthorityError:
             return self._tampered_view(catalog_digest)
         except Exception:
@@ -64,7 +71,10 @@ class ExtensionControlAuthorityReadsMixin:
         include_managed_controls: bool = True,
         read_only: bool = False,
     ) -> ExtensionControlAuthorityView:
-        from .native_command_control_authority_io import NativeCommandControlMutationRequiredError
+        from .native_command_control_authority_io import (
+            NativeCommandControlAuthorityUnavailableError,
+            NativeCommandControlMutationRequiredError,
+        )
 
         catalog_digest = registry.catalog_digest
         self._extension_control_last_catalog_digest = catalog_digest
@@ -109,7 +119,9 @@ class ExtensionControlAuthorityReadsMixin:
                         replace=True,
                     )
                 return composed
-        except NativeCommandControlMutationRequiredError:
+        except (NativeCommandControlAuthorityUnavailableError, NativeCommandControlMutationRequiredError):
+            # Neither is a statement about the authority. The first means the
+            # lease was busy, the second that this read needs an exclusive one.
             raise
         except ExtensionControlAuthorityError:
             return self._tampered_view(catalog_digest)
