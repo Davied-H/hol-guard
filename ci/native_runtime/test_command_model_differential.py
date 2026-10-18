@@ -48,6 +48,9 @@ EXACT_FIXTURES = (
 # shadow keeps the source text and spans and models the prefix as a keyword.
 # Both must be exact and must run the same program with the same arguments.
 NORMALIZED_WRAPPER_FIXTURES = (("time tool", "time"),)
+# A plain inline script is modeled as the words it runs, so the native shadow
+# reads `sh -c '<script>'` as the program inside it.
+INLINE_SCRIPT_FIXTURES = (("sh -c 'rm -rf /tmp/example'", "rm"),)
 UNCERTAIN_FIXTURES = (
     "echo $(uname)",
     "echo `uname`",
@@ -59,7 +62,6 @@ UNCERTAIN_FIXTURES = (
     "sudo -s rm -rf /tmp/example",
     "env FOO=bar tool",
     "stdbuf -o0 tool",
-    "sh -c 'rm -rf /tmp/example'",
     "eval 'rm -rf /tmp/example'",
     "exec rm -rf /tmp/example",
     "source ./script.sh",
@@ -158,6 +160,11 @@ def main() -> int:
         assert wrapper in python_model["wrapper_chain"], fixture
         assert _programs(native_model) == _programs(python_model), fixture
 
+    for fixture, program in INLINE_SCRIPT_FIXTURES:
+        native_model = _native(args.binary, fixture)
+        assert native_model["confidence"] == "exact", fixture
+        assert program in {segment["executable"] for segment in native_model["segments"]}, fixture
+
     for fixture in UNCERTAIN_FIXTURES:
         native_model = _native(args.binary, fixture)
         assert native_model["confidence"] == "uncertain", fixture
@@ -169,6 +176,7 @@ def main() -> int:
             {
                 "exact_fixture_count": len(EXACT_FIXTURES),
                 "normalized_wrapper_fixture_count": len(NORMALIZED_WRAPPER_FIXTURES),
+                "inline_script_fixture_count": len(INLINE_SCRIPT_FIXTURES),
                 "uncertain_fixture_count": len(UNCERTAIN_FIXTURES),
                 "status": "ok",
             },
