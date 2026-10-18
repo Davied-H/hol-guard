@@ -13,9 +13,11 @@
 /// The text holds at most one quoted word, closed at the very end of the line,
 /// with no quote or backslash inside it; every unquoted character is a plain
 /// word character. Expansions (`$`, backtick) are already refused before this
-/// is asked, and PowerShell expands neither inside single quotes.
+/// is asked, and PowerShell expands neither inside single quotes. PowerShell
+/// also reads the typographic quotes (U+2018 to U+201E) as quotes, so any
+/// non-ASCII text stays wrapped.
 pub(crate) fn powershell_reads_the_same_words(raw: &str) -> bool {
-    if raw.contains('\\') {
+    if !raw.is_ascii() || raw.contains('\\') {
         return false;
     }
     let quotes: Vec<(usize, char)> = raw
@@ -67,6 +69,8 @@ mod tests {
             "sh -c {npm,test}",
             "sh -c @args",
             "sh -c a,b",
+            "sh -c 'echo hi \u{2019}; Remove-Item x; \u{2019}'",
+            "sh -c \u{201c}npm test\u{201d}",
         ] {
             assert!(!powershell_reads_the_same_words(raw), "{raw}");
         }
