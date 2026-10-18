@@ -251,7 +251,7 @@ fn global_configuration_inert(home: &Path) -> bool {
     HOME_VERSION_ROOTS.iter().all(|(root, nested)| {
         let entries = match fs::read_dir(home.join(root)) {
             Ok(entries) => entries,
-            Err(error) => return error.kind() == ErrorKind::NotFound,
+            Err(error) => return absent(&error),
         };
         let mut seen = 0usize;
         for entry in entries {
@@ -271,12 +271,23 @@ fn global_configuration_inert(home: &Path) -> bool {
     })
 }
 
+/// Whether a path holds no file at all.
+///
+/// A path whose parent is not a directory reports `ENOTDIR` rather than "no
+/// such file", and macOS writes a `.DS_Store` file beside the version
+/// directories a Node version manager keeps, so the configuration path built
+/// from that entry lands below a regular file. npm reads nothing there
+/// either, so it is as absent as a missing one.
+fn absent(error: &std::io::Error) -> bool {
+    matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory)
+}
+
 /// A missing file is inert. Anything unreadable, oversized or not a regular
 /// file is not.
 pub(in crate::pretool) fn npmrc_inert(path: &Path) -> bool {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(error) => return error.kind() == ErrorKind::NotFound,
+        Err(error) => return absent(&error),
     };
     if !metadata.is_file() || metadata.len() > MAX_NPMRC_BYTES {
         return false;
