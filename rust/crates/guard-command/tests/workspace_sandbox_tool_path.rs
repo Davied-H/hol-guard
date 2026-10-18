@@ -3,8 +3,9 @@
 //! The workspace sandbox keeps the caller's sealed tool directories on PATH,
 //! so `pnpm` and the caller's `node` still resolve inside it, and never
 //! Guard's package shims or a credential folder. A directory of the
-//! workspace's own is kept only for a venv, whose launchers also need the
-//! interpreter install they link out to.
+//! workspace's own keeps its place on PATH, so the project's own tools
+//! resolve to the same files inside the sandbox, and a venv's launchers also
+//! bring the interpreter install they link out to.
 
 use guard_command::restricted_pytest::evaluate;
 use serde_json::json;
@@ -58,9 +59,10 @@ fn sealed_user_tool_directories_stay_on_the_sandbox_path() {
     let workspace = dir(&root, "repo", 0o755);
     std::fs::create_dir_all(workspace.join(".git")).unwrap();
     std::fs::write(workspace.join(".git/config"), "[core]\n\tbare = false\n").unwrap();
-    let inside = dir(&root, "repo/bin", 0o755);
+    let inside = dir(&root, "repo/node_modules/.bin", 0o755);
+    let open = dir(&root, "repo/open", 0o777);
     let mut search_path: Vec<String> = refused.iter().map(|path| text(path.as_path())).collect();
-    search_path.extend([text(&inside), text(&tools), text(&pnpm)]);
+    search_path.extend([text(&open), text(&inside), text(&tools), text(&pnpm)]);
     search_path.extend(["/usr/bin".into(), "/bin".into()]);
     let reply = evaluate(
         "prepare_workspace_contained",
@@ -74,9 +76,16 @@ fn sealed_user_tool_directories_stay_on_the_sandbox_path() {
         }),
     );
     let plan = &reply["value"];
+    // The workspace's own tool directory keeps its place; one anyone else
+    // could write does not.
     assert_eq!(
         plan["sandbox_path"],
-        json!(format!("{}:{}:/usr/bin:/bin", text(&tools), text(&pnpm))),
+        json!(format!(
+            "{}:{}:{}:/usr/bin:/bin",
+            text(&inside),
+            text(&tools),
+            text(&pnpm)
+        )),
         "{reply}"
     );
     let roots: Vec<&str> = plan["exec_roots"]
@@ -87,7 +96,9 @@ fn sealed_user_tool_directories_stay_on_the_sandbox_path() {
         .collect();
     assert!(roots.contains(&text(&tools).as_str()), "{roots:?}");
     assert!(roots.contains(&text(&pnpm).as_str()), "{roots:?}");
-    for path in refused.iter().chain([&inside, &home]) {
+    // Being on the sandbox PATH is not a grant: the workspace is read and run
+    // already, and nothing else of the caller's is added for it.
+    for path in refused.iter().chain([&inside, &open, &home]) {
         assert!(!roots.contains(&text(path).as_str()), "{}", path.display());
     }
     let _ = std::fs::remove_dir_all(root);
