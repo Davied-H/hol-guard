@@ -101,8 +101,21 @@ fn bracketed_routes_in_a_sibling_repository_are_searched() {
         "rg -n export ~/badges/app/badge/[slug]/page.tsx",
         "rg -ln export ~/badges/app/[locale]",
         "rg -n export ~/badges/app/badge/[slug] ~/badges/components",
+        "rg -n export -B14 -A6 ~/badges/app/badge/[slug]/page.tsx",
+        "rg -c export ~/badges/app/[locale]/layout.tsx",
     ] {
         check(&f, command, true);
+    }
+    // The absolute spelling, quoted and bare, is the one agents write most.
+    let badges = f.home.join("badges");
+    let route = badges.join("app/badge/[slug]/page.tsx");
+    let route = route.display();
+    for command in [
+        format!("rg -n export {route}"),
+        format!("rg -n \"export|default\" \"{route}\""),
+        format!("rg -ln export {}/app/[locale]", badges.display()),
+    ] {
+        check(&f, &command, true);
     }
 }
 
