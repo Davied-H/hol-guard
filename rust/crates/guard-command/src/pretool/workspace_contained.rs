@@ -49,7 +49,7 @@ mod launch;
 #[path = "workspace_contained_links.rs"]
 mod links;
 #[path = "workspace_contained_package.rs"]
-mod package;
+pub(super) mod package;
 #[path = "workspace_contained_reach.rs"]
 mod reach;
 #[path = "workspace_contained_removal.rs"]
