@@ -172,8 +172,12 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
         }
     }
     // The custom allow lifts only a review the saved decision left standing
-    // and the daemon may override, so it never weakens a block or a floor.
-    if custom == Some(ReviewVerdict::Allowed) && overridable(&result) {
+    // and the daemon may override, and only one due to non-recognition, so it
+    // never weakens a block, a floor or a risk signal on the operands.
+    if custom == Some(ReviewVerdict::Allowed)
+        && overridable(&result)
+        && crate::connector_setup::grant_lifts(result.get("reason_code").and_then(Value::as_str))
+    {
         let mut allowed = result.clone();
         for key in ["decision", "minimum_action", "policy_action"] {
             allowed.insert(key.to_owned(), json!("allow"));
