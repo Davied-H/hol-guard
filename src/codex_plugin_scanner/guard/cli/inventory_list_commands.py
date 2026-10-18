@@ -133,7 +133,8 @@ def run_inventory_list_command(
         if context is not None:
             from ..adapters.harness_mcp_discovery import observe_configured_mcp_servers
 
-            observe_configured_mcp_servers(store, context=context, seen_at=generated_at)
+            # Listing changes no grant: record remote declarations only.
+            observe_configured_mcp_servers(store, context=context, seen_at=generated_at, stdio=False)
 
         payload = mcp_list_payload(
             store,
