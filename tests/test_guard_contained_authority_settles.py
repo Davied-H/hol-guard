@@ -89,7 +89,6 @@ def test_an_ask_that_waited_out_the_readiness_window_is_not_asked_again(monkeypa
     response = settled_authority(authorize, {"tool_input": {}})
     assert len(asked) == 1
     assert authority_unavailable(response)
-    assert contained_authority.last_unavailable_reason() == "native_pre_tool_unavailable"
 
 
 def test_a_quick_miss_is_still_asked_again_after_a_slow_one_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -109,7 +108,6 @@ def test_a_quick_miss_is_still_asked_again_after_a_slow_one_elsewhere(monkeypatc
     monkeypatch.setattr(contained_authority, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=lambda _s: None))
     assert settled_authority(authorize, {"tool_input": {}}) == ALLOW
     assert len(asked) == 2
-    assert contained_authority.last_unavailable_reason() is None
 
 
 def test_a_silent_runtime_is_reported_as_silent_not_as_a_refusal(
@@ -148,11 +146,15 @@ def test_a_silent_runtime_is_reported_as_silent_not_as_a_refusal(
 
 def test_a_real_refusal_keeps_the_refusal_wording(tmp_path: Path) -> None:
     """A decided command is not described as an unreachable runtime."""
-    from codex_plugin_scanner.guard.runtime.contained_authority import last_unavailable_reason
-
     assert settled_authority(lambda _payload: ALLOW, {"tool_input": {}}) == ALLOW
-    assert last_unavailable_reason() is None
+    assert "did not answer" not in str(sink._reject(ALLOW))
+
+
+def test_unavailable_wording_never_leaks_into_independent_rejections() -> None:
+    assert authority_unavailable(settled_authority(lambda _payload: UNAVAILABLE, {"tool_input": {}}, pause=lambda _: None))
+    assert "did not answer" in str(sink._reject(UNAVAILABLE))
     assert "did not answer" not in str(sink._reject())
+    assert "did not answer" not in str(sink._reject({"reason_code": "native_command_review_required"}))
 
 
 @pytest.mark.parametrize(
