@@ -236,7 +236,7 @@ def _background_read_error(calls: list[dict[str, Any]], *, require_steps: bool =
                 # is not the process ID and must never satisfy a selector.
                 start_id = re.compile(
                     r"(?:background\s+job|job[_\s]+id|process[_\s]+id)"
-                    r"\s*[:=#]?\s*([A-Za-z0-9_.-]+)",
+                    r"\s*[:=#]?\s*([A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*)",
                     re.IGNORECASE,
                 )
                 started_ids = {
@@ -244,7 +244,7 @@ def _background_read_error(calls: list[dict[str, Any]], *, require_steps: bool =
                     for name in names
                     for match in start_id.finditer(name)
                 }
-                if names and job["job"] not in started_ids:
+                if job["job"] not in started_ids:
                     return "the model read a job it did not start here"
                 if not JOB_OUTPUT_TEXT.search(_text(call) or ""):
                     return "the job output the model read back did not carry the command's result"
