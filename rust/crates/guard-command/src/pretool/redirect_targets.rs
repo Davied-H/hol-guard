@@ -75,14 +75,49 @@ pub(super) fn safe_output_target(target: &str, context: PathContext<'_>) -> bool
                 .strip_prefix(base)
                 .is_ok_and(|rest| no_symlink_components(base, rest));
         }
-        return cwd.is_some_and(|cwd| {
-            path != cwd
+        if let Some(cwd) = cwd.filter(|cwd| path.starts_with(cwd)) {
+            return path != cwd
                 && path
                     .strip_prefix(cwd)
-                    .is_ok_and(|rest| no_symlink_components(cwd, rest))
+                    .is_ok_and(|rest| no_symlink_components(cwd, rest));
+        }
+        // A session started in a directory above its checkouts, or in a
+        // sibling one, still writes the repository it works on.
+        return sibling_repository_root(path, context).is_some_and(|root| {
+            path.strip_prefix(&root)
+                .is_ok_and(|rest| no_symlink_components(&root, rest))
         });
     }
     cwd.is_some_and(|cwd| no_symlink_components(cwd, path))
+}
+
+/// Whether `target` is an absolute path in a repository beside the session's
+/// directory, outside the workspace sandbox the session's own files run in.
+pub(super) fn sibling_target(target: &str, context: PathContext<'_>) -> bool {
+    let path = std::path::Path::new(target);
+    path.is_absolute()
+        && !context.cwd.is_some_and(|cwd| path.starts_with(cwd))
+        && sibling_repository_root(path, context).is_some()
+}
+
+/// The root of the git repository below the verified home that holds the
+/// absolute `path`, when the session's directory is not inside it. This is
+/// the clone or worktree a file-edit tool already writes without review:
+/// `bounded_native_file_write_target` screens the same target for protected
+/// files, hidden parts, hard links and execution-control locations, and the
+/// caller still refuses a symlink anywhere below the root.
+fn sibling_repository_root(
+    path: &std::path::Path,
+    context: PathContext<'_>,
+) -> Option<std::path::PathBuf> {
+    let home = std::fs::canonicalize(context.home_dir?).ok()?;
+    let canonical = crate::pretool::worktree_writes::canonical_write_target(path)?;
+    let root =
+        crate::pretool::contained_wrapper::sibling_project_root(&canonical, context.home_dir?)?;
+    // The repository must sit below the home itself, not merely below a
+    // temporary directory the helper also accepts, and must be spelled the
+    // way the filesystem resolves it, so no alias redirects the write.
+    (root != home && root.starts_with(&home) && canonical.as_path() == path).then_some(root)
 }
 
 pub(super) fn bounded_write(target: &str, context: PathContext<'_>) -> bool {
@@ -94,7 +129,14 @@ pub(super) fn bounded_write(target: &str, context: PathContext<'_>) -> bool {
     let path = std::path::Path::new(target);
     let under = |base: Option<&str>| base.is_some_and(|base| path.starts_with(base));
     if path.is_absolute() && under(context.home_dir) && !under(context.cwd) {
-        return false;
+        // Only a file in a repository beside the session's directory is a
+        // workspace write; the rest of the home stays reviewed.
+        return sibling_repository_root(path, context).is_some()
+            && !crate::pretool::curl_reads::output_targets::existing_executable(
+                target,
+                context.cwd,
+            )
+            && bounded_native_file_write_target(target, context.home_dir, context.cwd);
     }
     // Truncating an existing program replaces what a later step may run.
     if crate::pretool::curl_reads::output_targets::existing_executable(target, context.cwd) {

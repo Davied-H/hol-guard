@@ -14,6 +14,8 @@ from .command_outputs import _text
 from .input_evidence import post_input_matches
 from .proofs import _edit_path, _path
 from .review_fixtures import WORKTREE_CASE, WORKTREE_NAME
+from .session_folder import CHECKOUT
+from .session_folder import EDIT_CASE as SESSION_EDIT_CASE
 
 PRIVATE_TEMP_ROOTS = ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
 # Git Bash ``mktemp -d`` on Windows prints a directory in the fixture profile's
@@ -24,6 +26,8 @@ SCRATCH_NAME = "scratch-notes.txt"
 # /private/tmp; the evidence redacts both spellings to ``{{scratch}}``.
 TMP_ALIAS_READ_CASE = "omp-native-read-tmp-alias-worktree-file"
 SCRATCH_READ_TARGET = "{{scratch}}/notes.md"
+# The checkout file a session opened in a plain folder reads and edits through its absolute path.
+SESSION_EDIT_TARGET = f"{{{{home}}}}/{CHECKOUT}/src/report.ts"
 # Keys of the default delegated report; `files` entries are checked against the lookup path.
 REPORT_KEYS = frozenset({"summary", "report", "architecture", "files"})
 
@@ -204,6 +208,29 @@ def _scratch_read_error(calls: list[dict[str, Any]], *, require_steps: bool = Tr
     return None
 
 
+def _session_edit_error(calls: list[dict[str, Any]], *, require_steps: bool = True) -> str | None:
+    """Hold every file call to the checkout's report; ``require_steps`` also needs read, edit, read back."""
+    steps: list[str] = []
+    for call in calls:
+        name = call["name"]
+        if name not in {"read", "edit"}:
+            continue
+        path = _edit_path(call["args"]) if name == "edit" else _path(call["args"])
+        if path is not None and name == "read":
+            path = re.sub(r":\d+(-\d+)?$", "", path)
+        if path != SESSION_EDIT_TARGET:
+            return "the model used a file other than the checkout's report"
+        steps.append(name)
+    if not require_steps:
+        return None
+    if "edit" not in steps:
+        return "the model did not edit the checkout's report"
+    edit = steps.index("edit")
+    if "read" not in steps[:edit] or "read" not in steps[edit:]:
+        return "the model did not read the report before and after editing it"
+    return None
+
+
 def native_tools_scope_error(
     scenario: Scenario, calls: list[dict[str, Any]], case: dict[str, Any], *, guard_denied: bool = False
 ) -> str | None:
@@ -291,6 +318,8 @@ def native_tools_scope_error(
         return scope
     if scenario.id == TMP_ALIAS_READ_CASE and (scope := _scratch_read_error(calls, require_steps=False)):
         return scope
+    if scenario.id == SESSION_EDIT_CASE and (scope := _session_edit_error(calls, require_steps=False)):
+        return scope
     if guard_denied:
         return None
     if not set(scenario.required_tools) <= {call["name"] for call in calls}:
@@ -306,6 +335,8 @@ def native_tools_scope_error(
         return _linked_worktree_error(calls)
     if scenario.id == TMP_ALIAS_READ_CASE:
         return _scratch_read_error(calls)
+    if scenario.id == SESSION_EDIT_CASE:
+        return _session_edit_error(calls)
     return None
 
 

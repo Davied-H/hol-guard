@@ -109,6 +109,7 @@ class BenignFixture:
     org: Path
     tmp_org: Path
     scratch: Path
+    stage: Path
 
     def cleanup(self) -> None:
         """Remove the directories this fixture created outside its own root."""
@@ -117,6 +118,7 @@ class BenignFixture:
         shutil.rmtree(self.tmp_worktree.parent, ignore_errors=True)
         shutil.rmtree(self.tmp_org.parent, ignore_errors=True)
         shutil.rmtree(self.scratch, ignore_errors=True)
+        shutil.rmtree(self.stage, ignore_errors=True)
 
     @property
     def contained_requests(self) -> Path:
@@ -139,6 +141,8 @@ class BenignFixture:
             # The live Gauntlet's fixture root and its fresh scratch leaf directly in /tmp.
             "${GAUNTLET_ROOT}": str(self.tmp_org.parent),
             "${SCRATCH}": str(self.scratch),
+            # Private directory directly in /tmp holding the files a case stages before its commands.
+            "${STAGE}": str(self.stage),
         }
 
     def cwd(self, name: str) -> Path:
@@ -465,8 +469,24 @@ def build_fixture(root: Path) -> BenignFixture:
     _git(bench, "commit", "--quiet", "-m", "bench base", home=home)
     # A leaf directly in /tmp that does not exist yet, as a throwaway checkout destination.
     scratch = Path(_system_tmp()) / f"hg-fp-scratch-{os.getpid()}-{secrets.token_hex(4)}"
+    # Source files a session staged in /tmp before copying them into a checkout.
+    stage = Path(tempfile.mkdtemp(prefix="hg-fp-stage-", dir=_system_tmp())).resolve()
+    _write(stage / "x.ts", "export const summary = 2;\n")
+    _write(stage / "a.ts", "export const copied = 3;\n")
     return BenignFixture(
-        root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org, scratch
+        root,
+        home,
+        parent,
+        worktree,
+        nested,
+        gitlink_repo,
+        guard_home,
+        private_tmp,
+        tmp_worktree,
+        org,
+        tmp_org,
+        scratch,
+        stage,
     )
 
 

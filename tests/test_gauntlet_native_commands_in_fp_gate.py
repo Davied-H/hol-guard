@@ -19,6 +19,7 @@ _TOKENS = {
     "{{workspace}}": "${PARENT}",
     "{{root}}": "${GAUNTLET_ROOT}",
     "{{scratch}}": "${SCRATCH}",
+    "{{stage}}": "${STAGE}",
 }
 
 
