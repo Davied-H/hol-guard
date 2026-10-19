@@ -28,6 +28,9 @@ const NESTED_SCHEMAS: &[&str] = &[
     "anyOf",
     "oneOf",
     "allOf",
+    "if",
+    "then",
+    "else",
 ];
 /// Keywords that carry a concrete value rather than a shape.
 const LITERALS: &[&str] = &["default", "const", "enum", "examples", "example"];
@@ -124,7 +127,11 @@ fn declares_literal(value: &Value, depth: usize) -> bool {
     }
     match value {
         Value::Object(node) => node.iter().any(|(key, child)| {
-            LITERALS.contains(&key.as_str()) || declares_literal(child, depth.saturating_add(1))
+            LITERALS.contains(&key.as_str())
+                // Without resolving the referenced schema, a sensitive field
+                // might hide a concrete credential in $defs/definitions.
+                || key == "$ref"
+                || declares_literal(child, depth.saturating_add(1))
         }),
         Value::Array(items) => items
             .iter()
