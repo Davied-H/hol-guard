@@ -83,10 +83,11 @@ pub(super) fn safe_output_target(target: &str, context: PathContext<'_>) -> bool
         }
         // A session started in a directory above its checkouts, or in a
         // sibling one, still writes the repository it works on.
-        return sibling_repository_root(path, context).is_some_and(|root| {
-            path.strip_prefix(&root)
-                .is_ok_and(|rest| no_symlink_components(&root, rest))
-        });
+        return bounded_write(target, context)
+            && sibling_repository_root(path, context).is_some_and(|root| {
+                path.strip_prefix(&root)
+                    .is_ok_and(|rest| no_symlink_components(&root, rest))
+            });
     }
     cwd.is_some_and(|cwd| no_symlink_components(cwd, path))
 }
@@ -101,7 +102,7 @@ pub(super) fn sibling_target(target: &str, context: PathContext<'_>) -> bool {
 }
 
 /// The root of the git repository below the verified home that holds the
-/// absolute `path`, when the session's directory is not inside it. This is
+/// absolute `path`. Callers separately require it to lie outside cwd. This is
 /// the clone or worktree a file-edit tool already writes without review:
 /// `bounded_native_file_write_target` screens the same target for protected
 /// files, hidden parts, hard links and execution-control locations, and the
@@ -117,7 +118,34 @@ fn sibling_repository_root(
     // The repository must sit below the home itself, not merely below a
     // temporary directory the helper also accepts, and must be spelled the
     // way the filesystem resolves it, so no alias redirects the write.
-    (root != home && root.starts_with(&home) && canonical.as_path() == path).then_some(root)
+    (root != home
+        && root.starts_with(&home)
+        && canonical.as_path() == path
+        && validated_git_marker(&root))
+    .then_some(root)
+}
+
+/// An empty `.git` marker is not a repository. Bound this check to Git's
+/// structural metadata; linked worktrees additionally require the existing
+/// admin-directory and backlink verification.
+fn validated_git_marker(root: &std::path::Path) -> bool {
+    let marker = root.join(".git");
+    let Ok(meta) = std::fs::symlink_metadata(&marker) else {
+        return false;
+    };
+    if meta.file_type().is_symlink() {
+        return false;
+    }
+    if meta.is_file() {
+        return crate::pretool::worktree_writes::linked_worktree_dirs(root).is_some();
+    }
+    if !meta.is_dir() {
+        return false;
+    }
+    marker.join("HEAD").is_file()
+        && marker.join("config").is_file()
+        && marker.join("objects").is_dir()
+        && marker.join("refs").is_dir()
 }
 
 pub(super) fn bounded_write(target: &str, context: PathContext<'_>) -> bool {
