@@ -75,7 +75,10 @@ def main(
     # writes the response itself. ``exec`` would save the fork, but this entry
     # point is also called in process, where replacing the caller is wrong.
     try:
-        return subprocess.run(argv, check=False).returncode
+        status = subprocess.run(argv, check=False).returncode
+        # Claude treats most nonzero hook exits as non-blocking errors.
+        # Only a successful JSON response or explicit blocking exit is safe.
+        return 0 if status == 0 else 2
     except OSError:
         # A removed/unlaunchable runtime has not consumed stdin. Returning a
         # traceback with exit 1 would let Claude run the unreviewed tool.
@@ -144,6 +147,11 @@ def _deny_without_a_runtime() -> int:
         sys.stdout.write(_limit_denied("hook input", event))
         return 0
     data = stamp_hook_input_text(body.strip() or "{}")
+    if _event_name(data) == "UserPromptSubmit":
+        # A legacy prompt hook must not silently accept unreviewed text when
+        # its native authority is unavailable.
+        sys.stdout.write(_deny_event("UserPromptSubmit", _DEGRADED_DAEMON_MESSAGE.format(reason=_NATIVE_RUNTIME_UNAVAILABLE)))
+        return 0
     sys.stdout.write(_degraded(_NATIVE_RUNTIME_UNAVAILABLE, data))
     return 0
 
