@@ -389,6 +389,7 @@ def native_tools_scope_error(
         return "unexpected delegated work"
     delegated_paths = {delegated_file, f"{{{{workspace}}}}/{delegated_file}"}
     declared_by_yield = _declared_keys_by_yield(calls, set(delegated))
+    read_in_scope = False
     for call in calls:
         if call["id"] not in delegated:
             continue
@@ -409,6 +410,7 @@ def native_tools_scope_error(
                 and post_input_matches("read", call["args"], {**call["args"], "path": resolved}, result)
             ):
                 return "delegated lookup read outside its requested file"
+            read_in_scope = True
         elif call["name"] == "yield":
             data = call["args"].get("data")
             if not isinstance(data, (dict, str)):
@@ -442,12 +444,10 @@ def native_tools_scope_error(
     if scenario.id == TASK_SCHEMA_CASE:
         if scope := _task_schema_error(calls, set(delegated), require_result=not guard_denied):
             return scope
-        if not guard_denied and not any(
-            call["id"] in delegated
-            and call["name"] == "read"
-            and _write_path(call["args"]) in {"README.md", "{{workspace}}/README.md"}
-            for call in calls
-        ):
+        # The loop above already accepts every spelling that resolves to the
+        # requested file, the Windows backslash form included, so reuse its
+        # verdict instead of comparing the literal argument a second time.
+        if not guard_denied and not read_in_scope:
             return "delegated lookup did not read README.md"
     if scenario.id == BACKGROUND_READ_CASE and (scope := _background_read_error(calls, require_steps=False)):
         return scope
