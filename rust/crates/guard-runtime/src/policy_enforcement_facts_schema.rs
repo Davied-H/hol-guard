@@ -130,7 +130,7 @@ fn declares_literal(value: &Value, depth: usize) -> bool {
             LITERALS.contains(&key.as_str())
                 // Without resolving the referenced schema, a sensitive field
                 // might hide a concrete credential in $defs/definitions.
-                || key == "$ref"
+                || matches!(key.as_str(), "$ref" | "$dynamicRef" | "$recursiveRef")
                 || declares_literal(child, depth.saturating_add(1))
         }),
         Value::Array(items) => items
