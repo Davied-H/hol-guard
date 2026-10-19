@@ -21,8 +21,8 @@ class _SettledDirectories:
     the string it arrived as; the verdicts themselves belong to the runtime.
     """
 
-    def __init__(self, candidates: tuple[tuple[str, str | None], ...]) -> None:
-        self._paths = {parameter: value for parameter, value in candidates}
+    def __init__(self, candidates: tuple[tuple[str, str | None] | tuple[str, str | None, str], ...]) -> None:
+        self._paths = {candidate[0]: candidate[1] for candidate in candidates}
 
     def require(self, parameter: str) -> str | None:
         return self._paths.get(parameter)
@@ -40,9 +40,17 @@ class _FakeHandler:
     def _daemon_server(self) -> object:
         return self._fake_daemon_server
 
-    def _settled_hook_directories(self, *candidates: tuple[str, str | None], **_kwargs: object):
-        """The readiness tests stub a successful native admission verdict."""
-        values = {parameter: value for parameter, value in candidates if value is not None}
+    def _settled_hook_directories(
+        self,
+        *candidates: tuple[str, str | None] | tuple[str, str | None, str],
+        **_kwargs: object,
+    ):
+        """The readiness tests stub a successful native admission verdict.
+
+        A candidate may name the rule to hold it to as a third element; the
+        verdict is the runtime's, so this double reads only the spelling.
+        """
+        values = {candidate[0]: candidate[1] for candidate in candidates if candidate[1] is not None}
         return SimpleNamespace(require=lambda parameter, **_ignored: values.get(parameter))
 
     @staticmethod

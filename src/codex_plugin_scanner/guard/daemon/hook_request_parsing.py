@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-from ..native_directory_trust import NativeDirectoryTrustError, native_directory_trust
 from ..runtime.hook_review_types import (
     HookPayloadKind,
 )
@@ -68,6 +67,11 @@ def _safe_reference_path(
     and be a regular file. A runtime that cannot answer refuses the reference
     rather than letting the daemon decide for itself.
     """
+
+    # Imported here so the hook bridges, which import this module, stay off the
+    # native runtime's import closure until a payload actually carries a
+    # reference. ``tests/test_hook_bridge_import_closure.py`` holds that line.
+    from ..native_directory_trust import NativeDirectoryTrustError, native_directory_trust
 
     try:
         verdicts = native_directory_trust(
