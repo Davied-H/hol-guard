@@ -12,7 +12,7 @@ pub(super) use super::read_paths::{
 };
 pub(super) use super::safe_scalar::{safe_date_arguments, safe_sleep_arguments};
 pub(super) use super::safe_writes::{
-    bounded_native_file_write_target, bounded_structured_file_write_target, safe_copy_arguments,
+    bounded_native_file_write_target, bounded_structured_file_write_target,
     safe_copy_arguments_into, safe_file_mutation_arguments,
 };
 pub(crate) use command_sequences::proven_created_file_removal;
