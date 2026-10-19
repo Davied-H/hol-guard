@@ -76,10 +76,25 @@ fn bounded_text(text: &str) -> bool {
     // An uncertain outbound value keeps the normal review, not the read proof.
     let lower = text.to_ascii_lowercase();
     ![
-        "http://", "https://", "%3a%2f%2f",
-        "github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_",
-        "bearer ", "authorization:", "access_token=", "api_key=",
-        "apikey=", "password=", "secret=", "xoxb-", "xoxp-", "sk-",
+        "http://",
+        "https://",
+        "%3a%2f%2f",
+        "github_pat_",
+        "ghp_",
+        "gho_",
+        "ghu_",
+        "ghs_",
+        "ghr_",
+        "bearer ",
+        "authorization:",
+        "access_token=",
+        "api_key=",
+        "apikey=",
+        "password=",
+        "secret=",
+        "xoxb-",
+        "xoxp-",
+        "sk-",
     ]
     .iter()
     .any(|marker| lower.contains(marker))

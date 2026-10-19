@@ -122,7 +122,16 @@ fn a_credential_path_in_a_lookup_is_still_held() {
 fn lookup_text_with_embedded_urls_or_tokens_keeps_review() {
     // A URL inside a query was not reported by generic URL extraction.
     // All string argument slots must be checked before proving network read.
-    for field in ["query", "path", "branch", "i", "run", "since", "until", "dateField"] {
+    for field in [
+        "query",
+        "path",
+        "branch",
+        "i",
+        "run",
+        "since",
+        "until",
+        "dateField",
+    ] {
         for text in [
             "https://alice:ghp_fake123456@example.test/private",
             "github_pat_fake123456",
@@ -130,8 +139,12 @@ fn lookup_text_with_embedded_urls_or_tokens_keeps_review() {
             "access_token=fake-credential",
             "https%3A%2F%2Fexample.test%2Fprivate",
         ] {
-            let mut input = json!({"op": "search_code", "repo": "example-org/app", "query": "ordinary"});
-            input.as_object_mut().unwrap().insert(field.to_owned(), json!(text));
+            let mut input =
+                json!({"op": "search_code", "repo": "example-org/app", "query": "ordinary"});
+            input
+                .as_object_mut()
+                .unwrap()
+                .insert(field.to_owned(), json!(text));
             let result = evaluate("omp", github(input));
             assert_ne!(result.reason_code, "native_github_read", "{field}: {text}");
         }
