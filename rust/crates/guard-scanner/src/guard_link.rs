@@ -6,12 +6,20 @@
 //! hand that reason back as the tool's output, as Oh My Pi does for an MCP
 //! call made through `write` to `xd://` (#5191). The fragment has the
 //! assignment shape the credential rule looks for, so the output review
-//! blocked Guard's own reason and the user never saw the link.
+//! blocked Guard's own reason and the user never saw the link. A repair
+//! block carries the same kind of link to the protection repair page.
 
 /// `{"aud":"guard-local-daemon","version":"guard-local-daemon-session.v1","surface":"`
 /// in unpadded base64url. Those 81 bytes are whole base64 groups, so every
 /// dashboard session payload Guard signs starts with exactly this text.
 const SESSION_PAYLOAD_PREFIX: &str = "eyJhdWQiOiJndWFyZC1sb2NhbC1kYWVtb24iLCJ2ZXJzaW9uIjoiZ3VhcmQtbG9jYWwtZGFlbW9uLXNlc3Npb24udjEiLCJzdXJmYWNlIjoi";
+/// What follows that prefix for the two pages a block reason links to:
+/// `approval-center","expires_at":` and `protection-repair","expires_at":"`,
+/// each cut to whole base64 groups. A session for any other page still counts.
+const LINKED_SURFACES: [&str; 2] = [
+    "YXBwcm92YWwtY2VudGVyIiwiZXhwaXJlc19hdCI6",
+    "cHJvdGVjdGlvbi1yZXBhaXIiLCJleHBpcmVzX2F0Ijoi",
+];
 /// An HMAC-SHA256 signature in unpadded base64url.
 const SIGNATURE_CHARS: usize = 43;
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "[::1]", "localhost"];
@@ -38,7 +46,13 @@ fn is_session_token(value: &str) -> bool {
     else {
         return false;
     };
-    payload.starts_with(SESSION_PAYLOAD_PREFIX)
+    payload
+        .strip_prefix(SESSION_PAYLOAD_PREFIX)
+        .is_some_and(|rest| {
+            LINKED_SURFACES
+                .iter()
+                .any(|surface| rest.starts_with(surface))
+        })
         && is_base64url(payload)
         && signature.len() == SIGNATURE_CHARS
         && is_base64url(signature)
@@ -50,7 +64,9 @@ fn is_base64url(text: &str) -> bool {
 }
 
 /// Whether `text` ends with `http(s)://host[:port]/path` on a loopback host,
-/// with no credentials, query or escapes.
+/// with no credentials, query or escapes. The URL must start the text or
+/// follow a space, quote or bracket, so a loopback address inside another
+/// URL (`http://elsewhere/?next=http://127.0.0.1/…`) does not count.
 fn ends_with_loopback_url(text: &str) -> bool {
     let Some(separator) = text.rfind("://") else {
         return false;
@@ -58,6 +74,15 @@ fn ends_with_loopback_url(text: &str) -> bool {
     let scheme_start = text[..separator]
         .rfind(|character: char| !character.is_ascii_alphabetic())
         .map_or(0, |index| index + 1);
+    if text[..scheme_start]
+        .chars()
+        .next_back()
+        .is_some_and(|before| {
+            !before.is_whitespace() && !matches!(before, '"' | '\'' | '(' | '<' | '[' | '`')
+        })
+    {
+        return false;
+    }
     let scheme = &text[scheme_start..separator];
     if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
         return false;

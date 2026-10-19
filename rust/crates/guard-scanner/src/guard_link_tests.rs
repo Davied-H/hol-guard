@@ -2,17 +2,23 @@ use base64ct::{Base64UrlUnpadded, Encoding};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-use super::{is_guard_link, SESSION_PAYLOAD_PREFIX};
+use super::{is_guard_link, LINKED_SURFACES, SESSION_PAYLOAD_PREFIX};
 use crate::scan_text;
 use guard_rules::MAX_SCAN_BYTES;
 
-/// A dashboard session token signed the way Guard signs one, assembled at
-/// run time so the repository holds no token-shaped text.
+const PAYLOAD_START: &str =
+    r#"{"aud":"guard-local-daemon","version":"guard-local-daemon-session.v1","surface":""#;
+
+/// An approval-center session token.
 fn session_token() -> String {
-    let payload = concat!(
-        r#"{"aud":"guard-local-daemon","version":"guard-local-daemon-session.v1","#,
-        r#""surface":"approval-center","expires_at":"2026-10-18T12:00:00+00:00","#,
-        r#""session_started_at":"2026-10-18T00:00:00+00:00"}"#,
+    surface_token("approval-center")
+}
+
+/// A dashboard session token for `surface`, signed the way Guard signs one
+/// and assembled at run time so the repository holds no token-shaped text.
+fn surface_token(surface: &str) -> String {
+    let payload = format!(
+        r#"{PAYLOAD_START}{surface}","expires_at":"2026-10-18T12:00:00+00:00","session_started_at":"2026-10-18T00:00:00+00:00"}}"#
     );
     let encoded = Base64UrlUnpadded::encode_string(payload.as_bytes());
     let mut mac = <Hmac<Sha256>>::new_from_slice(b"test-only").expect("hmac key");
@@ -39,14 +45,24 @@ fn credential_assignment(text: &str) -> bool {
 }
 
 #[test]
-fn the_prefix_is_the_start_of_every_guard_session_payload() {
-    let start =
-        r#"{"aud":"guard-local-daemon","version":"guard-local-daemon-session.v1","surface":""#;
-    assert_eq!(start.len() % 3, 0);
+fn the_prefixes_are_the_start_of_guard_session_payloads() {
+    assert_eq!(PAYLOAD_START.len() % 3, 0);
     assert_eq!(
-        Base64UrlUnpadded::encode_string(start.as_bytes()),
+        Base64UrlUnpadded::encode_string(PAYLOAD_START.as_bytes()),
         SESSION_PAYLOAD_PREFIX
     );
+    for (surface, encoded) in ["approval-center", "protection-repair"]
+        .into_iter()
+        .zip(LINKED_SURFACES)
+    {
+        let start = format!(r#"{PAYLOAD_START}{surface}","expires_at":""#);
+        let whole = &start.as_bytes()[..start.len() / 3 * 3];
+        assert_eq!(
+            Base64UrlUnpadded::encode_string(whole),
+            format!("{SESSION_PAYLOAD_PREFIX}{encoded}"),
+            "{surface}"
+        );
+    }
 }
 
 #[test]
@@ -69,6 +85,14 @@ fn guards_own_approval_link_is_not_a_credential() {
         "http://127.0.0.1:4781/requests/req-1"
     );
     assert!(!credential_assignment(&bare));
+    // A tampered-protection block links to the repair page the same way.
+    let repair = format!(
+        "HOL Guard blocked this action because trusted protection settings need repair. \
+         Open this local page and press Repair protection: \
+         http://127.0.0.1:4781/protection/repair#guard-token={}.",
+        surface_token("protection-repair")
+    );
+    assert!(!credential_assignment(&repair));
 }
 
 #[test]
@@ -80,6 +104,9 @@ fn the_token_anywhere_but_a_loopback_link_still_counts() {
         "http://user@127.0.0.1:4781/requests/req-1",
         "http://127.0.0.1:4781/requests/req-1?next=x",
         "ftp://127.0.0.1/requests/req-1",
+        "http://evil.example/?next=http://127.0.0.1/requests/req-1",
+        "http://evil.example/http://127.0.0.1/requests/req-1",
+        "xhttp://127.0.0.1/requests/req-1",
     ] {
         assert!(credential_assignment(&block_reason(page, &token)), "{page}");
     }
@@ -102,6 +129,8 @@ fn other_values_in_a_loopback_link_still_count() {
         format!("gld1.{payload}.{}", &signature[1..]),
         format!("gld2.{payload}.{signature}"),
         format!("{token}.extra"),
+        surface_token("settings"),
+        surface_token("approval-center-x"),
     ] {
         assert!(
             credential_assignment(&block_reason(page, &value)),
