@@ -102,9 +102,12 @@ def test_native_probe_budget_is_shared_with_one_bounded_retry(
         calls.append(deadline_monotonic)
         return None
 
+    sleeps: list[float] = []
+    monkeypatch.setattr(bridge.time, "sleep", sleeps.append)
     monkeypatch.setattr(bridge, "native_hook_bridge_executable", unavailable)
     assert bridge._native_bridge_executable(tmp_path) is None
     assert len(calls) == 2
+    assert len(sleeps) == 1 and 0.2 <= sleeps[0] <= 0.26
     assert calls[0] == calls[1]
     assert started < calls[0] <= time.monotonic() + 1.5
 
@@ -207,7 +210,7 @@ def test_a_query_naming_another_guard_home_still_reaches_the_runtime(
 
     config = json.loads(seen["argv"][3])
     assert config["query"] == "guard-home=/somewhere/else"
-    assert str(tmp_path) in config["recovery_command"][3]
+    assert repr(str(tmp_path)) in config["recovery_command"][3]
 
 
 @pytest.mark.parametrize("reason", ["missing authority", "fallback timed out", "capacity exhausted", "validator fault"])
