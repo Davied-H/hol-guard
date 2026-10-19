@@ -18,7 +18,8 @@ use crate::codex_output_inspection_flow::{
 };
 use crate::codex_output_post_tool::{absolute, Input, PostToolError, Run};
 use crate::codex_output_post_tool_sources::sensitive_local_source_matches;
-use crate::codex_output_py::{py_splitlines, py_strip, shlex_split, PyPath};
+use crate::codex_output_py::{py_splitlines, py_strip, shlex_split, strip_quotes, PyPath};
+use crate::shell_secret_read_support::classify_request_secret_path;
 use crate::codex_output_source_paths::resolve_source_candidate_path;
 use crate::sfrs_constants::FILE_READ_TOOL_NAMES;
 use crate::sfrs_read_only_filters::read_only_lookup_target_is_safe;
@@ -209,8 +210,18 @@ fn native_search_target_is_safe(
     target: &str,
     home: Option<&Path>,
 ) -> bool {
-    if target.contains(['*', '?', '[', ']']) || !read_only_lookup_target_is_safe(target, true, home)
+    // A native tool may quote its path. Classify exactly the spelling that
+    // the resolver uses, rather than checking a quoted basename and then
+    // silently unquoting it during filesystem resolution.
+    let target = strip_quotes(py_strip(target));
+    if target.is_empty()
+        || target.contains(['*', '?', '[', ']'])
+        || !read_only_lookup_target_is_safe(target, true, home)
     {
+        return false;
+    }
+    let cwd = os_path(input.cwd.as_ref());
+    if classify_request_secret_path(target, cwd.as_deref(), home).is_some() {
         return false;
     }
     let scope = scope_of(run.ctx, input.cwd.as_ref(), input.home_dir.as_ref());
@@ -327,7 +338,9 @@ fn native_read_is_read_only(run: &Run, input: &Input) -> bool {
     }
     let home = os_path(input.home_dir.as_ref());
     targets.iter().all(|target| {
-        let target = without_line_range(target);
+        // Native line ranges are presentation metadata, not part of the
+        // filename that the sensitive-source classifier must see.
+        let target = without_line_range(strip_quotes(py_strip(target)));
         native_search_target_is_safe(run, input, target, home.as_deref())
     })
 }

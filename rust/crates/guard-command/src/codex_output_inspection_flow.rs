@@ -283,7 +283,12 @@ pub(crate) fn target_name_is_secret_like(target: &str, scope: Scope) -> bool {
         name_stem
     };
     let exact = SECRET_LIKE_SOURCE_NAME_STEMS.contains(&stem.to_lowercase().as_str());
-    let compound = stem_has_compound_secret_segment(&stem, scope.cwd.is_some());
+    // With no caller cwd, an absolute external filename cannot claim the
+    // trusted in-project source exemption for compound secret names.
+    let compound = stem_has_compound_secret_segment(
+        &stem,
+        scope.cwd.is_some() || PyPath::new(target).is_absolute(),
+    );
     if !exact && !compound && !name.starts_with("id_") {
         return false;
     }

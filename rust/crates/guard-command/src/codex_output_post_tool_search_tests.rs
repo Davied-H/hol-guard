@@ -209,6 +209,32 @@ fn reading_a_credential_source_or_an_unknown_target_is_not_read_only() {
 }
 
 #[test]
+fn ranged_and_quoted_native_credential_paths_keep_output_review() {
+    let root = scratch("ranged-credential");
+    let source = root.join("src");
+    fs::create_dir(&source).unwrap();
+    for name in ["terraform.tfvars", "private.key", "wallet.key", "secrets.ts"] {
+        let path = source.join(name);
+        fs::write(&path, "token=not-a-real-token\n").unwrap();
+        let target = text(&path);
+        for given in [target.clone(), format!("{target}:1-20"), format!("\\\"{target}:1-20\\\"")] {
+            assert!(!read_file(&root, "read", json!({"path": given.clone()}), Some(&root)), "{given}");
+        }
+        assert!(!read_only(&root, "rg", json!({"pattern": "token", "path": format!("\\\"{target}\\\"")}), Some(&root)));
+    }
+}
+
+#[test]
+fn an_absolute_external_token_source_without_cwd_keeps_output_review() {
+    let root = scratch("external-service-token");
+    let source = root.join("outside");
+    fs::create_dir(&source).unwrap();
+    let target = source.join("service-token.ts");
+    fs::write(&target, "export const token = \\"placeholder\\";\n").unwrap();
+    assert!(!read_file(&root, "read", json!({"path": text(&target)}), None));
+}
+
+#[test]
 fn a_search_target_that_names_a_credential_source_is_not_read_only() {
     let root = scratch("search-secret");
     let source = root.join("src");
