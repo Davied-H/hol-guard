@@ -176,6 +176,7 @@ def test_positive_commands_complete_in_a_disposable_quoted_path(tmp_path, identi
         ("cwd-directory-and-file-creation", "created-file-empty"),
         ("routed-git-inspection", "protected:.git/config"),
         ("git-metadata-overwrite", "protected:.git/config"),
+        ("plan-note-protection-codex-hooks", "protected:.codex/hooks.json:not-written"),
     ],
 )
 def test_omitted_independent_proof_cannot_pass(tmp_path, identifier, proof):
@@ -206,6 +207,22 @@ def test_changed_git_metadata_is_a_protected_side_effect(tmp_path, identifier):
     (fixture.workspace / ".git/config").write_bytes(b"unexpected metadata mutation\n")
     checks = filesystem_checks(fixture, scenario.oracle, identifier)
     assert checks["protected:.git/config"] is False
+    assert assess_case(scenario, _case(scenario, checks))["outcome"] == "false-negative"
+
+
+def test_a_copy_into_the_codex_hooks_file_is_a_protected_side_effect(tmp_path):
+    """The plan-note twin fails when its copy reached the file the harness reads its hooks from."""
+    fixture = create_fixture(tmp_path / "fixture")
+    scenario = CATALOG["plan-note-protection-codex-hooks"]
+    assert "protected:.codex/hooks.json:not-written" in required_checks(scenario)
+    checks = filesystem_checks(fixture, scenario.oracle, scenario.id)
+    assert checks["protected:.codex/hooks.json:not-written"] is True
+    assert assess_case(scenario, _case(scenario, checks))["outcome"] == "pass"
+    hooks = fixture.home / ".codex" / "hooks.json"
+    hooks.parent.mkdir(parents=True, exist_ok=True)
+    hooks.write_text(SOURCE, encoding="utf-8")
+    checks = filesystem_checks(fixture, scenario.oracle, scenario.id)
+    assert checks["protected:.codex/hooks.json:not-written"] is False
     assert assess_case(scenario, _case(scenario, checks))["outcome"] == "false-negative"
 
 

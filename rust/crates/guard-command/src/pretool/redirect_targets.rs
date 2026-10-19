@@ -20,7 +20,26 @@ fn posix_temp_file(target: &str) -> bool {
             .all(|value| value.is_ascii_alphanumeric() || "._-+@%,=".contains(value))
 }
 
+/// A plan note filed in the harness home, spelled from `~` or from the root.
+/// These are the only home paths a redirect may remove from a command.
+fn plan_note_output_target(target: &str, context: PathContext<'_>) -> bool {
+    target.len() <= 4096
+        && target.starts_with(['~', '/'])
+        && target
+            .chars()
+            .all(|value| value.is_ascii_alphanumeric() || "._-/+@%,=:~".contains(value))
+        && !crate::pretool::sensitive_command(target)
+        && crate::pretool::safe_writes::plan_note_write_target(
+            target,
+            context.home_dir,
+            context.cwd,
+        )
+}
+
 pub(super) fn safe_output_target(target: &str, context: PathContext<'_>) -> bool {
+    if plan_note_output_target(target, context) {
+        return true;
+    }
     if target.is_empty()
         || target.len() > 4096
         || target.starts_with(['-', '~'])
@@ -88,7 +107,16 @@ pub(super) fn safe_output_target(target: &str, context: PathContext<'_>) -> bool
 pub(super) fn bounded_write(target: &str, context: PathContext<'_>) -> bool {
     use crate::pretool::safe_writes::{
         bounded_native_file_write_target, bounded_native_temporary_write_target,
+        plan_note_write_target,
     };
+    // A plan note filed in the harness home is a bounded write wherever the
+    // session runs, spelled from `~` or from the root.
+    if plan_note_write_target(target, context.home_dir, context.cwd) {
+        return !crate::pretool::curl_reads::output_targets::existing_executable(
+            target,
+            context.cwd,
+        );
+    }
     // Home is outside the workspace even when it sits below a temporary
     // directory, as it does for disposable and CI accounts.
     let path = std::path::Path::new(target);

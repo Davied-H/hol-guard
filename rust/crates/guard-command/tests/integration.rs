@@ -158,6 +158,7 @@ pub mod pretool_package_script_routes;
 pub mod pretool_parent_relative_writes;
 pub mod pretool_pi_tools;
 pub mod pretool_pip_reads;
+pub mod pretool_plan_note_writes;
 pub mod pretool_private_temp_cd;
 pub mod pretool_private_temporary_workspace;
 pub mod pretool_process_probe_chains;
