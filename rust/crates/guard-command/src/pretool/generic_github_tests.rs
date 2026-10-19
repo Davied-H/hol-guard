@@ -189,15 +189,21 @@ fn search_words_are_not_read_as_an_instruction() {
 #[test]
 fn ordinary_lookups_with_sk_in_a_word_do_not_get_reviewed() {
     for query in ["task-runner", "risk-score", "disk-space", "desk-config"] {
-        let result = evaluate("omp", github(json!({
-            "op":"search_prs","repo":"example-org/app","query":query
-        })));
+        let result = evaluate(
+            "omp",
+            github(json!({
+                "op":"search_prs","repo":"example-org/app","query":query
+            })),
+        );
         assert!(allowed(&result), "{query}: {}", result.reason_code);
     }
     for path in ["src/task-runner.rs", "docs/risk-score.md"] {
-        let result = evaluate("omp", github(json!({
-            "op":"file_read","repo":"example-org/app","path":path
-        })));
+        let result = evaluate(
+            "omp",
+            github(json!({
+                "op":"file_read","repo":"example-org/app","path":path
+            })),
+        );
         assert!(allowed(&result), "{path}: {}", result.reason_code);
     }
 }

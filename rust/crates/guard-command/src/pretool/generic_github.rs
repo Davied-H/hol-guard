@@ -87,16 +87,26 @@ fn bounded_text(text: &str) -> bool {
     // An uncertain outbound value keeps the normal review, not the read proof.
     let lower = text.to_ascii_lowercase();
     let at_token_start = |marker: &str| {
-        lower.match_indices(marker).any(|(index, _)| {
-            index == 0 || !lower.as_bytes()[index - 1].is_ascii_alphanumeric()
-        })
+        lower
+            .match_indices(marker)
+            .any(|(index, _)| index == 0 || !lower.as_bytes()[index - 1].is_ascii_alphanumeric())
     };
     let anywhere = [
-        "http://", "https://", "%3a%2f%2f", "github_pat_",
-        "bearer ", "authorization:", "access_token=",
-        "api_key=", "apikey=", "password=", "secret=",
+        "http://",
+        "https://",
+        "%3a%2f%2f",
+        "github_pat_",
+        "bearer ",
+        "authorization:",
+        "access_token=",
+        "api_key=",
+        "apikey=",
+        "password=",
+        "secret=",
     ];
-    let prefixes = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "xoxb-", "xoxp-", "sk-"];
+    let prefixes = [
+        "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "xoxb-", "xoxp-", "sk-",
+    ];
     !(anywhere.iter().any(|marker| lower.contains(marker))
         || prefixes.iter().any(|marker| at_token_start(marker)))
 }
