@@ -22,16 +22,42 @@ from ..native_command_control_authority_io import (
 LEASE_WAIT_SECONDS = 0.25
 
 
-def published_binding_token(publisher: object) -> tuple[object, object] | None:
-    """Identify the published snapshot without taking the authority lease."""
+def published_binding_token(publisher: object) -> tuple[object, object, object] | None:
+    """Read *committed* control inputs, not the cached publisher snapshot.
 
-    reader = getattr(publisher, "current_snapshot_binding", None)
-    if not callable(reader):
+    An external CLI can commit to SQLite while this process's in-memory
+    generation stays unchanged. If durable control inputs cannot be read,
+    an unleased review must fail closed rather than treat two None values
+    as proof of unchanged authority.
+    """
+
+    import hashlib
+    import json
+
+    compiled = getattr(publisher, "_compiled_command_extensions", None)
+    business = getattr(publisher, "_compiled_business_source", None)
+    revision = getattr(publisher, "_current_local_cli_revision", None)
+    if not all(callable(fn) for fn in (compiled, business, revision)):
         return None
-    binding = reader()
-    if not isinstance(binding, Mapping):
+    try:
+        controls = compiled()
+        business_source = business()
+        cli_revision = revision()
+        business_bytes = (
+            getattr(business_source, "retained_identity_bytes", None)
+            if business_source is not None
+            else b""
+        )
+        if not isinstance(controls, Mapping) or not isinstance(business_bytes, bytes):
+            return None
+        controls_data = json.dumps(controls, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return (
+            hashlib.sha256(controls_data.encode("utf-8")).hexdigest(),
+            hashlib.sha256(business_bytes).hexdigest(),
+            cli_revision,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError):
         return None
-    return (binding.get("generation"), binding.get("policy_digest"))
 
 
 @contextmanager
@@ -47,10 +73,10 @@ def native_review_fence(
 
     None means the lease was wanted and was not free within its short wait.
     The review still runs, on the snapshot that was bound before this fence,
-    and the caller compares the published binding across it: a mutation that
-    commits while the lease is unheld moves that binding, and the caller then
-    reports the fence unavailable rather than honouring an answer reached
-    against the policy the user is replacing.
+    and the caller compares committed control state across it. An external
+    mutation can leave the publisher's cached generation unchanged, so the
+    comparison must read the durable source. An unavailable reading fails
+    closed; the read does not grant permission to an uncertain response.
     """
 
     bound = policy_snapshot is not None and (
