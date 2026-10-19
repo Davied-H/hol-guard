@@ -53,6 +53,10 @@ pub(super) fn safe_worktree_config(output: &[u8], home: &Path) -> Option<Option<
             return Some(None);
         }
         let global_scope = matches!(scope, "global" | "system" | "unknown");
+        // The bundled `unknown` scope keeps the stricter reading for settings
+        // that run programs or pull in more files; a user's own global config
+        // and the system config are an ordinary developer's.
+        let user_scope = matches!(scope, "global" | "system");
         if key == "core.hookspath" {
             // Hook managers set this globally; the directory must exist and
             // hold no hook Git would run for this operation.
@@ -113,11 +117,11 @@ pub(super) fn safe_worktree_config(output: &[u8], home: &Path) -> Option<Option<
             || (matches!(
                 key.as_str(),
                 "core.sshcommand" | "core.gitproxy" | "core.askpass"
-            ) && !global_scope)
+            ) && !user_scope)
             || key.starts_with("hook.")
-            || (display_pager_setting(&key) && !(global_scope && display_pager_key(&key)))
+            || (display_pager_setting(&key) && !(user_scope && display_pager_key(&key)))
             || (key.starts_with("credential.") && !global_scope)
-            || (key.starts_with("include") && !(global_scope && !key.contains("onbranch:")))
+            || (key.starts_with("include") && (!user_scope || key.contains("onbranch:")))
             || (key.starts_with("extensions.") && !inert_extension(&key))
             || (key.starts_with("submodule.")
                 && !matches!(key.as_str(), "submodule.recurse" | "submodule.fetchjobs"))
@@ -263,7 +267,10 @@ mod tests {
     fn bundled_scope_keeps_execution_settings_reviewed() {
         for (key, value) in [
             ("core.fsmonitor", "/opt/example/run"),
+            ("core.pager", "/opt/example/run"),
+            ("core.sshcommand", "/opt/example/run"),
             ("hook.post-checkout.command", "/opt/example/run"),
+            ("pager.log", "/opt/example/run"),
             ("pager.worktree", "/opt/example/run"),
             ("include.path", "/opt/example/run"),
             ("includeif.onbranch:main.path", "/opt/example/run"),
