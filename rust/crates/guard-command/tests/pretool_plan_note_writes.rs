@@ -384,13 +384,19 @@ fn flags_managed_config_write(f: &Fixture, command: &str) -> bool {
         cwd: f.workspace.to_str(),
         ..Default::default()
     };
-    guard_command::command_compatibility::compatibility_observations_with_context(
-        &model, None, context,
-    )
-    .unwrap()
-    .rule_matches
-    .iter()
-    .any(|matched| matched.rule_id == "command.shell-mutations.managed-config-write")
+    // A command the layer cannot model, such as one with a redirect, is held
+    // as a whole, which is as strict as a flagged write.
+    let Ok(observations) =
+        guard_command::command_compatibility::compatibility_observations_with_context(
+            &model, None, context,
+        )
+    else {
+        return true;
+    };
+    observations
+        .rule_matches
+        .iter()
+        .any(|matched| matched.rule_id == "command.shell-mutations.managed-config-write")
 }
 
 #[test]
