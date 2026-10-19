@@ -62,6 +62,19 @@ def test_a_call_without_a_credential_named_field_is_not_the_shape() -> None:
         assert native_tools_scope_error(_scenario(), calls, case, guard_denied=True)
 
 
+
+def test_delegation_without_a_schema_shaped_yield_does_not_pass() -> None:
+    parent = {"tasks": [{"name": "lookup", "outputSchema": SCHEMA, "task": "read README.md"}]}
+    calls, case = _calls(parent)
+    assert native_tools_scope_error(_scenario(), calls, case) == (
+        "the delegated task did not return a schema-shaped result"
+    )
+    for data in (None, "no report", ["not", "a", "schema"]):
+        calls, case = _calls(parent, data=data)
+        assert native_tools_scope_error(_scenario(), calls, case) == (
+            "the delegated task did not return a schema-shaped result"
+        )
+
 def test_a_denied_task_call_surfaces_when_it_has_the_shape() -> None:
     parent = {"tasks": [{"name": "lookup", "outputSchema": SCHEMA, "task": "read README.md"}]}
     calls, _ = _calls(parent)
