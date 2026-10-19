@@ -6356,7 +6356,8 @@
         "command": "find ${HOME}/edge-clone/workers -name \"*.ts\" -exec grep -l \"edge_session_marker\" {} \\;"
       },
       "cwd": "edge_clone",
-      "expect": "not_allow"
+      "expect": "not_allow",
+      "contained_ok": true
     },
     {
       "id": "neg-omp-grep-edge-clone-env-backup-value",

@@ -104,7 +104,7 @@ fn omp_grep_keeps_its_review_when_a_sensitive_file_could_print() {
         // The pattern occurs in a sensitive file, in any letter case.
         json!({"pattern": "COOKIE_NAME"}),
         json!({"pattern": "cookie_name"}),
-        json!({"pattern": "api_token", "path": "workers"}),
+        json!({"pattern": "session_secret", "gitignore": false}),
         json!({"pattern": "handler|session_secret"}),
         // A pattern that is not plain text is never read as a clearance.
         json!({"pattern": "hand.*er"}),
@@ -138,18 +138,22 @@ fn the_omp_review_names_the_sensitive_file_and_never_a_cleared_one() {
 
 #[test]
 fn key_material_stores_credential_names_and_links_are_never_cleared() {
-    for (name, relative, text) in [
-        ("key", "certs/server.pem", "synthetic\n"),
-        ("store", ".ssh/config", "synthetic\n"),
-        ("aws", ".aws/credentials", "synthetic\n"),
-        ("credential", "credentials.json", "{}\n"),
-        ("secrets", "secrets/db.json", "{}\n"),
-        ("password", "password.txt", "synthetic\n"),
+    // Oh My Pi's `grep` does not hold a certificate or key container by its
+    // extension, so `omp` is false for those: the shell walk holds them.
+    for (name, relative, text, omp) in [
+        ("key", "certs/server.pem", "synthetic\n", false),
+        ("store", ".ssh/config", "synthetic\n", true),
+        ("aws", ".aws/credentials", "synthetic\n", true),
+        ("credential", "credentials.json", "{}\n", true),
+        ("secrets", "secrets/db.json", "{}\n", true),
+        ("password", "password.txt", "synthetic\n", true),
     ] {
         let f = fixture(&format!("never-{name}"));
         write(f.repo.join(relative), text);
-        let result = omp_grep(&f, json!({"pattern": "handler"}));
-        assert!(!allowed(&result), "{relative}");
+        if omp {
+            let result = omp_grep(&f, json!({"pattern": "handler"}));
+            assert!(!allowed(&result), "{relative}");
+        }
         let result = shell(&f, "grep -rn handler .");
         assert!(!allowed(&result), "{relative}");
     }

@@ -102,6 +102,9 @@ def test_only_the_marked_cases_may_pass_on_containment() -> None:
         "neg-env-git-dir-then-list",
         "neg-env-ld-preload-then-list",
         "neg-env-pager-names-program",
+        # A `find` that is not limited to regular files hands a link to `grep`, which opens its
+        # target; the contained run reaches nothing outside the workspace.
+        "neg-find-exec-grep-l-edge-clone-without-type-f",
     }
 
 
