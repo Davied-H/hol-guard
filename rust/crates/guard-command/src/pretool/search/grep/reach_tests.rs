@@ -27,6 +27,10 @@ fn fixture(name: &str) -> (PathBuf, PathBuf) {
     )
 }
 
+fn reason_for(command: &str, home: &Path, repo: &Path) -> String {
+    reason(command, home, repo).unwrap_or_default()
+}
+
 fn reason(command: &str, home: &Path, repo: &Path) -> Option<String> {
     let model = crate::parse_command(&crate::CommandModelRequestV1 {
         command: command.to_owned(),
@@ -61,6 +65,10 @@ fn the_reason_names_the_sensitive_file_the_search_would_reach() {
     let (home, repo) = fixture("named");
     for (command, shown) in [
         ("grep -rn api_token workers", "workers/api/.dev.vars"),
+        // `.env.bak` sorts first, but this pattern cannot match it: the file
+        // that holds the search is the one the pattern could print from.
+        ("grep -rn api_token .", "workers/api/.dev.vars"),
+        ("grep -rln api_token . | head -5", "workers/api/.dev.vars"),
         ("grep -rn cookie_name .", ".env.bak"),
         ("grep -rln \"cookie.*name\" .", ".env.bak"),
         ("grep -rln \"cookie.*name\" . | head -5", ".env.bak"),
@@ -76,6 +84,37 @@ fn the_reason_names_the_sensitive_file_the_search_would_reach() {
             "{command}: {reason}"
         );
     }
+    std::fs::remove_dir_all(home.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_cleared_file_is_never_the_one_named() {
+    let (home, repo) = fixture("cleared-first");
+    let reason = reason_for("grep -rn api_token .", &home, &repo);
+    assert!(!reason.contains("`.env.bak`"), "{reason}");
+    assert!(reason.contains("`workers/api/.dev.vars`"), "{reason}");
+    // A count lists every file it reads, so no file is cleared and the first
+    // one in name order is the one named.
+    let reason = reason_for("grep -rc handler .", &home, &repo);
+    assert!(reason.contains("`.env.bak`"), "{reason}");
+    std::fs::remove_dir_all(home.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn an_exclusion_beside_an_include_is_not_offered_as_the_way_around() {
+    let (home, repo) = fixture("include");
+    assert!(
+        reason("grep -rn --exclude=.dev.vars cookie_name .", &home, &repo)
+            .is_some_and(|reason| reason.contains("`.env.bak`"))
+    );
+    assert_eq!(
+        reason(
+            "grep -rn --include=*.ts --exclude=.dev.vars cookie_name .",
+            &home,
+            &repo
+        ),
+        None
+    );
     std::fs::remove_dir_all(home.parent().unwrap()).unwrap();
 }
 

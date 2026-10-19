@@ -113,11 +113,14 @@ struct Scan {
     patterns: Vec<String>,
     /// A pattern given in a form the scan cannot read back (`-efoo`, `-f`).
     pattern_unread: bool,
-    /// `-v` or `-L`: the output is what does not match.
-    inverted: bool,
+    /// `-v`, `-L` or `-c`: the output covers what does not match, or names
+    /// and counts every file read, matching or not.
+    reports_unmatched: bool,
     /// The search operands, after the pattern.
     targets: Vec<String>,
     recursive: bool,
+    /// `--include` appears, so exact exclusions are not part of the proof.
+    includes_present: bool,
     /// Exact names the command leaves out of its walk.
     excluded_files: Vec<String>,
     excluded_directories: Vec<String>,
@@ -128,7 +131,9 @@ impl Scan {
     /// that match it: files it cannot match add nothing to the output.
     fn clearance(&self) -> Option<PatternClearance> {
         match self.patterns.as_slice() {
-            [only] if !self.inverted && !self.pattern_unread => PatternClearance::new(only),
+            [only] if !self.reports_unmatched && !self.pattern_unread => {
+                PatternClearance::new(only)
+            }
             _ => None,
         }
     }
@@ -248,7 +253,8 @@ fn scan_into(
                 continue;
             }
             includes_present |= name == "--include";
-            scan.inverted |= matches!(name, "--invert-match" | "--files-without-match");
+            scan.reports_unmatched |=
+                matches!(name, "--invert-match" | "--files-without-match" | "--count");
             if matches!(name, "--recursive" | "--dereference-recursive") {
                 if !attached.is_empty() {
                     return false;
@@ -307,7 +313,7 @@ fn scan_into(
             };
             recursive |= bundled().any(|option| matches!(option, 'r' | 'R'));
             dereference |= bundled().any(|option| matches!(option, 'R' | 'S' | 'O'));
-            scan.inverted |= bundled().any(|option| matches!(option, 'v' | 'L'));
+            scan.reports_unmatched |= bundled().any(|option| matches!(option, 'v' | 'L' | 'c'));
             let parsed = short_search_option(
                 argument,
                 &[],
@@ -360,6 +366,7 @@ fn scan_into(
         return scan_into(arguments, context, stdin_only, absent, true, scan);
     }
     scan.recursive = recursive;
+    scan.includes_present = includes_present;
     scan.excluded_files = excluded_files
         .iter()
         .map(|name| (*name).to_owned())

@@ -173,6 +173,26 @@ fn a_large_or_binary_sensitive_file_is_never_cleared() {
 }
 
 #[test]
+fn a_sensitive_file_with_bytes_past_ascii_is_never_cleared() {
+    // A C locale reads `.` as one byte and a UTF-8 locale as one character,
+    // so a pattern like `caf.x` can match a Latin-1 or UTF-8 line the check
+    // would otherwise call clear.
+    for (name, bytes) in [
+        ("latin1", b"PASS=caf\xE9x\n".to_vec()),
+        ("utf8", "PASS=caf\u{e9}x\n".as_bytes().to_vec()),
+    ] {
+        let f = fixture(&format!("non-ascii-{name}"));
+        std::fs::write(f.repo.join(".env.local"), bytes).unwrap();
+        assert!(
+            !allowed(&omp_grep(&f, json!({"pattern": "caf.x"}))),
+            "{name}"
+        );
+        assert!(!allowed(&shell(&f, "grep -rn caf.x .")), "{name}");
+        assert!(!allowed(&shell(&f, "grep -rn handler .")), "{name}");
+    }
+}
+
+#[test]
 fn bash_grep_over_the_repository_root_proceeds_when_the_pattern_cannot_match() {
     let f = fixture("bash-root");
     for command in [
@@ -205,6 +225,12 @@ fn bash_grep_keeps_its_review_when_a_sensitive_file_could_print() {
         "grep -rn --invert-match handler .",
         "grep -rn '^handler' .",
         "grep -rn -f patterns.txt .",
+        // A count prints every file it reads, so a match-free sensitive file
+        // would still be named in the output.
+        "grep -rc handler .",
+        "grep -rnc handler .",
+        "grep -r --count handler .",
+        "grep -rcn handler workers",
     ] {
         let result = shell(&f, command);
         assert!(!allowed(&result), "{command}");

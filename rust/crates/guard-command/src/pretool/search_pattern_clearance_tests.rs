@@ -73,6 +73,21 @@ fn a_file_clears_only_when_the_pattern_cannot_match_it() {
 }
 
 #[test]
+fn a_dot_cannot_hide_a_match_in_a_file_with_bytes_past_ascii() {
+    let root = scratch("dot-bytes");
+    let latin = root.join(".env.latin1");
+    std::fs::write(&latin, b"PASS=caf\xE9x\n").unwrap();
+    let utf8 = root.join(".env.utf8");
+    std::fs::write(&utf8, "PASS=caf\u{e9}x\n".as_bytes()).unwrap();
+    for pattern in ["caf.x", "caf..x", "PASS=caf.x"] {
+        let clearance = PatternClearance::new(pattern).unwrap();
+        assert!(!clearance.clears(&latin), "{pattern}");
+        assert!(!clearance.clears(&utf8), "{pattern}");
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_dot_crosses_a_line_break_so_a_split_match_is_not_cleared() {
     let root = scratch("dot");
     let env = root.join(".env");
@@ -94,6 +109,11 @@ fn files_the_check_cannot_read_as_plain_text_are_not_cleared() {
     assert!(!clearance.clears(&write(".env.nul", b"X=1\0\n")));
     assert!(!clearance.clears(&write(".env.utf16le", b"\xFF\xFEX\x00=\x001\x00")));
     assert!(!clearance.clears(&write(".env.utf16be", b"\xFE\xFF\x00X")));
+    // Any byte past ASCII is read differently by a C locale, a UTF-8 locale
+    // and a Latin-1 one, so `.` could cover a different span than this check's.
+    assert!(!clearance.clears(&write(".env.latin1", b"PASS=caf\xE9x\n")));
+    assert!(!clearance.clears(&write(".env.utf8", "PASS=caf\u{e9}x\n".as_bytes())));
+    assert!(!clearance.clears(&write(".env.bom", b"\xEF\xBB\xBFX=1\n")));
     assert!(!clearance.clears(&write(".env.big", &vec![b'x'; 300 * 1024])));
     assert!(!clearance.clears(&root.join(".env.missing")));
     assert!(!clearance.clears(&root));

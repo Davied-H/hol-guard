@@ -13,9 +13,10 @@
 //! reads those characters the same way, and the check is deliberately wider
 //! than any of them: it ignores case, lets `.` cross lines, and anchors
 //! nothing. A pattern with an operator, a class, an escape, or an inverted
-//! match is never cleared. A file that is large, binary, in an unusual text
-//! encoding, a key container, or inside a credential store is never cleared
-//! either, so those keep the review.
+//! match is never cleared. A file that is large, not plain ASCII (binary,
+//! UTF-16, Latin-1 or any other encoding a locale could read differently), a
+//! key container, or inside a credential store is never cleared either, so
+//! those keep the review.
 
 use super::search::SECRET_EXTENSIONS;
 use std::cell::Cell;
@@ -100,12 +101,11 @@ impl PatternClearance {
         {
             return false;
         }
-        // NUL bytes and a UTF-16 mark mean the host may decode the file into
-        // text this check never saw.
-        if bytes.contains(&0)
-            || bytes.starts_with(&[0xFE, 0xFF])
-            || bytes.starts_with(&[0xFF, 0xFE])
-        {
+        // Only plain ASCII is read the same way by every host. Another byte
+        // can be a character, a part of one, or a stray byte depending on the
+        // locale and the decoder, and `.` then covers a different span than
+        // this check's. A NUL byte, a UTF-16 mark and Latin-1 text all fall here.
+        if !bytes.is_ascii() || bytes.contains(&0) {
             return false;
         }
         !self.matcher.is_match(&bytes)

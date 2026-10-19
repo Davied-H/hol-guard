@@ -2,9 +2,12 @@
 //! reach. The generic reason ("could not be confirmed read-only") left agents
 //! guessing which operand held the search. This names the file the walk
 //! stopped at, in the words the Oh My Pi `grep` review uses, and the shell
-//! ways around it. Only names are inspected; no file is opened.
+//! ways around it. Names are inspected, and a sensitive file the pattern
+//! clearance considers is read locally, as the proof reads it, so a file the
+//! pattern cannot match is never the one named. No content is returned.
 
 use super::{scan_arguments, tree, AbsentOperands, ReadContext};
+use crate::pretool::search_pattern_clearance::PatternClearance;
 
 const MAX_ENTRIES: usize = 10_000;
 
@@ -39,8 +42,16 @@ pub(in crate::pretool) fn sensitive_reach_reason(
     if proven || !scan.recursive {
         return None;
     }
+    // An exclusion next to `--include` is not part of the proof, so advice to
+    // exclude a file would not release the search.
+    if scan.includes_present
+        && !(scan.excluded_files.is_empty() && scan.excluded_directories.is_empty())
+    {
+        return None;
+    }
+    let clearance = scan.clearance();
     let shown = scan.targets.iter().find_map(|target| {
-        let entry = first_sensitive_entry(target, context, &scan)?;
+        let entry = first_sensitive_entry(target, context, &scan, clearance.as_ref())?;
         let folder = target.trim_end_matches('/');
         let shown = if matches!(folder, "" | ".") {
             entry
@@ -56,12 +67,13 @@ pub(in crate::pretool) fn sensitive_reach_reason(
 }
 
 /// The first entry below `value`, in name order, that the recursive screens
-/// refuse by name, relative to `value`. A walk that does not finish names
-/// nothing.
+/// refuse by name and the pattern clearance does not admit, relative to
+/// `value`. A walk that does not finish names nothing.
 fn first_sensitive_entry(
     value: &str,
     context: ReadContext<'_>,
     scan: &super::Scan,
+    clearance: Option<&PatternClearance>,
 ) -> Option<String> {
     if value.split(['/', '\\']).any(|part| part == "..")
         || !crate::pretool::safe_reads::bounded_read_target(
@@ -93,11 +105,17 @@ fn first_sensitive_entry(
                 continue;
             }
             if !tree::descendant_allowed(&path, &root, metadata.is_file()) {
-                return path
-                    .strip_prefix(&root)
-                    .ok()
-                    .and_then(|relative| relative.to_str())
-                    .map(str::to_owned);
+                // The name alone holds the search; a clearance may admit it.
+                if !clearance.is_some_and(|clearance| clearance.admits(&path, &metadata)) {
+                    return path
+                        .strip_prefix(&root)
+                        .ok()
+                        .and_then(|relative| relative.to_str())
+                        .map(str::to_owned);
+                }
+                if metadata.is_file() {
+                    continue;
+                }
             }
         }
         if metadata.is_dir() {
