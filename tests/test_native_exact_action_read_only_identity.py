@@ -429,14 +429,17 @@ def test_paging_options_do_not_end_a_read_approval(
 def test_one_file_outside_the_workspace_is_a_scope_an_approval_can_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_context_digest: Path
 ) -> None:
-    # A checkout beside the workspace is a place the user can answer for once;
-    # a directory stands for everything under it, so it stays once-only.
+    # A checkout beside the workspace is a file the user can answer for once,
+    # as long as answering for it again changes nothing: a read names the file
+    # they were shown. A write out there keeps broad_scope, because the next
+    # write of that name carries different bytes. A directory stands for
+    # everything under it, so it stays once-only either way.
     workspace = _wrangler_workspace(tmp_path, monkeypatch)
     sibling = workspace.parent / "sibling"
     (sibling / "src").mkdir(parents=True)
     (sibling / "src" / "main.rs").write_text("fn main() {}\n")
     assert _tool_proven("read", {"path": str(sibling / "src" / "main.rs")}, workspace)
-    assert _tool_proven("write", {"file_path": str(sibling / "src" / "new.rs"), "content": "x"}, workspace)
+    assert not _tool_proven("write", {"file_path": str(sibling / "src" / "new.rs"), "content": "x"}, workspace)
     assert not _tool_proven("read", {"path": str(sibling / "src")}, workspace)
     assert not _tool_proven("ls", {"path": str(sibling)}, workspace)
     assert not _tool_proven("write", {"file_path": str(sibling / "gone" / "new.rs"), "content": "x"}, workspace)
