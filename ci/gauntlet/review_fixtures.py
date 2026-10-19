@@ -55,6 +55,7 @@ def gh_stub_script(log: Path) -> str:
         'case "$*" in\n'
         '*graphql*) printf \'%s\\n\' \'{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}\' ;;\n'
         '*/replies*) printf \'%s\\n\' \'{"id":456,"body":"reply recorded"}\' ;;\n'
+        '*search/issues*) printf \'%s\n\' \'{"total_count":1,"incomplete_results":false,"items":[{"number":12,"title":"Add metrics","state":"open","html_url":"https://github.com/example-org/example-repo/pull/12","pull_request":{}}]}\' ;;\n'
         '*) printf \'%s\\n\' \'[{"id":123,"user":{"login":"reviewer"},"body":"Please rename the helper"}]\' ;;\n'
         "esac\n"
         "exit 0\n"
@@ -73,6 +74,8 @@ def gh_stub_python(log: Path) -> str:
         "    out = '{\"data\":{\"resolveReviewThread\":{\"thread\":{\"isResolved\":true}}}}'\n"
         "elif '/replies' in joined:\n"
         "    out = '{\"id\":456,\"body\":\"reply recorded\"}'\n"
+        "elif 'search/issues' in joined:\n"
+        "    out = '{\"total_count\":1,\"incomplete_results\":false,\"items\":[{\"number\":12,\"title\":\"Add metrics\",\"state\":\"open\",\"html_url\":\"https://github.com/example-org/example-repo/pull/12\",\"pull_request\":{}}]}'\n"
         "else:\n"
         "    out = '[{\"id\":123,\"user\":{\"login\":\"reviewer\"},\"body\":\"Please rename the helper\"}]'\n"
         "sys.stdout.buffer.write(out.encode() + b'\\n')\n"
