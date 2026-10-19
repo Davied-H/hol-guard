@@ -20,6 +20,7 @@ from ..approval_gate import (
     require_extension_control,
 )
 from ..json_transport import escape_json_for_html
+from ..native_command_control_authority_io import NativeCommandControlAuthorityUnavailableError
 from ..runtime import command_inspection
 from ..runtime.command_extensions import CommandSafetyExtensionRegistry
 from ..runtime.extension_control_authority import (
@@ -157,7 +158,13 @@ class ExtensionControlApiService:
             return current
 
     def refresh(self) -> dict[str, object]:
-        view = self._store.read_extension_control_authority_for_registry(self._registry)
+        try:
+            view = self._store.read_extension_control_authority_for_registry(self._registry)
+        except NativeCommandControlAuthorityUnavailableError:
+            # A busy lease means this refresh read nothing, not that the route
+            # failed. Serve the snapshot the runtime already holds rather than
+            # retrying the read through effective(), which would wait again.
+            return effective_controls_payload(self._registry, self._runtime.current(), self._store)
         _ = self._runtime.refresh(view)
         return self.effective()
 
@@ -280,7 +287,13 @@ class ExtensionControlApiService:
         return self.effective()
 
     def acknowledge_degraded(self, payload: dict[str, object]) -> dict[str, object]:
-        if self._runtime.current().health is not AuthorityHealth.DEGRADED_UNACKNOWLEDGED:
+        current_snapshot = self._runtime.current()
+        if current_snapshot.unread:
+            # The daemon started without reading the authority, so degraded mode
+            # here is the absence of a reading. Acknowledging it would persist an
+            # outage nobody observed and invalidate the native policy with it.
+            raise ExtensionControlApiError(503, "authority_unread")
+        if current_snapshot.health is not AuthorityHealth.DEGRADED_UNACKNOWLEDGED:
             raise ExtensionControlApiError(409, "authority_not_degraded")
         current = self._store.read_extension_control_authority_for_registry(self._registry)
         action = "acknowledge-degraded"

@@ -756,7 +756,7 @@
    "old_node": "tests/test_guard_hook_payload_reference.py::test_reject_path_outside_temp_root",
    "replacement_nodes": [
     "rust/crates/guard-runtime/src/edge_tests.rs::rejects_encrypted_payload_reference_until_supported",
-    "tests/test_guard_hook_payload_reference.py::test_hook_payload_reference_rejects_path_outside_temp_root"
+    "rust/crates/guard-runtime/src/directory_trust_tests.rs::a_payload_reference_is_read_only_where_guards_writer_put_it"
    ],
    "status": "native_behavior_ported_requires_ci"
   },
@@ -764,7 +764,7 @@
    "old_node": "tests/test_guard_hook_payload_reference.py::test_reject_wrong_prefix_temp_dir",
    "replacement_nodes": [
     "rust/crates/guard-runtime/src/edge_tests.rs::rejects_encrypted_payload_reference_until_supported",
-    "tests/test_guard_hook_payload_reference.py::test_hook_payload_reference_rejects_path_outside_temp_root"
+    "rust/crates/guard-runtime/src/directory_trust_tests.rs::a_payload_reference_is_read_only_where_guards_writer_put_it"
    ],
    "status": "native_behavior_ported_requires_ci"
   },
@@ -828,7 +828,7 @@
   {
    "old_node": "tests/test_guard_hook_payload_reference.py::test_hook_payload_reference_reports_bounded_bytes_before_hydration",
    "replacement_nodes": [
-    "tests/test_guard_hook_payload_reference.py::test_hook_payload_reference_reports_bounded_bytes"
+    "rust/crates/guard-runtime/src/edge_tests.rs::rejects_encrypted_payload_reference_until_supported"
    ],
    "status": "native_behavior_ported_requires_ci"
   },

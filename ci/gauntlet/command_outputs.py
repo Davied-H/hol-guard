@@ -12,6 +12,19 @@ from .business_policy import BUSINESS_ORDINARY_READ
 from .catalog import Scenario
 from .fixtures import SECURITY_NOTES, SOURCE, SOURCE_FILES
 from .script_cases import REPORT_CASES, report_output
+from .source_output_fixtures import (
+    HELPER_MARKER,
+    HELPER_PATH,
+    ROUTE_MARKER,
+    ROUTE_PATH,
+    WORKER_MARKER,
+    WORKER_PATH,
+)
+
+TOKEN_READ_CASE = "omp-native-read-token-handling-sources"
+TOKEN_SHELL_CASE = "omp-native-shell-cat-token-handling-sources"
+# One line of each token-handling file, which only that file's real text carries.
+TOKEN_SOURCE_MARKERS = {ROUTE_PATH: ROUTE_MARKER, WORKER_PATH: WORKER_MARKER, HELPER_PATH: HELPER_MARKER}
 
 OUTPUT_SCENARIOS = frozenset(
     {
@@ -114,10 +127,33 @@ def _od(text: str | None) -> bool:
         return False
 
 
+def _token_sources_match(scenario: Scenario, calls: list[dict[str, Any]]) -> bool:
+    """Every token-handling file must be read, and its own text must come back as the tool result."""
+    covered: set[str] = set()
+    for call in calls:
+        if scenario.id == TOKEN_READ_CASE and call.get("name") == "read":
+            target = re.sub(r":\d+(-\d+)?$", "", str(call["args"].get("path", "")))
+        elif scenario.id == TOKEN_SHELL_CASE and call.get("name") == "bash":
+            words = str(call["args"].get("command", "")).split()
+            target = words[-1] if words else ""
+        else:
+            continue
+        source = next((path for path in TOKEN_SOURCE_MARKERS if target == path or target.endswith("/" + path)), None)
+        if source is None:
+            continue
+        text = _text(call)
+        if text is None or TOKEN_SOURCE_MARKERS[source] not in text:
+            return False
+        covered.add(source)
+    return covered == set(TOKEN_SOURCE_MARKERS)
+
+
 def command_outputs_match(scenario: Scenario, calls: list[dict[str, Any]]) -> bool:
     """A successful host status cannot replace the required read, search or transformation."""
     if scenario.id == BUSINESS_ORDINARY_READ:
         return len(calls) == 1 and _text(calls[0]) == SOURCE
+    if scenario.id in (TOKEN_READ_CASE, TOKEN_SHELL_CASE):
+        return _token_sources_match(scenario, calls)
     if scenario.id not in OUTPUT_SCENARIOS:
         return True
     if len(calls) != len(scenario.commands):

