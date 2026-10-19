@@ -710,7 +710,8 @@ fn a_quoted_assignment_holding_a_space_is_one_word() {
     // alive: the `pydoc` wrapper a virtualenv leaves behind then put `python`
     // in a command position the file never reaches.
     let line = "PS1=\"(${VIRTUAL_ENV_PROMPT}) ${PS1-}\"\n";
-    let words: Vec<&str> = super::command_words(&super::mask_double_quoted_words(line)).collect();
+    let masked = super::mask_double_quoted_words(line);
+    let words: Vec<&str> = super::command_words(&masked).collect();
     assert!(!words.iter().any(|word| word.starts_with('$')), "{words:?}");
 }
 
@@ -719,6 +720,7 @@ fn a_quoted_span_still_shows_the_program_a_substitution_runs() {
     // Masking a span that runs a command would hide the program it names, so
     // the span is left exactly as it stands and `curl` stays visible.
     let line = "OUT=\"$(curl https://host/p)\"\n";
-    let words: Vec<&str> = super::command_words(&super::mask_double_quoted_words(line)).collect();
+    let masked = super::mask_double_quoted_words(line);
+    let words: Vec<&str> = super::command_words(&masked).collect();
     assert!(words.contains(&"curl"), "{words:?}");
 }
