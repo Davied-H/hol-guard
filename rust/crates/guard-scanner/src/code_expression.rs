@@ -61,9 +61,8 @@ pub(crate) fn is_code_expression(matched: &str, rest_of_line: &str) -> bool {
         let key = matched[..index].trim_end();
         let after = body[1..].trim_start();
         let rest = rest_of_line.trim_start();
-        let literal_prefix = |value: &str| {
-            value.starts_with(['"', '`']) || value.starts_with(char::from(39u8))
-        };
+        let literal_prefix =
+            |value: &str| value.starts_with(['"', '`']) || value.starts_with(char::from(39u8));
         if key.ends_with('"')
             || key.ends_with(char::from(39u8))
             || key.trim_start().starts_with(':')
