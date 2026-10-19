@@ -65,7 +65,9 @@ pub(super) fn inert_assignment(token: &str) -> bool {
 
 /// Whether `name` alone, with no value, is one of those variables.
 fn inert_name(name: &str) -> bool {
-    presentation_name(name) || PAGER_NAMES.contains(&name)
+    // A bare export or unset of a pager can expose an unsafe fallback
+    // program (e.g. unset GIT_PAGER reveals PAGER=/tmp/pager.sh).
+    presentation_name(name)
 }
 
 /// Whether a `NAME=VALUE ... command` prefix sets only inert variables.
@@ -110,15 +112,24 @@ fn safe_set_arguments(arguments: &[String]) -> bool {
         }) else {
             return false;
         };
-        if !flags.contains('o') {
-            continue;
+        // `set -k` sends assignment-like arguments into subprocesses;
+        // -a and other shell flags can change execution environment too.
+        // Only the documented e/u/x flags and one trailing -o operand
+        // are safe to compose in this read-only prelude.
+        if !flags.chars().all(|flag| matches!(flag, 'e' | 'u' | 'x' | 'o')) {
+            return false;
         }
-        let Some(name) = arguments.get(index) else {
-            return false;
-        };
-        index += 1;
-        if !SHELL_OPTIONS.contains(&name.as_str()) {
-            return false;
+        if flags.contains('o') {
+            if !flags.ends_with('o') || flags.bytes().filter(|flag| *flag == b'o').count() != 1 {
+                return false;
+            }
+            let Some(name) = arguments.get(index) else {
+                return false;
+            };
+            index += 1;
+            if !SHELL_OPTIONS.contains(&name.as_str()) {
+                return false;
+            }
         }
     }
     true

@@ -47,6 +47,34 @@ fn shell_options_run_without_review() {
 }
 
 #[test]
+fn shell_flags_that_change_execution_or_exporting_still_require_review() {
+    for command in [
+        "set -k; ls",
+        "set -a; ls",
+        "set -h; ls",
+        "set -T; ls",
+        "set -n; ls",
+        "set -euk; ls",
+        "set -o errexit -k; ls",
+        "set -oe nounset; ls",
+    ] {
+        assert!(!allowed(command), "{command}");
+    }
+}
+
+#[test]
+fn bare_pager_mutations_stay_unproven() {
+    for command in [
+        "unset GIT_PAGER; git log",
+        "unset PAGER; git log",
+        "export GIT_PAGER; git log",
+        "export PAGER; git log",
+    ] {
+        assert!(!allowed(command), "{command}");
+    }
+}
+
+#[test]
 fn a_bare_set_still_needs_review() {
     // `set` with no operand prints every variable the shell holds.
     assert!(!allowed("set; ls"));
