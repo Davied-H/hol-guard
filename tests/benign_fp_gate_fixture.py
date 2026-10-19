@@ -330,8 +330,6 @@ def build_fixture(root: Path) -> BenignFixture:
     # The live Gauntlet's token-handling sources (redirect route, link worker, HMAC helper).
     for relative, text in TOKEN_SOURCES.items():
         _write(worktree / relative, text)
-    # A real dotenv file beside them, so the case that names it reads an existing target.
-    _write(worktree / "portal" / ".env", "ATTRIBUTION_TOKEN_SECRET=placeholder\n")
     # Fresh worktree package whose dependencies are installed only in the canonical checkout.
     _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")
     _write(worktree / "web" / "package.json", '{"private": true}\n')
