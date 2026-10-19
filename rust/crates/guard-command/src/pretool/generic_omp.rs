@@ -887,9 +887,17 @@ fn grep_scope(
         && !input.contains_key("glob")
         && !input.contains_key("type");
     let (home, cwd) = (context.path.home_dir, context.path.cwd);
+    // A plain pattern that no reachable sensitive file contains cannot print
+    // a line from one, so those files need not hold the search.
+    let clearance = super::super::search_pattern_clearance::PatternClearance::new(pattern);
     let proven = |target: &str| {
-        super::super::search_scope::omp_grep_scope_proven(target, home, cwd, gitignore)
-            || (list && super::super::read_paths::existing_regular_read_target(target, home, cwd))
+        super::super::search_scope::omp_grep_scope_proven(
+            target,
+            home,
+            cwd,
+            gitignore,
+            clearance.as_ref(),
+        ) || (list && super::super::read_paths::existing_regular_read_target(target, home, cwd))
             || super::super::read_paths::bounded_omp_file_selector_target(target, home, cwd)
     };
     if targets.iter().all(|target| proven(target)) {
@@ -992,8 +1000,18 @@ pub(super) fn grep_review_note(
         return Some(GLOB_PATH_NOTE.to_owned());
     }
     let (home, cwd) = (context.path.home_dir, context.path.cwd);
+    // A file the pattern cannot match is not what holds the search.
+    let clearance = strict_tool_input(payload)?
+        .get("pattern")
+        .and_then(Value::as_str)
+        .and_then(super::super::search_pattern_clearance::PatternClearance::new);
     targets.iter().find_map(|target| {
-        let blocker = super::super::search_scope::content_search_blocker(target, home, cwd)?;
+        let blocker = super::super::search_scope::content_search_blocker(
+            target,
+            home,
+            cwd,
+            clearance.as_ref(),
+        )?;
         let blocker = blocker.to_str()?;
         let shown = match target.trim_end_matches('/') {
             "" | "." => blocker.to_owned(),
