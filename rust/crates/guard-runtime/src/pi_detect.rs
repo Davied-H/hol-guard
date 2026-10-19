@@ -33,6 +33,8 @@ const THEME_SUFFIXES: [&str; 5] = [".json", ".js", ".ts", ".yaml", ".yml"];
 const REMOTE_PREFIXES: [&str; 5] = ["npm:", "git:", "http://", "https://", "ssh://"];
 /// The files Oh My Pi loads MCP servers from in its agent and project
 /// directories. A name in `mcp.json` shadows the same name in `.mcp.json`.
+/// A file that cannot be read whole lists no servers rather than failing the
+/// detection, so it never hides the extensions and skills found beside it.
 const OMP_MCP_FILES: [&str; 2] = ["mcp.json", ".mcp.json"];
 
 /// The four resource kinds, with their default directory and the file test
@@ -422,11 +424,16 @@ impl Detection<'_> {
             if !is_file(&fs_path) {
                 continue;
             }
-            let payload = settings_payload(&fs_path)?;
-            let artifacts =
+            // `mcp` is the artifact family policy scopes recognize for a
+            // server, as in Claude Code's ids.
+            let artifacts = settings_payload(&fs_path).and_then(|payload| {
                 mcp_server_artifacts(&Scope { harness, scope }, &path, &payload, |server| {
-                    format!("{harness}:{id_scope}:mcp_server:{server}")
-                })?;
+                    format!("{harness}:{id_scope}:mcp:{server}")
+                })
+            });
+            let Ok(artifacts) = artifacts else {
+                continue;
+            };
             if artifacts.is_empty() {
                 continue;
             }

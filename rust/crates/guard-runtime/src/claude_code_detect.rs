@@ -133,18 +133,45 @@ impl Detection {
     /// The servers `claude mcp add` keeps in `~/.claude.json`: its top-level
     /// `mcpServers` (user scope) and the workspace's `projects` entry (local
     /// scope). The rest of that file is Claude Code's own state and is not
-    /// read. A server a settings file already declares keeps that entry.
-    fn user_state_servers(&mut self, path: &Path) -> Result<(), &'static str> {
+    /// read. A server a settings file already declares keeps that entry. A
+    /// state file that cannot be read whole lists no servers rather than
+    /// failing the detection, as before this file was read.
+    fn user_state_servers(&mut self, path: &Path) {
+        let Ok(mut artifacts) = self.user_state_artifacts(path) else {
+            return;
+        };
+        artifacts.retain(|artifact| {
+            !self
+                .artifacts
+                .iter()
+                .any(|existing| existing["artifact_id"] == artifact["artifact_id"])
+        });
+        let Ok(found) = kept(&path.to_string_lossy()).map(str::to_owned) else {
+            return;
+        };
+        if artifacts.is_empty() {
+            return;
+        }
+        self.found_paths.push(found);
+        self.artifacts.extend(artifacts);
+    }
+
+    fn user_state_artifacts(&self, path: &Path) -> Result<Vec<Value>, &'static str> {
         let payload = settings_payload(&self.fs(path))?;
         let global = Scope {
             harness: HARNESS,
             scope: "global",
         };
         let mut artifacts = mcp_artifacts(&global, path, &payload)?;
+        // Claude Code keys a project by its absolute directory.
         let project = self.workspace.as_ref().and_then(|workspace| {
-            payload
-                .get("projects")
-                .and_then(|projects| projects.get(&workspace.to_string_lossy()))
+            let absolute = self.fs(workspace);
+            let canonical = fs::canonicalize(&absolute).ok();
+            let projects = payload.get("projects")?;
+            [Some(workspace.clone()), Some(absolute), canonical]
+                .into_iter()
+                .flatten()
+                .find_map(|key| projects.get(&key.to_string_lossy()))
         });
         if let Some(project) = project {
             let local = Scope {
@@ -153,19 +180,7 @@ impl Detection {
             };
             artifacts.extend(mcp_artifacts(&local, path, project)?);
         }
-        artifacts.retain(|artifact| {
-            !self
-                .artifacts
-                .iter()
-                .any(|existing| existing["artifact_id"] == artifact["artifact_id"])
-        });
-        if artifacts.is_empty() {
-            return Ok(());
-        }
-        self.found_paths
-            .push(kept(&path.to_string_lossy())?.to_owned());
-        self.artifacts.extend(artifacts);
-        Ok(())
+        Ok(artifacts)
     }
 
     /// `_discover_project_markdown_artifacts` for one project directory.
@@ -274,7 +289,7 @@ pub(crate) fn detect(args: &Value) -> KindResult {
     for candidate in &candidates {
         detection.settings(candidate)?;
     }
-    detection.user_state_servers(&home.join(USER_STATE_FILE))?;
+    detection.user_state_servers(&home.join(USER_STATE_FILE));
     if let Some(workspace) = &workspace {
         for directory in PROJECT_DIRECTORIES {
             detection.project_directory(workspace, directory)?;
