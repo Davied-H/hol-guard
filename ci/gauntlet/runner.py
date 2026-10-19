@@ -54,7 +54,7 @@ from .input_evidence import (
 from .interruptions import KNOWN_GAPS, load_known_gaps, report_sections, stale_gaps
 from .latency import summarize_hook_latency
 from .native_routes import await_native_routes
-from .native_tools import cleanup_private_temp
+from .native_tools import TASK_SCHEMA_CASE, cleanup_private_temp
 from .observed_extension import generate_observed_extension
 from .parallel import HostSlots, Lease, LoadGate, run_scheduled, validate_jobs
 from .provider import InferenceRelay, LoopbackCollector
@@ -139,7 +139,7 @@ def run_case(
             write_agent_configuration(
                 agent_dir,
                 relay,
-                wait_for_tasks=scenario.id == "omp-native-task-readonly-lookup",
+                wait_for_tasks=scenario.id in {"omp-native-task-readonly-lookup", TASK_SCHEMA_CASE},
                 memory_bank="learn" in scenario.required_tools,
             )
             if scenario.oracle == "watch-command":

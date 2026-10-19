@@ -4,6 +4,7 @@ use guard_secure_fs::sensitive_path_family;
 use serde_json::{Map, Value};
 use std::path::Path;
 
+mod policy_enforcement_facts_schema;
 mod policy_enforcement_facts_tools;
 
 pub(super) use policy_enforcement_facts_tools::{
@@ -489,7 +490,9 @@ pub(super) fn payload_facts(
     // is timing metadata. Nested copies, extra keys, credentials and command
     // floors retain ordinary enforcement. This grants no process authority.
     let wait_process = codex_browser_process_metadata(payload, harness);
-    let sensitive_target = payload_sensitive_target(&maps, budget_input, wait_process)?
+    // The field names of a `task` result schema are labels, not credentials.
+    let scanned = policy_enforcement_facts_schema::without_schema_names(&maps, payload, harness);
+    let sensitive_target = payload_sensitive_target(&scanned, budget_input, wait_process)?
         || reason_code.contains("secret")
         || reason_code.contains("credential")
         || reason_code.contains("exfiltration");
