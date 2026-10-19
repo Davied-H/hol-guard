@@ -443,7 +443,7 @@ class NativePolicySnapshotPublicationMixin:
                     publisher._last_error = None
                     publisher._renewal_after_generation = None
                     publisher._failure_count = 0
-                    publisher._resident_failure_streak = 0
+                    publisher._note_resident_acknowledged_locked()
                     publisher._retry_not_before_monotonic = None
                     publisher._schedule_renewal_locked(snapshot)
                     publisher._commit_workspace_readiness_locked(compiled_workspaces)

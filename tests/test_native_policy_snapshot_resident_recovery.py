@@ -18,6 +18,7 @@ from codex_plugin_scanner.guard.native_policy_snapshot_resident_recovery import 
     RESIDENT_NUDGE_MIN_INTERVAL_SECONDS,
     RESIDENT_REVIVE_COOLDOWN_SECONDS,
     RESIDENT_REVIVE_FAILURE_STREAK,
+    RESIDENT_REVIVE_MAX_ATTEMPTS,
     is_resident_class_error,
 )
 from codex_plugin_scanner.guard.store import GuardStore
@@ -102,6 +103,85 @@ def test_failures_that_are_not_the_resident_never_revive_it(tmp_path: Path) -> N
             publisher._record_error("native_policy_snapshot_ack_mismatch")
         assert not revived.wait(0.2)
         assert publisher.resident_failure_streak() == 0
+    finally:
+        publisher.close()
+
+
+def test_a_resident_that_never_comes_back_stops_being_revived(tmp_path: Path) -> None:
+    """Revival resets the crash-loop budget, so it cannot run forever without an acknowledgement."""
+    clock = _DeterministicClock()
+    publisher = _idle_publisher(tmp_path, clock)
+    calls: list[Path] = []
+    publisher._resident_reviver = lambda home: calls.append(home) is None
+    try:
+        for _ in range(RESIDENT_REVIVE_FAILURE_STREAK):
+            publisher._record_error("native_client_timed_out")
+        for _ in range(RESIDENT_REVIVE_MAX_ATTEMPTS + 3):
+            clock.monotonic += RESIDENT_REVIVE_COOLDOWN_SECONDS + 1.0
+            publisher._record_error("native_client_timed_out")
+        deadline = time.monotonic() + 2.0
+        while len(calls) < RESIDENT_REVIVE_MAX_ATTEMPTS and time.monotonic() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.2)
+        assert len(calls) == RESIDENT_REVIVE_MAX_ATTEMPTS
+
+        # An acknowledgement refills the budget.
+        with publisher._condition:
+            publisher._note_resident_acknowledged_locked()
+        for _ in range(RESIDENT_REVIVE_FAILURE_STREAK):
+            clock.monotonic += RESIDENT_REVIVE_COOLDOWN_SECONDS + 1.0
+            publisher._record_error("native_client_timed_out")
+        deadline = time.monotonic() + 2.0
+        while len(calls) == RESIDENT_REVIVE_MAX_ATTEMPTS and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert len(calls) == RESIDENT_REVIVE_MAX_ATTEMPTS + 1
+    finally:
+        publisher.close()
+
+
+def test_a_failure_the_resident_answered_ends_the_run_of_resident_failures(tmp_path: Path) -> None:
+    clock = _DeterministicClock()
+    publisher = _idle_publisher(tmp_path, clock)
+    revived = threading.Event()
+    publisher._resident_reviver = lambda _home: revived.set() or True
+    try:
+        for _ in range(RESIDENT_REVIVE_FAILURE_STREAK - 1):
+            publisher._record_error("native_client_timed_out")
+        publisher._record_error("native_policy_snapshot_ack_mismatch")
+        assert publisher.resident_failure_streak() == 0
+        publisher._record_error("native_client_timed_out")
+        assert publisher.resident_failure_streak() == 1
+        assert not revived.wait(0.2)
+    finally:
+        publisher.close()
+
+
+def test_a_revival_that_fails_or_does_not_help_is_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    clock = _DeterministicClock()
+    publisher = _idle_publisher(tmp_path, clock)
+    outcomes = iter([False, OSError("runtime missing")])
+
+    def reviver(_home: Path) -> bool:
+        outcome = next(outcomes)
+        if isinstance(outcome, OSError):
+            raise outcome
+        return outcome
+
+    publisher._resident_reviver = reviver
+    try:
+        with caplog.at_level("INFO", logger="codex_plugin_scanner.guard.native_policy_snapshot_resident_recovery"):
+            for _ in range(RESIDENT_REVIVE_FAILURE_STREAK):
+                publisher._record_error("native_client_timed_out")
+            thread = publisher._start_resident_revival()
+            assert thread is not None
+            thread.join(2.0)
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline and not (
+                "did not bring the resident back" in caplog.text and "revival failed: OSError" in caplog.text
+            ):
+                time.sleep(0.01)
+        assert "did not bring the resident back" in caplog.text
+        assert "revival failed: OSError" in caplog.text
     finally:
         publisher.close()
 

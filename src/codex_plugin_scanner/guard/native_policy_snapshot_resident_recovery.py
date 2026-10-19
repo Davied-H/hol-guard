@@ -18,6 +18,7 @@ fails closed; this only shortens how long that takes to end.
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -32,10 +33,17 @@ if TYPE_CHECKING:
 RESIDENT_REVIVE_FAILURE_STREAK = 3
 # A revival that did not help is not repeated inside this window.
 RESIDENT_REVIVE_COOLDOWN_SECONDS = 30.0
+# Revivals attempted without a single acknowledgement in between. A resident
+# that keeps crash-looping through this many revivals has a cause a restart
+# cannot clear (a broken binary, a bad state directory), so the crash-loop
+# backoff is left in place and `hol-guard repair` is the way forward.
+RESIDENT_REVIVE_MAX_ATTEMPTS = 3
 # Waiting hooks cannot start publish attempts faster than this.
 RESIDENT_NUDGE_MIN_INTERVAL_SECONDS = 0.5
 # From this many consecutive failures a hook stops waiting for the resident.
 RESIDENT_FAIL_FAST_STREAK = 4
+
+logger = logging.getLogger(__name__)
 
 _RESIDENT_CODE_PREFIXES = ("native_client_", "native_frame_", "native_resident_")
 
@@ -54,12 +62,14 @@ class NativePolicySnapshotResidentRecoveryMixin:
     _resident_failure_streak: int = 0
     _last_attempt_monotonic: float | None = None
     _last_revive_monotonic: float | None = None
+    _resident_revive_attempts: int = 0
     _resident_reviver: Callable[[Path], bool] | None = None
 
     def _init_resident_recovery(self, reviver: Callable[[Path], bool] | None = None) -> None:
         self._resident_failure_streak = 0
         self._last_attempt_monotonic = None
         self._last_revive_monotonic = None
+        self._resident_revive_attempts = 0
         self._resident_reviver = reviver
 
     def resident_failure_streak(self) -> int:
@@ -107,16 +117,29 @@ class NativePolicySnapshotResidentRecoveryMixin:
 
         publisher = cast("NativePolicySnapshotPublisher", self)
         if not is_resident_class_error(code):
+            # The resident answered, with a failure of its own: it is alive,
+            # so the run of resident failures it was counting has ended.
+            publisher._resident_failure_streak = 0
             return False
         publisher._resident_failure_streak += 1
         if publisher._resident_failure_streak < RESIDENT_REVIVE_FAILURE_STREAK:
+            return False
+        if publisher._resident_revive_attempts >= RESIDENT_REVIVE_MAX_ATTEMPTS:
             return False
         now = publisher._monotonic_clock()
         last = publisher._last_revive_monotonic
         if last is not None and now - last < RESIDENT_REVIVE_COOLDOWN_SECONDS:
             return False
         publisher._last_revive_monotonic = now
+        publisher._resident_revive_attempts += 1
         return True
+
+    def _note_resident_acknowledged_locked(self) -> None:
+        """An acknowledgement ends the failure run and refills the revival budget."""
+
+        publisher = cast("NativePolicySnapshotPublisher", self)
+        publisher._resident_failure_streak = 0
+        publisher._resident_revive_attempts = 0
 
     def _start_resident_revival(self) -> threading.Thread | None:
         """Lift the respawn pacing off the publisher thread, then retry at once."""
@@ -130,9 +153,10 @@ class NativePolicySnapshotResidentRecoveryMixin:
                     from .native_resident_revival import revive_native_resident
 
                     reviver = revive_native_resident
-                reviver(publisher.guard_home)
-            except (OSError, RuntimeError, TypeError, ValueError):
-                pass
+                if not reviver(publisher.guard_home):
+                    logger.info("native resident revival did not bring the resident back")
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                logger.warning("native resident revival failed: %s", type(error).__name__)
             finally:
                 publisher.nudge_retry(force=True)
 
@@ -146,6 +170,7 @@ __all__ = [
     "RESIDENT_NUDGE_MIN_INTERVAL_SECONDS",
     "RESIDENT_REVIVE_COOLDOWN_SECONDS",
     "RESIDENT_REVIVE_FAILURE_STREAK",
+    "RESIDENT_REVIVE_MAX_ATTEMPTS",
     "NativePolicySnapshotResidentRecoveryMixin",
     "is_resident_class_error",
 ]
