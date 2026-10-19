@@ -79,6 +79,8 @@ fn a_credential_named_property_with_a_value_keeps_the_review() {
             "$defs":{"Shared":{"const":"sk-example"}}}),
         json!({"type":"object", "properties":{"password":{"$ref":"#/definitions/Ref"}},
             "definitions":{"Ref":{"default":"example"}}}),
+        json!({"type":"object", "properties":{"token":{"$dynamicRef":"#s"}},
+            "$defs":{"Shared":{"$dynamicAnchor":"s","const":"secret"}}}),
         // A name map whose entry is a bare value, not a schema.
         json!({"type": "object", "properties": {"apiToken": "abc123"}}),
         // A look-alike inside an example is data, never a schema to trust.
