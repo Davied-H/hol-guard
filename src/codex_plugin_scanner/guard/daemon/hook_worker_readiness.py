@@ -43,10 +43,16 @@ def _wait_nudging_publisher(
 
     nudge = publisher.nudge_retry
     while True:
+        # A retired publisher returns immediately from wait_until_ready. Do
+        # not spin on its closed state for the remainder of the hook budget.
+        if getattr(publisher, "closed", False) is True:
+            return
         _ = nudge()
         slice_deadline = min(deadline, time.monotonic() + RESIDENT_NUDGE_MIN_INTERVAL_SECONDS)
         ready = wait_until_ready(slice_deadline, workspace=workspace) if pending else wait_until_ready(slice_deadline)
         if ready or time.monotonic() >= deadline:
+            return
+        if getattr(publisher, "closed", False) is True:
             return
         last_error = getattr(publisher, "last_error", None)
         if last_error in POLICY_SNAPSHOT_UNRECOVERABLE_ERRORS:
