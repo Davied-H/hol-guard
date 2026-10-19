@@ -592,7 +592,6 @@ mod jq_stdin_boundary_tests {
     }
 }
 
-
 #[cfg(test)]
 mod head_tail_plus_filename_tests {
     use super::*;
@@ -606,13 +605,19 @@ mod head_tail_plus_filename_tests {
             ..Default::default()
         };
         assert!(!safe_head_tail_with_targets(
-            &["+31".to_owned(), "Cargo.toml".to_owned()], false, context, true
+            &["+31".to_owned(), "Cargo.toml".to_owned()],
+            false,
+            context,
+            true
         ));
         // A nonexistent +31 filename by itself can be a harmless proven
         // missing-file read; the security invariant is that it still occupies
         // the target slot and cannot hide an additional source operand.
         assert!(safe_head_tail_with_targets(
-            &["-n".to_owned(), "+31".to_owned(), "Cargo.toml".to_owned()], false, context, true
+            &["-n".to_owned(), "+31".to_owned(), "Cargo.toml".to_owned()],
+            false,
+            context,
+            true
         ));
     }
 }

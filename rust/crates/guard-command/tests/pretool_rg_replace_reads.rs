@@ -57,7 +57,7 @@ fn replace_and_grep_only_filters_do_not_clear_the_operand_proof() {
         format!("rg -n fixture {child} --include='*.rs' --hidden | head -3"),
         format!("rg -n fixture {child}/src -r --no-ignore | head -3"),
         format!("rg -n fixture {child}/src --include='*.rs' --pre cat | head -3"),
-        format!("rg -n fixture ~/.ssh --include='*.pub' | head -3"),
+        "rg -n fixture ~/.ssh --include='*.pub' | head -3".to_string(),
         format!("rg -n fixture {child}/.env --include='*.rs'"),
     ] {
         assert_decision(&layout.org, &layout.home, &command, false);

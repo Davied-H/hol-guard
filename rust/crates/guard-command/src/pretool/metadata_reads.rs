@@ -204,7 +204,13 @@ pub(super) fn safe_stat_arguments(arguments: &[String], context: super::PathCont
             after_options = true;
         } else if option == "-c"
             || (matches!(option, "-f" | "-t")
-                && cfg!(any(target_os = "macos", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd", target_os = "dragonfly")))
+                && cfg!(any(
+                    target_os = "macos",
+                    target_os = "freebsd",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                    target_os = "dragonfly"
+                )))
         {
             // BSD stat takes a format operand for -f/-t, GNU stat does not.
             if !values.next().is_some_and(|format| stat_format(format)) {
@@ -306,7 +312,6 @@ fn plain_path(value: &str) -> bool {
         ])
 }
 
-
 #[cfg(all(test, target_os = "linux"))]
 mod stat_operand_regression_tests {
     use super::*;
@@ -320,8 +325,15 @@ mod stat_operand_regression_tests {
             ..Default::default()
         };
         for flag in ["-f", "-t"] {
-            let operands = vec![flag.to_owned(), "/etc/shadow".to_owned(), "Cargo.toml".to_owned()];
-            assert!(!safe_stat_arguments(&operands, context), "{flag} must prove every file");
+            let operands = vec![
+                flag.to_owned(),
+                "/etc/shadow".to_owned(),
+                "Cargo.toml".to_owned(),
+            ];
+            assert!(
+                !safe_stat_arguments(&operands, context),
+                "{flag} must prove every file"
+            );
         }
     }
 }
