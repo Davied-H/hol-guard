@@ -11,6 +11,13 @@ Those entries are this installation's own earlier generations. Replacing them
 is what a reinstall is for. A Guard-looking handler that names a different
 Guard home, or names none at all, still belongs to an owner this install
 cannot speak for, so it keeps its refusal.
+
+Naming this home is not enough on its own. Only the launcher spellings Guard
+itself writes are claimed, token for token: the bridge launcher, the native
+bridge wrapper around it, and the isolated CLI fallback with the options the
+installer emits. Anything else - an extra argument, a reordered launcher, a
+wrapper of someone else's - is a command this install never wrote, so it stays
+unowned and keeps its conflict even when the Guard home inside it is ours.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from urllib.parse import parse_qsl
 
+from .codex_hook_bridge_runtime import decode_bridge_config_argument
 from .codex_hook_command_line import hook_command_tokens, hook_token_name
 from .codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND
 from .codex_hook_events import MANAGED_CODEX_HOOK_EVENTS
@@ -27,6 +35,14 @@ from .codex_hook_events import MANAGED_CODEX_HOOK_EVENTS
 _GUARD_HOME_OPTION = "--guard-home"
 _GUARD_HOME_QUERY_KEY = "guard-home"
 _DAEMON_STATE_NAME = "daemon-state.json"
+_BRIDGE_SCRIPT_NAME = "codex_daemon_hook_bridge.py"
+_ISOLATED_FLAG = "-I"
+_INLINE_PROGRAM_FLAG = "-c"
+_BRIDGE_LAUNCH_TOKENS = 4
+_NATIVE_LAUNCH_TOKENS = 6
+_CLI_BOOTSTRAP_MARKER = "codex_plugin_scanner.cli"
+_CLI_GUARD_ARGS_HEAD = ("guard", "hook", "--harness", "codex")
+_CLI_VALUE_OPTIONS = ("--home", _GUARD_HOME_OPTION, "--workspace")
 
 
 def _resolved(value: str) -> Path | None:
@@ -76,44 +92,84 @@ def _payload_guard_home(payload: Mapping[str, object]) -> set[Path]:
     return homes
 
 
-def _bridge_payloads(tokens: Sequence[str], *, windows: bool | None) -> list[Mapping[str, object]]:
-    """The JSON configuration operands a native bridge launcher was given."""
+def _bridge_launch_tokens(tokens: Sequence[str]) -> list[str] | None:
+    """The interpreter argv of a bridge launcher, once its native wrapper is stripped."""
 
-    payloads: list[Mapping[str, object]] = []
-    rest = list(tokens[2:]) if len(tokens) > 2 and tokens[1] == NATIVE_CODEX_HOOK_COMMAND else list(tokens)
-    bridge = next(
-        (
-            index
-            for index, token in enumerate(rest)
-            if hook_token_name(token, windows=windows) == "codex_daemon_hook_bridge.py"
-        ),
-        None,
-    )
-    if bridge is None:
-        return payloads
-    for operand in rest[bridge + 1 :]:
-        try:
-            decoded = json.loads(operand)
-        except (TypeError, ValueError):
-            continue
-        if isinstance(decoded, Mapping):
-            payloads.append(decoded)
-    return payloads
+    if len(tokens) == _NATIVE_LAUNCH_TOKENS and tokens[1] == NATIVE_CODEX_HOOK_COMMAND:
+        return list(tokens[2:])
+    if len(tokens) == _BRIDGE_LAUNCH_TOKENS:
+        return list(tokens)
+    return None
+
+
+def _bridge_payload(tokens: Sequence[str], *, windows: bool | None) -> Mapping[str, object] | None:
+    """The configuration a bridge launcher Guard wrote carries, or ``None``.
+
+    The launcher is one interpreter, the isolation flag, the bridge script and
+    exactly one config operand. A command carrying anything else is not a
+    launcher this installer emitted.
+    """
+
+    launch = _bridge_launch_tokens(tokens)
+    if launch is None or launch[1] != _ISOLATED_FLAG:
+        return None
+    if hook_token_name(launch[2], windows=windows) != _BRIDGE_SCRIPT_NAME:
+        return None
+    try:
+        decoded = json.loads(decode_bridge_config_argument(launch[3]))
+    except (TypeError, ValueError):
+        return None
+    return decoded if isinstance(decoded, Mapping) else None
+
+
+def _cli_guard_arguments(tokens: Sequence[str]) -> list[str] | None:
+    """The ``guard hook`` arguments of the isolated CLI fallback Guard writes.
+
+    Every trailing token must be one of the options the installer emits, given
+    once and with a value, so an argument Guard would never write disqualifies
+    the whole command.
+    """
+
+    if len(tokens) < len(_CLI_GUARD_ARGS_HEAD) + 4:
+        return None
+    if tokens[1] != _ISOLATED_FLAG or tokens[2] != _INLINE_PROGRAM_FLAG:
+        return None
+    if _CLI_BOOTSTRAP_MARKER not in tokens[3]:
+        return None
+    arguments = list(tokens[4:])
+    if tuple(arguments[: len(_CLI_GUARD_ARGS_HEAD)]) != _CLI_GUARD_ARGS_HEAD:
+        return None
+    options = arguments[len(_CLI_GUARD_ARGS_HEAD) :]
+    seen: set[str] = set()
+    index = 0
+    while index < len(options):
+        option = options[index]
+        if option not in _CLI_VALUE_OPTIONS or option in seen or index + 1 >= len(options):
+            return None
+        seen.add(option)
+        index += 2
+    return arguments
 
 
 def codex_hook_guard_home(command: str, *, windows: bool | None = None) -> Path | None:
-    """The single Guard home a Codex hook command is bound to, when it names one.
+    """The single Guard home a launcher Guard wrote is bound to, when it names one.
 
-    Returns ``None`` when the command names no Guard home, or names more than
-    one, because neither state identifies an installation that may replace it.
+    Returns ``None`` for a command that is not one of Guard's own launcher
+    spellings, and for one that names no Guard home or names more than one,
+    because none of those identify an installation that may replace it.
     """
 
     tokens = hook_command_tokens(command, windows=windows)
     if not tokens:
         return None
-    homes = _option_guard_home(tokens)
-    for payload in _bridge_payloads(tokens, windows=windows):
-        homes |= _payload_guard_home(payload)
+    payload = _bridge_payload(tokens, windows=windows)
+    if payload is not None:
+        homes = _payload_guard_home(payload)
+    else:
+        arguments = _cli_guard_arguments(tokens)
+        if arguments is None:
+            return None
+        homes = _option_guard_home(arguments)
     if len(homes) != 1:
         return None
     return next(iter(homes))

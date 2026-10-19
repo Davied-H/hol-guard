@@ -12,6 +12,7 @@ import pytest
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
 from codex_plugin_scanner.guard.adapters.codex import CodexHarnessAdapter
 from codex_plugin_scanner.guard.codex_config import dump_toml, read_toml_payload
+from codex_plugin_scanner.guard.codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND
 from codex_plugin_scanner.guard.codex_hook_self_binding import (
     codex_hook_guard_home,
     self_bound_hook_bindings,
@@ -101,41 +102,73 @@ def test_reinstall_keeps_a_foreign_handler_sharing_a_group_with_a_stale_one(tmp_
     assert not [command for command in commands if command.startswith("/usr/bin/python3")]
 
 
-@pytest.mark.parametrize(
-    "command",
-    (
-        "python -m codex_plugin_scanner.cli guard hook --harness codex --guard-home /srv/guard",
-        "python -m codex_plugin_scanner.cli guard hook --harness codex --guard-home=/srv/guard",
-    ),
-)
-def test_guard_home_option_identifies_the_installation(command):
+def _cli_command(*arguments: str) -> str:
+    """The isolated CLI fallback spelling the installer writes."""
+
+    bootstrap = "import sys;sys.path.insert(0, '/opt/guard');from codex_plugin_scanner.cli import main"
+    return shlex.join(("/usr/bin/python3", "-I", "-c", bootstrap, "guard", "hook", "--harness", "codex", *arguments))
+
+
+def _bridge_command(payload: dict[str, object], *extra: str) -> str:
+    """The bridge launcher spelling the installer writes."""
+
+    return shlex.join(
+        ("/opt/guard/python", "-I", "/opt/guard/codex_daemon_hook_bridge.py", json.dumps(payload), *extra)
+    )
+
+
+_BRIDGE_PAYLOAD: dict[str, object] = {
+    "state_path": "/srv/guard/daemon-state.json",
+    "query": "guard-home=/srv/guard&home=/home/dev",
+    "fallback_command": ["python", "-m", "codex_plugin_scanner.cli", "--guard-home", "/srv/guard"],
+}
+
+
+def test_guard_home_option_identifies_the_installation():
+    command = _cli_command("--home", "/home/dev", "--guard-home", "/srv/guard", "--workspace", "/w")
     assert codex_hook_guard_home(command) == Path("/srv/guard")
 
 
 def test_native_bridge_payload_identifies_the_installation():
-    payload = {
-        "state_path": "/srv/guard/daemon-state.json",
-        "query": "guard-home=/srv/guard&home=/home/dev",
-        "fallback_command": ["python", "-m", "codex_plugin_scanner.cli", "--guard-home", "/srv/guard"],
-    }
-    command = "/opt/guard/python -I /opt/guard/codex_daemon_hook_bridge.py " + shlex.quote(json.dumps(payload))
-    assert codex_hook_guard_home(command) == Path("/srv/guard")
+    assert codex_hook_guard_home(_bridge_command(_BRIDGE_PAYLOAD)) == Path("/srv/guard")
+
+
+def test_the_native_bridge_wrapper_identifies_the_installation():
+    wrapped = shlex.join(("/opt/guard/hol-guard-runtime", NATIVE_CODEX_HOOK_COMMAND))
+    assert codex_hook_guard_home(f"{wrapped} {_bridge_command(_BRIDGE_PAYLOAD)}") == Path("/srv/guard")
 
 
 @pytest.mark.parametrize(
     "command",
     (
-        "python -m codex_plugin_scanner.cli guard hook --harness codex",
+        _cli_command(),
         "/usr/local/bin/hol-guard-codex-hook.sh",
-        "python -m codex_plugin_scanner.cli guard hook --guard-home /srv/guard --guard-home /srv/other",
+        # A bridge payload whose fields disagree names no one installation.
+        _bridge_command({**_BRIDGE_PAYLOAD, "state_path": "/srv/other/daemon-state.json"}),
     ),
 )
 def test_a_command_naming_no_single_guard_home_identifies_nothing(command):
     assert codex_hook_guard_home(command) is None
 
 
+@pytest.mark.parametrize(
+    "command",
+    (
+        # An argument the installer never writes, on either launcher spelling.
+        _cli_command("--guard-home", "/srv/guard") + " --tampered",
+        _bridge_command(_BRIDGE_PAYLOAD, "--tampered"),
+        # A wrapper of someone else's around a launcher of ours.
+        "/usr/bin/env " + _cli_command("--guard-home", "/srv/guard"),
+        # An option the installer only writes once.
+        _cli_command("--guard-home", "/srv/guard", "--guard-home", "/srv/guard"),
+    ),
+)
+def test_a_tampered_command_is_not_this_installations_own(command):
+    assert codex_hook_guard_home(command) is None
+
+
 def test_self_bound_bindings_name_the_group_by_matcher_alone():
-    handler = {"type": "command", "command": "guard --guard-home /srv/guard"}
+    handler = {"type": "command", "command": _cli_command("--guard-home", "/srv/guard")}
     hooks = {"PreToolUse": [{"matcher": "Bash", "hooks": [handler, {"type": "command", "command": "other"}]}]}
     bindings = self_bound_hook_bindings(hooks, guard_home=Path("/srv/guard"))
     assert bindings == [{"event": "PreToolUse", "group": {"matcher": "Bash"}, "handler": handler}]
