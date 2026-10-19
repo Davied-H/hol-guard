@@ -62,18 +62,61 @@ def test_a_call_without_a_credential_named_field_is_not_the_shape() -> None:
         assert native_tools_scope_error(_scenario(), calls, case, guard_denied=True)
 
 
-
 def test_delegation_without_a_schema_shaped_yield_does_not_pass() -> None:
     parent = {"tasks": [{"name": "lookup", "outputSchema": SCHEMA, "task": "read README.md"}]}
     calls, case = _calls(parent)
     assert native_tools_scope_error(_scenario(), calls, case) == (
         "the delegated task did not return a schema-shaped result"
     )
-    for data in (None, "no report", ["not", "a", "schema"]):
+    for data in (None, "no report"):
         calls, case = _calls(parent, data=data)
         assert native_tools_scope_error(_scenario(), calls, case) == (
             "the delegated task did not return a schema-shaped result"
         )
+    # A report that is neither an object nor text is stopped earlier, by the yield check.
+    calls, case = _calls(parent, data=["not", "a", "schema"])
+    assert native_tools_scope_error(_scenario(), calls, case) == "delegated result report was missing"
+
+
+def test_a_credential_named_field_with_a_literal_is_not_the_exemptible_shape() -> None:
+    answer = {"tokenMentions": "no", "firstSentence": "Settings example project."}
+    for literal in (
+        {"default": "x"},
+        {"const": "x"},
+        {"enum": ["x"]},
+        {"examples": ["x"]},
+        {"example": "x"},
+        {"items": {"default": "x"}},
+        {"$ref": "#/$defs/value"},
+    ):
+        schema = {
+            "type": "object",
+            "properties": {"tokenMentions": {"type": "string", **literal}, "firstSentence": {"type": "string"}},
+        }
+        for parent in (
+            {"tasks": [{"name": "lookup", "outputSchema": schema, "task": "read README.md"}]},
+            {"outputSchema": schema, "tasks": [{"name": "lookup", "task": "read README.md"}]},
+        ):
+            calls, case = _calls(parent, data=answer)
+            expected = "the task call put a concrete value under a credential-named result field"
+            assert native_tools_scope_error(_scenario(), calls, case) == expected, literal
+            # A denial of this shape is the runtime working as designed, not a false positive.
+            assert native_tools_scope_error(_scenario(), calls, case, guard_denied=True) == expected, literal
+
+
+def test_a_literal_on_a_neutral_field_or_nested_under_a_label_does_not_change_the_shape() -> None:
+    answer = {"tokenMentions": "no", "firstSentence": "Settings example project."}
+    schema = {
+        "type": "object",
+        "properties": {
+            "tokenMentions": {"type": "string"},
+            "firstSentence": {"type": "string", "default": "x", "examples": ["y"]},
+        },
+    }
+    parent = {"tasks": [{"name": "lookup", "outputSchema": schema, "task": "read README.md"}]}
+    calls, case = _calls(parent, data=answer)
+    assert native_tools_scope_error(_scenario(), calls, case) is None
+
 
 def test_a_denied_task_call_surfaces_when_it_has_the_shape() -> None:
     parent = {"tasks": [{"name": "lookup", "outputSchema": SCHEMA, "task": "read README.md"}]}
