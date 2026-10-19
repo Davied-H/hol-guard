@@ -344,6 +344,55 @@ class _StuckPublisher:
         return None
 
 
+def test_closed_publisher_does_not_spin_during_hook_readiness() -> None:
+    from codex_plugin_scanner.guard.daemon.hook_worker_readiness import _wait_nudging_publisher
+
+    class Retired:
+        closed = True
+        last_error = None
+        nudges = 0
+        waits = 0
+
+        def nudge_retry(self) -> bool:
+            self.nudges += 1
+            return False
+
+        def wait_until_ready(self, _deadline: float) -> bool:
+            self.waits += 1
+            return False
+
+    retired = Retired()
+    started = time.monotonic()
+    _wait_nudging_publisher(retired, retired.wait_until_ready, started + 30.0, workspace=None, pending=False)
+    assert retired.nudges == retired.waits == 0
+    assert time.monotonic() - started < 1.0
+
+
+def test_publisher_retired_while_waiting_stops_without_busy_spin() -> None:
+    from codex_plugin_scanner.guard.daemon.hook_worker_readiness import _wait_nudging_publisher
+
+    class Retiring:
+        closed = False
+        last_error = None
+        nudges = 0
+        waits = 0
+
+        def nudge_retry(self) -> bool:
+            self.nudges += 1
+            return False
+
+        def wait_until_ready(self, _deadline: float) -> bool:
+            self.waits += 1
+            self.closed = True
+            return False
+
+    retiring = Retiring()
+    started = time.monotonic()
+    _wait_nudging_publisher(retiring, retiring.wait_until_ready, started + 30.0, workspace=None, pending=False)
+    assert retiring.nudges == retiring.waits == 1
+    assert time.monotonic() - started < 1.0
+
+
 def test_repeated_resident_failures_fail_the_hook_fast(tmp_path: Path) -> None:
     publisher = _StuckPublisher(streak=RESIDENT_FAIL_FAST_STREAK)
     worker = SimpleNamespace(_publish_native_policy=True, policy_snapshot_publisher=publisher, store=None)
