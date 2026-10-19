@@ -47,6 +47,7 @@ import pytest
 
 from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
+from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
 from tests.benign_fp_gate_connectors import write_connectors
 from tests.benign_fp_gate_projects import (
@@ -330,6 +331,9 @@ def build_fixture(root: Path) -> BenignFixture:
     # The live Gauntlet's placeholder docs and field-copy source, read by its shell cases.
     _write(worktree / "docs" / "review-notes.md", REVIEW_NOTES)
     _write(worktree / "dashboard" / "src" / "session.js", SESSION_SOURCE)
+    # The live Gauntlet's token-handling sources (redirect route, link worker, HMAC helper).
+    for relative, text in TOKEN_SOURCES.items():
+        _write(worktree / relative, text)
     # Fresh worktree package whose dependencies are installed only in the canonical checkout.
     _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")
     _write(worktree / "web" / "package.json", '{"private": true}\n')

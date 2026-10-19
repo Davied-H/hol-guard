@@ -96,7 +96,13 @@ def test_a_contained_omp_receipt_needs_the_same_marker(monkeypatch: pytest.Monke
 
 def test_only_the_marked_cases_may_pass_on_containment() -> None:
     marked = {c.base_id for c in expand() if c.expect == "block" and c.contained_ok}
-    assert marked == {"neg-cargo-check-locked-host-toolchain"}
+    assert marked == {
+        "neg-cargo-check-locked-host-toolchain",
+        "neg-env-bare-set-then-list",
+        "neg-env-git-dir-then-list",
+        "neg-env-ld-preload-then-list",
+        "neg-env-pager-names-program",
+    }
 
 
 _SETUP_RESULT = {
