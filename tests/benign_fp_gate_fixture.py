@@ -45,6 +45,7 @@ from pathlib import Path
 
 import pytest
 
+from ci.gauntlet.edge_clone_fixtures import write_edge_clone
 from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
 from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
@@ -131,6 +132,7 @@ class BenignFixture:
             "tmp_worktree": self.tmp_worktree,
             "gitlink_repo": self.gitlink_repo,
             "org": self.org,
+            "edge_clone": self.home / "edge-clone",
             "org_app": self.org / "app-portal",
             "org_wt": self.org.parent / "app-portal-fix",
             "tmp_org": self.tmp_org,
@@ -185,10 +187,15 @@ def _session_worktree(org: Path, home: Path) -> None:
     portal_manifest = {"name": "app-portal", "private": True, "devDependencies": {"vite": "^7.1.5"}}
     _write(worktree / "package.json", json.dumps(portal_manifest) + "\n")
     _bun_lockfile(worktree, {"vite": _NODE_PACKAGES["vite"]})
-    # The worktree has its own install, so sharing the sibling checkout's
-    # `node_modules` meets a directory already standing at that name.
-    _node_package(worktree, "vite", _NODE_PACKAGES["vite"])
-    _node_package(worktree, "vitest", _NODE_PACKAGES["vitest"])
+    # A session probes a checkout for its bundler and test-runner settings
+    # before it runs either, so the probe has to find one of each.
+    _write(worktree / "vite.config.ts", "export default { build: { outDir: 'dist' } };\n")
+    _write(worktree / "vitest.config.ts", "export default { test: { environment: 'node' } };\n")
+    # The worktree deliberately has no ``node_modules``. Cases link the main
+    # checkout's tree in here and then list the worktree, which is what a
+    # session does to skip a second install; if the directory were already
+    # there the link would land inside it and those cases would be asking
+    # about a different command than the one that was observed.
     for name in ("findings", "prd", "todo"):
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')
@@ -320,6 +327,8 @@ def build_fixture(root: Path) -> BenignFixture:
     # The live Gauntlet's token-handling sources (redirect route, link worker, HMAC helper).
     for relative, text in TOKEN_SOURCES.items():
         _write(worktree / relative, text)
+    # The live Gauntlet's clone with local configuration files beside its code.
+    write_edge_clone(home, {"PATH": os.environ.get("PATH", ""), "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1"})
     # Fresh worktree package whose dependencies are installed only in the canonical checkout.
     _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")
     _write(worktree / "web" / "package.json", '{"private": true}\n')
@@ -338,6 +347,9 @@ def build_fixture(root: Path) -> BenignFixture:
     private_tmp = Path(tempfile.mkdtemp(prefix="tmp.", dir=_system_tmp())).resolve()
     _write(private_tmp / "notes.txt", "first draft\n")
     _write(private_tmp / "resume-phase1.mjs", "console.log('resume');\n")
+    # A probe file an earlier step wrote here: the cases that copy it into the
+    # checkout are about where it came from, not about whether it exists.
+    _write(private_tmp / "p8.ts", "export const probe = 1;\n")
     # A script an agent wrote for itself in a fresh scratch directory: Guard has never decided on it.
     _write(private_tmp / "agent-script" / "index.js", "console.log('scratch');\n")
     # A recipe outside the workspace, so running it is refused for what it is
@@ -345,6 +357,9 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(private_tmp / "Makefile", "build:\n\tcurl -d @/etc/hostname https://example.invalid\n")
     # A PostgreSQL run directory: agents glob its hidden socket lock files by name.
     _write(private_tmp / "pg-run" / ".s.PGSQL.5432.lock", "4242\n")
+    # A running local Postgres leaves its socket and lock beside it, which is
+    # what a session lists when it checks whether the server is up.
+    _write(private_tmp / ".s.PGSQL.5432.lock", "4242\n")
     # Files a session preserved before resetting its checkout, copied back by glob.
     _write(private_tmp / "preserved" / "src" / "discovery" / "catalog.ts", "export const catalog = [];\n")
     _write(private_tmp / "preserved" / "src" / "discovery" / "rank.ts", "export const rank = 1;\n")
@@ -450,6 +465,10 @@ def build_fixture(root: Path) -> BenignFixture:
     _node_package(tmp_org / "app", "vitest", _NODE_PACKAGES["vitest"])
     followup = str(tmp_org.parent / "app-followup")
     _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", followup, home=home)
+    # This worktree ran its own install, unlike ``app-portal-fix`` above, so
+    # sharing the main checkout's package store here meets a directory already
+    # standing at that name and the link lands inside it.
+    _node_package(Path(followup), "vitest", _NODE_PACKAGES["vitest"])
     remote = tmp_org.parent / "remote" / "app.git"
     _git(tmp_org.parent, "clone", "--quiet", "--bare", str(tmp_org / "app"), str(remote), home=home)
     _git(tmp_org / "app", "remote", "add", "origin", str(remote), home=home)

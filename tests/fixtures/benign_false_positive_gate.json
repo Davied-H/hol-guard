@@ -6248,6 +6248,185 @@
       "expect": "allow"
     },
     {
+      "id": "gauntlet-grep-rln-quoted-marker-edge-clone",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rln \"edge_session_marker\" ${HOME}/edge-clone/"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-find-exec-grep-l-edge-clone-workers",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "find ${HOME}/edge-clone/workers -type f -name \"*.ts\" -exec grep -l \"edge_session_marker\" {} \\;"
+      },
+      "cwd": "edge_clone",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-find-exec-grep-l-workspace-absolute",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "find ${PARENT}/src -type f -name \"*.ts\" -exec grep -l \"retryLimit\" {} \\;"
+      },
+      "cwd": "parent",
+      "expect": "allow"
+    },
+    {
+      "id": "omp-grep-edge-clone-root-plain-pattern",
+      "fix_area": "omp",
+      "harnesses": [
+        "omp"
+      ],
+      "tool": "grep",
+      "tool_input": {
+        "pattern": "edge_session_marker",
+        "path": "${HOME}/edge-clone"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-grep-rn-edge-clone-env-backup-value",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rn EDGE_PREVIOUS_SETTING ${HOME}/edge-clone/"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-grep-rln-edge-clone-regex-over-env-backup",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rln \"edge.*setting\" ${HOME}/edge-clone/"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-grep-rn-edge-clone-inverted-match",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rnv edge_session_marker ${HOME}/edge-clone/"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-grep-rc-edge-clone-count-mode",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rc edge_session_marker ${HOME}/edge-clone/"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-find-exec-grep-l-edge-clone-without-type-f",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "find ${HOME}/edge-clone/workers -name \"*.ts\" -exec grep -l \"edge_session_marker\" {} \\;"
+      },
+      "cwd": "edge_clone",
+      "expect": "not_allow",
+      "contained_ok": true
+    },
+    {
+      "id": "neg-omp-grep-edge-clone-env-backup-value",
+      "fix_area": "negative",
+      "harnesses": [
+        "omp"
+      ],
+      "tool": "grep",
+      "tool_input": {
+        "pattern": "edge_previous_setting",
+        "path": "${HOME}/edge-clone"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-omp-grep-edge-clone-regex-over-env-backup",
+      "fix_area": "negative",
+      "harnesses": [
+        "omp"
+      ],
+      "tool": "grep",
+      "tool_input": {
+        "pattern": "edge.*setting",
+        "path": "${HOME}/edge-clone"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
       "id": "gauntlet-grep-rln-checkout-from-parent-directory",
       "fix_area": "shell",
       "harnesses": [
@@ -12067,7 +12246,7 @@
       "expect": "allow"
     },
     {
-      "id": "session-ln-s-sibling-wt-modules-fresh-name",
+      "id": "session-ln-s-tmp-sibling-modules-already-installed",
       "fix_area": "queue",
       "harnesses": [
         "codex",
@@ -12078,13 +12257,13 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_WT}/shared-modules && ls -la ${ORG_WT}/ | grep shared"
+        "command": "ln -s ${TMP_ORG}/app/node_modules ${TMP_ORG_WT}/node_modules && ls -la ${TMP_ORG_WT}/ | grep node_module"
       },
-      "cwd": "org",
+      "cwd": "tmp_org",
       "expect": "allow"
     },
     {
-      "id": "neg-ln-s-into-existing-modules-taken-name",
+      "id": "neg-ln-s-into-installed-modules-taken-name",
       "fix_area": "negative",
       "harnesses": [
         "codex",
@@ -12095,9 +12274,9 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "ln -s ${ORG}/app-portal/node_modules/vitest ${ORG_WT}/node_modules"
+        "command": "ln -s ${TMP_ORG}/app/node_modules/vitest ${TMP_ORG_WT}/node_modules"
       },
-      "cwd": "org",
+      "cwd": "tmp_org",
       "expect": "not_allow"
     },
     {
@@ -12112,9 +12291,9 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_WT}/package.json"
+        "command": "ln -s ${TMP_ORG}/app/node_modules ${TMP_ORG_WT}/package.json"
       },
-      "cwd": "org",
+      "cwd": "tmp_org",
       "expect": "not_allow"
     },
     {
@@ -14470,6 +14649,345 @@
       "cwd": "worktree",
       "expect": "not_allow",
       "contained_ok": true
+    },
+    {
+      "id": "plan-note-write-codex-plans",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/plans/acme-closeout.md",
+        "content": "# Closeout\n- retry window checked\n"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "plan-note-write-claude-plans",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.claude/plans/acme-closeout.md",
+        "content": "# Closeout\n- retry window checked\n"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "plan-note-copy-codex-plans",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp README.md ~/.codex/plans/acme-closeout.md"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "plan-note-copy-claude-plans",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp README.md ~/.claude/plans/acme-closeout.md"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "plan-note-redirect-append-codex-plans",
+      "fix_area": "redirect",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "echo \"- follow-up: confirm the report window\" >> ~/.codex/plans/acme-closeout-followups.md"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "plan-note-heredoc-codex-plans",
+      "fix_area": "redirect",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cat > ~/.codex/plans/acme-closeout-summary.md <<'EOF'\n# Closeout\n- retry window checked\nEOF"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-plan-note-write-codex-hooks",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/hooks.json",
+        "content": "{}\n"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-write-codex-config",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/config.toml",
+        "content": "model = \"synthetic\"\n"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-write-plans-instruction-file",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/plans/AGENTS.md",
+        "content": "# Instructions\n"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-write-plans-non-markdown",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/plans/notes.txt",
+        "content": "notes\n"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-write-plans-subfolder",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/plans/evidence/closeout.md",
+        "content": "# Closeout\n"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-write-plans-traversal",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/plans/../hooks.json",
+        "content": "{}\n"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-write-codex-rules",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${HOME}/.codex/rules/closeout.md",
+        "content": "# Rule\n"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-copy-codex-hooks",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp README.md ~/.codex/hooks.json"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-copy-codex-rules",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp README.md ~/.codex/rules/closeout.md"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-copy-plans-non-markdown",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp README.md ~/.codex/plans/notes.txt"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-copy-plans-traversal",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp README.md ~/.codex/plans/../hooks.json"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-redirect-codex-hooks",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "echo '{}' > ~/.codex/hooks.json"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-redirect-plans-instruction-file",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "echo done > ~/.codex/plans/AGENTS.md"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-redirect-plans-traversal",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "echo done > ~/.codex/plans/../hooks.json"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-redirect-plan-note-then-codex-hooks",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "echo done > ~/.codex/plans/acme-closeout.md && echo '{}' > ~/.codex/hooks.json"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-plan-note-heredoc-codex-hooks",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cat > ~/.codex/hooks.json <<'EOF'\n{}\nEOF"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
     }
   ],
   "mcp_cases": [
