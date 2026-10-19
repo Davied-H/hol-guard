@@ -109,6 +109,30 @@ def test_native_probe_budget_is_shared_with_one_bounded_retry(
     assert started < calls[0] <= time.monotonic() + 1.5
 
 
+@pytest.mark.parametrize("status", [1, 3, 126, 127])
+def test_native_child_nonblocking_error_is_converted_to_blocking_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(bridge, "_native_bridge_executable", lambda _home: tmp_path / "runtime")
+    monkeypatch.setattr(bridge.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=status))
+    assert _run(tmp_path) == 2
+
+
+@pytest.mark.usefixtures("without_a_runtime")
+def test_missing_native_prompt_authority_blocks_unreviewed_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        bridge.sys, "stdin", io.StringIO('{"hook_event_name":"UserPromptSubmit","prompt":"read my tokens"}')
+    )
+    assert _run(tmp_path) == 0
+    response = json.loads(capsys.readouterr().out)
+    assert response["decision"] == "block"
+    assert bridge._NATIVE_RUNTIME_UNAVAILABLE in response["reason"]
+
+
 def test_the_launcher_hands_the_runtime_this_call_s_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
