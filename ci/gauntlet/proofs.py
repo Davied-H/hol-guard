@@ -12,7 +12,7 @@ from .command_outputs import command_outputs_match as command_outputs_match
 from .input_evidence import input_digest, input_matches, post_input_matches
 from .native_routes import native_route_error
 from .remote_code import REMOTE_CODE_CASES
-from .review_fixtures import GITHUB_REVIEW_CASE, WORKTREE_CASE
+from .review_fixtures import GITHUB_LOOKUP_CASE, GITHUB_REVIEW_CASE, WORKTREE_CASE
 from .script_cases import CREDENTIAL_STORE_CASES, SCRIPT_BLOCK_REASONS, STORE_CHECK
 from .session_folder import EDIT_CASE as SESSION_EDIT_CASE
 from .session_folder import SHELL_CASE as SESSION_SHELL_CASE
@@ -70,6 +70,8 @@ def required_checks(scenario: Scenario) -> set[str]:
         checks.add("protected:.git/config")
     if scenario.id == GITHUB_REVIEW_CASE:
         checks.add("github-stub-calls-exact")
+    if scenario.id == GITHUB_LOOKUP_CASE:
+        checks.add("github-lookup-ran-once")
     if scenario.id == LONG_LIVED_CLONE_CASE:
         checks.add("long-lived-branch-checked-out")
     if scenario.id == SESSION_EDIT_CASE:
