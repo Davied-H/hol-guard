@@ -193,17 +193,15 @@ def _desktop_main(
         return 1
     if probe_command is None:
         native = _native_bridge_executable(state.parent)
-        unauthenticated = (
-            _NATIVE_RUNTIME_MISSING_CODE
-            if native is None
-            else _registration_failure(
-                state_path=state,
-                fallback_command=fallback_command,
-                start_command=start_command,
-                hook_timeouts=hook_timeouts,
-                manifest_path=manifest_path,
-                config_json=config_json,
-            )
+        if native is None:
+            return _desktop_denial(event_name, _NATIVE_RUNTIME_MISSING_CODE)
+        unauthenticated = _registration_failure(
+            state_path=state,
+            fallback_command=fallback_command,
+            start_command=start_command,
+            hook_timeouts=hook_timeouts,
+            manifest_path=manifest_path,
+            config_json=config_json,
         )
         if unauthenticated is not None:
             return _desktop_denial(event_name, unauthenticated)
