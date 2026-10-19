@@ -5,8 +5,8 @@
 //! tool does: `cat /tmp/x.ts > <clone>/src/lib/y.ts`, an append, a quoted
 //! heredoc, or a staging copy followed by a write. Hooks, settings,
 //! credential files, links and executables keep their review, and so does any
-//! folder that is not a repository. Instruction files are judged as they are
-//! inside a repository.
+//! folder that is not a repository. Instruction files outside the session
+//! continue to require review.
 
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -49,6 +49,8 @@ fn layout(name: &str) -> Layout {
         clone.join("src/api/login"),
         clone.join("scripts"),
         clone.join(".git/hooks"),
+        clone.join(".git/objects"),
+        clone.join(".git/refs"),
     ] {
         std::fs::create_dir_all(directory).unwrap();
     }
@@ -180,36 +182,41 @@ fn protected_targets_links_and_other_folders_keep_their_review() {
 }
 
 #[test]
-fn instruction_file_heredocs_are_not_held_where_redirects_are_not() {
-    // The same write as the redirect form: a repository session runs the
-    // heredoc inside its sandbox, and a session folder has no sandbox around
-    // the clone, so the target checks stand in for it.
+fn instruction_file_heredocs_outside_the_session_remain_reviewed() {
+    // A session outside a clone must not turn an instruction-file write into
+    // an unsandboxed no-op proof. A newly loaded AGENTS.md can redirect an agent.
     let layout = layout("instruction-heredoc");
     let clone = layout.clone.display();
-    let command = format!("cat > {clone}/AGENTS.md <<'EOF'\nmore rules\nEOF");
-    assert!(permitted(&layout, &layout.session, &command), "{command}");
+    let command = format!("cat > {clone}/AGENTS.md <<'EOF'\\nmore rules\\nEOF");
+    assert!(!permitted(&layout, &layout.session, &command), "{command}");
 }
 
 #[test]
-fn instruction_file_redirects_are_judged_as_from_inside_the_repository() {
-    // A plain redirect into an instruction file is a warning in a repository
-    // session; the session folder must not read it any looser or any tighter.
+fn instruction_file_redirects_outside_the_session_remain_reviewed() {
     let layout = layout("instructions");
     let (clone, scratch) = (layout.clone.display(), layout.scratch.display());
-    for (outside, inside) in [
-        (
-            format!("cat {scratch}/x.ts >> {clone}/AGENTS.md"),
-            format!("cat {scratch}/x.ts >> AGENTS.md"),
-        ),
-        (
-            format!("cat {scratch}/x.ts > {clone}/AGENTS.md"),
-            format!("cat {scratch}/x.ts > AGENTS.md"),
-        ),
+    for command in [
+        format!("cat {scratch}/x.ts >> {clone}/AGENTS.md"),
+        format!("cat {scratch}/x.ts > {clone}/AGENTS.md"),
     ] {
-        assert_eq!(
-            permitted(&layout, &layout.session, &outside),
-            permitted(&layout, &layout.clone, &inside),
-            "{outside}"
-        );
+        assert!(!permitted(&layout, &layout.session, &command), "{command}");
+    }
+}
+
+#[test]
+fn empty_git_markers_cannot_turn_plain_home_folders_into_workspaces() {
+    let layout = layout("false-repository");
+    let scratch = layout.scratch.display();
+    for (name, directory) in [("empty-dir", true), ("empty-file", false)] {
+        let folder = layout.home.join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        let marker = folder.join(".git");
+        if directory {
+            std::fs::create_dir_all(&marker).unwrap();
+        } else {
+            std::fs::write(&marker, "").unwrap();
+        }
+        let command = format!("cat {scratch}/x.ts > {}/report.ts", folder.display());
+        assert!(!permitted(&layout, &layout.session, &command), "{command}");
     }
 }
