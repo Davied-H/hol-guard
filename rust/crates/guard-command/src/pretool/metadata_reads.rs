@@ -202,11 +202,17 @@ pub(super) fn safe_stat_arguments(arguments: &[String], context: super::PathCont
             operands.push(option);
         } else if option == "--" {
             after_options = true;
-        } else if matches!(option, "-f" | "-c" | "-t") {
-            // The next word is the output format, never a path.
+        } else if option == "-c"
+            || (matches!(option, "-f" | "-t")
+                && cfg!(any(target_os = "macos", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd", target_os = "dragonfly")))
+        {
+            // BSD stat takes a format operand for -f/-t, GNU stat does not.
             if !values.next().is_some_and(|format| stat_format(format)) {
                 return false;
             }
+        } else if matches!(option, "-f" | "-t") {
+            // GNU stat: -f prints filesystem data, -t is terse. The *next*
+            // argument is a file operand and must pass its own path proof.
         } else if let Some(long) = option.strip_prefix("--") {
             let allowed = match long.split_once('=') {
                 Some(("format" | "printf", format)) => stat_format(format),
@@ -298,4 +304,24 @@ fn plain_path(value: &str) -> bool {
         && !value.contains([
             '$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '*', '?', '{', '}', '[', ']',
         ])
+}
+
+
+#[cfg(all(test, target_os = "linux"))]
+mod stat_operand_regression_tests {
+    use super::*;
+
+    #[test]
+    fn gnu_short_flags_do_not_hide_the_next_file_operand() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let context = super::super::PathContext {
+            home_dir: Some(root),
+            cwd: Some(root),
+            ..Default::default()
+        };
+        for flag in ["-f", "-t"] {
+            let operands = vec![flag.to_owned(), "/etc/shadow".to_owned(), "Cargo.toml".to_owned()];
+            assert!(!safe_stat_arguments(&operands, context), "{flag} must prove every file");
+        }
+    }
 }

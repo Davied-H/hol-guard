@@ -558,10 +558,8 @@ fn safe_head_tail_with_targets(
                 continue;
             }
         }
-        // BSD `tail +31 FILE`, an obsolete spelling of `tail -n +31 FILE`.
-        if argument.starts_with('+') && head_tail_count(argument) {
-            continue;
-        }
+        // Bare `+N` is a filename on modern GNU head/tail. Never skip the
+        // read-target proof; `-n +N` remains an option/value pair above.
         if argument.starts_with('-') {
             return false;
         }
@@ -591,5 +589,28 @@ mod jq_stdin_boundary_tests {
         let projection = vec!["-r".to_owned(), ".tests | keys".to_owned()];
         assert!(safe_jq_stdin_arguments(&projection));
         assert_eq!(jq_filter_position(&projection, true), Some(1));
+    }
+}
+
+
+#[cfg(test)]
+mod head_tail_plus_filename_tests {
+    use super::*;
+
+    #[test]
+    fn a_bare_plus_number_is_a_file_operand_not_a_line_count() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let context = super::super::PathContext {
+            home_dir: Some(root),
+            cwd: Some(root),
+            ..Default::default()
+        };
+        assert!(!safe_head_tail_with_targets(
+            &["+31".to_owned(), "Cargo.toml".to_owned()], false, context, true
+        ));
+        assert!(!safe_head_tail_with_targets(&["+31".to_owned()], true, context, true));
+        assert!(safe_head_tail_with_targets(
+            &["-n".to_owned(), "+31".to_owned(), "Cargo.toml".to_owned()], false, context, true
+        ));
     }
 }
