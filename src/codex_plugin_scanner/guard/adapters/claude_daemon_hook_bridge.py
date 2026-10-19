@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -84,7 +85,19 @@ def main(
 def _native_bridge_executable(guard_home: Path) -> Path | None:
     from .claude_hook_argv import NATIVE_CLAUDE_HOOK_FEATURE
 
-    return native_hook_bridge_executable(NATIVE_CLAUDE_HOOK_FEATURE, guard_home=guard_home)
+    # Claude's hook window is 10s, and the child reserves up to 8s of it.
+    # Bound cold native capability probing before launching the child.
+    deadline = time.monotonic() + 1.5
+    runtime = native_hook_bridge_executable(
+        NATIVE_CLAUDE_HOOK_FEATURE, guard_home=guard_home, deadline_monotonic=deadline
+    )
+    # A quick transient probe miss may clear on the second check. Both attempts
+    # share one deadline; a slow or missing runtime still fails closed.
+    if runtime is None and time.monotonic() + 0.25 < deadline:
+        runtime = native_hook_bridge_executable(
+            NATIVE_CLAUDE_HOOK_FEATURE, guard_home=guard_home, deadline_monotonic=deadline
+        )
+    return runtime
 
 
 def _native_bridge_command() -> str:
