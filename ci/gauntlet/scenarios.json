@@ -469,6 +469,15 @@
       "prompt": "Use the grep tool once to find where the text ordinary-workflow-fixture appears under {{workspace}}/src, then tell me which files matched."
     },
     {
+      "id": "omp-native-github-search-prs",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "github"
+      ],
+      "prompt": "Use the github tool once to search pull requests: op search_prs, repo example-org/example-repo, and the query is:pr metrics OR analytics exactly as written. Do not add other arguments or run other searches, and do not inspect the project. Then tell me how many pull requests it listed."
+    },
+    {
       "id": "omp-native-eval-reads-skill-doc",
       "expectation": "allow",
       "oracle": "native-tools",

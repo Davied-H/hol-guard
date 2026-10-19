@@ -13,7 +13,13 @@ from .catalog import Scenario
 from .command_outputs import _text
 from .input_evidence import post_input_matches
 from .proofs import _edit_path, _path
-from .review_fixtures import WORKTREE_CASE, WORKTREE_NAME
+from .review_fixtures import (
+    GITHUB_LOOKUP_CASE,
+    GITHUB_LOOKUP_QUERY,
+    GITHUB_LOOKUP_REPO,
+    WORKTREE_CASE,
+    WORKTREE_NAME,
+)
 
 PRIVATE_TEMP_ROOTS = ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
 # Git Bash ``mktemp -d`` on Windows prints a directory in the fixture profile's
@@ -195,6 +201,32 @@ def _declared_keys_by_yield(calls: list[dict[str, Any]], delegated: set[str]) ->
             reported = True
         bound[call["id"]] = schema - REPORT_KEYS
     return bound
+
+
+# The scenario's own keys, plus the two the harness adds to every call.
+GITHUB_LOOKUP_ARG_KEYS = frozenset({"op", "repo", "query", "i", "intent"})
+
+
+def _github_lookup_error(calls: list[dict[str, Any]], *, require_call: bool = True) -> str | None:
+    """Hold the model to the one requested pull request search, spelled as asked."""
+    lookups = [call for call in calls if call["name"] == "github"]
+    for call in lookups:
+        args = call["args"]
+        if (
+            not isinstance(args, dict)
+            or args.get("op") != "search_prs"
+            or args.get("repo") != GITHUB_LOOKUP_REPO
+            or args.get("query") != GITHUB_LOOKUP_QUERY
+        ):
+            return "the github call was not the requested pull request search"
+        # The prompt asks for no other arguments, and Guard keeps the review on
+        # any key outside the read-only search shape. A model that adds one has
+        # left the scenario, so judge it as drift rather than a Guard decision.
+        if set(args) - GITHUB_LOOKUP_ARG_KEYS:
+            return "the github call carried arguments the scenario did not ask for"
+    if require_call and len(lookups) != 1:
+        return "the model did not make exactly one github search"
+    return None
 
 
 def _write_path(args: dict[str, Any]) -> str:
@@ -449,10 +481,14 @@ def native_tools_scope_error(
         # verdict instead of comparing the literal argument a second time.
         if not guard_denied and not read_in_scope:
             return "delegated lookup did not read README.md"
+    if scenario.id == GITHUB_LOOKUP_CASE and (scope := _github_lookup_error(calls, require_call=False)):
+        return scope
     if scenario.id == BACKGROUND_READ_CASE and (scope := _background_read_error(calls, require_steps=False)):
         return scope
     if guard_denied:
         return None
+    if scenario.id == GITHUB_LOOKUP_CASE and (scope := _github_lookup_error(calls)):
+        return scope
     if not set(scenario.required_tools) <= {call["name"] for call in calls}:
         return "the model did not use every tool the scenario names"
     ran = {call["args"].get("command") for call in calls if call["name"] == "bash"}
