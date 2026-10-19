@@ -106,8 +106,7 @@ def _is_lookup_call(call: tuple[str, ...]) -> bool:
         call[:1] == ("api",)
         and "/search/issues" in call
         and len(queries) == 1
-        and GITHUB_LOOKUP_QUERY in queries[0]
-        and f"repo:{GITHUB_LOOKUP_REPO}" in queries[0]
+        and queries == [f"q={GITHUB_LOOKUP_QUERY} repo:{GITHUB_LOOKUP_REPO} is:pr"]
     )
 
 
