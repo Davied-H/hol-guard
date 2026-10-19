@@ -33,9 +33,15 @@ impl Drop for Layout {
 }
 
 fn layout(name: &str) -> Layout {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/omp-redirect-fixtures")
-        .join(format!("{name}-{}", std::process::id()));
+    layout_at(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/omp-redirect-fixtures")
+            .join(format!("{name}-{}", std::process::id())),
+        name,
+    )
+}
+
+fn layout_at(root: PathBuf, name: &str) -> Layout {
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     let home = fixture::canonical_spelling(&root).join("home");
@@ -202,6 +208,26 @@ fn instruction_file_redirects_outside_the_session_remain_reviewed() {
     ] {
         assert!(!permitted(&layout, &layout.session, &command), "{command}");
     }
+}
+
+#[test]
+fn instruction_file_redirects_stay_reviewed_when_the_home_lies_below_a_temporary_root() {
+    // A test host's home sits below `/tmp`, where the temporary-root rule for
+    // redirect targets would otherwise admit any file the home holds.
+    let layout = layout_at(
+        PathBuf::from(format!("/tmp/hg-redirect-home-{}", std::process::id())),
+        "temporary-home",
+    );
+    let (clone, scratch) = (layout.clone.display(), layout.scratch.display());
+    for command in [
+        format!("cat {scratch}/x.ts >> {clone}/AGENTS.md"),
+        format!("cat {scratch}/x.ts > {clone}/AGENTS.md"),
+        format!("cat > {clone}/AGENTS.md <<'EOF'\nmore rules\nEOF"),
+    ] {
+        assert!(!permitted(&layout, &layout.session, &command), "{command}");
+    }
+    let source = format!("cat {scratch}/x.ts >> {clone}/src/lib/y.ts");
+    assert!(permitted(&layout, &layout.session, &source), "{source}");
 }
 
 #[test]

@@ -61,6 +61,14 @@ pub(super) fn safe_output_target(target: &str, context: PathContext<'_>) -> bool
     if hidden && !bounded_write(target, context) {
         return false;
     }
+    // Agent instruction files in a repository beside the session keep their
+    // review: a newly loaded one can redirect an agent, and no workspace
+    // sandbox stands around a sibling repository to deny the write. This
+    // runs before the temporary-root rule below, which would otherwise admit
+    // the file when the home itself lies below `/tmp`, as a test host's does.
+    if instruction_file(target) && sibling_target(target, context) {
+        return false;
+    }
     let cwd = context
         .cwd
         .map(std::path::Path::new)
@@ -82,12 +90,9 @@ pub(super) fn safe_output_target(target: &str, context: PathContext<'_>) -> bool
                     .is_ok_and(|rest| no_symlink_components(cwd, rest));
         }
         // A session started in a directory above its checkouts, or in a
-        // sibling one, still writes the repository it works on.
-        // Agent instruction files outside the session keep their review: a
-        // newly loaded one can redirect an agent, and no workspace sandbox
-        // stands around a sibling repository to deny the write.
+        // sibling one, still writes the repository it works on. Instruction
+        // files were refused above.
         return bounded_write(target, context)
-            && !instruction_file(target)
             && sibling_repository_root(path, context).is_some_and(|root| {
                 path.strip_prefix(&root)
                     .is_ok_and(|rest| no_symlink_components(&root, rest))
