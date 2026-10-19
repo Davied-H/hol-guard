@@ -26,6 +26,8 @@ mod omp_bash_cwd_tests;
 mod open_quote;
 #[path = "generic_pure_eval.rs"]
 mod pure_eval;
+#[path = "generic_read_note.rs"]
+mod read_note;
 #[path = "redirect_projection.rs"]
 mod redirect_projection;
 #[path = "generic_result.rs"]
@@ -721,6 +723,8 @@ fn evaluate_envelope(
     if result.reason_code == "native_file_read_review" {
         if let Some(note) = omp::grep_review_note(payload, &signals, &omp_context) {
             result.reason = format!("{} {note}", result.reason);
+        } else if let Some(reason) = read_note::read_review_reason(&signals, &omp_context) {
+            result.reason = reason;
         }
     }
     if event == "UserPromptSubmit" {

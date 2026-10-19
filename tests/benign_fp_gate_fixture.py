@@ -45,6 +45,8 @@ from pathlib import Path
 
 import pytest
 
+from ci.gauntlet.feature_directory_fixtures import HELD as FEATURE_HELD
+from ci.gauntlet.feature_directory_fixtures import SOURCES as FEATURE_SOURCES
 from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
 from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
@@ -329,6 +331,9 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(worktree / "dashboard" / "src" / "session.js", SESSION_SOURCE)
     # The live Gauntlet's token-handling sources (redirect route, link worker, HMAC helper).
     for relative, text in TOKEN_SOURCES.items():
+        _write(worktree / relative, text)
+    # The live Gauntlet's sign-in folder, plus the data files in it that stay under review.
+    for relative, text in {**FEATURE_SOURCES, **FEATURE_HELD}.items():
         _write(worktree / relative, text)
     # Fresh worktree package whose dependencies are installed only in the canonical checkout.
     _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")

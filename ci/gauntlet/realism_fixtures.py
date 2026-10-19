@@ -13,7 +13,9 @@ sessions hit while the Gauntlet stayed green:
 * a read-only ``doctl`` sits on the developer ``PATH``;
 * token-handling source (a redirect route, a link-building worker, an HMAC
   helper) names credential-like identifiers on every line (see
-  ``source_output_fixtures``).
+  ``source_output_fixtures``);
+* a sign-in folder named ``auth`` holds a README and a session helper (see
+  ``feature_directory_fixtures``).
 
 None of it holds a credential, reaches the network or writes outside the fixture.
 """
@@ -25,6 +27,8 @@ import os
 import sys
 from pathlib import Path
 
+from .feature_directory_fixtures import CONSOLE
+from .feature_directory_fixtures import SOURCES as FEATURE_SOURCES
 from .source_output_fixtures import PORTAL, SOURCES
 
 DASHBOARD = "dashboard"
@@ -138,6 +142,8 @@ def add_main_shapes(main: Path) -> tuple[str, ...]:
     _write(main / "docs/review-notes.md", REVIEW_NOTES)
     for relative, text in SOURCES.items():
         _write(main / relative, text)
+    for relative, text in FEATURE_SOURCES.items():
+        _write(main / relative, text)
     _write(main / "scripts/check.sh", CHECK_SCRIPT, 0o755)
     _write(main / "scripts/release/deploy.sh", DEPLOY_SCRIPT, 0o755)
     modules = main / DASHBOARD / "node_modules"
@@ -149,7 +155,7 @@ def add_main_shapes(main: Path) -> tuple[str, ...]:
     (modules / ".bin").mkdir()
     # npm links each bin relative to node_modules/.bin.
     (modules / ".bin/vite").symlink_to(Path("../vite/bin/vite"))
-    return (".gitignore", DASHBOARD, PORTAL, "docs/review-notes.md", "scripts")
+    return (".gitignore", CONSOLE, DASHBOARD, PORTAL, "docs/review-notes.md", "scripts")
 
 
 def borrow_main_modules(main: Path, worktree: Path) -> None:

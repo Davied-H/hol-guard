@@ -908,6 +908,15 @@
       ]
     },
     {
+      "id": "omp-native-read-feature-directory",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "read"
+      ],
+      "prompt": "List {{workspace}}/console/src/lib/auth with the read tool, then read {{workspace}}/console/src/lib/auth/README.md and {{workspace}}/console/src/lib/auth/session.ts with the read tool, and tell me in two sentences what the folder is for."
+    },
+    {
       "id": "omp-native-shell-linked-modules-build",
       "expectation": "allow",
       "oracle": "native-tools",

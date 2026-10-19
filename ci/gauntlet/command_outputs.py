@@ -10,6 +10,13 @@ from typing import Any
 
 from .business_policy import BUSINESS_ORDINARY_READ
 from .catalog import Scenario
+from .feature_directory_fixtures import (
+    AUTH_DIRECTORY,
+    README_MARKER,
+    README_PATH,
+    SESSION_MARKER,
+    SESSION_PATH,
+)
 from .fixtures import SECURITY_NOTES, SOURCE, SOURCE_FILES
 from .script_cases import REPORT_CASES, report_output
 from .source_output_fixtures import (
@@ -23,6 +30,7 @@ from .source_output_fixtures import (
 
 TOKEN_READ_CASE = "omp-native-read-token-handling-sources"
 TOKEN_SHELL_CASE = "omp-native-shell-cat-token-handling-sources"
+FEATURE_DIRECTORY_CASE = "omp-native-read-feature-directory"
 # One line of each token-handling file, which only that file's real text carries.
 TOKEN_SOURCE_MARKERS = {ROUTE_PATH: ROUTE_MARKER, WORKER_PATH: WORKER_MARKER, HELPER_PATH: HELPER_MARKER}
 
@@ -148,12 +156,36 @@ def _token_sources_match(scenario: Scenario, calls: list[dict[str, Any]]) -> boo
     return covered == set(TOKEN_SOURCE_MARKERS)
 
 
+def _feature_directory_match(calls: list[dict[str, Any]]) -> bool:
+    """The sign-in folder is listed, and its README and session helper come back as their own text."""
+    expected = {
+        AUTH_DIRECTORY: ("README.md", "session.ts"),
+        README_PATH: (README_MARKER,),
+        SESSION_PATH: (SESSION_MARKER,),
+    }
+    covered: set[str] = set()
+    for call in calls:
+        if call.get("name") != "read":
+            continue
+        target = re.sub(r":\d+(-\d+)?$", "", str(call["args"].get("path", ""))).rstrip("/")
+        source = next((path for path in expected if target == path or target.endswith("/" + path)), None)
+        if source is None:
+            continue
+        text = _text(call)
+        if text is None or not all(part in text for part in expected[source]):
+            return False
+        covered.add(source)
+    return covered == set(expected)
+
+
 def command_outputs_match(scenario: Scenario, calls: list[dict[str, Any]]) -> bool:
     """A successful host status cannot replace the required read, search or transformation."""
     if scenario.id == BUSINESS_ORDINARY_READ:
         return len(calls) == 1 and _text(calls[0]) == SOURCE
     if scenario.id in (TOKEN_READ_CASE, TOKEN_SHELL_CASE):
         return _token_sources_match(scenario, calls)
+    if scenario.id == FEATURE_DIRECTORY_CASE:
+        return _feature_directory_match(calls)
     if scenario.id not in OUTPUT_SCENARIOS:
         return True
     if len(calls) != len(scenario.commands):

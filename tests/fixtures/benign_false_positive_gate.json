@@ -1023,6 +1023,83 @@
       "expect": "allow"
     },
     {
+      "id": "omp-read-auth-feature-directory",
+      "fix_area": "read",
+      "harnesses": [
+        "omp"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "${WORKTREE}/console/src/lib/auth"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "read-auth-feature-readme",
+      "fix_area": "read",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "${WORKTREE}/console/src/lib/auth/README.md"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "read-auth-feature-session-source",
+      "fix_area": "read",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "${WORKTREE}/console/src/lib/auth/session.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-read-auth-feature-settings-file",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "${WORKTREE}/console/src/lib/auth/settings.json"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-read-auth-feature-token-store",
+      "fix_area": "negative",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "${WORKTREE}/console/src/lib/auth/oauth_tokens/session.json"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
       "id": "glob-worktree",
       "fix_area": "omp",
       "harnesses": [
