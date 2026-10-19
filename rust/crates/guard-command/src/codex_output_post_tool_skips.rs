@@ -19,10 +19,10 @@ use crate::codex_output_inspection_flow::{
 use crate::codex_output_post_tool::{absolute, Input, PostToolError, Run};
 use crate::codex_output_post_tool_sources::sensitive_local_source_matches;
 use crate::codex_output_py::{py_splitlines, py_strip, shlex_split, strip_quotes, PyPath};
-use crate::shell_secret_read_support::classify_request_secret_path;
 use crate::codex_output_source_paths::resolve_source_candidate_path;
 use crate::sfrs_constants::FILE_READ_TOOL_NAMES;
 use crate::sfrs_read_only_filters::read_only_lookup_target_is_safe;
+use crate::shell_secret_read_support::classify_request_secret_path;
 
 const NATIVE_SEARCH_TOOLS: [&str; 4] = ["grep", "egrep", "fgrep", "rg"];
 const EXPLICIT_COMMAND_KEYS: [&str; 4] = ["command", "cmd", "shell_command", "shellCommand"];

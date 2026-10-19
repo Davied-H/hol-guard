@@ -213,7 +213,12 @@ fn ranged_and_quoted_native_credential_paths_keep_output_review() {
     let root = scratch("ranged-credential");
     let source = root.join("src");
     fs::create_dir(&source).unwrap();
-    for name in ["terraform.tfvars", "private.key", "wallet.key", "secrets.ts"] {
+    for name in [
+        "terraform.tfvars",
+        "private.key",
+        "wallet.key",
+        "secrets.ts",
+    ] {
         let path = source.join(name);
         fs::write(&path, "token=not-a-real-token\n").unwrap();
         let target = text(&path);
@@ -243,7 +248,12 @@ fn an_absolute_external_token_source_without_cwd_keeps_output_review() {
     fs::create_dir(&source).unwrap();
     let target = source.join("service-token.ts");
     fs::write(&target, r#"export const token = "placeholder";"#).unwrap();
-    assert!(!read_file(&root, "read", json!({"path": text(&target)}), None));
+    assert!(!read_file(
+        &root,
+        "read",
+        json!({"path": text(&target)}),
+        None
+    ));
 }
 
 #[test]
