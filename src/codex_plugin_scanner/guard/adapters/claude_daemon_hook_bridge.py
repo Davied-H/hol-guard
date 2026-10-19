@@ -156,7 +156,8 @@ def _deny_without_a_runtime() -> int:
     if _event_name(data) == "UserPromptSubmit":
         # A legacy prompt hook must not silently accept unreviewed text when
         # its native authority is unavailable.
-        sys.stdout.write(_deny_event("UserPromptSubmit", _DEGRADED_DAEMON_MESSAGE.format(reason=_NATIVE_RUNTIME_UNAVAILABLE)))
+        message = _DEGRADED_DAEMON_MESSAGE.format(reason=_NATIVE_RUNTIME_UNAVAILABLE)
+        sys.stdout.write(_deny_event("UserPromptSubmit", message))
         return 0
     sys.stdout.write(_degraded(_NATIVE_RUNTIME_UNAVAILABLE, data))
     return 0
