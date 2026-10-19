@@ -45,6 +45,14 @@ fn sensitive(value: &str) -> bool {
         .any(|needle| lowered.contains(needle))
 }
 
+/// A harness or Guard configuration location named anywhere in the value.
+fn names_managed_config(value: &str) -> bool {
+    let value = value.to_ascii_lowercase().replace('\\', "/");
+    [".hol-guard", ".codex/", ".claude/", "hol-guard/config"]
+        .iter()
+        .any(|path| value.contains(path))
+}
+
 fn option(arguments: &[String], names: &[&str]) -> bool {
     arguments
         .iter()
@@ -396,14 +404,22 @@ pub(super) fn observe(
         redirects::posix_redirect(&segment.text)
     };
     if write_command || redirect != Redirect::None || interpreter {
+        // Filing a Markdown note in a plan folder (a plain `cp` or `touch`)
+        // changes no harness configuration, though the folder sits inside the
+        // harness directory.
+        let plan_note_write = matches!(executable.as_str(), "cp" | "touch")
+            && redirect == Redirect::None
+            && command.wrapper_chain.is_empty()
+            && !command.path_overridden
+            && crate::pretool::safe_reads::plan_note_write_sources(&executable, arguments, context)
+                .is_some_and(|sources| !sources.iter().any(|source| names_managed_config(source)));
         // A stderr merge or discard (`2>/dev/null`) changes no file, so naming a
         // harness directory beside it is a read, not a managed-config write.
         // Reads of logins and secret-bearing config there stay with the native
         // read proof, which refuses them whatever redirect follows.
         if (write_command || redirect == Redirect::Output || interpreter)
-            && [".hol-guard", ".codex/", ".claude/", "hol-guard/config"]
-                .iter()
-                .any(|path| normalized.contains(path))
+            && names_managed_config(&normalized)
+            && !plan_note_write
         {
             output.rule("command.shell-mutations.managed-config-write", index, true);
         }
