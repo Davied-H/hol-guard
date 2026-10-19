@@ -11,7 +11,11 @@ from .realism_fixtures import write_windows_launcher
 
 GITHUB_REVIEW_CASE = "github-review-work-enabled-permissions"
 GITHUB_DELETE_CASE = "explicit-disabled-github-delete-permission"
-GITHUB_STUB_CASES = frozenset({GITHUB_REVIEW_CASE, GITHUB_DELETE_CASE})
+# The Oh My Pi `github` tool runs `gh api` underneath, so its lookups reach the same stand-in.
+GITHUB_LOOKUP_CASE = "omp-native-github-search-prs"
+GITHUB_LOOKUP_REPO = "example-org/example-repo"
+GITHUB_LOOKUP_QUERY = "is:pr metrics OR analytics"
+GITHUB_STUB_CASES = frozenset({GITHUB_REVIEW_CASE, GITHUB_DELETE_CASE, GITHUB_LOOKUP_CASE})
 WORKTREE_CASE = "linked-worktree-edit-from-main-checkout"
 # Not prefixed by the workspace name, so redaction cannot fold it into {{workspace}}.
 WORKTREE_NAME = "review-worktree"
@@ -92,9 +96,24 @@ def recorded_gh_calls(workspace: Path) -> list[tuple[str, ...]] | None:
     return [tuple(line.split(SEPARATOR)[:-1]) for line in text.splitlines()]
 
 
+def _is_lookup_call(call: tuple[str, ...]) -> bool:
+    """One `gh api` issue-search request carrying the case's query, scoped to its repository."""
+    queries = [arg for arg in call if arg.startswith("q=")]
+    return (
+        call[:1] == ("api",)
+        and "/search/issues" in call
+        and len(queries) == 1
+        and GITHUB_LOOKUP_QUERY in queries[0]
+        and f"repo:{GITHUB_LOOKUP_REPO}" in queries[0]
+    )
+
+
 def github_checks(workspace: Path, scenario_id: str) -> dict[str, bool]:
     if scenario_id == GITHUB_REVIEW_CASE:
         return {"github-stub-calls-exact": recorded_gh_calls(workspace) == list(EXPECTED_GH_CALLS)}
+    if scenario_id == GITHUB_LOOKUP_CASE:
+        calls = recorded_gh_calls(workspace)
+        return {"github-lookup-ran-once": calls is not None and len(calls) == 1 and _is_lookup_call(calls[0])}
     return {}
 
 

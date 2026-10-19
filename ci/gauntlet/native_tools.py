@@ -13,7 +13,13 @@ from .catalog import Scenario
 from .command_outputs import _text
 from .input_evidence import post_input_matches
 from .proofs import _edit_path, _path
-from .review_fixtures import WORKTREE_CASE, WORKTREE_NAME
+from .review_fixtures import (
+    GITHUB_LOOKUP_CASE,
+    GITHUB_LOOKUP_QUERY,
+    GITHUB_LOOKUP_REPO,
+    WORKTREE_CASE,
+    WORKTREE_NAME,
+)
 
 PRIVATE_TEMP_ROOTS = ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
 # Git Bash ``mktemp -d`` on Windows prints a directory in the fixture profile's
@@ -94,6 +100,23 @@ def _declared_keys_by_yield(calls: list[dict[str, Any]], delegated: set[str]) ->
             reported = True
         bound[call["id"]] = schema - REPORT_KEYS
     return bound
+
+
+def _github_lookup_error(calls: list[dict[str, Any]], *, require_call: bool = True) -> str | None:
+    """Hold the model to the one requested pull request search, spelled as asked."""
+    lookups = [call for call in calls if call["name"] == "github"]
+    for call in lookups:
+        args = call["args"]
+        if (
+            not isinstance(args, dict)
+            or args.get("op") != "search_prs"
+            or args.get("repo") != GITHUB_LOOKUP_REPO
+            or args.get("query") != GITHUB_LOOKUP_QUERY
+        ):
+            return "the github call was not the requested pull request search"
+    if require_call and len(lookups) != 1:
+        return "the model did not make exactly one github search"
+    return None
 
 
 def _write_path(args: dict[str, Any]) -> str:
@@ -291,8 +314,12 @@ def native_tools_scope_error(
         return scope
     if scenario.id == TMP_ALIAS_READ_CASE and (scope := _scratch_read_error(calls, require_steps=False)):
         return scope
+    if scenario.id == GITHUB_LOOKUP_CASE and (scope := _github_lookup_error(calls, require_call=False)):
+        return scope
     if guard_denied:
         return None
+    if scenario.id == GITHUB_LOOKUP_CASE and (scope := _github_lookup_error(calls)):
+        return scope
     if not set(scenario.required_tools) <= {call["name"] for call in calls}:
         return "the model did not use every tool the scenario names"
     ran = {call["args"].get("command") for call in calls if call["name"] == "bash"}
