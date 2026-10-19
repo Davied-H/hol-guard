@@ -489,8 +489,9 @@ def native_tools_scope_error(
                 and post_input_matches("read", call["args"], {**call["args"], "path": resolved}, result)
             ):
                 return "delegated lookup read outside its requested file"
-            # A read that came back as an error looked nothing up.
-            read_in_scope = read_in_scope or call.get("is_error") is not True
+            # Only a read that finished without an error looked something up; one
+            # that never finished (no result recorded) did not.
+            read_in_scope = read_in_scope or call.get("is_error") is False
         elif call["name"] == "yield":
             data = call["args"].get("data")
             if not isinstance(data, (dict, str)):

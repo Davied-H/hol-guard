@@ -26,7 +26,7 @@ def _scenario():
 def _calls(parent: dict[str, Any], *, data: object = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     calls = [
         {"id": "parent", "name": "task", "args": parent},
-        {"id": "read", "name": "read", "args": {"path": "README.md"}},
+        {"id": "read", "name": "read", "args": {"path": "README.md"}, "is_error": False},
     ]
     delegated = ["read"]
     if data is not None:
@@ -177,6 +177,9 @@ def test_a_failed_readme_read_is_not_a_completed_lookup() -> None:
     parent = {"tasks": [{"name": "lookup", "outputSchema": SCHEMA, "task": "read README.md"}]}
     calls, case = _calls(parent, data=ANSWER)
     calls[1]["is_error"] = True
+    assert native_tools_scope_error(_scenario(), calls, case) == "delegated lookup did not read README.md"
+    # A read that never finished has no verdict yet, so it is no lookup either.
+    calls[1]["is_error"] = None
     assert native_tools_scope_error(_scenario(), calls, case) == "delegated lookup did not read README.md"
     calls[1]["is_error"] = False
     assert native_tools_scope_error(_scenario(), calls, case) is None
