@@ -160,3 +160,10 @@ def test_shell_case_runs_only_its_listed_commands() -> None:
     assert native_tools_scope_error(scenario, unlisted, {})
     assert native_tools_scope_error(scenario, _shell(scenario)[:-1], {})
     assert native_tools_scope_error(scenario, _shell(scenario)[:-1], {}, guard_denied=True) is None
+    all_steps = _shell(scenario)
+    assert native_tools_scope_error(scenario, all_steps + [all_steps[0]], {}) == (
+        "the shell commands were duplicated or out of order"
+    )
+    assert native_tools_scope_error(scenario, list(reversed(all_steps)), {}) == (
+        "the shell commands were duplicated or out of order"
+    )
