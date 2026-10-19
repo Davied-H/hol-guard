@@ -14150,7 +14150,7 @@
       "id": "neg-plan-note-write-codex-hooks",
       "fix_area": "negative",
       "harnesses": [
-        "codex",
+        "zcode",
         "claude-code",
         "omp"
       ],
@@ -14166,7 +14166,7 @@
       "id": "neg-plan-note-write-codex-config",
       "fix_area": "negative",
       "harnesses": [
-        "codex",
+        "zcode",
         "claude-code",
         "omp"
       ],
@@ -14182,7 +14182,7 @@
       "id": "neg-plan-note-write-plans-instruction-file",
       "fix_area": "negative",
       "harnesses": [
-        "codex",
+        "zcode",
         "claude-code",
         "omp"
       ],
@@ -14198,7 +14198,7 @@
       "id": "neg-plan-note-write-plans-non-markdown",
       "fix_area": "negative",
       "harnesses": [
-        "codex",
+        "zcode",
         "claude-code",
         "omp"
       ],
@@ -14214,7 +14214,7 @@
       "id": "neg-plan-note-write-plans-subfolder",
       "fix_area": "negative",
       "harnesses": [
-        "codex",
+        "zcode",
         "claude-code",
         "omp"
       ],
@@ -14230,7 +14230,7 @@
       "id": "neg-plan-note-write-plans-traversal",
       "fix_area": "negative",
       "harnesses": [
-        "codex",
+        "zcode",
         "claude-code",
         "omp"
       ],
@@ -14246,7 +14246,7 @@
       "id": "neg-plan-note-write-codex-rules",
       "fix_area": "negative",
       "harnesses": [
-        "codex",
+        "zcode",
         "claude-code",
         "omp"
       ],

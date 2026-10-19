@@ -262,6 +262,9 @@ fn a_redirect_or_heredoc_files_a_note_in_a_plan_directory() {
         "cat > ~/.codex/plans/acme-closeout.md <<'EOF'\n# Closeout\n- done\nEOF".to_owned(),
         format!("cat > {home}/.claude/plans/acme-closeout.md <<'EOF'\n# Closeout\n- done\nEOF"),
         "cat closeout-report.md > ~/.codex/plans/acme-closeout.md".to_owned(),
+        // A date substitution is inert text, so the name it builds is still
+        // a plain Markdown note.
+        "echo done > ~/.codex/plans/$(date +%F).md".to_owned(),
     ] {
         let result = shell(&f, &command);
         assert!(allowed(&result), "{command}: {}", result.reason);
@@ -288,9 +291,8 @@ fn a_redirect_or_heredoc_keeps_its_review_for_everything_else() {
         format!("echo done > {home}/.codex/hooks.json"),
         "cat > ~/.codex/hooks.json <<'EOF'\n{}\nEOF".to_owned(),
         format!("cat > {home}/.codex/hooks.json <<'EOF'\n{{}}\nEOF"),
-        // Variables and substitutions are not spellings Guard resolves.
+        // Variables are not spellings Guard resolves.
         "echo done > $HOME/.codex/plans/acme-closeout.md".to_owned(),
-        "echo done > ~/.codex/plans/$(date +%F).md".to_owned(),
         // A second write that is not a note keeps the whole command in review.
         "echo done > ~/.codex/plans/acme-closeout.md && echo '{}' > ~/.codex/hooks.json".to_owned(),
         "echo done > ~/.codex/plans/acme-closeout.md; rm -rf ~/.codex/rules".to_owned(),
@@ -334,5 +336,76 @@ fn the_same_rule_holds_for_the_other_hosts() {
         ),
     ] {
         assert!(!allowed(&run(&f, harness, tool, input)), "{harness}");
+    }
+}
+
+/// The command-extension layer flags a write that names a harness directory as
+/// a managed-configuration write. Filing a plan note is the one such write that
+/// is not.
+fn flags_managed_config_write(f: &Fixture, command: &str) -> bool {
+    let model = guard_command::parse_command(&guard_command::CommandModelRequestV1 {
+        command: command.to_owned(),
+        dialect: "posix".to_owned(),
+        transport: "shell_string".to_owned(),
+        extraction_provenance: "plan-note-vector".to_owned(),
+    })
+    .unwrap();
+    let context = guard_command::pretool::PathContext {
+        home_dir: f.home.to_str(),
+        cwd: f.workspace.to_str(),
+        ..Default::default()
+    };
+    guard_command::command_compatibility::compatibility_observations_with_context(
+        &model, None, context,
+    )
+    .unwrap()
+    .rule_matches
+    .iter()
+    .any(|matched| matched.rule_id == "command.shell-mutations.managed-config-write")
+}
+
+#[test]
+fn filing_a_plan_note_is_not_a_managed_configuration_write() {
+    let f = fixture("extension-note");
+    let home = f.home.display();
+    for command in [
+        "cp closeout-report.md ~/.codex/plans/acme-closeout.md".to_owned(),
+        format!("cp closeout-report.md {home}/.claude/plans/acme-closeout.md"),
+        "cp closeout-report.md ~/.codex/plans/earlier-plan.md".to_owned(),
+        "cp -- closeout-report.md ~/.codex/plans/acme-closeout.md".to_owned(),
+        "cp closeout-report.md ~/.codex/plans/".to_owned(),
+        "touch ~/.codex/plans/acme-closeout.md".to_owned(),
+    ] {
+        assert!(!flags_managed_config_write(&f, &command), "{command}");
+    }
+}
+
+#[test]
+fn every_other_write_in_a_harness_home_is_still_a_managed_configuration_write() {
+    let f = fixture("extension-held");
+    for command in [
+        "cp closeout-report.md ~/.codex/hooks.json",
+        "cp closeout-report.md ~/.codex/config.toml",
+        "cp closeout-report.md ~/.codex/AGENTS.md",
+        "cp closeout-report.md ~/.codex/rules/default.md",
+        "cp closeout-report.md ~/.codex/plans/AGENTS.md",
+        "cp closeout-report.md ~/.codex/plans/notes.txt",
+        "cp closeout-report.md ~/.codex/plans/.hidden.md",
+        "cp closeout-report.md ~/.codex/plans/evidence/",
+        "cp closeout-report.md ~/.codex/plans/../hooks.json",
+        // A source in a harness directory is a read of configuration.
+        "cp ~/.codex/hooks.json ~/.codex/plans/acme-closeout.md",
+        "cp ~/.codex/config.toml ~/.codex/plans/acme-closeout.md",
+        // More than the one note is written, or the copy is more than a copy.
+        "cp closeout-report.md ~/.codex/plans/a.md ~/.codex/hooks.json",
+        "cp -r closeout-report.md ~/.codex/plans/acme-closeout.md",
+        "cp closeout-report.md ~/.codex/plans/acme-closeout.md > ~/.codex/hooks.json",
+        "mv closeout-report.md ~/.codex/plans/acme-closeout.md",
+        "touch ~/.codex/hooks.json",
+        "touch ~/.codex/plans/notes.txt",
+        "touch ~/.codex/plans/acme-closeout.md ~/.codex/hooks.json",
+        "sed -i 's/Earlier/Later/' ~/.codex/plans/earlier-plan.md",
+    ] {
+        assert!(flags_managed_config_write(&f, command), "{command}");
     }
 }

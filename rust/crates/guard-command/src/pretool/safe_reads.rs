@@ -15,6 +15,7 @@ pub(super) use super::safe_writes::{
     bounded_native_file_write_target, bounded_structured_file_write_target, safe_copy_arguments,
     safe_file_mutation_arguments,
 };
+pub(crate) use super::safe_writes::plan_note_write_sources;
 pub(crate) use command_sequences::proven_created_file_removal;
 pub(super) use command_sequences::{exact_safe_sequence, leading_and_cd, leading_semicolon_cd};
 pub(super) use read_globs::glob_file_matches;

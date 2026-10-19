@@ -22,7 +22,7 @@ fn posix_temp_file(target: &str) -> bool {
 
 /// A plan note filed in the harness home, spelled from `~` or from the root.
 /// These are the only home paths a redirect may remove from a command.
-fn plan_note_output_target(target: &str, context: PathContext<'_>) -> bool {
+pub(super) fn plan_note_output_target(target: &str, context: PathContext<'_>) -> bool {
     target.len() <= 4096
         && target.starts_with(['~', '/'])
         && target

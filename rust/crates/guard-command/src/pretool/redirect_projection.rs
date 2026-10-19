@@ -6,7 +6,7 @@
 
 use crate::CommandModelRequestV1;
 use guard_contracts::PreToolResultV1;
-use targets::{bounded_write, relative_saved_reads, safe_output_target};
+use targets::{bounded_write, plan_note_output_target, relative_saved_reads, safe_output_target};
 
 #[path = "redirect_git_chain.rs"]
 pub(super) mod git_chain;
@@ -194,6 +194,21 @@ pub(super) fn project(
     {
         return None;
     }
+    // A quoted heredoc is literal data, but the bare `cat` that remains reads
+    // standard input, which only the workspace sandbox bounds. A plan note in
+    // the harness home lies outside that sandbox, so the write checked above
+    // is all that is left to prove, and a no-op stands in for the command.
+    let command = if saw_heredoc
+        && bounded_writes
+        && writes_file
+        && targets
+            .iter()
+            .all(|target| plan_note_output_target(target, context))
+    {
+        "true".to_owned()
+    } else {
+        command
+    };
     Some(RedirectProjection {
         command,
         writes_file,

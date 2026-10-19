@@ -94,6 +94,39 @@ pub(in crate::pretool) fn plan_note_write_target(
         && super::bounded_native_file_write_target(value, home_dir, cwd)
 }
 
+/// The operands a plain `cp` or `touch` only reads, when the whole command
+/// passes its bounded proof and every path it writes is a plan note. `cp`
+/// reads its one source; `touch` reads nothing. The command-extension layer
+/// holds any write that names a harness directory, and this tells it the one
+/// such write that changes no configuration. What the sources are called is
+/// left to the caller.
+pub(crate) fn plan_note_write_sources<'a>(
+    command: &str,
+    arguments: &'a [String],
+    context: super::super::PathContext<'_>,
+) -> Option<&'a [String]> {
+    let operands = match arguments {
+        [separator, rest @ ..] if separator == "--" => rest,
+        _ => arguments,
+    };
+    let note = |value: &str| plan_note_write_target(value, context.home_dir, context.cwd);
+    match (command, operands) {
+        ("cp", [source, destination]) => {
+            // A destination folder takes the source's own name.
+            let named = Path::new(source)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| note(&format!("{}/{name}", destination.trim_end_matches('/'))));
+            ((note(destination) || named) && super::safe_copy_arguments(arguments, context))
+                .then(|| std::slice::from_ref(source))
+        }
+        ("touch", [target]) => (note(target)
+            && super::safe_file_mutation_arguments(command, arguments, context))
+        .then_some(&[][..]),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 #[path = "plan_note_writes_tests.rs"]
 mod tests;
