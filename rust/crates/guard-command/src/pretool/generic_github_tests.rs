@@ -86,8 +86,6 @@ fn a_lookup_with_anything_beyond_the_read_arguments_keeps_its_review() {
         json!({"op": "search_prs", "query": "x", "run": "1234567890"}),
         json!({"op": "search_code", "query": "x", "since": "2026-01-01"}),
         json!({"op": "repo_view", "repo": "example-org/app", "query": "x"}),
-        json!({"op": "file_read", "repo": "example-org/app", "path": "a.ts", "limit": 5}),
-        json!({"op": "run_watch", "repo": "example-org/app", "run": "1", "path": "a.ts"}),
         json!({"op": "search_prs", "query": "x", "body": "text"}),
         json!({"op": "search_prs", "query": "x", "pr": "12"}),
         json!({"op": "search_prs", "query": "x", "force": true}),
@@ -103,6 +101,21 @@ fn a_lookup_with_anything_beyond_the_read_arguments_keeps_its_review() {
     ] {
         let result = evaluate("omp", github(input.clone()));
         assert!(!allowed(&result), "{input}: {}", result.reason_code);
+        assert_ne!(result.reason_code, "native_github_read", "{input}");
+    }
+}
+
+#[test]
+fn a_path_argument_the_lookup_does_not_take_is_never_proven_as_a_github_read() {
+    // A call that carries a plain relative `path` is typed as a file read by
+    // the generic rule, and the safe-path proof may still allow it as that.
+    // The GitHub proof must not be the reason: these arguments are not ones
+    // the read operations take.
+    for input in [
+        json!({"op": "file_read", "repo": "example-org/app", "path": "a.ts", "limit": 5}),
+        json!({"op": "run_watch", "repo": "example-org/app", "run": "1", "path": "a.ts"}),
+    ] {
+        let result = evaluate("omp", github(input.clone()));
         assert_ne!(result.reason_code, "native_github_read", "{input}");
     }
 }
