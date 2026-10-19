@@ -56,7 +56,6 @@ fn line_range_reads_of_a_copy_are_allowed_in_every_spelling() {
         "sed -n -e 36p -e 39p src/example.py",
         "tail -n +31 src/example.py | head -20",
         "tail -n+31 src/example.py",
-        "tail +31 src/example.py",
         "tail -c +10 src/example.py",
         "tail --lines=+31 src/example.py",
         "tail -n 20 src/example.py | head -5",
@@ -75,6 +74,7 @@ fn line_range_reads_of_a_copy_are_allowed_in_every_spelling() {
 fn line_range_read_spellings_do_not_admit_writes_or_other_files() {
     for command in [
         "tail -f src/example.py",
+        "tail +31 src/example.py",
         "tail -n +31 .env",
         "tail +31 ~/.ssh/id_rsa",
         "tail -n +x src/example.py",
