@@ -81,6 +81,7 @@ mod git_reads;
 mod git_ref_listings;
 mod git_rev_list;
 mod git_search_text;
+pub(crate) mod git_stash_reads;
 pub(crate) mod git_tag_listing;
 mod repo_create_reason;
 mod root_removal;

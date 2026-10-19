@@ -3669,6 +3669,40 @@
       "expect": "allow"
     },
     {
+      "id": "git-cd-fork-diff-status-from-nonrepo-parent",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${TMP_ORG}/app && git diff --stat | head; git status --short | head -10"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "git-cd-fork-status-revparse-from-nonrepo-parent",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${TMP_ORG_WT} && git status --short | head -5; git rev-parse HEAD"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
       "id": "git-cd-worktree-diff-check",
       "fix_area": "shell",
       "harnesses": [
@@ -12935,6 +12969,57 @@
         "command": "git stash show --stat"
       },
       "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "git-stash-list-from-nonrepo-parent",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${TMP_ORG}/app && git stash list | head -3"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "git-stash-show-entry-from-nonrepo-parent",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${TMP_ORG}/app && git stash show -p stash@{0}"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "git-stash-list-status-show-from-nonrepo-parent",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${TMP_ORG}/app && git stash list | head -3 && git status --porcelain | wc -l && git stash show -p stash@{0}"
+      },
+      "cwd": "tmp_org",
       "expect": "allow"
     },
     {
