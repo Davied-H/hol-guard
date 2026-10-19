@@ -14,7 +14,9 @@ from codex_plugin_scanner.guard.adapters.codex import CodexHarnessAdapter
 from codex_plugin_scanner.guard.codex_config import dump_toml, read_toml_payload
 from codex_plugin_scanner.guard.codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND
 from codex_plugin_scanner.guard.codex_hook_self_binding import (
+    codex_hook_binds_guard_home,
     codex_hook_guard_home,
+    install_package_root,
     self_bound_hook_bindings,
 )
 
@@ -53,7 +55,7 @@ def test_reinstall_replaces_a_stale_generation_of_this_install(tmp_path):
     home = tmp_path / "home"
     guard_home = tmp_path / "guard-home"
     _install(home, guard_home)
-    before = len(_handlers(home))
+    before = [handler["command"] for handler in _handlers(home)]
     assert before
 
     # An upgrade, a moved virtualenv or a reinstalled package changes the
@@ -62,9 +64,9 @@ def test_reinstall_replaces_a_stale_generation_of_this_install(tmp_path):
 
     _install(home, guard_home)
 
-    commands = [handler["command"] for handler in _handlers(home)]
-    assert not [command for command in commands if command.startswith("/usr/bin/python3")]
-    assert len(commands) == before
+    # Claiming is not adopting: the slot holds the command this install
+    # generates, byte for byte, not the bytes that were found in it.
+    assert [handler["command"] for handler in _handlers(home)] == before
 
 
 def test_reinstall_refuses_a_guard_handler_bound_to_another_guard_home(tmp_path):
@@ -123,10 +125,23 @@ _BRIDGE_PAYLOAD: dict[str, object] = {
     "fallback_command": ["python", "-m", "codex_plugin_scanner.cli", "--guard-home", "/srv/guard"],
 }
 
+_PACKAGED_BRIDGE = install_package_root() / "guard" / "adapters" / "codex_daemon_hook_bridge.py"
 
-def test_guard_home_option_identifies_the_installation():
-    command = _cli_command("--home", "/home/dev", "--guard-home", "/srv/guard", "--workspace", "/w")
-    assert codex_hook_guard_home(command) == Path("/srv/guard")
+
+def _bridge_launch(script: Path, guard_home: Path, *, program: str = "/usr/bin/python3") -> str:
+    payload = {"state_path": str(guard_home / "daemon-state.json"), "query": f"guard-home={guard_home}"}
+    return shlex.join((program, "-I", str(script), json.dumps(payload)))
+
+
+def _native_launch(program: str, script: Path, guard_home: Path) -> str:
+    return f"{shlex.join((program, NATIVE_CODEX_HOOK_COMMAND))} {_bridge_launch(script, guard_home)}"
+
+
+def _bridge_script(directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    script = directory / "codex_daemon_hook_bridge.py"
+    script.write_text("", encoding="utf-8")
+    return script
 
 
 def test_native_bridge_payload_identifies_the_installation():
@@ -141,7 +156,6 @@ def test_the_native_bridge_wrapper_identifies_the_installation():
 @pytest.mark.parametrize(
     "command",
     (
-        _cli_command(),
         "/usr/local/bin/hol-guard-codex-hook.sh",
         # A bridge payload whose fields disagree names no one installation.
         _bridge_command({**_BRIDGE_PAYLOAD, "state_path": "/srv/other/daemon-state.json"}),
@@ -154,21 +168,106 @@ def test_a_command_naming_no_single_guard_home_identifies_nothing(command):
 @pytest.mark.parametrize(
     "command",
     (
-        # An argument the installer never writes, on either launcher spelling.
-        _cli_command("--guard-home", "/srv/guard") + " --tampered",
+        # An argument the installer never writes.
         _bridge_command(_BRIDGE_PAYLOAD, "--tampered"),
         # A wrapper of someone else's around a launcher of ours.
-        "/usr/bin/env " + _cli_command("--guard-home", "/srv/guard"),
-        # An option the installer only writes once.
-        _cli_command("--guard-home", "/srv/guard", "--guard-home", "/srv/guard"),
+        "/usr/bin/env " + _bridge_command(_BRIDGE_PAYLOAD),
     ),
 )
 def test_a_tampered_command_is_not_this_installations_own(command):
     assert codex_hook_guard_home(command) is None
 
 
-def test_self_bound_bindings_name_the_group_by_matcher_alone():
-    handler = {"type": "command", "command": _cli_command("--guard-home", "/srv/guard")}
+def test_the_packaged_bridge_script_is_this_installations_own(tmp_path):
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    assert codex_hook_binds_guard_home(_bridge_launch(_PACKAGED_BRIDGE, guard_home), guard_home)
+
+
+def test_the_native_bridge_under_the_guard_home_is_this_installations_own(tmp_path):
+    guard_home = tmp_path / "guard-home"
+    runtime = guard_home / "native-runtime"
+    runtime.mkdir(parents=True)
+    program = runtime / "hol-guard-runtime"
+    program.write_text("", encoding="utf-8")
+    # The script is somewhere this install does not own; the program is not,
+    # and the program is what survives a moved virtualenv.
+    foreign = _bridge_script(tmp_path / "elsewhere")
+    assert codex_hook_binds_guard_home(_native_launch(str(program), foreign, guard_home), guard_home)
+
+
+def test_a_bridge_outside_this_installation_stays_unowned(tmp_path):
+    """The shape `test_install_rejects_unowned_guard_bridge_without_committing` guards.
+
+    Only an argument names this Guard home. The program lives somewhere this
+    install has no control over, so the command proves nothing about who
+    wrote it.
+    """
+
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    script = _bridge_script(tmp_path / "pipx" / "hol-guard" / "adapters")
+    assert codex_hook_guard_home(_bridge_launch(script, guard_home)) == guard_home
+    assert not codex_hook_binds_guard_home(_bridge_launch(script, guard_home), guard_home)
+
+
+def test_a_symlink_out_of_the_guard_home_is_not_inside_it(tmp_path):
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    target = tmp_path / "evil" / "hol-guard-runtime"
+    target.parent.mkdir()
+    target.write_text("", encoding="utf-8")
+    link = guard_home / "hol-guard-runtime"
+    link.symlink_to(target)
+    assert not codex_hook_binds_guard_home(
+        _native_launch(str(link), _PACKAGED_BRIDGE.parent / "nowhere.py", guard_home), guard_home
+    )
+
+
+def test_a_sibling_root_sharing_a_name_prefix_is_not_inside(tmp_path):
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    evil = tmp_path / "guard-home-evil"
+    evil.mkdir()
+    program = evil / "hol-guard-runtime"
+    program.write_text("", encoding="utf-8")
+    assert not codex_hook_binds_guard_home(_native_launch(str(program), _bridge_script(evil), guard_home), guard_home)
+
+
+@pytest.mark.parametrize("program", ("hol-guard-runtime", "./hol-guard-runtime"))
+def test_a_program_that_is_not_absolute_is_never_claimed(tmp_path, program):
+    """A bare name is resolved through PATH at launch, so it names no file to own."""
+
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    assert not codex_hook_binds_guard_home(
+        _native_launch(program, _bridge_script(tmp_path / "elsewhere"), guard_home), guard_home
+    )
+
+
+def test_a_program_that_does_not_exist_is_never_claimed(tmp_path):
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    missing = guard_home / "native-runtime" / "hol-guard-runtime"
+    assert not codex_hook_binds_guard_home(
+        _native_launch(str(missing), _bridge_script(tmp_path / "elsewhere"), guard_home), guard_home
+    )
+
+
+def test_a_python_launcher_is_reported_rather_than_claimed(tmp_path):
+    """Anyone can spell Guard's CLI fallback, so Guard never claims one."""
+
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    command = _cli_command("--guard-home", str(guard_home))
+    assert codex_hook_guard_home(command) is None
+    assert not codex_hook_binds_guard_home(command, guard_home)
+
+
+def test_self_bound_bindings_name_the_group_by_matcher_alone(tmp_path):
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    handler = {"type": "command", "command": _bridge_launch(_PACKAGED_BRIDGE, guard_home)}
     hooks = {"PreToolUse": [{"matcher": "Bash", "hooks": [handler, {"type": "command", "command": "other"}]}]}
-    bindings = self_bound_hook_bindings(hooks, guard_home=Path("/srv/guard"))
+    bindings = self_bound_hook_bindings(hooks, guard_home=guard_home)
     assert bindings == [{"event": "PreToolUse", "group": {"matcher": "Bash"}, "handler": handler}]

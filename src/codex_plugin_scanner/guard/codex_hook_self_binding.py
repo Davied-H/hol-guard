@@ -2,22 +2,29 @@
 
 A managed handler carries the installation it serves inside its own command:
 the native bridge launches with a JSON payload naming the Guard home it talks
-to, and the plain CLI form passes that home as an option. Guard rewrites its
-registration whenever the launcher changes - a new interpreter, a moved
-package, a reinstall after an upgrade - so the signed manifest that proved the
-previous entry stops matching while the entry keeps naming this Guard home.
+to. Guard rewrites its registration whenever the launcher changes - a new
+interpreter, a moved package, a reinstall after an upgrade - so the signed
+manifest that proved the previous entry stops matching while the entry keeps
+naming this Guard home.
 
-Those entries are this installation's own earlier generations. Replacing them
-is what a reinstall is for. A Guard-looking handler that names a different
-Guard home, or names none at all, still belongs to an owner this install
-cannot speak for, so it keeps its refusal.
+Naming this home is not what makes the entry ours. Guard's command spelling is
+public, so a handler that names this home proves only that someone knew where
+Guard lives. What a stranger cannot do is put a program inside a root Guard
+already controls. So an entry is claimed only when its program is the native
+bridge under this Guard home, or the bridge script inside this install's own
+package: an attacker able to plant either of those already controls Guard, and
+refusing to replace it would buy nothing. See
+:mod:`.codex_hook_owned_paths` for the containment rule that decides this.
 
-Naming this home is not enough on its own. Only the launcher spellings Guard
-itself writes are claimed, token for token: the bridge launcher, the native
-bridge wrapper around it, and the isolated CLI fallback with the options the
-installer emits. Anything else - an extra argument, a reordered launcher, a
-wrapper of someone else's - is a command this install never wrote, so it stays
-unowned and keeps its conflict even when the Guard home inside it is ours.
+Everything else keeps its refusal, including a handler whose command is
+exactly the one this installer would write. The common case is a Python
+launcher: the program is an interpreter Guard does not own, anyone may invoke
+it, and no inspection of the command can tell Guard's own earlier generation
+from a stranger's imitation. Those are reported, not claimed.
+
+Claiming is not adopting. A claimed slot is overwritten with a freshly
+generated command and a new manifest; the bytes found there are never kept and
+stamped as owned.
 """
 
 from __future__ import annotations
@@ -31,18 +38,26 @@ from .codex_hook_bridge_runtime import decode_bridge_config_argument
 from .codex_hook_command_line import hook_command_tokens, hook_token_name
 from .codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND
 from .codex_hook_events import MANAGED_CODEX_HOOK_EVENTS
+from .codex_hook_owned_paths import path_is_inside
 
 _GUARD_HOME_OPTION = "--guard-home"
 _GUARD_HOME_QUERY_KEY = "guard-home"
 _DAEMON_STATE_NAME = "daemon-state.json"
 _BRIDGE_SCRIPT_NAME = "codex_daemon_hook_bridge.py"
 _ISOLATED_FLAG = "-I"
-_INLINE_PROGRAM_FLAG = "-c"
 _BRIDGE_LAUNCH_TOKENS = 4
 _NATIVE_LAUNCH_TOKENS = 6
-_CLI_BOOTSTRAP_MARKER = "codex_plugin_scanner.cli"
-_CLI_GUARD_ARGS_HEAD = ("guard", "hook", "--harness", "codex")
-_CLI_VALUE_OPTIONS = ("--home", _GUARD_HOME_OPTION, "--workspace")
+_BRIDGE_SCRIPT_INDEX = 2
+
+
+def install_package_root() -> Path:
+    """The package directory of the running installation.
+
+    The bridge script Guard writes into a handler lives under this directory,
+    so a handler pointing inside it is pointing inside code this install owns.
+    """
+
+    return Path(__file__).resolve().parent.parent
 
 
 def _resolved(value: str) -> Path | None:
@@ -113,7 +128,7 @@ def _bridge_payload(tokens: Sequence[str], *, windows: bool | None) -> Mapping[s
     launch = _bridge_launch_tokens(tokens)
     if launch is None or launch[1] != _ISOLATED_FLAG:
         return None
-    if hook_token_name(launch[2], windows=windows) != _BRIDGE_SCRIPT_NAME:
+    if hook_token_name(launch[_BRIDGE_SCRIPT_INDEX], windows=windows) != _BRIDGE_SCRIPT_NAME:
         return None
     try:
         decoded = json.loads(decode_bridge_config_argument(launch[3]))
@@ -122,79 +137,83 @@ def _bridge_payload(tokens: Sequence[str], *, windows: bool | None) -> Mapping[s
     return decoded if isinstance(decoded, Mapping) else None
 
 
-def _cli_guard_arguments(tokens: Sequence[str]) -> list[str] | None:
-    """The ``guard hook`` arguments of the isolated CLI fallback Guard writes.
+def _program_is_owned(tokens: Sequence[str], *, guard_home: Path, package_root: Path) -> bool:
+    """Whether the program this handler runs sits in a root Guard controls.
 
-    Every trailing token must be one of the options the installer emits, given
-    once and with a value, so an argument Guard would never write disqualifies
-    the whole command.
+    Two roots qualify. The native bridge is written under the Guard home, and
+    stays there across an interpreter change or a moved virtualenv, which is
+    the case a reinstall has to repair. The bridge script is written inside
+    this install's own package. Nothing else counts, so a Guard-shaped command
+    launched by an ordinary interpreter is reported rather than claimed.
     """
 
-    if len(tokens) < len(_CLI_GUARD_ARGS_HEAD) + 4:
-        return None
-    if tokens[1] != _ISOLATED_FLAG or tokens[2] != _INLINE_PROGRAM_FLAG:
-        return None
-    if _CLI_BOOTSTRAP_MARKER not in tokens[3]:
-        return None
-    arguments = list(tokens[4:])
-    if tuple(arguments[: len(_CLI_GUARD_ARGS_HEAD)]) != _CLI_GUARD_ARGS_HEAD:
-        return None
-    options = arguments[len(_CLI_GUARD_ARGS_HEAD) :]
-    seen: set[str] = set()
-    index = 0
-    while index < len(options):
-        option = options[index]
-        if option not in _CLI_VALUE_OPTIONS or option in seen or index + 1 >= len(options):
-            return None
-        seen.add(option)
-        index += 2
-    return arguments
+    if path_is_inside(tokens[0], guard_home):
+        return True
+    launch = _bridge_launch_tokens(tokens)
+    return launch is not None and path_is_inside(launch[_BRIDGE_SCRIPT_INDEX], package_root)
 
 
 def codex_hook_guard_home(command: str, *, windows: bool | None = None) -> Path | None:
-    """The single Guard home a launcher Guard wrote is bound to, when it names one.
+    """The single Guard home a bridge launcher names, when it names exactly one.
 
-    Returns ``None`` for a command that is not one of Guard's own launcher
-    spellings, and for one that names no Guard home or names more than one,
-    because none of those identify an installation that may replace it.
+    This reports what the command says, not who owns it: a launcher naming one
+    home identifies an installation, but only
+    :func:`codex_hook_binds_guard_home` decides whether this install may
+    replace it. Returns ``None`` for a command that is not a bridge launcher
+    Guard writes, and for one naming no Guard home or more than one, because
+    none of those identify an installation at all.
     """
 
     tokens = hook_command_tokens(command, windows=windows)
     if not tokens:
         return None
     payload = _bridge_payload(tokens, windows=windows)
-    if payload is not None:
-        homes = _payload_guard_home(payload)
-    else:
-        arguments = _cli_guard_arguments(tokens)
-        if arguments is None:
-            return None
-        homes = _option_guard_home(arguments)
+    if payload is None:
+        return None
+    homes = _payload_guard_home(payload)
     if len(homes) != 1:
         return None
     return next(iter(homes))
 
 
-def codex_hook_binds_guard_home(command: str, guard_home: Path, *, windows: bool | None = None) -> bool:
-    """Whether this command is bound to ``guard_home`` and to nothing else."""
+def codex_hook_binds_guard_home(
+    command: str,
+    guard_home: Path,
+    *,
+    package_root: Path | None = None,
+    windows: bool | None = None,
+) -> bool:
+    """Whether this install may replace ``command`` as its own earlier generation.
+
+    Both halves are required: the launcher names this Guard home and nothing
+    else, and the program it runs sits inside a root this install controls.
+    """
 
     bound = codex_hook_guard_home(command, windows=windows)
     if bound is None:
         return False
     try:
-        return bound == guard_home.resolve(strict=False)
+        if bound != guard_home.resolve(strict=False):
+            return False
     except (OSError, ValueError):
         return False
+    return _program_is_owned(
+        hook_command_tokens(command, windows=windows),
+        guard_home=guard_home,
+        package_root=install_package_root() if package_root is None else package_root,
+    )
 
 
 def self_bound_hook_bindings(
     hooks: Mapping[str, object],
     *,
     guard_home: Path,
+    package_root: Path | None = None,
     windows: bool | None = None,
 ) -> list[dict[str, object]]:
     """Exact bindings for the handlers an earlier generation of this install left behind."""
 
+    root = install_package_root() if package_root is None else package_root
     bindings: list[dict[str, object]] = []
     for event_name in MANAGED_CODEX_HOOK_EVENTS:
         groups = hooks.get(event_name)
@@ -207,11 +226,13 @@ def self_bound_hook_bindings(
             if not isinstance(handlers, list):
                 # The group is the handler, so removing the handler removes
                 # the group, and the exact group is what identifies it.
-                if _binds(group, guard_home, windows=windows):
+                if _binds(group, guard_home, package_root=root, windows=windows):
                     bindings.append({"event": event_name, "group": dict(group), "handler": dict(group)})
                 continue
             for handler in handlers:
-                if not isinstance(handler, Mapping) or not _binds(handler, guard_home, windows=windows):
+                if not isinstance(handler, Mapping) or not _binds(
+                    handler, guard_home, package_root=root, windows=windows
+                ):
                     continue
                 # The group is named by its matcher alone: a group that also
                 # holds a handler this install cannot speak for must lose only
@@ -226,13 +247,16 @@ def self_bound_hook_bindings(
     return bindings
 
 
-def _binds(entry: Mapping[str, object], guard_home: Path, *, windows: bool | None) -> bool:
+def _binds(entry: Mapping[str, object], guard_home: Path, *, package_root: Path, windows: bool | None) -> bool:
     command = entry.get("command")
-    return isinstance(command, str) and codex_hook_binds_guard_home(command, guard_home, windows=windows)
+    return isinstance(command, str) and codex_hook_binds_guard_home(
+        command, guard_home, package_root=package_root, windows=windows
+    )
 
 
 __all__ = [
     "codex_hook_binds_guard_home",
     "codex_hook_guard_home",
+    "install_package_root",
     "self_bound_hook_bindings",
 ]

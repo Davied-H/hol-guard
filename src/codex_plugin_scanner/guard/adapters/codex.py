@@ -454,9 +454,12 @@ def _current_install_legacy_bindings(context: HarnessContext, hooks: dict[str, o
 def _current_install_self_bindings(context: HarnessContext, hooks: Mapping[str, object]) -> list[dict[str, object]]:
     """Select the handlers an earlier generation of this same install left behind.
 
-    A Guard handler that names this Guard home was written by this
-    installation, whatever launcher it was written with, so a reinstall
-    replaces it instead of refusing to touch an owner it cannot identify.
+    A Guard handler counts as ours only when it names this Guard home and runs
+    a program inside a root this install controls - the native bridge under
+    the Guard home, or the bridge script inside this install's package. A
+    reinstall replaces those rather than refusing to touch an owner it cannot
+    identify. A Guard-shaped handler launched from anywhere else keeps its
+    conflict, because its spelling proves nothing about who wrote it.
     """
 
     return self_bound_hook_bindings(hooks, guard_home=_runtime_guard_home(context))
