@@ -7,7 +7,7 @@ mod screens;
 use super::read_paths::{
     existing_regular_read_target, expand_home_read_path, resolved_location_allowed,
 };
-pub(super) use copies::safe_copy_arguments;
+pub(super) use copies::{safe_copy_arguments, safe_copy_arguments_into};
 pub(super) use screens::autostart_write_target;
 use screens::{home_spelling_matches_target, shared_library_part};
 

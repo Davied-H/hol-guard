@@ -27,8 +27,19 @@
 //!   named `FILE-e` (or `FILE-E`) next to the edited file.
 //! - `sed -i [-E] SCRIPT FILE...` only on Linux. BSD sed would read the first
 //!   file name as its script.
+//!
+//! A chain of plain peers may also edit a scratch copy it stages in a private
+//! temporary directory: `cp /tmp/a.ts /tmp/b.ts && sed -i '' 's|x|y|' /tmp/b.ts`.
+//! The target is a temporary file the chain proof accepts (absent, or a
+//! regular single-link file the user owns), it is not executable, and no
+//! backup is kept. No peer links, renames or changes directory, so the path
+//! checked is the path `sed` opens. A scratch edit may also add a line with an
+//! `a\` or `i\` text command, which only writes the text.
 
 use std::path::{Component, Path};
+
+#[path = "sed_append_scripts.rs"]
+mod append_scripts;
 
 const MAX_TARGETS: usize = 16;
 const MAX_SCRIPT: usize = 1024;
@@ -46,9 +57,43 @@ pub(super) fn safe_in_place_segment(
 ) -> bool {
     model.dialect == "posix"
         && segment.pipeline_index == 0
-        && !model.segments.iter().any(changes_path_meaning)
         && shell_text_literal(&segment.text)
+        && (workspace_edit_safe(model, segment, context)
+            || scratch_edit_safe(model, segment, context))
+}
+
+/// An inert substitution in existing ordinary files of the workspace.
+fn workspace_edit_safe(
+    model: &crate::CanonicalCommandV1,
+    segment: &crate::CommandSegmentV1,
+    context: super::PathContext<'_>,
+) -> bool {
+    !model.segments.iter().any(changes_path_meaning)
         && in_place_edit(&segment.arguments).is_some_and(|edit| edits_safe(&edit, context))
+}
+
+/// An inert edit of scratch files in a chain of plain peers. Every target is
+/// a temporary file the chain proof accepts, so it is absent or a regular
+/// single-link file the user owns, and a file that exists is not executable.
+/// Nothing in the chain links, renames or changes directory, so the files
+/// checked are the files `sed` opens. No backup is kept next to the target.
+fn scratch_edit_safe(
+    model: &crate::CanonicalCommandV1,
+    segment: &crate::CommandSegmentV1,
+    context: super::PathContext<'_>,
+) -> bool {
+    super::chain_temporary::peers_only(model)
+        && in_place_edit_with(&segment.arguments, true).is_some_and(|edit| {
+            edit.backup_suffix.is_none()
+                && edit.targets.iter().all(|target| {
+                    super::chain_temporary::temporary_file_target(
+                        target,
+                        context.home_dir,
+                        context.cwd,
+                    ) && !std::fs::symlink_metadata(target)
+                        .is_ok_and(|metadata| executable(&metadata))
+                })
+        })
 }
 
 /// A whole `sed` segment, generic checks included, that the native proof
@@ -119,6 +164,11 @@ pub(super) struct InPlaceEdit<'a> {
 }
 
 pub(super) fn in_place_edit(arguments: &[String]) -> Option<InPlaceEdit<'_>> {
+    in_place_edit_with(arguments, false)
+}
+
+/// [`in_place_edit`], which with `scratch` also accepts a line insert.
+fn in_place_edit_with(arguments: &[String], scratch: bool) -> Option<InPlaceEdit<'_>> {
     let mut rest = arguments;
     let mut extended = false;
     if rest.first().is_some_and(|word| word == "-E") {
@@ -168,6 +218,11 @@ pub(super) fn in_place_edit(arguments: &[String]) -> Option<InPlaceEdit<'_>> {
         if empty_suffix && script.split('/').any(|part| part == "..") {
             return None;
         }
+        // An address such as `/pat/` is an absolute file name to GNU sed,
+        // which only BSD sed (the macOS default) reads as a script.
+        if empty_suffix && script.starts_with('/') && !cfg!(target_os = "macos") {
+            return None;
+        }
         scripts.push(script);
         rest = tail;
     } else if !portable && scripts.len() != 1 {
@@ -181,12 +236,13 @@ pub(super) fn in_place_edit(arguments: &[String]) -> Option<InPlaceEdit<'_>> {
         && rest
             .iter()
             .all(|target| !target.is_empty() && !target.starts_with('-'));
-    (targets_plain && scripts.iter().all(|script| inert_substitution(script))).then_some(
-        InPlaceEdit {
-            targets: rest,
-            backup_suffix,
-        },
-    )
+    let inert = |script: &&str| {
+        inert_substitution(script) || (scratch && append_scripts::inert_text_insert(script))
+    };
+    (targets_plain && scripts.iter().all(inert)).then_some(InPlaceEdit {
+        targets: rest,
+        backup_suffix,
+    })
 }
 
 /// A plain backup suffix such as `.bak` or `~`. GNU sed reads `*` as the file

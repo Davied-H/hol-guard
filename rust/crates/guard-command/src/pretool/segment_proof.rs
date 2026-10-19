@@ -306,11 +306,14 @@ pub(super) fn exact_safe_segment_with_context(
         "cp" => {
             super::chain_temporary::copy_segments_allowed(model, segment, context)
                 && super::directory_targets::drive_targets_quoted(segment)
-                && (safe_reads::safe_copy_arguments(&segment.arguments, context)
-                    || super::recursive_copy::safe_recursive_copy_arguments(
-                        &segment.arguments,
-                        context,
-                    ))
+                && (safe_reads::safe_copy_arguments_into(
+                    &segment.arguments,
+                    context,
+                    &super::chain_temporary::created_scratch_directories(model, context),
+                ) || super::recursive_copy::safe_recursive_copy_arguments(
+                    &segment.arguments,
+                    context,
+                ))
         }
         "mktemp" | "mkdir" | "touch" | "mv" | "ln" | "rm" => {
             let alone = basename != "ln" || model.segments.len() == 1;

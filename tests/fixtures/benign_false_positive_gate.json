@@ -1445,6 +1445,70 @@
       "expect": "allow"
     },
     {
+      "id": "queue-scratch-copy-sed-in-place-edit",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/notes.txt ${PRIVATE_TMP}/notes-edited.txt && sed -i '' 's|first|second|' ${PRIVATE_TMP}/notes-edited.txt"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-scratch-copy-sed-edit-then-print-range",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/notes.txt ${PRIVATE_TMP}/notes-edited.txt && sed -i '' 's|first|second|' ${PRIVATE_TMP}/notes-edited.txt && sed -n 1,3p ${PRIVATE_TMP}/notes-edited.txt"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-scratch-awk-print-transform",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "awk 'NR==1 { print \"alpha\"; print \"beta\"; next } { print }' ${PRIVATE_TMP}/notes.txt > ${PRIVATE_TMP}/notes-awk.txt && wc -l ${PRIVATE_TMP}/notes-awk.txt"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-scratch-mkdir-cp-into-new-dir",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "mkdir -p ${PRIVATE_TMP}/new-pkg && cp ${PRIVATE_TMP}/agent-script/index.js ${PRIVATE_TMP}/new-pkg/index.js && cp ${PRIVATE_TMP}/notes.txt ${PRIVATE_TMP}/new-pkg/"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "git-tmp-worktree-status",
       "fix_area": "git",
       "harnesses": [
@@ -3602,6 +3666,54 @@
       "tool": "shell",
       "tool_input": {
         "command": "cp ${PRIVATE_TMP}/notes.txt ${HOME}/.zshrc"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-scratch-sed-in-place-home-dotfile",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/notes.txt ${PRIVATE_TMP}/n.txt && sed -i '' 's|first|second|' ${HOME}/.zshrc"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-scratch-sed-in-place-exec-flag",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/notes.txt ${PRIVATE_TMP}/n.txt && sed -i '' 's|first|id|e' ${PRIVATE_TMP}/n.txt"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-scratch-sed-edit-then-run",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/notes.txt ${PRIVATE_TMP}/n.sh && sed -i '' 's|first|echo|' ${PRIVATE_TMP}/n.sh && sh ${PRIVATE_TMP}/n.sh"
       },
       "cwd": "worktree",
       "expect": "not_allow"
