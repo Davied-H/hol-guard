@@ -26,6 +26,8 @@ const ERR_NAME: &str = "native_runner_authority_claude_code_name_undecodable";
 
 const HARNESS: &str = "claude-code";
 const SETTINGS_FILES: [&str; 2] = ["settings.json", "settings.local.json"];
+/// Where `claude mcp add` keeps user and local scope servers.
+const USER_STATE_FILE: &str = ".claude.json";
 
 /// How a project directory names the artifacts it holds.
 #[derive(Clone, Copy)]
@@ -125,6 +127,44 @@ impl Detection {
             .extend(mcp_artifacts(&scope, path, &payload)?);
         self.artifacts
             .extend(hook_artifacts(&scope, path, &payload)?);
+        Ok(())
+    }
+
+    /// The servers `claude mcp add` keeps in `~/.claude.json`: its top-level
+    /// `mcpServers` (user scope) and the workspace's `projects` entry (local
+    /// scope). The rest of that file is Claude Code's own state and is not
+    /// read. A server a settings file already declares keeps that entry.
+    fn user_state_servers(&mut self, path: &Path) -> Result<(), &'static str> {
+        let payload = settings_payload(&self.fs(path))?;
+        let global = Scope {
+            harness: HARNESS,
+            scope: "global",
+        };
+        let mut artifacts = mcp_artifacts(&global, path, &payload)?;
+        let project = self.workspace.as_ref().and_then(|workspace| {
+            payload
+                .get("projects")
+                .and_then(|projects| projects.get(&workspace.to_string_lossy()))
+        });
+        if let Some(project) = project {
+            let local = Scope {
+                harness: HARNESS,
+                scope: "project",
+            };
+            artifacts.extend(mcp_artifacts(&local, path, project)?);
+        }
+        artifacts.retain(|artifact| {
+            !self
+                .artifacts
+                .iter()
+                .any(|existing| existing["artifact_id"] == artifact["artifact_id"])
+        });
+        if artifacts.is_empty() {
+            return Ok(());
+        }
+        self.found_paths
+            .push(kept(&path.to_string_lossy())?.to_owned());
+        self.artifacts.extend(artifacts);
         Ok(())
     }
 
@@ -234,6 +274,7 @@ pub(crate) fn detect(args: &Value) -> KindResult {
     for candidate in &candidates {
         detection.settings(candidate)?;
     }
+    detection.user_state_servers(&home.join(USER_STATE_FILE))?;
     if let Some(workspace) = &workspace {
         for directory in PROJECT_DIRECTORIES {
             detection.project_directory(workspace, directory)?;
