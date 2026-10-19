@@ -205,6 +205,13 @@ def _session_worktree(org: Path, home: Path) -> None:
     portal_manifest = {"name": "app-portal", "private": True, "devDependencies": {"vite": "^7.1.5"}}
     _write(worktree / "package.json", json.dumps(portal_manifest) + "\n")
     _bun_lockfile(worktree, {"vite": _NODE_PACKAGES["vite"]})
+    # The worktree's dependencies are installed, as a session that ran its
+    # package manager there leaves them. Cases measure the size of that tree
+    # and link into a file inside it; against a tree that is not there they
+    # would measure a missing path instead of an installed one.
+    _node_package(worktree, "vite", _NODE_PACKAGES["vite"])
+    _node_package(worktree, "vitest", _NODE_PACKAGES["vitest"])
+    _write(worktree / "node_modules" / "vitest" / "index.js", "module.exports = {};\n")
     for name in ("findings", "prd", "todo"):
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')
@@ -354,6 +361,9 @@ def build_fixture(root: Path) -> BenignFixture:
     private_tmp = Path(tempfile.mkdtemp(prefix="tmp.", dir=_system_tmp())).resolve()
     _write(private_tmp / "notes.txt", "first draft\n")
     _write(private_tmp / "resume-phase1.mjs", "console.log('resume');\n")
+    # A probe file an earlier step wrote here: the cases that copy it into the
+    # checkout are about where it came from, not about whether it exists.
+    _write(private_tmp / "p8.ts", "export const probe = 1;\n")
     # A script an agent wrote for itself in a fresh scratch directory: Guard has never decided on it.
     _write(private_tmp / "agent-script" / "index.js", "console.log('scratch');\n")
     # A recipe outside the workspace, so running it is refused for what it is
