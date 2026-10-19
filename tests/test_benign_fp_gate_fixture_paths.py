@@ -39,9 +39,13 @@ _GLOB_CHARACTERS = ("*", "?", "[")
 _PROBES_FOR_ABSENCE = frozenset(
     {
         "gauntlet-ls-missing-git-leaf-plain-dir",
-        # The worktree has no ``node_modules`` of its own, deliberately: the
-        # cases that link one in here are asking about an absent destination.
-        # A ``du`` of it measures nothing and prints an error, as a probe does.
+        # These two measure the feature worktree's ``node_modules``, and the
+        # session they were mined from had one. The fixture cannot give them
+        # one yet: three other cases link the main checkout's tree in at that
+        # same name, and a link whose destination already exists lands inside
+        # it, which is a different command than the one that was observed and
+        # is still reviewed. Installing here would turn those three red. The
+        # install belongs with the fix for that review, not before it.
         "session-du-sibling-worktree-modules",
         "session-du-sibling-worktree-scripts-sort",
         "observed-ls-lockfile-probe-mixed",
