@@ -194,6 +194,8 @@ fn diff_option(option: &str) -> bool {
 
 pub(super) fn safe_stat_arguments(arguments: &[String], context: super::PathContext<'_>) -> bool {
     let mut operands = Vec::new();
+    // GNU stat can interpret BSD formatting flags as bare file options.
+    let mut format_operands = Vec::new();
     let mut after_options = false;
     let mut values = arguments.iter();
     while let Some(argument) = values.next() {
@@ -213,8 +215,11 @@ pub(super) fn safe_stat_arguments(arguments: &[String], context: super::PathCont
                 )))
         {
             // BSD stat takes a format operand for -f/-t, GNU stat does not.
-            if !values.next().is_some_and(|format| stat_format(format)) {
+            let Some(format) = values.next().filter(|format| stat_format(format)) else {
                 return false;
+            };
+            if option != "-c" {
+                format_operands.push(format.as_str());
             }
         } else if matches!(option, "-f" | "-t") {
             // GNU stat: -f prints filesystem data, -t is terse. The *next*
@@ -234,7 +239,7 @@ pub(super) fn safe_stat_arguments(arguments: &[String], context: super::PathCont
     }
     !operands.is_empty()
         && operands.len() <= MAX_OPERANDS
-        && operands.iter().all(|operand| {
+        && operands.iter().chain(format_operands.iter()).all(|operand| {
             safe_reads::bounded_read_target(operand, context.home_dir, context.cwd, true)
                 || super::chain_temporary::absent_temporary_read_target(
                     operand,
