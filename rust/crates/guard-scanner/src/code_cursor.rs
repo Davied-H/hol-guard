@@ -4,7 +4,7 @@
 //! building a syntax tree, and fails closed on anything it does not know: a
 //! long or encoded-looking literal, a stray symbol, an unbalanced bracket.
 
-const MAX_EXPRESSION_BYTES: usize = 600;
+pub(crate) const MAX_EXPRESSION_BYTES: usize = 600;
 const MAX_DEPTH: usize = 8;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Scan {
@@ -60,10 +60,9 @@ pub(crate) fn environment_call(path_env: bool, name: &[u8]) -> Option<usize> {
 /// A quoted argument that cannot be a credential: every word is short, or the
 /// whole literal reads as a slug, a host or a path of at most three words.
 pub(crate) fn literal_ok(literal: &[u8]) -> bool {
-    literal
-        .split(|byte| byte.is_ascii_whitespace())
-        .all(|word| word.len() < 12)
-        || word_like(literal)
+    // Multiple short words may still spell a passphrase. Require the whole
+    // literal to look like one ordinary word, source token or short path.
+    word_like(literal)
 }
 
 pub(crate) fn word_like(literal: &[u8]) -> bool {
@@ -79,13 +78,20 @@ pub(crate) fn word_like(literal: &[u8]) -> bool {
                     && !(run.len() >= 10
                         && run.iter().any(u8::is_ascii_digit)
                         && run.iter().any(u8::is_ascii_alphabetic))
+                    && !(run.len() >= 8
+                        && run.iter().any(u8::is_ascii_digit)
+                        && run.iter().any(u8::is_ascii_uppercase)
+                        && run.iter().any(u8::is_ascii_lowercase))
             })
 }
 
 /// Literal text of a template: no run that looks like an encoded secret.
 pub(crate) fn text_ok(text: &[u8]) -> bool {
-    text.split(|&byte| !(byte.is_ascii_alphanumeric() || byte == b'_'))
-        .all(|run| run.len() < 20 && !encoded_looking(run))
+    // Splitting on hyphens alone cannot prove that a long literal is harmless.
+    (text.len() < 20 || word_like(text))
+        && text
+            .split(|&byte| !(byte.is_ascii_alphanumeric() || byte == b'_'))
+            .all(|run| run.len() < 20 && !encoded_looking(run))
 }
 
 impl<'a> Cursor<'a> {
