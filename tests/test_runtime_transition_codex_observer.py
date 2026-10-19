@@ -24,7 +24,11 @@ from codex_plugin_scanner.guard.runtime.command_activity_correlation import (
     rotate_installation_correlation_key,
 )
 from codex_plugin_scanner.guard.runtime_transition import TransitionError
-from codex_plugin_scanner.guard.runtime_transition_hook_probe import PROBE_FIELD, transition_hook_observation
+from codex_plugin_scanner.guard.runtime_transition_hook_probe import (
+    PROBE_FIELD,
+    PROBE_SCHEMA,
+    transition_hook_observation,
+)
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.test_native_decision_receipt import _receipt
 
@@ -107,7 +111,7 @@ def test_frozen_desktop_configured_bridge_routes_probe_through_signed_proxy(monk
         "hook_event_name": "PreToolUse",
         "cwd": str(workspace),
         PROBE_FIELD: {
-            "schema": "hol-guard.transition-hook-probe.v1",
+            "schema": PROBE_SCHEMA,
             "operation_id": str(uuid.uuid4()),
             "request_id": "transition-hook-" + uuid.uuid4().hex,
         },
@@ -151,7 +155,7 @@ def test_frozen_desktop_configured_bridge_fails_closed_without_proxy(monkeypatch
         "hook_event_name": "PreToolUse",
         "cwd": str((tmp_path / "workspace").resolve()),
         PROBE_FIELD: {
-            "schema": "hol-guard.transition-hook-probe.v1",
+            "schema": PROBE_SCHEMA,
             "operation_id": str(uuid.uuid4()),
             "request_id": "transition-hook-" + uuid.uuid4().hex,
         },
@@ -175,7 +179,7 @@ def test_desktop_bridge_runs_proxy_and_preserves_its_hook_channels(monkeypatch, 
             "tool_input": {"command": "pwd"},
             "cwd": str(tmp_path),
             PROBE_FIELD: {
-                "schema": "hol-guard.transition-hook-probe.v1",
+                "schema": PROBE_SCHEMA,
                 "operation_id": str(uuid.uuid4()),
                 "request_id": "transition-hook-" + uuid.uuid4().hex,
             },
@@ -425,3 +429,45 @@ def test_invalid_configuration_never_launches_a_child(tmp_path, monkeypatch, fau
             workspace=workspace,
             deadline_monotonic=deadline,
         )
+
+
+def _observation_envelope() -> dict[str, object]:
+    request_id = "transition-hook-" + "c" * 32
+    payload = {
+        PROBE_FIELD: {
+            "schema": PROBE_SCHEMA,
+            "operation_id": str(uuid.uuid4()),
+            "request_id": request_id,
+        }
+    }
+    receipt = _receipt(
+        request_id=request_id,
+        harness="codex",
+        event_name="PreToolUse",
+        decision="allow",
+        policy_action="allow",
+    )
+    observation = transition_hook_observation(payload, receipt)
+    assert observation is not None
+    return observation
+
+
+def test_observation_is_read_from_a_stderr_shared_with_runtime_diagnostics():
+    # The native bridge writes the observation to the hook's own stderr, which
+    # the runtime also traces resident phases on under
+    # HOL_GUARD_NATIVE_DIAGNOSTIC. The whole stream is not one JSON document.
+    observation = _observation_envelope()
+    stderr = (
+        "native_resident_phase phase=client_connect status=start elapsed_ms=0\n"
+        + json.dumps(observation)
+        + "\nnative_resident_phase phase=client_close status=ok elapsed_ms=1\n"
+    )
+    assert observer._probe_observation(stderr) == observation
+
+
+@pytest.mark.parametrize(
+    "stderr", ["", "native_resident_phase phase=client_connect status=start elapsed_ms=0\n", '{"schema":"other"}\n']
+)
+def test_missing_observation_is_refused_rather_than_guessed(stderr):
+    with pytest.raises(ValueError):
+        observer._probe_observation(stderr)
