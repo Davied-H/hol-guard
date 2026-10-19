@@ -75,7 +75,7 @@ pub(super) fn strengthen(result: &mut PreToolResultV1, action: &str, reason: &st
                 "HOL Guard could not match this command to the installed extension controls, so it stays blocked. A command that runs a script or another program (such as `bash script.sh`, `env`, `xargs`, `node -e` or a `$(...)` that runs one) cannot be matched. Run the program directly, or use a built-in tool. If an ordinary command keeps getting this, ask the user to run `hol-guard doctor`."
             }
             "native_command_extension_uncertain" => {
-                "HOL Guard requires review because this command matched a protected-action rule that Guard could not rule out, such as a write to a harness, shell or credential file, or code Guard cannot read ahead of time. A plain read of a file needs no review, so a simpler command or a built-in read tool avoids it."
+                "HOL Guard could not rule out a protected action in this command, such as a write to a harness, shell or credential file, or a program, loop or heredoc Guard cannot read ahead of time. Running each step directly, or using a built-in tool for an ordinary file read, usually avoids it."
             }
             _ => "HOL Guard requires the native command extension policy before this action can execute.",
         }
