@@ -193,6 +193,52 @@ def test_a_durable_control_read_that_fails_leaves_no_token() -> None:
     assert published_binding_token(Publisher()) is None
 
 
+def test_a_marker_frozen_mid_mutation_leaves_no_token() -> None:
+    from codex_plugin_scanner.guard.daemon.hook_native_review_fence import published_binding_token
+
+    marker = {"epoch": 1, "mutation_revision": 8, "phase": "closed", "effective_digest": None}
+
+    class Publisher:
+        def _committed_control_authority(self) -> dict[str, object]:
+            return dict(marker)
+
+        def _compiled_business_source(self) -> None:
+            return None
+
+        def _current_local_cli_revision(self) -> int:
+            return 3
+
+    publisher = Publisher()
+    # The writer freezes this marker before it commits its control rows, so two
+    # reads taken across that window read the same bytes while the rows change.
+    assert published_binding_token(publisher) is None
+    marker["phase"] = "committed"
+    marker["effective_digest"] = "digest-8"
+    assert published_binding_token(publisher) is not None
+
+
+def test_a_home_without_control_authority_still_has_a_token() -> None:
+    from codex_plugin_scanner.guard.daemon.hook_native_review_fence import published_binding_token
+
+    class Publisher:
+        def _committed_control_authority(self) -> None:
+            # A fresh install has no control authority at all.
+            return None
+
+        def _compiled_business_source(self) -> None:
+            return None
+
+        def _current_local_cli_revision(self) -> int:
+            return 3
+
+    publisher = Publisher()
+    token = published_binding_token(publisher)
+    # An absent marker is a definite state; refusing it would turn ordinary work
+    # on a fresh install into an approval row.
+    assert token is not None
+    assert published_binding_token(publisher) == token
+
+
 def test_unleased_review_without_durable_authority_cannot_allow(tmp_path, monkeypatch):
     worker = _unleased_worker(tmp_path, monkeypatch, [None, None])
     try:

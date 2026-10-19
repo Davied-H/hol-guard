@@ -21,6 +21,11 @@ from ..native_command_control_authority_io import (
 # review without it.
 LEASE_WAIT_SECONDS = 0.25
 
+# The only marker phase that describes a control state the rows have settled
+# into. A mutation writes the next revision as ``closed`` before it commits its
+# rows, so anything else is a state still being written.
+COMMITTED_PHASE = "committed"
+
 
 def _reader(publisher: object, name: str) -> Callable[[], object] | None:
     """Bind one of the publisher's own readers, which this module only duck-types."""
@@ -43,9 +48,9 @@ def published_binding_token(publisher: object) -> tuple[object, ...] | None:
     control projection here instead would re-enter the authority lock this
     fence exists to stay out of, and would spend the budget the review still
     needs; an absent marker is a definite state and compares as one. None is
-    returned only when the committed state could not be read at all, and an
-    unleased review then fails closed rather than reading an unknown as
-    unchanged.
+    returned when the committed state could not be read at all, or when the
+    marker that was read is mid-mutation, and an unleased review then fails
+    closed rather than reading an unknown as unchanged.
     """
 
     authority = _reader(publisher, "_committed_control_authority")
@@ -59,6 +64,18 @@ def published_binding_token(publisher: object) -> tuple[object, ...] | None:
         cli_revision = revision()
         identity = b"" if source is None else getattr(source, "retained_identity_bytes", None)
         if not isinstance(marker, Mapping) or not isinstance(identity, bytes):
+            return None
+        if marker and marker.get("phase") != COMMITTED_PHASE:
+            # A control mutation freezes the marker at the next revision with
+            # phase ``closed`` while it still holds the lease, and only commits
+            # its control rows afterwards. The unleased review runs precisely
+            # because a writer holds that lease, so both of its reads can land
+            # inside that one frozen window and match while the rows change
+            # between them. A marker mid-mutation is not a state a review can be
+            # bound to; refuse it, and the caller fails closed. An absent marker
+            # is a home with no control authority at all - a fresh install -
+            # which is a definite state and stays comparable, so ordinary work
+            # there is not turned into an approval.
             return None
         return (
             marker.get("epoch"),
