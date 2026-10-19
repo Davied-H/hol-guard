@@ -231,7 +231,8 @@ def _background_read_error(calls: list[dict[str, Any]], *, require_steps: bool =
             # hide the false positive this scenario exists to catch.
             if call["is_error"] is not True:
                 names = [_text(calls[other]) or "" for other in started]
-                if names and not any(job["job"] in name for name in names):
+                token = re.compile(rf"(?<![A-Za-z0-9_.-]){re.escape(job['job'])}(?![A-Za-z0-9_.-])")
+                if names and not any(token.search(name) for name in names):
                     return "the model read a job it did not start here"
                 if not JOB_OUTPUT_TEXT.search(_text(call) or ""):
                     return "the job output the model read back did not carry the command's result"
