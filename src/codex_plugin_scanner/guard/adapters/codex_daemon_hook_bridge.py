@@ -1,23 +1,41 @@
-"""Fast, authenticated bridge from Codex hooks to the local Guard daemon."""
+"""Compatibility launcher for Codex hook commands written before the native bridge.
+
+The daemon hook review itself lives in the runtime
+(``rust/crates/guard-runtime/src/codex_hook_bridge.rs``). Guard installs that
+runtime's ``codex-hook-bridge`` command ahead of this bridge whenever the
+runtime is present, so what is left here is the hook command of a session
+written before the runtime shipped, and the frozen Desktop entry point that
+still calls ``main`` in process: both run the same native command with the
+same config argument.
+
+There is no Python evaluator behind it. Every hook review needs the native
+runtime, so an install without one has nothing left to ask and the hook
+fails closed.
+
+A frozen macOS Desktop keeps one lane of its own. A transition probe there
+must be answered by the signed bundle executable, not by a runtime copy
+published beside the Guard home, so this module still builds that strict
+signed-proxy command and runs it. Python decides nothing on that lane either;
+it only chooses which signed binary reviews the hook.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
 from pathlib import Path
 from urllib.parse import parse_qs
 
 if __package__:
     from ..approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
-    from ..codex_hook_bridge_runtime import (
-        BridgeConfig,
-    )
+    from ..codex_hook_bridge_runtime import BridgeConfig
     from ..codex_hook_bridge_runtime import bounded_hook_input as _hook_input
     from ..codex_hook_bridge_runtime import bridge_config_from_argv as _parse_bridge_config
+    from ..codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND, NATIVE_CODEX_HOOK_FEATURE
     from ..codex_hook_launch_runtime import (
         desktop_hook_proxy_context,
         isolated_hook_environment,
@@ -31,30 +49,12 @@ if __package__:
         CODEX_BROWSER_WAIT_TIMEOUT_SECONDS_KEY,
         current_process_identity,
     )
-    from ..native_codex_binding_capture import record_bridge_ingress
-    from .codex_contained_tests import route_codex_containment
-    from .codex_daemon_bridge_failure_reason import AUTHENTICATION_FAILED_REASON, daemon_failure_reason
-    from .codex_daemon_hook_bridge_flow import bridge_review_response
-    from .codex_daemon_hook_resume import apply_browser_approval_wait
-    from .codex_hook_response import codex_hook_response as _codex_hook_response
+    from .native_hook_bridge import native_hook_bridge_executable
 else:  # pragma: no cover - exercised by subprocess integration tests
     _package_root = str(Path(__file__).resolve().parents[3])
     if _package_root not in sys.path:
         sys.path.insert(0, _package_root)
-    from codex_plugin_scanner.guard.adapters.codex_contained_tests import route_codex_containment
-    from codex_plugin_scanner.guard.adapters.codex_daemon_bridge_failure_reason import (
-        AUTHENTICATION_FAILED_REASON,
-        daemon_failure_reason,
-    )
-    from codex_plugin_scanner.guard.adapters.codex_daemon_hook_bridge_flow import (
-        bridge_review_response,
-    )
-    from codex_plugin_scanner.guard.adapters.codex_daemon_hook_resume import (
-        apply_browser_approval_wait,
-    )
-    from codex_plugin_scanner.guard.adapters.codex_hook_response import (
-        codex_hook_response as _codex_hook_response,
-    )
+    from codex_plugin_scanner.guard.adapters.native_hook_bridge import native_hook_bridge_executable
     from codex_plugin_scanner.guard.approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from codex_plugin_scanner.guard.codex_hook_bridge_runtime import (
         BridgeConfig,
@@ -64,6 +64,10 @@ else:  # pragma: no cover - exercised by subprocess integration tests
     )
     from codex_plugin_scanner.guard.codex_hook_bridge_runtime import (
         bridge_config_from_argv as _parse_bridge_config,
+    )
+    from codex_plugin_scanner.guard.codex_hook_compatibility import (
+        NATIVE_CODEX_HOOK_COMMAND,
+        NATIVE_CODEX_HOOK_FEATURE,
     )
     from codex_plugin_scanner.guard.codex_hook_launch_runtime import (
         desktop_hook_proxy_context,
@@ -80,45 +84,204 @@ else:  # pragma: no cover - exercised by subprocess integration tests
         CODEX_BROWSER_WAIT_TIMEOUT_SECONDS_KEY,
         current_process_identity,
     )
-    from codex_plugin_scanner.guard.native_codex_binding_capture import record_bridge_ingress
 
 _HOOK_TIMEOUT_GRACE_SECONDS = 2
-_DISCOVERY_PROTOCOL_VERSION = 1
 _MAX_HOOK_INPUT_BYTES = 1_000_000
-_BRIDGE_FAILURE_SCHEMA = "hol-guard.codex-bridge-failure.v1"
-_FAIL_CLOSED_REASON = AUTHENTICATION_FAILED_REASON
-_LAUNCH_INTEGRITY_REASON = (
-    "HOL Guard could not authenticate its managed Codex hook launcher. "
-    "Run `hol-guard install codex` from a terminal, then retry."
-)
 _TRANSITION_PROBE_OUTPUT_LIMIT = 64 * 1024
+_NATIVE_RUNTIME_UNAVAILABLE = (
+    "HOL Guard could not complete native review (the native runtime is unavailable) and denied this action."
+)
 
 
-def _json_object(text: str) -> dict[str, object] | None:
+def main(
+    *,
+    state_path: str | Path,
+    fallback_command: Sequence[str],
+    start_command: Sequence[str],
+    query: str,
+    hook_timeouts: Mapping[str, int],
+    manifest_path: str | Path | None = None,
+    config_json: str | None = None,
+) -> int:
+    """Run this hook call in the native bridge, or deny when there is no runtime."""
+
+    state = Path(state_path)
+    if _desktop_probe_lane():
+        return _desktop_main(
+            state=state,
+            query=query,
+            hook_timeouts=hook_timeouts,
+            fallback_command=fallback_command,
+            start_command=start_command,
+            manifest_path=manifest_path,
+            config_json=config_json,
+        )
+    native = _native_bridge_executable(state.parent)
+    if native is None:
+        return _deny_without_a_runtime()
+    sys.stdout.flush()
+    # The child inherits this hook call's stdio, so it reads the hook body and
+    # writes the response itself. ``exec`` would save the fork, but this entry
+    # point is also called in process, where replacing the caller is wrong.
+    return subprocess.run(
+        _native_argv(
+            native,
+            state_path=state_path,
+            fallback_command=fallback_command,
+            start_command=start_command,
+            query=query,
+            hook_timeouts=hook_timeouts,
+            manifest_path=manifest_path,
+            config_json=config_json,
+        ),
+        check=False,
+    ).returncode
+
+
+def _desktop_main(
+    *,
+    state: Path,
+    query: str,
+    hook_timeouts: Mapping[str, int],
+    fallback_command: Sequence[str],
+    start_command: Sequence[str],
+    manifest_path: str | Path | None,
+    config_json: str | None,
+) -> int:
+    """Review this hook inside the signed bundle, or hand the body to the runtime.
+
+    The probe lane is the one case where Python has to read the hook body
+    before it knows where the review belongs, so a body read here is passed on
+    rather than inherited.
+    """
+
+    hook_input = _bound_hook_input(hook_timeouts)
+    if hook_input is None:
+        sys.stdout.write(json.dumps(_fail_closed("PreToolUse"), separators=(",", ":")))
+        return 0
+    event_name, data, timeout_seconds, input_ready_at = hook_input
     try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return payload if isinstance(payload, dict) else None
+        probe_command = _desktop_transition_probe_command(
+            data=data,
+            state_path=state,
+            query=query,
+            hook_timeouts=hook_timeouts,
+        )
+    except (OSError, RuntimeError, ValueError):
+        sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
+        return 1
+    if probe_command is None:
+        native = _native_bridge_executable(state.parent)
+        if native is None:
+            sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
+            return 0
+        sys.stdout.flush()
+        return subprocess.run(
+            _native_argv(
+                native,
+                state_path=state,
+                fallback_command=fallback_command,
+                start_command=start_command,
+                query=query,
+                hook_timeouts=hook_timeouts,
+                manifest_path=manifest_path,
+                config_json=config_json,
+            ),
+            input=data.encode("utf-8", "surrogateescape"),
+            check=False,
+        ).returncode
+    try:
+        probe_result = run_isolated_hook_process(
+            probe_command,
+            input_text=data,
+            cwd=Path.home(),
+            environment=isolated_hook_environment(),
+            output_limit=_TRANSITION_PROBE_OUTPUT_LIMIT,
+            deadline_monotonic=input_ready_at + timeout_seconds,
+        )
+    except OSError:
+        sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
+        return 1
+    if (
+        probe_result.returncode != 0
+        or probe_result.timed_out
+        or probe_result.containment_failed
+        or probe_result.output_limit_exceeded
+    ):
+        sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
+        return 1
+    sys.stdout.write(probe_result.stdout)
+    sys.stderr.write(probe_result.stderr)
+    return 0
 
 
-def _write_transition_observation(data: str, response: Mapping[str, object]) -> None:
-    envelope = response.get("guard_transition_observation")
-    if not isinstance(envelope, dict):
-        return
-    from codex_plugin_scanner.guard.runtime_transition_hook_probe import (
-        transition_hook_observation,
+def _desktop_probe_lane(environment: Mapping[str, str] | None = None) -> bool:
+    """Whether this call is the frozen macOS Desktop lane that owns the probe."""
+
+    source = os.environ if environment is None else environment
+    return bool(getattr(sys, "frozen", False)) and sys.platform == "darwin" and source.get("HOL_GUARD_DESKTOP") == "1"
+
+
+def _native_argv(
+    native: Path,
+    *,
+    state_path: str | Path,
+    fallback_command: Sequence[str],
+    start_command: Sequence[str],
+    query: str,
+    hook_timeouts: Mapping[str, int],
+    manifest_path: str | Path | None,
+    config_json: str | None,
+) -> tuple[str, ...]:
+    return (
+        str(native),
+        _native_bridge_command(),
+        config_json
+        if config_json is not None
+        else _native_bridge_config(
+            state_path=state_path,
+            fallback_command=fallback_command,
+            start_command=start_command,
+            query=query,
+            hook_timeouts=hook_timeouts,
+            manifest_path=manifest_path,
+        ),
     )
 
-    payload = _json_object(data)
-    if payload is None:
-        return
-    validated = transition_hook_observation(payload, envelope.get("native_receipt"))
-    if validated is None or envelope != validated:
-        return
-    # Diagnostics must never interfere with the app's enforcement response.
-    with suppress(OSError, ValueError):
-        sys.stderr.write(json.dumps(validated, sort_keys=True, separators=(",", ":")) + "\n")
+
+def _native_bridge_executable(guard_home: Path) -> Path | None:
+    return native_hook_bridge_executable(NATIVE_CODEX_HOOK_FEATURE, guard_home=guard_home)
+
+
+def _native_bridge_command() -> str:
+    return NATIVE_CODEX_HOOK_COMMAND
+
+
+def _native_bridge_config(
+    *,
+    state_path: str | Path,
+    fallback_command: Sequence[str],
+    start_command: Sequence[str],
+    query: str,
+    hook_timeouts: Mapping[str, int],
+    manifest_path: str | Path | None,
+) -> str:
+    """The config the installed native command carries, rebuilt from this call.
+
+    The runtime reads the same fields ``bridge_config_from_argv`` does, and
+    refuses anything Python would refuse, so a call that arrives without its
+    original argument is rebuilt here rather than repaired.
+    """
+
+    config = {
+        "state_path": str(state_path),
+        "manifest_path": str(manifest_path or ""),
+        "fallback_command": [str(item) for item in fallback_command],
+        "start_command": [str(item) for item in start_command],
+        "query": query,
+        "hook_timeouts": {str(event): int(timeout) for event, timeout in hook_timeouts.items()},
+    }
+    return json.dumps(config, ensure_ascii=False, separators=(",", ":"))
 
 
 def _desktop_transition_probe_command(
@@ -132,9 +295,7 @@ def _desktop_transition_probe_command(
     """Build the strict signed-proxy path for an authenticated Desktop probe."""
 
     source = os.environ if environment is None else environment
-    if not bool(getattr(sys, "frozen", False)) or sys.platform != "darwin":
-        return None
-    if source.get("HOL_GUARD_DESKTOP") != "1":
+    if not _desktop_probe_lane(source):
         return None
 
     payload = _json_object(data)
@@ -203,11 +364,23 @@ def _desktop_transition_probe_command(
     return command
 
 
-def _event_name(data: str) -> str:
-    payload = _json_object(data)
-    if payload is None:
-        return "PreToolUse"
-    return runtime_hook_event_name(payload)
+def _bound_hook_input(hook_timeouts: Mapping[str, int]) -> tuple[str, str, float, float] | None:
+    """The probe lane's hook body, stamped the way the runtime stamps its own."""
+
+    raw_data = _hook_input(_MAX_HOOK_INPUT_BYTES)
+    if raw_data is None:
+        return None
+    input_ready_at = time.monotonic()
+    event_name = _event_name(raw_data)
+    timeout_seconds = _request_timeout(event_name, hook_timeouts)
+    data = (
+        _with_browser_wait_process(raw_data, wait_timeout_seconds=max(1.0, timeout_seconds - 1.0))
+        if event_name == "PreToolUse"
+        else raw_data
+    )
+    # Native Git-helper checks need the environment Codex will run the command
+    # in; without it every Git read is treated as unverifiable.
+    return event_name, stamp_hook_input_text(data), timeout_seconds, input_ready_at
 
 
 def _with_browser_wait_process(data: str, *, wait_timeout_seconds: float) -> str:
@@ -232,7 +405,29 @@ def _request_timeout(event_name: str, hook_timeouts: Mapping[str, int]) -> float
     return float(max(1, timeout - _HOOK_TIMEOUT_GRACE_SECONDS))
 
 
-def _fail_closed(event_name: str, reason: str = _FAIL_CLOSED_REASON) -> dict[str, object]:
+def _deny_without_a_runtime() -> int:
+    data = _hook_input(_MAX_HOOK_INPUT_BYTES)
+    event_name = "PreToolUse" if data is None else _event_name(data)
+    sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
+    return 0
+
+
+def _json_object(text: str) -> dict[str, object] | None:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _event_name(data: str) -> str:
+    payload = _json_object(data)
+    if payload is None:
+        return "PreToolUse"
+    return runtime_hook_event_name(payload)
+
+
+def _fail_closed(event_name: str, reason: str = _NATIVE_RUNTIME_UNAVAILABLE) -> dict[str, object]:
     if hook_event_is_permission_request(event_name):
         return {
             "hookSpecificOutput": {
@@ -255,210 +450,6 @@ def _fail_closed(event_name: str, reason: str = _FAIL_CLOSED_REASON) -> dict[str
         "continue": True,
         "systemMessage": reason,
     }
-
-
-def _unavailable_response(
-    event_name: str,
-    reason: str,
-    data: str | None = None,
-) -> dict[str, object]:
-    # A payload's command name or path is not an authenticated tool decision.
-    del data
-    if event_name == "PreToolUse":
-        return _fail_closed(event_name, reason)
-    if hook_event_is_permission_request(event_name):
-        return _fail_closed(event_name, reason)
-    return {
-        "continue": True,
-        "systemMessage": reason,
-    }
-
-
-def _bound_hook_input(
-    hook_timeouts: Mapping[str, int],
-    *,
-    capture_guard_home: Path | None = None,
-) -> tuple[str, str, float, float] | None:
-    raw_data = _hook_input(_MAX_HOOK_INPUT_BYTES)
-    if raw_data is None:
-        return None
-    input_ready_at = time.monotonic()
-    event_name = _event_name(raw_data)
-    timeout_seconds = _request_timeout(event_name, hook_timeouts)
-    data = (
-        _with_browser_wait_process(raw_data, wait_timeout_seconds=max(1.0, timeout_seconds - 1.0))
-        if event_name == "PreToolUse"
-        else raw_data
-    )
-    # Native Git-helper checks need the environment Codex will run the command
-    # in; without it every Git read is treated as unverifiable.
-    data = stamp_hook_input_text(data)
-    if capture_guard_home is not None:
-        with suppress(Exception):
-            record_bridge_ingress(
-                guard_home=capture_guard_home,
-                raw_payload=raw_data,
-                forwarded_payload=data,
-                event_name=event_name,
-            )
-    return event_name, data, timeout_seconds, input_ready_at
-
-
-def main(
-    *,
-    state_path: str | Path,
-    fallback_command: Sequence[str],
-    start_command: Sequence[str],
-    query: str,
-    hook_timeouts: Mapping[str, int],
-    manifest_path: str | Path | None = None,
-    config_json: str | None = None,
-) -> int:
-    """Review one Codex hook through the resident daemon or a fail-safe fallback."""
-
-    state = Path(state_path)
-    capture_guard_home = state.parent if state.is_absolute() and state.name == "daemon-state.json" else None
-    hook_input = _bound_hook_input(hook_timeouts, capture_guard_home=capture_guard_home)
-    if hook_input is None:
-        sys.stdout.write(json.dumps(_fail_closed("PreToolUse"), separators=(",", ":")))
-    else:
-        event_name, data, timeout_seconds, input_ready_at = hook_input
-        deadline = input_ready_at + timeout_seconds
-        try:
-            probe_command = _desktop_transition_probe_command(
-                data=data,
-                state_path=state_path,
-                query=query,
-                hook_timeouts=hook_timeouts,
-            )
-        except (OSError, RuntimeError, ValueError):
-            sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
-            return 1
-        if probe_command is not None:
-            try:
-                probe_result = run_isolated_hook_process(
-                    probe_command,
-                    input_text=data,
-                    cwd=Path.home(),
-                    environment=isolated_hook_environment(),
-                    output_limit=_TRANSITION_PROBE_OUTPUT_LIMIT,
-                    deadline_monotonic=deadline,
-                )
-            except OSError:
-                sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
-                return 1
-            if (
-                probe_result.returncode != 0
-                or probe_result.timed_out
-                or probe_result.containment_failed
-                or probe_result.output_limit_exceeded
-            ):
-                sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
-                return 1
-            sys.stdout.write(probe_result.stdout)
-            sys.stderr.write(probe_result.stderr)
-            return 0
-        failure_causes = []
-        response, daemon_overloaded, launch_integrity_failed = bridge_review_response(
-            state_path=state_path,
-            fallback_command=fallback_command,
-            start_command=start_command,
-            query=query,
-            data=data,
-            deadline=deadline,
-            manifest_path=manifest_path,
-            config_json=config_json,
-            failure_causes=failure_causes,
-            event_name=event_name,
-        )
-        if response is None:
-            # Name the cause of every denial; an allowed continuation stays quiet.
-            if launch_integrity_failed or event_name == "PreToolUse" or hook_event_is_permission_request(event_name):
-                _write_failure_causes(failure_causes)
-            if launch_integrity_failed:
-                if any(
-                    isinstance(cause, dict) and cause.get("reason_code") == "codex_hook_validation_deadline_expired"
-                    for cause in failure_causes
-                ):
-                    response = _unavailable_response(
-                        event_name,
-                        "HOL Guard could not finish hook identity verification before the deadline. "
-                        "Retry this action after local review recovers.",
-                        data,
-                    )
-                else:
-                    response = _launcher_integrity_response(event_name, data)
-            else:
-                failure_reason = daemon_failure_reason(failure_causes, daemon_overloaded=daemon_overloaded)
-                response = _unavailable_response(event_name, failure_reason, data)
-        _write_transition_observation(data, response)
-        sys.stdout.write(
-            _bridge_output(
-                response,
-                event_name=event_name,
-                hook_input=data,
-                state_path=state_path,
-                deadline=deadline,
-                query=query,
-            )
-        )
-    return 0
-
-
-def _write_failure_causes(failure_causes: list[object]) -> None:
-    """Report the fixed reason codes behind a denial without exposing details."""
-
-    # Diagnostic delivery must not interrupt the denial response.
-    with suppress(OSError, ValueError, TypeError):
-        sys.stderr.write(
-            json.dumps({"schema": _BRIDGE_FAILURE_SCHEMA, "causes": failure_causes}, separators=(",", ":")) + "\n"
-        )
-
-
-def _launcher_integrity_response(event_name: str, data: str) -> dict[str, object]:
-    """Deny tool actions through a bad launcher and identify a terminal repair."""
-
-    return _unavailable_response(event_name, _LAUNCH_INTEGRITY_REASON, data)
-
-
-def _installed_hook_home(query: str) -> Path | None:
-    """Return the single absolute home the installed Codex hook was bound to."""
-
-    values = parse_qs(query, keep_blank_values=True).get("home", [])
-    if len(values) != 1 or "\x00" in values[0]:
-        return None
-    home = Path(values[0])
-    if not home.is_absolute():
-        return None
-    return home
-
-
-def _bridge_output(
-    response: dict[str, object],
-    *,
-    event_name: str,
-    hook_input: str,
-    state_path: str | Path,
-    deadline: float,
-    query: str = "",
-) -> str:
-    if event_name == "PreToolUse":
-        state = Path(state_path)
-        response = route_codex_containment(
-            response,
-            hook_input=hook_input,
-            guard_home=state.parent if state.is_absolute() and state.name == "daemon-state.json" else None,
-            home_dir=_installed_hook_home(query),
-            deadline=deadline,
-        )
-    payload = apply_browser_approval_wait(
-        response,
-        event_name=event_name,
-        hook_input=hook_input,
-        state_path=state_path,
-        deadline=deadline,
-    )
-    return json.dumps(_codex_hook_response(payload, event_name=event_name), separators=(",", ":"))
 
 
 def _bridge_config_from_argv(argv: Sequence[str]) -> BridgeConfig:

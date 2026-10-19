@@ -185,6 +185,7 @@ def test_desktop_bridge_runs_proxy_and_preserves_its_hook_channels(monkeypatch, 
     stdout, stderr = StringIO(), StringIO()
     monkeypatch.setattr(codex_daemon_hook_bridge.sys, "frozen", True, raising=False)
     monkeypatch.setattr(codex_daemon_hook_bridge.sys, "platform", "darwin")
+    monkeypatch.setenv("HOL_GUARD_DESKTOP", "1")
     monkeypatch.setattr(
         codex_daemon_hook_bridge,
         "_bound_hook_input",
@@ -208,9 +209,9 @@ def test_desktop_bridge_runs_proxy_and_preserves_its_hook_channels(monkeypatch, 
 
     monkeypatch.setattr(codex_daemon_hook_bridge, "run_isolated_hook_process", launch)
     monkeypatch.setattr(
-        codex_daemon_hook_bridge,
-        "bridge_review_response",
-        lambda **_kwargs: pytest.fail("daemon path ran"),
+        codex_daemon_hook_bridge.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("the native bridge ran"),
     )
     monkeypatch.setattr(codex_daemon_hook_bridge.sys, "stdout", stdout)
     monkeypatch.setattr(codex_daemon_hook_bridge.sys, "stderr", stderr)
