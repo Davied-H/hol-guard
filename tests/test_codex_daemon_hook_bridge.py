@@ -21,6 +21,7 @@ import pytest
 from codex_plugin_scanner.guard.adapters import codex_daemon_hook_auth as hook_auth
 from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge as bridge
 from codex_plugin_scanner.guard.adapters import codex_daemon_hook_transport as hook_transport
+from codex_plugin_scanner.guard.codex_hook_file_integrity import CodexHookIntegrityError
 from codex_plugin_scanner.guard.config import load_guard_config
 from codex_plugin_scanner.guard.daemon import manager as daemon_manager
 from codex_plugin_scanner.guard.daemon import runtime_hook_deadline as runtime_hook_deadline_module
@@ -118,6 +119,45 @@ def _daemon_hook_response(
 
     assert hook_response.status == 200, body
     return json.loads(body) if body.strip() else {}
+
+
+def _native_bridge_response(
+    runtime: Path,
+    guard_home: Path,
+    *,
+    query: str,
+    payload: dict[str, object],
+    timeout_seconds: int = 30,
+) -> dict[str, object]:
+    """The response the harness reads, rendered by the native bridge it runs.
+
+    The daemon answers with the review's own fields; the bridge is what turns
+    that review into the harness-shaped hook response, so a test about that
+    shape has to run the bridge rather than read the daemon directly.
+    """
+
+    config = _bridge_config(guard_home, 0)
+    event_name = str(payload.get("hook_event_name", "PreToolUse"))
+    argv = bridge._native_argv(
+        runtime,
+        state_path=config["state_path"],
+        fallback_command=config["fallback_command"],
+        start_command=config["start_command"],
+        query=query,
+        hook_timeouts={event_name: timeout_seconds},
+        manifest_path=guard_home / "managed" / "codex" / "hooks.manifest.json",
+        config_json=None,
+    )
+    completed = subprocess.run(
+        argv,
+        input=stamp_hook_input_text(json.dumps(payload)),
+        capture_output=True,
+        text=True,
+        timeout=timeout_seconds + 15,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout) if completed.stdout.strip() else {}
 
 
 def _unproven_hook_delivery(daemon: GuardDaemonServer, *, query: str, payload: dict[str, object]) -> int:
@@ -255,6 +295,91 @@ def test_unresolvable_native_runtime_denies_pretool_use(
         "permissionDecision": "deny",
         "permissionDecisionReason": bridge._NATIVE_RUNTIME_UNAVAILABLE,
     }
+
+
+def test_denial_before_the_runtime_names_its_reason_code(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A denial the shim makes itself still reports why, on the evidence channel."""
+    guard_home = tmp_path / "guard-home"
+    _without_a_native_runtime(
+        monkeypatch,
+        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push"}},
+    )
+
+    assert bridge.main(**_bridge_config(guard_home, 5474)) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert json.loads(captured.err) == {
+        "schema": "hol-guard.codex-bridge-failure.v1",
+        "causes": [{"reason_code": "codex_hook_native_runtime_missing"}],
+    }
+
+
+def test_unauthenticated_registration_reports_the_validator_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The validator's own reason reaches the evidence channel, not a guess at it."""
+    guard_home = tmp_path / "guard-home"
+    monkeypatch.setattr(bridge, "_native_bridge_executable", lambda _guard_home: Path("/nonexistent/runtime"))
+    monkeypatch.setattr(
+        bridge,
+        "trusted_hook_launch",
+        _refusing_launch(CodexHookIntegrityError("codex_hook_manifest_missing", "no manifest")),
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash"})))
+    config = _bridge_config(guard_home, 5474)
+    config["manifest_path"] = str(guard_home / "managed" / "codex" / "hooks.manifest.json")
+    config["config_json"] = "{}"
+
+    assert bridge.main(**config) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert json.loads(captured.err)["causes"] == [{"reason_code": "codex_hook_manifest_missing"}]
+
+
+def test_a_runtime_that_cannot_be_started_denies_the_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A runtime resolved but unlaunchable denies rather than answering nothing.
+
+    Codex reads a non-zero exit with no JSON as a non-blocking error and runs
+    the tool anyway, so a spawn failure has to produce the deny itself.
+    """
+    guard_home = tmp_path / "guard-home"
+    monkeypatch.setattr(bridge, "_native_bridge_executable", lambda _guard_home: Path("/nonexistent/runtime"))
+    monkeypatch.setattr(subprocess, "run", _refusing_to_start(OSError(13, "Permission denied")))
+    hook = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git push"}}
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(hook)))
+
+    assert bridge.main(**_bridge_config(guard_home, 5474)) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert json.loads(captured.err)["causes"] == [{"reason_code": "codex_hook_native_runtime_launch_failed"}]
+
+
+def _refusing_to_start(error: Exception):
+    """A spawn that fails the way an unlaunchable executable fails."""
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise error
+
+    return refuse
+
+
+def _refusing_launch(error: Exception):
+    """A launch validator that refuses every registration with ``error``."""
+
+    def refuse(**_kwargs: object) -> None:
+        raise error
+
+    return refuse
 
 
 def test_unresolvable_native_runtime_denies_permission_request(
@@ -460,10 +585,10 @@ def test_bridge_real_daemon_uses_payload_cwd_for_bounded_compound_read(
     assert response == {} or response.get("hookSpecificOutput", {}).get("permissionDecision") in {None, "deny"}
 
 
-@pytest.mark.usefixtures("native_hook_force")
 def test_bridge_real_daemon_emits_schema_exact_post_tool_response(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    native_hook_force: Path,
 ) -> None:
     guard_home = tmp_path / "guard-home"
     workspace = tmp_path / "workspace"
@@ -472,8 +597,8 @@ def test_bridge_real_daemon_emits_schema_exact_post_tool_response(
     _start_daemon(daemon, monkeypatch)
 
     try:
-        response = _daemon_hook_response(
-            daemon,
+        response = _native_bridge_response(
+            native_hook_force,
             guard_home,
             query=urlencode({"guard-home": str(guard_home), "home": str(tmp_path)}),
             payload={
@@ -640,14 +765,14 @@ def test_bridge_real_daemon_denies_unproven_github_content_reads(
 
 
 @pytest.mark.parametrize("command", ("gh -Rowner/repo pr view 17", "gh -Rgithub.com/Owner/Repo pr view 17"))
-@pytest.mark.usefixtures("native_hook_force")
 def test_bridge_real_daemon_allows_attached_repository_reads_on_github(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    native_hook_force: Path,
     command: str,
 ) -> None:
     """A top-level `-Rowner/repo` names a github.com repository, so the read keeps its allow baseline."""
-    response, store = _bridge_github_read(tmp_path, monkeypatch, command)
+    response, store = _bridge_github_read(tmp_path, monkeypatch, command, runtime=native_hook_force)
     hook_output = response.get("hookSpecificOutput")
     assert isinstance(hook_output, dict)
     assert "permissionDecision" not in hook_output, response
@@ -658,6 +783,8 @@ def _bridge_github_read(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
+    *,
+    runtime: Path | None = None,
 ) -> tuple[dict[str, object], GuardStore]:
     guard_home = tmp_path / "guard-home"
     session_workspace = tmp_path / "projects"
@@ -665,20 +792,25 @@ def _bridge_github_read(
     store = GuardStore(guard_home)
     daemon = GuardDaemonServer(store, host="127.0.0.1", port=0)
     _start_daemon(daemon, monkeypatch)
+    query = urlencode({"guard-home": str(guard_home), "home": str(tmp_path)})
+    payload: dict[str, object] = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": command},
+        "cwd": str(session_workspace),
+    }
 
     try:
-        response = _daemon_hook_response(
-            daemon,
-            guard_home,
-            query=urlencode({"guard-home": str(guard_home), "home": str(tmp_path)}),
-            payload={
-                "hook_event_name": "PreToolUse",
-                "tool_name": "Bash",
-                "tool_input": {"command": command},
-                "cwd": str(session_workspace),
-            },
-            timeout_seconds=30,
-        )
+        if runtime is None:
+            response = _daemon_hook_response(
+                daemon,
+                guard_home,
+                query=query,
+                payload=payload,
+                timeout_seconds=30,
+            )
+        else:
+            response = _native_bridge_response(runtime, guard_home, query=query, payload=payload)
     finally:
         daemon.stop()
 

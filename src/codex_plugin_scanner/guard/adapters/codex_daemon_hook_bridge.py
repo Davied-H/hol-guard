@@ -92,6 +92,11 @@ _TRANSITION_PROBE_OUTPUT_LIMIT = 64 * 1024
 _NATIVE_RUNTIME_UNAVAILABLE = (
     "HOL Guard could not complete native review (the native runtime is unavailable) and denied this action."
 )
+_BRIDGE_FAILURE_SCHEMA = "hol-guard.codex-bridge-failure.v1"
+_NATIVE_RUNTIME_MISSING_CODE = "codex_hook_native_runtime_missing"
+_LAUNCH_UNAUTHENTICATED_CODE = "codex_hook_launch_unauthenticated"
+_RUNTIME_LAUNCH_FAILED_CODE = "codex_hook_native_runtime_launch_failed"
+_RUNTIME_DEADLINE_CODE = "codex_hook_native_runtime_deadline_exceeded"
 
 
 def main(
@@ -119,33 +124,39 @@ def main(
         )
     native = _native_bridge_executable(state.parent)
     if native is None:
-        return _deny_before_the_runtime_runs()
-    if not _registration_is_authentic(
+        return _deny_before_the_runtime_runs(_NATIVE_RUNTIME_MISSING_CODE)
+    unauthenticated = _registration_failure(
         state_path=state,
         fallback_command=fallback_command,
         start_command=start_command,
         hook_timeouts=hook_timeouts,
         manifest_path=manifest_path,
         config_json=config_json,
-    ):
-        return _deny_before_the_runtime_runs()
+    )
+    if unauthenticated is not None:
+        return _deny_before_the_runtime_runs(unauthenticated)
     sys.stdout.flush()
     # The child inherits this hook call's stdio, so it reads the hook body and
     # writes the response itself. ``exec`` would save the fork, but this entry
     # point is also called in process, where replacing the caller is wrong.
-    return subprocess.run(
-        _native_argv(
-            native,
-            state_path=state_path,
-            fallback_command=fallback_command,
-            start_command=start_command,
-            query=query,
-            hook_timeouts=hook_timeouts,
-            manifest_path=manifest_path,
-            config_json=config_json,
-        ),
-        check=False,
-    ).returncode
+    try:
+        return subprocess.run(
+            _native_argv(
+                native,
+                state_path=state_path,
+                fallback_command=fallback_command,
+                start_command=start_command,
+                query=query,
+                hook_timeouts=hook_timeouts,
+                manifest_path=manifest_path,
+                config_json=config_json,
+            ),
+            check=False,
+        ).returncode
+    except OSError:
+        # A runtime that cannot be started answers nothing, and a hook that
+        # answers nothing lets the call through, so deny it here instead.
+        return _deny_before_the_runtime_runs(_RUNTIME_LAUNCH_FAILED_CODE)
 
 
 def _desktop_main(
@@ -169,7 +180,7 @@ def _desktop_main(
     if hook_input is None:
         sys.stdout.write(json.dumps(_fail_closed("PreToolUse"), separators=(",", ":")))
         return 0
-    event_name, data, timeout_seconds, input_ready_at = hook_input
+    event_name, data, timeout_seconds, input_ready_at, raw_data = hook_input
     try:
         probe_command = _desktop_transition_probe_command(
             data=data,
@@ -182,32 +193,52 @@ def _desktop_main(
         return 1
     if probe_command is None:
         native = _native_bridge_executable(state.parent)
-        authentic = native is not None and _registration_is_authentic(
-            state_path=state,
-            fallback_command=fallback_command,
-            start_command=start_command,
-            hook_timeouts=hook_timeouts,
-            manifest_path=manifest_path,
-            config_json=config_json,
-        )
-        if native is None or not authentic:
-            sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
-            return 0
-        sys.stdout.flush()
-        return subprocess.run(
-            _native_argv(
-                native,
+        unauthenticated = (
+            _NATIVE_RUNTIME_MISSING_CODE
+            if native is None
+            else _registration_failure(
                 state_path=state,
                 fallback_command=fallback_command,
                 start_command=start_command,
-                query=query,
                 hook_timeouts=hook_timeouts,
                 manifest_path=manifest_path,
                 config_json=config_json,
-            ),
-            input=data.encode("utf-8", "surrogateescape"),
-            check=False,
-        ).returncode
+            )
+        )
+        if unauthenticated is not None:
+            return _desktop_denial(event_name, unauthenticated)
+        sys.stdout.flush()
+        # Desktop dispatch spends part of this hook's budget before the runtime
+        # starts, so the child reviews inside what is left of it rather than
+        # starting a second one.
+        remaining = input_ready_at + timeout_seconds - time.monotonic()
+        if remaining <= 0:
+            return _desktop_denial(event_name, _RUNTIME_DEADLINE_CODE)
+        try:
+            completed = subprocess.run(
+                _native_argv(
+                    native,
+                    state_path=state,
+                    fallback_command=fallback_command,
+                    start_command=start_command,
+                    query=query,
+                    hook_timeouts=hook_timeouts,
+                    manifest_path=manifest_path,
+                    config_json=config_json,
+                ),
+                input=raw_data.encode("utf-8", "surrogateescape"),
+                capture_output=True,
+                timeout=remaining,
+                check=False,
+            )
+        except OSError:
+            # Nothing reviewed this call, and silence here would let it run.
+            return _desktop_denial(event_name, _RUNTIME_LAUNCH_FAILED_CODE)
+        except subprocess.TimeoutExpired:
+            return _desktop_denial(event_name, _RUNTIME_DEADLINE_CODE)
+        sys.stdout.write(completed.stdout.decode("utf-8", "surrogateescape"))
+        sys.stderr.write(completed.stderr.decode("utf-8", "surrogateescape"))
+        return completed.returncode
     try:
         probe_result = run_isolated_hook_process(
             probe_command,
@@ -382,8 +413,8 @@ def _desktop_transition_probe_command(
     return command
 
 
-def _bound_hook_input(hook_timeouts: Mapping[str, int]) -> tuple[str, str, float, float] | None:
-    """The probe lane's hook body, stamped the way the runtime stamps its own."""
+def _bound_hook_input(hook_timeouts: Mapping[str, int]) -> tuple[str, str, float, float, str] | None:
+    """The probe lane's hook body, stamped the way the runtime stamps its own, and as it arrived."""
 
     raw_data = _hook_input(_MAX_HOOK_INPUT_BYTES)
     if raw_data is None:
@@ -398,7 +429,7 @@ def _bound_hook_input(hook_timeouts: Mapping[str, int]) -> tuple[str, str, float
     )
     # Native Git-helper checks need the environment Codex will run the command
     # in; without it every Git read is treated as unverifiable.
-    return event_name, stamp_hook_input_text(data), timeout_seconds, input_ready_at
+    return event_name, stamp_hook_input_text(data), timeout_seconds, input_ready_at, raw_data
 
 
 def _with_browser_wait_process(data: str, *, wait_timeout_seconds: float) -> str:
@@ -423,7 +454,7 @@ def _request_timeout(event_name: str, hook_timeouts: Mapping[str, int]) -> float
     return float(max(1, timeout - _HOOK_TIMEOUT_GRACE_SECONDS))
 
 
-def _registration_is_authentic(
+def _registration_failure(
     *,
     state_path: Path,
     fallback_command: Sequence[str],
@@ -431,20 +462,20 @@ def _registration_is_authentic(
     hook_timeouts: Mapping[str, int],
     manifest_path: str | Path | None,
     config_json: str | None,
-) -> bool:
-    """Whether this registration still matches the manifest it was installed with.
+) -> str | None:
+    """The reason code this registration no longer matches its manifest, if any.
 
     The runtime runs the registered fallback argv as the prefix of the
     contained-execution sink and the start argv to bring the daemon up, so a
     registration an attacker rewrote must not reach it. This authenticates the
     hook's own installation; it renders no verdict about the call, which stays
-    the runtime's to make.
+    the runtime's to make. ``None`` means the registration authenticated.
     """
 
     if manifest_path is None and config_json is None:
-        return True
+        return None
     if manifest_path is None or config_json is None:
-        return False
+        return _LAUNCH_UNAUTHENTICATED_CODE
     try:
         trusted_hook_launch(
             manifest_path=manifest_path,
@@ -454,9 +485,12 @@ def _registration_is_authentic(
             config_json=config_json,
             deadline_monotonic=_validation_deadline(hook_timeouts),
         )
-    except Exception:  # a validator fault leaves the launch unauthenticated
-        return False
-    return True
+    except Exception as exc:  # a validator fault leaves the launch unauthenticated
+        # The validators carry a stable, non-secret reason; anything else is
+        # reported as the authentication failure it is rather than guessed at.
+        reason = getattr(exc, "reason", None)
+        return reason if isinstance(reason, str) and reason else _LAUNCH_UNAUTHENTICATED_CODE
+    return None
 
 
 def _validation_deadline(hook_timeouts: Mapping[str, int]) -> float | None:
@@ -474,13 +508,37 @@ def _validation_deadline(hook_timeouts: Mapping[str, int]) -> float | None:
     return time.monotonic() + max(1, min(timeouts) - _HOOK_TIMEOUT_GRACE_SECONDS)
 
 
-def _deny_before_the_runtime_runs() -> int:
-    """Fail this hook closed without launching anything."""
+def _deny_before_the_runtime_runs(reason_code: str) -> int:
+    """Fail this hook closed without launching anything, and say why."""
 
     data = _hook_input(_MAX_HOOK_INPUT_BYTES)
     event_name = "PreToolUse" if data is None else _event_name(data)
     sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
+    _write_failure_cause(reason_code)
     return 0
+
+
+def _desktop_denial(event_name: str, reason_code: str) -> int:
+    """Fail a Desktop hook closed once its body has already been read."""
+
+    sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
+    _write_failure_cause(reason_code)
+    return 0
+
+
+def _write_failure_cause(reason_code: str) -> None:
+    """Report the fixed reason code behind a denial without exposing details.
+
+    The denial itself is already on stdout, so a diagnostic that cannot be
+    written must not take the response down with it.
+    """
+
+    document = {"schema": _BRIDGE_FAILURE_SCHEMA, "causes": [{"reason_code": reason_code}]}
+    try:
+        sys.stderr.write(json.dumps(document, separators=(",", ":")) + "\n")
+        sys.stderr.flush()
+    except (OSError, ValueError):
+        return
 
 
 def _json_object(text: str) -> dict[str, object] | None:

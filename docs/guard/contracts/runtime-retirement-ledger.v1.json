@@ -6177,10 +6177,11 @@
    "source_sha256": "3c02373bd497270379342378013b271e4159d630bf5a275260ad072d3fb9f5fb",
    "replacement_nodes": [
     "tests/test_codex_outage_recovery_boundary.py::test_total_outage_rejects_unverified_recovery_action[PreToolUse-repair_path]",
+    "tests/test_codex_daemon_hook_bridge.py::test_denial_before_the_runtime_names_its_reason_code",
     "rust/crates/guard-runtime/src/codex_hook_response_tests.rs::fail_closed_matches_python"
    ],
    "status": "obsolete_implementation_assertion",
-   "rationale": "Exercises the retired Python executing layer of the Codex daemon hook bridge, which now only launches the native command. No child runs, which the installed outage canary asserts directly. The two-cause stderr report belonged to the retired `hol-guard.codex-bridge-failure.v1` evidence document, which has no runtime successor."
+   "rationale": "Exercises the retired Python executing layer of the Codex daemon hook bridge, which now only launches the native command. No child runs, which the installed outage canary asserts directly. The shim still writes the `hol-guard.codex-bridge-failure.v1` document for the denials it makes before the runtime runs, but with the one reason it knows; a two-cause report belonged to the retired Python review and has no runtime successor."
   },
   {
    "old_node": "tests/test_codex_bridge_failure_diagnostics.py::test_total_outage_blocks_mutating_action_without_authenticated_fallback",

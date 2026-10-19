@@ -193,7 +193,7 @@ def test_desktop_bridge_runs_proxy_and_preserves_its_hook_channels(monkeypatch, 
     monkeypatch.setattr(
         codex_daemon_hook_bridge,
         "_bound_hook_input",
-        lambda *_args, **_kwargs: ("PreToolUse", payload, 10.0, time.monotonic()),
+        lambda *_args, **_kwargs: ("PreToolUse", payload, 10.0, time.monotonic(), payload),
     )
     monkeypatch.setattr(
         codex_daemon_hook_bridge,
@@ -233,6 +233,49 @@ def test_desktop_bridge_runs_proxy_and_preserves_its_hook_channels(monkeypatch, 
     assert launched[0][1]["input_text"] == payload
     assert stdout.getvalue() == '{"hookSpecificOutput":{"permissionDecision":"allow"}}'
     assert stderr.getvalue() == '{"schema":"native-observation"}\n'
+
+
+def test_desktop_dispatch_hands_the_runtime_what_is_left_of_the_budget(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Desktop dispatch spends hook time, so the runtime reviews inside the rest of it."""
+    payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(tmp_path)})
+    stdout, stderr = StringIO(), StringIO()
+    monkeypatch.setattr(codex_daemon_hook_bridge.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(codex_daemon_hook_bridge.sys, "platform", "darwin")
+    monkeypatch.setenv("HOL_GUARD_DESKTOP", "1")
+    # Four of this hook's eight seconds are already gone when the runtime starts.
+    monkeypatch.setattr(
+        codex_daemon_hook_bridge,
+        "_bound_hook_input",
+        lambda *_args, **_kwargs: ("PreToolUse", payload, 8.0, time.monotonic() - 4.0, payload),
+    )
+    monkeypatch.setattr(codex_daemon_hook_bridge, "_desktop_transition_probe_command", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        codex_daemon_hook_bridge, "_native_bridge_executable", lambda _guard_home: tmp_path / "hol-guard-runtime"
+    )
+    monkeypatch.setattr(codex_daemon_hook_bridge.sys, "stdout", stdout)
+    monkeypatch.setattr(codex_daemon_hook_bridge.sys, "stderr", stderr)
+    budgets: list[float] = []
+
+    def run(command, **kwargs):
+        budgets.append(kwargs["timeout"])
+        raise codex_daemon_hook_bridge.subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(codex_daemon_hook_bridge.subprocess, "run", run)
+
+    result = codex_daemon_hook_bridge.main(
+        state_path=tmp_path / "guard" / "daemon-state.json",
+        fallback_command=("fallback",),
+        start_command=("start",),
+        query="home=%2Ftmp%2Fhome",
+        hook_timeouts={"PreToolUse": 10},
+    )
+
+    assert result == 0
+    assert 3.0 < budgets[0] <= 4.0
+    assert json.loads(stdout.getvalue())["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert json.loads(stderr.getvalue())["causes"] == [{"reason_code": "codex_hook_native_runtime_deadline_exceeded"}]
 
 
 @pytest.mark.parametrize(

@@ -47,13 +47,23 @@ def test_frozen_codex_bridge_has_no_fallback_response(
         children.append(tuple(str(part) for part in argv))
         return subprocess.CompletedProcess(list(argv), 0)
 
+    authenticated: list[str] = []
+
+    def authenticate(*, config_json, **_kwargs):
+        authenticated.append(config_json)
+
     monkeypatch.setattr(subprocess, "run", record)
+    monkeypatch.setattr(codex_bridge, "trusted_hook_launch", authenticate)
     monkeypatch.setattr(codex_bridge, "native_hook_bridge_executable", lambda *_args, **_kwargs: _NATIVE)
     monkeypatch.setattr("sys.stdin", io.StringIO(_PRE_TOOL_USE))
 
     argv = ("hol-guard", frozen_codex_runtime._FROZEN_BRIDGE_ARG, _BRIDGE_CONFIG)
     assert frozen_codex_runtime.run_frozen_internal_command(argv) == 0
 
+    # The registration this hook call carries is authenticated before the
+    # runtime reviews anything, and the runtime then carries that same
+    # argument.
+    assert authenticated == [_BRIDGE_CONFIG]
     assert children == [(str(_NATIVE), "codex-hook-bridge", _BRIDGE_CONFIG)]
     capsys.readouterr()
 
