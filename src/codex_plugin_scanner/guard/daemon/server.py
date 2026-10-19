@@ -1975,9 +1975,7 @@ class _GuardDaemonHandler(
             if action_workdir_provided and action_workdir is None:
                 raise _HookPathValidationError("workspace", "invalid_action_workdir")
             workspace = (
-                action_workdir
-                or directories.require("workspace-payload")
-                or directories.require("workspace-query")
+                action_workdir or directories.require("workspace-payload") or directories.require("workspace-query")
             )
         except _HookPathValidationError as error:
             # The Rust edge still receives the complete raw payload. Use
