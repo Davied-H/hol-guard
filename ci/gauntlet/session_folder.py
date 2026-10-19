@@ -41,7 +41,7 @@ def seed_session_folder(home: Path, stage: Path, scenario_id: str) -> None:
     (home / SESSION_FOLDER).mkdir(mode=0o700, exist_ok=True)
     if scenario_id != SHELL_CASE:
         return
-    stage.mkdir(mode=0o700)
+    stage.mkdir(mode=0o700, parents=True)
     for name, text in STAGED_FILES.items():
         (stage / name).write_text(text, encoding="utf-8", newline="\n")
 
