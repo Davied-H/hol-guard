@@ -13676,6 +13676,20 @@
       "expect": "not_allow"
     },
     {
+      "id": "neg-session-folder-heredoc-clone-agents-file",
+      "fix_area": "shell",
+      "harnesses": [
+        "zcode",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cat > ${HOME}/other-project/AGENTS.md <<'EOF'\nmore rules\nEOF"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
       "id": "neg-session-folder-staging-copy-then-write-git-hook",
       "fix_area": "shell",
       "harnesses": [

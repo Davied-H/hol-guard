@@ -6,7 +6,7 @@
 
 use crate::CommandModelRequestV1;
 use guard_contracts::PreToolResultV1;
-use targets::{bounded_write, relative_saved_reads, safe_output_target, sibling_target};
+use targets::{bounded_write, relative_saved_reads, safe_output_target, sibling_heredoc_target};
 
 #[path = "redirect_git_chain.rs"]
 pub(super) mod git_chain;
@@ -206,7 +206,9 @@ pub(super) fn project(
     let command = if saw_heredoc
         && bounded_writes
         && writes_file
-        && targets.iter().all(|target| sibling_target(target, context))
+        && targets
+            .iter()
+            .all(|target| sibling_heredoc_target(target, context))
     {
         "true".to_owned()
     } else {

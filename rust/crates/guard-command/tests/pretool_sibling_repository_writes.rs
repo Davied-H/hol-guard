@@ -188,7 +188,7 @@ fn instruction_file_heredocs_outside_the_session_remain_reviewed() {
     // an unsandboxed no-op proof. A newly loaded AGENTS.md can redirect an agent.
     let layout = layout("instruction-heredoc");
     let clone = layout.clone.display();
-    let command = format!("cat > {clone}/AGENTS.md <<'EOF'\\nmore rules\\nEOF");
+    let command = format!("cat > {clone}/AGENTS.md <<'EOF'\nmore rules\nEOF");
     assert!(!permitted(&layout, &layout.session, &command), "{command}");
 }
 

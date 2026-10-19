@@ -49,6 +49,7 @@ from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
 from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
+from tests.benign_fp_gate_configs import KUBECONFIG, LFS_GITCONFIG
 from tests.benign_fp_gate_connectors import write_connectors
 from tests.benign_fp_gate_projects import (
     _INSTALLED_PACKAGES,
@@ -67,33 +68,6 @@ _GIT_IDENTITY = {
     "GIT_COMMITTER_NAME": "Fixture Author",
     "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
 }
-
-_LFS_GITCONFIG = """[filter "lfs"]
-\tclean = git-lfs clean -- %f
-\tsmudge = git-lfs smudge -- %f
-\tprocess = git-lfs filter-process
-\trequired = true
-[user]
-\tname = Fixture Author
-\temail = fixture@example.invalid
-"""
-# Synthetic kubeconfig with no credentials; kubectl is never executed by the gate.
-_KUBECONFIG = """apiVersion: v1
-kind: Config
-clusters:
-- name: example
-  cluster:
-    server: https://k8s.example.invalid
-contexts:
-- name: example
-  context:
-    cluster: example
-    user: example
-current-context: example
-users:
-- name: example
-  user: {}
-"""
 
 
 @dataclass(frozen=True)
@@ -248,7 +222,7 @@ def build_fixture(root: Path) -> BenignFixture:
     guard_home = root / "guard-home"
     for directory in (home, guard_home):
         directory.mkdir(parents=True)
-    _write(home / ".gitconfig", _LFS_GITCONFIG)
+    _write(home / ".gitconfig", LFS_GITCONFIG)
     _write(home / ".rustup" / "settings.toml", 'version = "12"\ndefault_toolchain = "stable"\n')
     # Synthetic credential file so the negative controls have a real target.
     _write(home / ".agent" / "skills" / "x" / "SKILL.md", "---\nname: x\n---\nSynthetic home skill body.\n")
@@ -282,7 +256,7 @@ def build_fixture(root: Path) -> BenignFixture:
     )
     _write(home / "acme-plain" / "README.txt", "Plain notes directory.\n")
     _write(home / "acme-plain" / "probe_py.py", "print('probe')\n")
-    _write(home / "kubeconfig.yaml", _KUBECONFIG)
+    _write(home / "kubeconfig.yaml", KUBECONFIG)
     # Connectors Guard has no decision for: a local CLI with its state directory, and harness MCP servers.
     write_connectors(home)
     _write(home / ".ssh" / "id_rsa", "-----BEGIN FIXTURE KEY-----\nnot-a-real-key\n-----END FIXTURE KEY-----\n")
