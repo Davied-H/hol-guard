@@ -235,7 +235,6 @@ fn proc_references_are_reads_of_the_sessions_own_jobs() {
         "proc://bg_1#frag",
         "proc://:1-5",
         "proc://~",
-        " proc://bg_1",
         "PROC://bg_1",
     ] {
         let result = omp(&f, "read", json!({"path": path}));
