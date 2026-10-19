@@ -1,10 +1,12 @@
 //! `ln -s <directory> <repo>/<name>`: sharing a dependency directory such as
-//! `node_modules` between checkouts of one repository. The link must be a
-//! fresh, non-hidden name directly inside a verified workspace checkout, and
-//! the target an existing, non-hidden directory of another checkout with the
-//! same Git common directory, or inside the working directory. A symbolic
-//! link runs nothing; these bounds keep it from replacing any existing path
-//! or exposing data outside the repository.
+//! `node_modules` between checkouts of one repository. The link path must be
+//! a non-hidden name directly inside a verified workspace checkout, and the
+//! target an existing, non-hidden directory of another checkout with the same
+//! Git common directory, or inside the working directory. The name is free,
+//! or already a directory `ln` writes the link inside under the target's own
+//! base name, which must be free there. A symbolic link runs nothing; these
+//! bounds keep it from replacing any existing path or exposing data outside
+//! the repository.
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -68,7 +70,7 @@ pub(super) fn safe_symlink_arguments(
     else {
         return false;
     };
-    let Some((parent, name)) = fresh_link(link, &cwd) else {
+    let Some((parent, written, name)) = fresh_link(link, target, &cwd) else {
         return false;
     };
     let Some(link_common) = checkout_common_directory(&parent, &cwd) else {
@@ -77,7 +79,7 @@ pub(super) fn safe_symlink_arguments(
     let parent_text = parent.to_string_lossy();
     if !super::git_route_within_workspace(&parent_text, context)
         || !super::read_paths::resolved_path_allowed(
-            &parent.join(name),
+            &written.join(&name),
             context.home_dir,
             context.cwd,
         )
@@ -109,11 +111,20 @@ pub(super) fn safe_symlink_arguments(
     }
 }
 
-/// The canonical parent and file name of a link path that does not exist yet.
-/// `..` may reach a sibling checkout (`../report/node_modules`): the kernel
-/// resolves it against the physical cwd, which canonicalizing the parent
-/// reproduces, and the caller screens that canonical parent.
-fn fresh_link<'a>(link: &'a str, cwd: &Path) -> Option<(PathBuf, &'a str)> {
+/// The checkout directory the link path names, the directory the link is
+/// actually written in, and its file name. `..` may reach a sibling checkout
+/// (`../report/node_modules`): the kernel resolves it against the physical
+/// cwd, which canonicalizing the parent reproduces, and the caller screens
+/// that canonical parent.
+///
+/// `ln -s <target> <link>` writes `<link>` only while that name is free. When
+/// it already names a directory the link goes inside it, under the target's
+/// own base name, which is the ordinary second run of `ln -s
+/// <checkout>/node_modules <worktree>/node_modules` once the worktree has its
+/// own install. That deeper name must be free in turn, so nothing is replaced
+/// either way, and the directory the caller screens is still the one the link
+/// path names.
+fn fresh_link(link: &str, target: &str, cwd: &Path) -> Option<(PathBuf, PathBuf, String)> {
     let lexical = Path::new(link);
     if lexical
         .components()
@@ -135,8 +146,26 @@ fn fresh_link<'a>(link: &'a str, cwd: &Path) -> Option<(PathBuf, &'a str)> {
         None => cwd.to_path_buf(),
     };
     let parent = fs::canonicalize(parent).ok()?;
-    match fs::symlink_metadata(parent.join(name)) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Some((parent, name)),
+    let named = parent.join(name);
+    match fs::symlink_metadata(&named) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Some((parent.clone(), parent, name.to_owned()))
+        }
+        // A symbolic link in the way is left alone: `ln` would write through
+        // whatever it points at, which this screen has not proven.
+        Ok(metadata) if metadata.is_dir() => {
+            let inner = Path::new(target).file_name()?.to_str()?;
+            if inner.starts_with('.') || inner.is_empty() {
+                return None;
+            }
+            let written = fs::canonicalize(&named).ok()?;
+            match fs::symlink_metadata(written.join(inner)) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    Some((parent, written, inner.to_owned()))
+                }
+                _ => None,
+            }
+        }
         _ => None,
     }
 }

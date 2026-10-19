@@ -12067,6 +12067,57 @@
       "expect": "allow"
     },
     {
+      "id": "session-ln-s-sibling-wt-modules-fresh-name",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_WT}/shared-modules && ls -la ${ORG_WT}/ | grep shared"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-ln-s-into-existing-modules-taken-name",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules/vitest ${ORG_WT}/node_modules"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-ln-s-onto-existing-file",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_WT}/package.json"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
       "id": "neg-ln-s-sibling-chain-then-grep-recursive-through-link",
       "fix_area": "negative",
       "harnesses": [

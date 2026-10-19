@@ -185,6 +185,10 @@ def _session_worktree(org: Path, home: Path) -> None:
     portal_manifest = {"name": "app-portal", "private": True, "devDependencies": {"vite": "^7.1.5"}}
     _write(worktree / "package.json", json.dumps(portal_manifest) + "\n")
     _bun_lockfile(worktree, {"vite": _NODE_PACKAGES["vite"]})
+    # The worktree has its own install, so sharing the sibling checkout's
+    # `node_modules` meets a directory already standing at that name.
+    _node_package(worktree, "vite", _NODE_PACKAGES["vite"])
+    _node_package(worktree, "vitest", _NODE_PACKAGES["vitest"])
     for name in ("findings", "prd", "todo"):
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')
