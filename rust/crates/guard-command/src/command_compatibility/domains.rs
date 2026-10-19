@@ -395,9 +395,14 @@ pub(super) fn observe(
         redirects::posix_redirect(&segment.text)
     };
     if write_command || redirect != Redirect::None || interpreter {
-        if [".hol-guard", ".codex/", ".claude/", "hol-guard/config"]
-            .iter()
-            .any(|path| normalized.contains(path))
+        // A stderr merge or discard (`2>/dev/null`) changes no file, so naming a
+        // harness directory beside it is a read, not a managed-config write.
+        // Reads of logins and secret-bearing config there stay with the native
+        // read proof, which refuses them whatever redirect follows.
+        if (write_command || redirect == Redirect::Output || interpreter)
+            && [".hol-guard", ".codex/", ".claude/", "hol-guard/config"]
+                .iter()
+                .any(|path| normalized.contains(path))
         {
             output.rule("command.shell-mutations.managed-config-write", index, true);
         }
