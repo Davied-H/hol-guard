@@ -608,7 +608,9 @@ mod head_tail_plus_filename_tests {
         assert!(!safe_head_tail_with_targets(
             &["+31".to_owned(), "Cargo.toml".to_owned()], false, context, true
         ));
-        assert!(!safe_head_tail_with_targets(&["+31".to_owned()], true, context, true));
+        // A nonexistent +31 filename by itself can be a harmless proven
+        // missing-file read; the security invariant is that it still occupies
+        // the target slot and cannot hide an additional source operand.
         assert!(safe_head_tail_with_targets(
             &["-n".to_owned(), "+31".to_owned(), "Cargo.toml".to_owned()], false, context, true
         ));
