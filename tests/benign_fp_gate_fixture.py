@@ -51,6 +51,7 @@ from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
 from tests.benign_fp_gate_configs import KUBECONFIG, LFS_GITCONFIG
 from tests.benign_fp_gate_connectors import write_connectors
+from tests.benign_fp_gate_developer_checkout import head_commit, write_developer_checkout
 from tests.benign_fp_gate_feature_app import build_feature_app, feature_app_path
 from tests.benign_fp_gate_projects import (
     _INSTALLED_PACKAGES,
@@ -111,6 +112,7 @@ class BenignFixture:
             "${PRIVATE_TMP}": str(self.private_tmp),
             "${ORG}": str(self.org),
             "${ORG_WT}": str(self.org.parent / "app-portal-fix"),
+            "${PORTAL_WEB_HEAD}": head_commit(self.org),
             "${TMP_ORG}": str(self.tmp_org),
             "${TMP_ORG_WT}": str(self.tmp_org.parent / "app-followup"),
             "${TMP_REMOTE}": str(self.tmp_org.parent / "remote" / "app.git"),
@@ -396,6 +398,7 @@ def build_fixture(root: Path) -> BenignFixture:
             _git(repository, "remote", "add", "origin", "https://github.com/example-org/service-api.git", home=home)
             _git(repository, "update-ref", "refs/remotes/origin/main", "HEAD", home=home)
     _session_worktree(org, home)
+    write_developer_checkout(org, home, _git, _write)
     _stopped_rebase(org, home, "app-portal-rebase")
     # A rebase started with an `exec` step keeps that program in its saved todo list.
     _stopped_rebase(org, home, "app-portal-rebase-exec", "-x", "true")

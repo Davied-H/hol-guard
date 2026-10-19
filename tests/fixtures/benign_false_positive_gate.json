@@ -8056,6 +8056,176 @@
       "expect": "allow"
     },
     {
+      "id": "developer-checkout-fetch-chain",
+      "fix_area": "developer-checkout",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web remote -v | head -2; git -C ${ORG}/portal-web fetch origin main --quiet && git -C ${ORG}/portal-web rev-parse origin/main && git -C ${ORG}/portal-web worktree list"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "developer-checkout-fetch-origin-main",
+      "fix_area": "developer-checkout",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web fetch origin main"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "developer-checkout-worktree-add-new-branch",
+      "fix_area": "developer-checkout",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web worktree add ${ORG}/portal-web-fix -b fix/report-defects-two main"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "developer-checkout-worktree-add-new-branch-from-commit",
+      "fix_area": "developer-checkout",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web worktree add ${ORG}/portal-web-fix -b fix/report-defects-two ${PORTAL_WEB_HEAD}"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "developer-checkout-worktree-add-existing-branch",
+      "fix_area": "developer-checkout",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web worktree add ${ORG}/portal-web-fix2 fix/report-defects"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "developer-checkout-status",
+      "fix_area": "developer-checkout",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web status --short"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "developer-checkout-log",
+      "fix_area": "developer-checkout",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web log --oneline -3"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-developer-checkout-fetch-ssh-command-env",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "GIT_SSH_COMMAND=id git -C ${ORG}/portal-web fetch origin main"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-developer-checkout-fetch-ssh-command-config",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web -c core.sshCommand=id fetch origin main"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-developer-checkout-fetch-outside-hooks-path",
+      "fix_area": "negative",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/portal-web -c core.hooksPath=/tmp/hooks fetch origin main"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
       "id": "queue-worktree-add-org-sibling",
       "fix_area": "worktree-add",
       "harnesses": [
