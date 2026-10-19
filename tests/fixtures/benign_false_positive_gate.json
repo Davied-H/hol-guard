@@ -13690,6 +13690,20 @@
       "expect": "not_allow"
     },
     {
+      "id": "neg-session-folder-redirect-clone-agents-file",
+      "fix_area": "shell",
+      "harnesses": [
+        "zcode",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cat /tmp/x.ts >> ${HOME}/other-project/AGENTS.md"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
       "id": "neg-session-folder-staging-copy-then-write-git-hook",
       "fix_area": "shell",
       "harnesses": [

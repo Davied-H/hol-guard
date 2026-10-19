@@ -16,6 +16,7 @@ from .proofs import _edit_path, _path
 from .review_fixtures import WORKTREE_CASE, WORKTREE_NAME
 from .session_folder import CHECKOUT
 from .session_folder import EDIT_CASE as SESSION_EDIT_CASE
+from .session_folder import SHELL_CASE as SESSION_SHELL_CASE
 
 PRIVATE_TEMP_ROOTS = ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
 # Git Bash ``mktemp -d`` on Windows prints a directory in the fixture profile's

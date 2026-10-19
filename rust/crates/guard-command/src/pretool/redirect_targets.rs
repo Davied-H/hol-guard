@@ -83,7 +83,11 @@ pub(super) fn safe_output_target(target: &str, context: PathContext<'_>) -> bool
         }
         // A session started in a directory above its checkouts, or in a
         // sibling one, still writes the repository it works on.
+        // Agent instruction files outside the session keep their review: a
+        // newly loaded one can redirect an agent, and no workspace sandbox
+        // stands around a sibling repository to deny the write.
         return bounded_write(target, context)
+            && !instruction_file(target)
             && sibling_repository_root(path, context).is_some_and(|root| {
                 path.strip_prefix(&root)
                     .is_ok_and(|rest| no_symlink_components(&root, rest))
@@ -108,14 +112,17 @@ pub(super) fn sibling_target(target: &str, context: PathContext<'_>) -> bool {
 /// heredoc into them gets from inside the repository instead of the no-op
 /// stand-in that lets a heredoc into a source or notes file through.
 pub(super) fn sibling_heredoc_target(target: &str, context: PathContext<'_>) -> bool {
-    sibling_target(target, context)
-        && !std::path::Path::new(target)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| {
-                crate::harness_config_names::HARNESS_INSTRUCTION_FILES
-                    .contains(&name.to_ascii_lowercase().as_str())
-            })
+    sibling_target(target, context) && !instruction_file(target)
+}
+
+fn instruction_file(target: &str) -> bool {
+    std::path::Path::new(target)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            crate::harness_config_names::HARNESS_INSTRUCTION_FILES
+                .contains(&name.to_ascii_lowercase().as_str())
+        })
 }
 
 /// The root of the git repository below the verified home that holds the
