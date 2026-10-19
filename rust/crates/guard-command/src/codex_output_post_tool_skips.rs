@@ -240,8 +240,21 @@ fn native_search_target_is_safe(
     let Some(resolved) = pyfs::resolve(&candidate) else {
         return false;
     };
-    (pyfs::is_file(&resolved) == Ok(true) || pyfs::is_dir(&resolved) == Ok(true))
-        && read_only_lookup_target_is_safe(&resolved.to_string(), true, home)
+    if pyfs::is_file(&resolved) != Ok(true) && pyfs::is_dir(&resolved) != Ok(true) {
+        return false;
+    }
+    // A link's own name says nothing about what it points at. The spelling was
+    // classified above; classify the path the read actually opens by the same
+    // rules, so `notes.ts -> secrets/token.json` cannot carry a credential
+    // source past the checks its real name would have failed.
+    let resolved_text = resolved.to_string();
+    if resolved != candidate
+        && (classify_request_secret_path(&resolved_text, cwd.as_deref(), home).is_some()
+            || target_name_is_secret_like(&resolved_text, scope))
+    {
+        return false;
+    }
+    read_only_lookup_target_is_safe(&resolved_text, true, home)
 }
 
 /// `native_post_tool_search_is_read_only`.

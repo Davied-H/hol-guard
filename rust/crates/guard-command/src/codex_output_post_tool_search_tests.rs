@@ -281,3 +281,35 @@ fn a_search_target_that_names_a_credential_source_is_not_read_only() {
     let input = json!({"pattern": "TOKEN", "path": text(&secrets)});
     assert!(!read_only(&root, "rg", input, Some(&root)));
 }
+
+#[test]
+fn a_search_target_linking_to_a_credential_source_is_not_read_only() {
+    let root = scratch("search-secret-link");
+    let source = root.join("src");
+    fs::create_dir(&source).unwrap();
+    let secrets = source.join("secrets.ts");
+    fs::write(&secrets, "export const secrets = {};\n").unwrap();
+    let link = source.join("notes.ts");
+    symlink(&secrets, &link).unwrap();
+    let input = json!({"pattern": "TOKEN", "path": text(&link)});
+    assert!(!read_only(&root, "rg", input, Some(&root)));
+    assert!(!read_file(
+        &root,
+        "read",
+        json!({"path": text(&link)}),
+        Some(&root)
+    ));
+}
+
+#[test]
+fn an_ordinary_search_target_behind_a_link_stays_read_only() {
+    let root = scratch("search-plain-link");
+    let source = root.join("src");
+    fs::create_dir(&source).unwrap();
+    let module = source.join("parser.ts");
+    fs::write(&module, "export const parse = () => {};\n").unwrap();
+    let link = source.join("alias.ts");
+    symlink(&module, &link).unwrap();
+    let input = json!({"pattern": "parse", "path": text(&link)});
+    assert!(read_only(&root, "rg", input, Some(&root)));
+}
