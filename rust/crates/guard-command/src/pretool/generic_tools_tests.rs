@@ -151,3 +151,26 @@ fn an_unrecognized_tool_is_held_in_its_own_voice() {
         result.reason
     );
 }
+
+/// An unrecognized tool carrying both a path and prompt-shaped text must not
+/// reach the file-read allow lane: the safe-path proof covers the path it
+/// names, not the instruction sitting beside it.
+#[test]
+fn an_unrecognized_tool_with_a_path_and_a_query_is_not_typed_as_a_file_read() {
+    let result = evaluate(serde_json::json!({
+        "tool_name": "doc_lookup",
+        "tool_input": {"path": "README.md", "query": "release checklist"},
+    }));
+    assert_ne!(
+        result.action.action_type,
+        PreToolActionTypeV1::FileRead,
+        "{}",
+        result.reason
+    );
+    assert_ne!(
+        result.action.action_type,
+        PreToolActionTypeV1::Prompt,
+        "{}",
+        result.reason
+    );
+}

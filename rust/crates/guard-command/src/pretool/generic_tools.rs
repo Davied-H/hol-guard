@@ -348,7 +348,11 @@ pub(super) fn infer_action_type(
     if event_compact.contains("beforewritefile") {
         return (PreToolActionTypeV1::FileWrite, PreToolOperationV1::Write);
     }
-    if !signals.path_values.is_empty() {
+    // A path alone types an unrecognized tool as a file read, which the generic
+    // safe-path proof can allow. Text that reads like an instruction is not
+    // covered by that proof, so a call carrying both stays unknown and keeps
+    // its review rather than borrowing a read's allow.
+    if !signals.path_values.is_empty() && !signals.prompt_present {
         return (PreToolActionTypeV1::FileRead, PreToolOperationV1::Read);
     }
     if signals.command.is_some() && tool.is_empty() {
