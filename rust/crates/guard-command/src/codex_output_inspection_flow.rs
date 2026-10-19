@@ -246,6 +246,20 @@ fn stem_has_compound_secret_segment(stem: &str, split_compound: bool) -> bool {
     })
 }
 
+/// Whether the stem's last segment is the secret word, as `service-token` or
+/// `npm_secret` is. The head noun names what the file holds, so it reads as a
+/// credential source wherever it sits. A leading secret word names the subject
+/// instead — `token-discipline.md` is a document about tokens — and only the
+/// in-project exemption, which needs a caller cwd, could take that back.
+fn stem_ends_with_secret_segment(stem: &str) -> bool {
+    let lowered = stem.to_lowercase();
+    lowered.rsplit(['-', '_']).next().is_some_and(|segment| {
+        !segment.is_empty()
+            && segment != lowered
+            && SECRET_LIKE_SOURCE_NAME_STEMS.contains(&segment)
+    })
+}
+
 /// `codex_scan_targets_secret_like_source_name`; `recurse` carries the caller's
 /// own execution-context policy for chain and pipeline splits.
 pub(crate) fn scan_targets_secret_like_source_name(
@@ -283,7 +297,10 @@ pub(crate) fn target_name_is_secret_like(target: &str, scope: Scope) -> bool {
         name_stem
     };
     let exact = SECRET_LIKE_SOURCE_NAME_STEMS.contains(&stem.to_lowercase().as_str());
-    let compound = stem_has_compound_secret_segment(&stem, scope.cwd.is_some());
+    let compound = stem_has_compound_secret_segment(&stem, scope.cwd.is_some())
+        || (scope.cwd.is_none()
+            && PyPath::new(target).is_absolute()
+            && stem_ends_with_secret_segment(&stem));
     if !exact && !compound && !name.starts_with("id_") {
         return false;
     }

@@ -257,6 +257,21 @@ fn an_absolute_external_token_source_without_cwd_keeps_output_review() {
 }
 
 #[test]
+fn an_absolute_document_about_tokens_without_cwd_stays_read_only() {
+    let root = scratch("external-token-document");
+    let docs = root.join("docs");
+    fs::create_dir(&docs).unwrap();
+    let target = docs.join("token-discipline.md");
+    fs::write(&target, "# Token discipline\n").unwrap();
+    assert!(read_file(
+        &root,
+        "read",
+        json!({"path": text(&target)}),
+        None
+    ));
+}
+
+#[test]
 fn a_search_target_that_names_a_credential_source_is_not_read_only() {
     let root = scratch("search-secret");
     let source = root.join("src");
