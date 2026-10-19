@@ -1184,6 +1184,45 @@
       "expect": "allow"
     },
     {
+      "id": "omp-read-background-job-output",
+      "fix_area": "omp",
+      "harnesses": [
+        "omp"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "proc://bg_1"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "omp-read-background-job-list",
+      "fix_area": "omp",
+      "harnesses": [
+        "omp"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "proc://"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "omp-read-background-job-window",
+      "fix_area": "omp",
+      "harnesses": [
+        "omp"
+      ],
+      "tool": "read",
+      "tool_input": {
+        "path": "proc://bg_12:1-40"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "zcode-mcp-js",
       "fix_area": "shell",
       "harnesses": [

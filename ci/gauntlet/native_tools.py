@@ -24,6 +24,10 @@ SCRATCH_NAME = "scratch-notes.txt"
 # /private/tmp; the evidence redacts both spellings to ``{{scratch}}``.
 TMP_ALIAS_READ_CASE = "omp-native-read-tmp-alias-worktree-file"
 SCRATCH_READ_TARGET = "{{scratch}}/notes.md"
+# A background shell job started with `async`, then its output read back through the host's own
+# `proc://<job id>` selector, which names the job table rather than a file.
+BACKGROUND_READ_CASE = "omp-native-read-background-job-output"
+JOB_OUTPUT_PATH = re.compile(r"proc://[A-Za-z0-9_][A-Za-z0-9_.-]*(?::[1-9][0-9]*-[1-9][0-9]*)?")
 # Keys of the default delegated report; `files` entries are checked against the lookup path.
 REPORT_KEYS = frozenset({"summary", "report", "architecture", "files"})
 
@@ -204,6 +208,25 @@ def _scratch_read_error(calls: list[dict[str, Any]], *, require_steps: bool = Tr
     return None
 
 
+def _background_read_error(calls: list[dict[str, Any]], *, require_steps: bool = True) -> str | None:
+    """Hold every read to a background job's output, after the job started; ``require_steps`` also needs one."""
+    started: list[int] = []
+    reads: list[int] = []
+    for index, call in enumerate(calls):
+        if call["name"] == "bash" and call["args"].get("async") is True:
+            started.append(index)
+        elif call["name"] == "read":
+            if JOB_OUTPUT_PATH.fullmatch(_write_path(call["args"])) is None:
+                return "the model read something other than a background job's output"
+            reads.append(index)
+    # A read before any job exists is out of order even when Guard denied it.
+    if reads and (not started or reads[0] < started[0]):
+        return "the model read the job output before starting the job"
+    if require_steps and not (reads and started):
+        return "the model did not read the output of a background job it started"
+    return None
+
+
 def native_tools_scope_error(
     scenario: Scenario, calls: list[dict[str, Any]], case: dict[str, Any], *, guard_denied: bool = False
 ) -> str | None:
@@ -291,6 +314,8 @@ def native_tools_scope_error(
         return scope
     if scenario.id == TMP_ALIAS_READ_CASE and (scope := _scratch_read_error(calls, require_steps=False)):
         return scope
+    if scenario.id == BACKGROUND_READ_CASE and (scope := _background_read_error(calls, require_steps=False)):
+        return scope
     if guard_denied:
         return None
     if not set(scenario.required_tools) <= {call["name"] for call in calls}:
@@ -306,6 +331,8 @@ def native_tools_scope_error(
         return _linked_worktree_error(calls)
     if scenario.id == TMP_ALIAS_READ_CASE:
         return _scratch_read_error(calls)
+    if scenario.id == BACKGROUND_READ_CASE:
+        return _background_read_error(calls)
     return None
 
 

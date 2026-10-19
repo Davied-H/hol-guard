@@ -71,6 +71,8 @@ Six further `native-tools` allow scenarios reproduce interruptions reported from
 | Harness read inside a `/tmp` scratch checkout (macOS resolves `/tmp` to `/private/tmp`) | `omp-native-read-tmp-alias-worktree-file` | the `temp-root-leaf` worktree command, then an OMP `read` of `{{scratch}}/notes.md`; every read must name that note (either spelling redacts to `{{scratch}}`) and follow the checkout. On macOS it depends on the OMP /tmp-alias read fix; Linux and Windows have no alias |
 | Read-only cloud CLI | `omp-native-shell-doctl-reads` | a `doctl` stand-in under `$HOME/.local/bin` (prepended to `PATH`) answers `version` and `apps list` only |
 
+`omp-native-read-background-job-output` covers the OMP `proc://` selector: the listed command runs as an `async` background job and the model reads its output back at `proc://<job id>`, a host job-table read rather than a file path. It relies on the lane's default `async.enabled`, and `native_tools.py` requires the read to follow the job it started.
+
 The model-free gate pairs each with protection counterparts: `cat docs/review-notes.md .env`, the vite build piped to an upload, `doctl auth token`, `doctl compute droplet delete` and `doctl apps list --trace` must not allow.
 
 Gaps: the placeholder and field-copy shapes stopped sessions through PostToolUse output scanning, which the model-free gate and replay lanes (PreToolUse only) do not exercise; only a live run covers them. The `getpwuid` failure needs the macOS containment lane of a live qualify run; Linux bubblewrap has no equivalent lookup service. The model-free `doctl` gate cases list no Cursor harness.

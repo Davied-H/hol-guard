@@ -752,6 +752,19 @@
       ]
     },
     {
+      "id": "omp-native-read-background-job-output",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "bash",
+        "read"
+      ],
+      "prompt": "Start the listed command as a background job with the bash tool's async option, then open that job's output with the read tool at proc:// followed by the job id the bash result gives you, and tell me what it printed.",
+      "commands": [
+        "git hash-object README.md"
+      ]
+    },
+    {
       "id": "omp-native-git-sibling-worktree-reads",
       "expectation": "allow",
       "oracle": "native-tools",
