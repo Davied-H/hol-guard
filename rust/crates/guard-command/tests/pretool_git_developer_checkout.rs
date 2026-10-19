@@ -276,6 +276,17 @@ fn a_hooks_directory_spelled_oddly_or_reached_by_a_link_is_never_a_hook_managers
     session.assert_allow(&add, ADD);
     session.assert_allow(&fetch, REFRESH);
     assert_eq!(session.evaluate(&status).decision, "allow", "{status}");
+    // A hooks directory in the user's own configuration is read first and
+    // overridden by the repository's, which Git then reaches the same way.
+    std::fs::create_dir_all(session.home.join(".config/git/hooks")).unwrap();
+    std::fs::write(
+        session.home.join(".gitconfig"),
+        "[core]\n\thooksPath = ~/.config/git/hooks\n",
+    )
+    .unwrap();
+    session.assert_allow(&add, ADD);
+    session.assert_allow(&fetch, REFRESH);
+    assert_eq!(session.evaluate(&status).decision, "allow", "{status}");
 
     // Git folds these into the directory above, but nothing here is built
     // from a spelling that is not one plain relative path.

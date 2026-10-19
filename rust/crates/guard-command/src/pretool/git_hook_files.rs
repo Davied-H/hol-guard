@@ -98,14 +98,18 @@ pub(super) fn walk_hooks_directory(toplevel: &Path, hooks_path: &str) -> HooksDi
 /// way. Husky's runner finds the project hook from the path Git passes it, so
 /// a link at the hooks directory would send it somewhere other than where the
 /// resolved path points. `effective` and `repository` are the values of
-/// `core.hooksPath` in the effective and repository-scoped configuration.
+/// `core.hooksPath` in the effective and repository-scoped configuration, in
+/// the order Git reads them: a value in the user's own configuration is read
+/// first and overridden by the repository's.
 pub(super) fn reached_without_a_link(
     toplevel: &Path,
     effective: &[String],
     repository: &[String],
     directory: &Path,
 ) -> bool {
-    let ([value], true) = (repository, effective == repository) else {
+    // Git reads the last value, and the repository's own is the last one only
+    // while no command-line or environment setting follows it.
+    let ([value], true) = (repository, effective.last() == repository.first()) else {
         return false;
     };
     match (
@@ -388,8 +392,12 @@ mod tests {
         // Only the repository's own single, unrouted value counts.
         assert!(!reached_without_a_link(&root, &[], &[], &directory));
         assert!(!reached_without_a_link(&root, &value, &[], &directory));
-        let global = vec![".husky/_".to_owned(), "/opt/hooks".to_owned()];
-        assert!(!reached_without_a_link(&root, &global, &value, &directory));
+        // A command-line or environment value after the repository's wins.
+        let later = vec![".husky/_".to_owned(), "/opt/hooks".to_owned()];
+        assert!(!reached_without_a_link(&root, &later, &value, &directory));
+        // One in the user's own configuration is read first and overridden.
+        let user = vec!["/opt/hooks".to_owned(), ".husky/_".to_owned()];
+        assert!(reached_without_a_link(&root, &user, &value, &directory));
         let twice = vec![".husky/_".to_owned(), ".husky/_".to_owned()];
         assert!(!reached_without_a_link(&root, &twice, &twice, &directory));
         // `.husky/_` is a link to another directory of the repository: the

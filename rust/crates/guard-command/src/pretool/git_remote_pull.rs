@@ -101,11 +101,17 @@ pub(super) fn pull_inert(
     } else {
         FAST_FORWARD_HOOKS
     };
-    // A fast-forward or merge brings in a commit Guard has not read, and the
-    // hooks directory the repository names may be a tracked one it adds a hook to.
+    // A fast-forward or merge brings in a commit Guard has not read, and a
+    // hooks directory below the repository may be a tracked one it adds a hook
+    // to. A directory the user's own configuration keeps outside it is not.
     !routed
         && !repository_lfs_program(repository)
-        && !effective.contains_key("core.hookspath")
+        && !repository.contains_key("core.hookspath")
+        && !effective.get("core.hookspath").is_some_and(|values| {
+            values
+                .iter()
+                .any(|value| !value.starts_with('~') && !std::path::Path::new(value).is_absolute())
+        })
         && (!pull.merge || merge_inert(effective, repository))
         && probe.hooks_inert(hooks.iter().copied())
 }
