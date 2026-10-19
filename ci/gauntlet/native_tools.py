@@ -327,6 +327,11 @@ def native_tools_scope_error(
     ran = {call["args"].get("command") for call in calls if call["name"] == "bash"}
     if listed - ran:
         return "the model skipped a listed shell command"
+    if scenario.id == SESSION_SHELL_CASE and not guard_denied:
+        expected = [command.replace("{{root}}", "{{fixture}}") for command in scenario.commands]
+        executed = [call["args"].get("command") for call in calls if call["name"] == "bash"]
+        if executed != expected:
+            return "the shell commands were duplicated or out of order"
     if any(call["name"] == "bash" for call in calls) != bool(scenario.commands):
         return "the shell commands were omitted or unexpected"
     if "private-temp-write" in scenario.id:
