@@ -96,10 +96,16 @@ def _native_bridge_executable(guard_home: Path) -> Path | None:
     )
     # A quick transient probe miss may clear on the second check. Both attempts
     # share one deadline; a slow or missing runtime still fails closed.
-    if runtime is None and time.monotonic() + 0.25 < deadline:
-        runtime = native_hook_bridge_executable(
-            NATIVE_CLAUDE_HOOK_FEATURE, guard_home=guard_home, deadline_monotonic=deadline
-        )
+    if runtime is None:
+        # The native capability probe caches misses for 0.25s. Retrying
+        # immediately only reads that negative cache. Leave a little time
+        # after the backoff for the second bounded probe.
+        retry_at = time.monotonic() + 0.26
+        if retry_at + 0.25 < deadline:
+            time.sleep(max(0.0, retry_at - time.monotonic()))
+            runtime = native_hook_bridge_executable(
+                NATIVE_CLAUDE_HOOK_FEATURE, guard_home=guard_home, deadline_monotonic=deadline
+            )
     return runtime
 
 
