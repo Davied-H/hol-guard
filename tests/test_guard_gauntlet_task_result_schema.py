@@ -81,6 +81,17 @@ def test_a_denied_task_call_surfaces_when_it_has_the_shape() -> None:
     assert native_tools_scope_error(_scenario(), calls[:1], {}, guard_denied=True) is None
 
 
+def test_delegated_yield_without_read_is_not_a_completed_lookup() -> None:
+    parent = {"tasks": [{"name": "lookup", "outputSchema": SCHEMA, "task": "read README.md"}]}
+    calls = [
+        {"id": "parent", "name": "task", "args": parent},
+        {"id": "yield", "name": "yield", "args": {"data": {"tokenMentions": "no"}}},
+    ]
+    case = {"delegated_call_ids": ["yield"]}
+    assert native_tools_scope_error(_scenario(), calls, case) == "delegated lookup did not read README.md"
+    assert native_tools_scope_error(_scenario(), calls, case, guard_denied=True) is None
+
+
 def test_the_delegated_report_stays_inside_the_declared_schema() -> None:
     parent = {"tasks": [{"name": "lookup", "outputSchema": SCHEMA, "task": "read README.md"}]}
     calls, case = _calls(parent, data={"tokenMentions": "no", "command": "cat .env"})
