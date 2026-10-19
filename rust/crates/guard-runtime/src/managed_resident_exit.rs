@@ -27,6 +27,16 @@ const SUPERVISOR_HOLD_FILE: &str = "supervisor-exit.v1.lock";
 /// write and the budget lock left to do, so a stop polls for the hold rather
 /// than sleeping out its whole bound.
 const SUPERVISOR_QUIESCE_RETRY_DELAY: Duration = Duration::from_millis(10);
+/// How long a stop waits for the supervisors inside the scope to finish.
+///
+/// This must outlast everything a supervisor still does while holding the
+/// scope, not just the writes themselves: it waits up to
+/// `MANAGED_STOP_TIMEOUT` for the child's stderr, because a grandchild can
+/// keep that pipe open after the resident is gone, and the restart budget
+/// then takes its own bounded lock wait. Bounding the stop by
+/// `MANAGED_STOP_TIMEOUT` alone would race that ordinary tail and report a
+/// resident that has in fact stopped as still running.
+const SUPERVISOR_QUIESCE_TIMEOUT: Duration = Duration::from_secs(5);
 
 struct SupervisorHold {
     file: File,
@@ -85,11 +95,15 @@ fn open_hold_file(scope: &Path) -> Result<File, String> {
 /// that reap them have finished their records, so the scope can be read as
 /// final and, on Windows, removed.
 pub(super) fn wait_for_supervisor_quiesce(scope: &Path) -> Result<(), String> {
+    wait_for_supervisor_quiesce_within(scope, SUPERVISOR_QUIESCE_TIMEOUT)
+}
+
+fn wait_for_supervisor_quiesce_within(scope: &Path, timeout: Duration) -> Result<(), String> {
     let Ok(file) = open_hold_file(scope) else {
         // A hold that cannot be opened cannot have been taken either.
         return Ok(());
     };
-    let deadline = Instant::now() + super::MANAGED_STOP_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         if fs2::FileExt::try_lock_exclusive(&file).is_ok() {
             let _ = fs2::FileExt::unlock(&file);

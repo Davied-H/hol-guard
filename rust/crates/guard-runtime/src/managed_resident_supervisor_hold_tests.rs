@@ -4,6 +4,11 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::SystemTime;
 
+/// A held scope is proved by a stop that gives up, so these tests use a bound
+/// of their own rather than sleeping out `SUPERVISOR_QUIESCE_TIMEOUT`, which
+/// is sized for a supervisor still waiting on its child's stderr.
+const TEST_QUIESCE_TIMEOUT: Duration = Duration::from_millis(50);
+
 /// A private scope with a private parent, which is what the hold's lock file
 /// is opened against.
 fn test_scope(label: &str) -> (PathBuf, PathBuf) {
@@ -58,7 +63,7 @@ fn a_stop_reports_a_supervisor_that_never_finishes() {
     let hold = hold_scope(&scope).expect("a private scope should be holdable");
 
     assert_eq!(
-        wait_for_supervisor_quiesce(&scope),
+        wait_for_supervisor_quiesce_within(&scope, TEST_QUIESCE_TIMEOUT),
         Err("native_resident_supervisor_exit_pending".to_owned())
     );
 
@@ -75,11 +80,20 @@ fn the_hold_is_shared_between_supervisors() {
 
     drop(first);
     assert_eq!(
-        wait_for_supervisor_quiesce(&scope),
+        wait_for_supervisor_quiesce_within(&scope, TEST_QUIESCE_TIMEOUT),
         Err("native_resident_supervisor_exit_pending".to_owned())
     );
     drop(second);
     wait_for_supervisor_quiesce(&scope).expect("the last hold released should quiesce the scope");
 
     fs::remove_dir_all(root).expect("test directory should be removable");
+}
+
+/// A supervisor still waiting for its child's stderr holds the scope for up to
+/// `MANAGED_STOP_TIMEOUT`, so the stop's own bound has to outlast that wait
+/// and the budget lock that follows it, or an ordinary exit reads as a stop
+/// failure.
+#[test]
+fn the_stop_outwaits_the_supervisors_longest_ordinary_tail() {
+    assert!(SUPERVISOR_QUIESCE_TIMEOUT > crate::managed_resident::MANAGED_STOP_TIMEOUT * 2);
 }
