@@ -144,6 +144,46 @@ def test_an_unleased_allow_on_an_unchanged_binding_is_delivered(tmp_path, monkey
     assert result["policy_action"] == "allow"
 
 
+def test_durable_control_token_changes_without_a_publisher_generation_change() -> None:
+    from codex_plugin_scanner.guard.daemon.hook_native_review_fence import published_binding_token
+
+    class Publisher:
+        controls = {"extensions": {"one": True}}
+        business_source = None
+        revision = 3
+
+        def _compiled_command_extensions(self):
+            return self.controls
+
+        def _compiled_business_source(self):
+            return self.business_source
+
+        def _current_local_cli_revision(self):
+            return self.revision
+
+        def current_snapshot_binding(self):
+            # The cached binding has not changed despite a committed write.
+            return {"generation": 4, "policy_digest": "unchanged"}
+
+    publisher = Publisher()
+    before = published_binding_token(publisher)
+    assert before is not None
+    publisher.controls = {"extensions": {"one": False}}
+    assert published_binding_token(publisher) != before
+    publisher.revision += 1
+    assert published_binding_token(publisher) != before
+
+
+def test_unleased_review_without_durable_authority_cannot_allow(tmp_path, monkeypatch):
+    worker = _unleased_worker(tmp_path, monkeypatch, [None, None])
+    try:
+        edge = _review_behind_a_held_mutation(worker, tmp_path)
+    finally:
+        worker.close()
+    assert edge["failure_reason_code"] == "native_command_control_fence_unavailable"
+    assert edge["result"] is None
+
+
 def test_an_unleased_allow_is_dropped_when_the_policy_is_replaced(tmp_path, monkeypatch):
     worker = _unleased_worker(tmp_path, monkeypatch, [("gen-1", "digest-1"), ("gen-2", "digest-2")])
     try:
