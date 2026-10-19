@@ -121,6 +121,10 @@ def test_shell_proof_needs_every_write(tmp_path: Path) -> None:
     assert session_folder_checks(home, SHELL_CASE) == {"session-folder-shell-exact": False}
     (checkout / "src/copied.ts").write_text(STAGED_FILES["a.ts"], encoding="utf-8")
     assert session_folder_checks(home, SHELL_CASE) == {"session-folder-shell-exact": True}
+    # A repeated append is not the exact single write the scenario proves.
+    with (checkout / "src/report.ts").open("a", encoding="utf-8") as report:
+        report.write(STAGED_FILES["x.ts"])
+    assert session_folder_checks(home, SHELL_CASE) == {"session-folder-shell-exact": False}
     # The append must keep the original text, and a replaced file is not an append.
     (checkout / "src/report.ts").write_text(STAGED_FILES["x.ts"], encoding="utf-8")
     assert session_folder_checks(home, SHELL_CASE) == {"session-folder-shell-exact": False}
