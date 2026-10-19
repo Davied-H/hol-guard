@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from typing import cast
 
 # A contained run re-asks native authority from its own short-lived process.
 # That process starts its own policy publisher and waits for the resident to
@@ -30,8 +29,6 @@ _SETTLE_PAUSE_SECONDS = 0.75
 # report. That time is not "a moment".
 _SETTLE_RETRY_WITHIN_SECONDS = 5.0
 
-_last_unavailable_reason: str | None = None
-
 
 def authority_unavailable(response: object) -> bool:
     """Whether the runtime failed to decide rather than deciding against the run."""
@@ -51,9 +48,7 @@ def settled_authority(
     itself asked to run contained. A real decision is deterministic and
     arrives on the first ask; only an unavailable runtime is asked again.
     """
-    global _last_unavailable_reason
     wait = time.sleep if pause is None else pause
-    _last_unavailable_reason = None
     started = time.monotonic()
     response = authorize(payload)
     for _ in range(_SETTLE_ATTEMPTS - 1):
@@ -62,15 +57,5 @@ def settled_authority(
         wait(_SETTLE_PAUSE_SECONDS)
         started = time.monotonic()
         response = authorize(payload)
-    if authority_unavailable(response):
-        _last_unavailable_reason = str(cast("Mapping[str, object]", response).get("reason_code"))
     return response
 
-
-def last_unavailable_reason() -> str | None:
-    """The reason code of the latest ask that ended with no runtime decision.
-
-    The sink runs one command per short-lived process, so the latest ask is the
-    one whose failure the operator is about to be told about.
-    """
-    return _last_unavailable_reason
