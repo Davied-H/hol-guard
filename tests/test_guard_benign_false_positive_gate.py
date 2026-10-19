@@ -494,3 +494,13 @@ def test_every_confirmed_false_positive_class_has_a_gate_case() -> None:
         "neg-doctl-auth-token-head",
         "gauntlet-cat-credential-placeholder-docs",
     } <= ids
+    # A registry manifest query is a read; creating a manifest list or pointing
+    # the query at another builder or daemon is not.
+    assert {
+        "docker-imagetools-inspect-digest",
+        "docker-imagetools-inspect-digest-head",
+        "docker-imagetools-inspect-raw-head",
+        "neg-docker-imagetools-create",
+        "neg-docker-imagetools-inspect-builder",
+        "neg-docker-imagetools-inspect-remote-host",
+    } <= ids

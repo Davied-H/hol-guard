@@ -104,6 +104,7 @@ REALISM_IDS = {
     "omp-native-shell-read-credential-placeholder-docs",
     "omp-native-shell-linked-modules-build",
     "omp-native-shell-doctl-reads",
+    "omp-native-shell-docker-imagetools-inspect",
 }
 
 
@@ -157,6 +158,18 @@ def test_linked_modules_build_and_doctl_reads_run_on_the_host(tmp_path: Path) ->
         result = _shell(fixture, command)
         assert result.returncode == 0 and result.stdout.strip(), (command, result.stderr)
     assert _shell(fixture, "doctl auth token").returncode != 0
+
+
+def test_docker_stand_in_answers_only_the_registry_manifest_query(tmp_path: Path) -> None:
+    fixture = create_fixture(tmp_path / "fx", realistic=True)
+    for command in commands_for("omp-native-shell-docker-imagetools-inspect"):
+        result = _shell(fixture, command)
+        assert result.returncode == 0 and result.stdout.startswith("sha256:"), (command, result.stderr)
+    for refused in (
+        "docker buildx imagetools create -t registry.example.com/acme/acme-app:latest alpine:3.20",
+        "docker run --rm alpine true",
+    ):
+        assert _shell(fixture, refused).returncode != 0, refused
 
 
 def test_placeholder_docs_and_field_copies_match_the_reported_shapes(tmp_path: Path) -> None:

@@ -10,7 +10,8 @@ sessions hit while the Gauntlet stayed green:
   run proves the sandbox still answers ``getpwuid``;
 * a docs file quotes a placeholder credential before an escaped ``\\n``, and a
   source file copies credential fields from one object to another;
-* a read-only ``doctl`` sits on the developer ``PATH``.
+* a read-only ``doctl`` sits on the developer ``PATH``;
+* a read-only ``docker`` answers one registry manifest query.
 
 None of it holds a credential, reaches the network or writes outside the fixture.
 """
@@ -100,6 +101,27 @@ DOCTL_STUB_PYTHON = (
 )
 
 
+DOCKER_DIGEST = "sha256:" + "0123456789abcdef" * 4
+DOCKER_STUB = (
+    "#!/bin/sh\n"
+    "# Read-only stand-in for docker: it never reaches a registry or a daemon.\n"
+    'if [ "${1:-}" = buildx ] && [ "${2:-}" = imagetools ] && [ "${3:-}" = inspect ]; then\n'
+    f"  printf '{DOCKER_DIGEST}\\n'\n"
+    "  exit 0\n"
+    "fi\n"
+    "printf 'docker stand-in: unsupported command\\n' >&2\n"
+    "exit 2\n"
+)
+DOCKER_STUB_PYTHON = (
+    "import sys\n"
+    "if sys.argv[1:4] == ['buildx', 'imagetools', 'inspect']:\n"
+    f"    sys.stdout.buffer.write(b'{DOCKER_DIGEST}\\n')\n"
+    "else:\n"
+    "    sys.stderr.buffer.write(b'docker stand-in: unsupported command\\n')\n"
+    "    sys.exit(2)\n"
+)
+
+
 def write_windows_launcher(bin_dir: Path, name: str, source: str) -> None:
     """Give a stand-in a ``.cmd`` launcher on Windows, running a Python copy of it.
 
@@ -154,3 +176,5 @@ def add_home_tools(home: Path) -> None:
     """Install the read-only CLI stand-ins under the home ``.local/bin``."""
     _write(home / LOCAL_BIN / "doctl", DOCTL_STUB, 0o755)
     write_windows_launcher(home / LOCAL_BIN, "doctl", DOCTL_STUB_PYTHON)
+    _write(home / LOCAL_BIN / "docker", DOCKER_STUB, 0o755)
+    write_windows_launcher(home / LOCAL_BIN, "docker", DOCKER_STUB_PYTHON)
