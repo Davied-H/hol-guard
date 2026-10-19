@@ -366,6 +366,12 @@ def test_claude_oversized_forged_notification_still_denies(
 ) -> None:
     from codex_plugin_scanner.guard.adapters import claude_daemon_hook_bridge as claude
 
+    # With a runtime installed the native command reads the body itself, and the
+    # bound it holds the oversized call to is covered by
+    # `rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs`. What is left
+    # here is the launcher's own answer when no runtime can be resolved: it
+    # still has to refuse a forged body too large to read.
+    monkeypatch.setattr(claude, "_native_bridge_executable", lambda _home: None)
     body = '{"hook_event_name":"Notification","prompt":"' + ("x" * claude._MAX_HOOK_INPUT_BYTES)
     monkeypatch.setattr("sys.stdin", io.StringIO(body))
     result = claude.main(

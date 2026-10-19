@@ -1,4 +1,9 @@
-"""A frozen Guard never starts a cold `hol-guard hook` evaluator from a hook bridge."""
+"""A frozen Guard never starts a cold `hol-guard hook` evaluator from a hook bridge.
+
+The Claude bridge has no local evaluator left to forbid: its launcher runs the
+native command or denies, so `tests/test_claude_daemon_hook_bridge.py` covers
+it from the other side.
+"""
 
 from __future__ import annotations
 
@@ -6,13 +11,11 @@ import io
 import json
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import pytest
 
 from codex_plugin_scanner.guard import frozen_codex_runtime
-from codex_plugin_scanner.guard.adapters import claude_daemon_hook_bridge
 from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge as codex_bridge
 
 _PRE_TOOL_USE = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}})
@@ -30,27 +33,6 @@ _BRIDGE_CONFIG = json.dumps(
     },
     separators=(",", ":"),
 )
-
-
-def _forbidden(*args: object, **kwargs: object) -> object:
-    del args, kwargs
-    raise AssertionError("a frozen Guard must not start a cold evaluator")
-
-
-def test_frozen_claude_bridge_denies_without_a_daemon_answer(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(claude_daemon_hook_bridge, "run_isolated_hook_process", _forbidden)
-
-    output = claude_daemon_hook_bridge._run_local_fallback(
-        "daemon unavailable",
-        _PRE_TOOL_USE,
-        ("/app/hol-guard", "hook", "--harness", "claude"),
-        deadline=time.monotonic() + 10,
-    )
-
-    decision = json.loads(output)["hookSpecificOutput"]
-    assert decision["permissionDecision"] == "deny"
-    assert "no daemon answered" in decision["permissionDecisionReason"]
 
 
 def test_frozen_codex_bridge_has_no_fallback_response(

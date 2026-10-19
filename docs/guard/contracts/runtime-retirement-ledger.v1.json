@@ -6235,6 +6235,145 @@
    ],
    "status": "obsolete_implementation_assertion",
    "rationale": "Exercises the retired Python executing layer of the Codex daemon hook bridge, which now only launches the native command. There is no diagnostic write left that could fail between the failure and the denial; the runtime renders the deny directly."
+  },
+  {
+   "old_node": "tests/test_claude_daemon_hook_bridge_budget.py::test_bridge_timeouts_stay_under_harness_budget",
+   "source_sha256": "9e33894e537251d87e39fa9fc8770784bbd3ad18741ce6d1c3b40feb5fdcd9c0",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::timeouts_stay_under_the_harness_budget"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The hook deadline and every timeout derived from it are now the native bridge's."
+  },
+  {
+   "old_node": "tests/test_claude_daemon_hook_bridge_budget.py::test_daemon_timeout_without_a_recovery_window_uses_fallback",
+   "source_sha256": "9e33894e537251d87e39fa9fc8770784bbd3ad18741ce6d1c3b40feb5fdcd9c0",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::unavailable_daemon_is_denied_without_the_local_hook",
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::timeouts_stay_under_the_harness_budget"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. A daemon that cannot answer inside the deadline is denied there, and the Python local fallback it fell back to is gone."
+  },
+  {
+   "old_node": "tests/test_claude_daemon_hook_bridge_budget.py::test_recovery_still_runs_when_its_window_can_finish",
+   "source_sha256": "9e33894e537251d87e39fa9fc8770784bbd3ad18741ce6d1c3b40feb5fdcd9c0",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::a_daemon_the_recovery_starts_later_answers_the_hook_once",
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::recovered_daemon_answers_the_retry"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The recovery command and the one retry it earns are run by the native bridge."
+  },
+  {
+   "old_node": "tests/test_claude_hook_completion_contract.py::test_daemon_output_keeps_decision_and_completion_separate",
+   "source_sha256": "4f5968f09e584f4f307ecb67341cb9704f108b906ba1fb0d271f950efd7a7d33",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::daemon_answer_is_forwarded_with_its_proof"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The daemon's answer is forwarded by the native bridge, which writes it once."
+  },
+  {
+   "old_node": "tests/test_claude_hook_completion_contract.py::test_oversized_input_denies_without_contacting_daemon",
+   "source_sha256": "4f5968f09e584f4f307ecb67341cb9704f108b906ba1fb0d271f950efd7a7d33",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::oversized_input_is_denied"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The native bridge reads the hook body and holds it to the same bound."
+  },
+  {
+   "old_node": "tests/test_claude_hook_completion_contract.py::test_local_fallback_denial_is_emitted_once",
+   "source_sha256": "4f5968f09e584f4f307ecb67341cb9704f108b906ba1fb0d271f950efd7a7d33",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::unavailable_daemon_is_denied_without_the_local_hook"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. There is no Python local fallback left to emit a denial twice."
+  },
+  {
+   "old_node": "tests/test_claude_hook_exit_paths.py::test_success_writes_once_or_suppresses_only_success",
+   "source_sha256": "40b0396390d8aa5f8dd4d7d60d148d03bb132f34277c843d554124d267367c2b",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::daemon_answer_is_forwarded_with_its_proof"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The native child inherits this call's stdio and is the only writer on it."
+  },
+  {
+   "old_node": "tests/test_claude_hook_exit_paths.py::test_failure_output_is_never_suppressed_or_replaced",
+   "source_sha256": "40b0396390d8aa5f8dd4d7d60d148d03bb132f34277c843d554124d267367c2b",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::unavailable_daemon_is_denied_without_the_local_hook"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. A refusal is written by the native bridge and never suppressed."
+  },
+  {
+   "old_node": "tests/test_claude_hook_exit_paths.py::test_oversized_input_preserves_event_denial_without_contacting_daemon",
+   "source_sha256": "40b0396390d8aa5f8dd4d7d60d148d03bb132f34277c843d554124d267367c2b",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::oversized_input_is_denied"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The oversize denial, and the event it is shaped for, are the native bridge's."
+  },
+  {
+   "old_node": "tests/test_sonar_path_authority.py::test_claude_daemon_url_rejects_noncanonical_state_path",
+   "source_sha256": "b7f5d724d465e03ee8db217df31269f3568fef8c92d9b1ada6634fe8f16b11e8",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::state_path_is_bound_to_one_guard_home"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The daemon URL is derived in Rust, which refuses a state path that is not an absolute daemon-state.json."
+  },
+  {
+   "old_node": "tests/test_sonar_path_authority.py::test_claude_daemon_url_does_not_follow_state_symlink",
+   "source_sha256": "b7f5d724d465e03ee8db217df31269f3568fef8c92d9b1ada6634fe8f16b11e8",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_auth_tests.rs::state_reached_through_a_symlink_is_refused"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. Refusing a daemon state that is not a regular file is now the native authentication's rule."
+  },
+  {
+   "old_node": "tests/test_sonar_path_authority.py::test_claude_daemon_url_uses_authenticated_local_state",
+   "source_sha256": "b7f5d724d465e03ee8db217df31269f3568fef8c92d9b1ada6634fe8f16b11e8",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_auth_tests.rs::signed_state_authenticates"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The signature over the daemon state is checked in Rust before its URL is used."
+  },
+  {
+   "old_node": "tests/test_sonar_path_authority.py::test_claude_bridge_falls_back_when_hook_state_binding_is_stale",
+   "source_sha256": "b7f5d724d465e03ee8db217df31269f3568fef8c92d9b1ada6634fe8f16b11e8",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_auth_tests.rs::tampered_or_stopped_state_is_refused",
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::missing_state_is_denied_without_the_local_hook"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. A stale or tampered binding is refused by the native bridge, which denies instead of running a Python fallback."
+  },
+  {
+   "old_node": "tests/test_guard_claude_adapter.py::test_claude_daemon_hook_bridge_delegates_to_authenticated_transport",
+   "source_sha256": "049f45f913e4fa3c03bd6a7939af4be664127df958be1d6aade8a4ae4e60a56e",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::daemon_answer_is_forwarded_with_its_proof",
+    "rust/crates/guard-runtime/src/claude_hook_bridge_auth_tests.rs::signed_state_authenticates"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. The authenticated transport and the timeout it carried are the native bridge's."
+  },
+  {
+   "old_node": "tests/test_hook_stdin_utf8.py::test_claude_bridge_forwards_utf8_paths_unchanged",
+   "source_sha256": "53f395bb432efad199ba18673139925b0319ede9c2451cc836a48b7f49c419f7",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge_tests.rs::a_non_ascii_payload_reaches_the_daemon_unchanged"
+   ],
+   "status": "obsolete_implementation_assertion",
+   "rationale": "Exercises the retired Python executing layer of the Claude daemon hook bridge, which now only launches the native command. Python no longer decodes the hook body: the native child reads the bytes and forwards them."
   }
  ],
  "preserved_tests": [

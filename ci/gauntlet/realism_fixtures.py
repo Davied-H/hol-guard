@@ -11,6 +11,7 @@ sessions hit while the Gauntlet stayed green:
 * a docs file quotes a placeholder credential before an escaped ``\\n``, and a
   source file copies credential fields from one object to another;
 * a read-only ``doctl`` sits on the developer ``PATH``;
+* a read-only ``docker`` answers one registry manifest query.
 * token-handling source (a redirect route, a link-building worker, an HMAC
   helper) names credential-like identifiers on every line (see
   ``source_output_fixtures``).
@@ -105,6 +106,56 @@ DOCTL_STUB_PYTHON = (
 )
 
 
+DOCKER_DIGEST = "sha256:" + "0123456789abcdef" * 4
+DOCKER_STUB = (
+    "#!/bin/sh\n"
+    "# Read-only stand-in for docker: it never reaches a registry or a daemon.\n"
+    "# Only the options Guard admits for a manifest query are understood.\n"
+    'if [ "${1:-}" = buildx ] && [ "${2:-}" = imagetools ] && [ "${3:-}" = inspect ]; then\n'
+    "  shift 3\n"
+    "  images=0\n"
+    '  while [ "$#" -gt 0 ]; do\n'
+    '    case "$1" in\n'
+    "      --raw | --format=*) ;;\n"
+    '      --format) [ "$#" -ge 2 ] || exit 2; shift ;;\n'
+    "      -*) printf 'docker stand-in: unsupported option\\n' >&2; exit 2 ;;\n"
+    "      *) images=$((images + 1)) ;;\n"
+    "    esac\n"
+    "    shift\n"
+    "  done\n"
+    '  [ "$images" -eq 1 ] || exit 2\n'
+    f"  printf '{DOCKER_DIGEST}\\n'\n"
+    "  exit 0\n"
+    "fi\n"
+    "printf 'docker stand-in: unsupported command\\n' >&2\n"
+    "exit 2\n"
+)
+DOCKER_STUB_PYTHON = (
+    "import sys\n"
+    "args = sys.argv[1:]\n"
+    "ok = args[:3] == ['buildx', 'imagetools', 'inspect']\n"
+    "images = 0\n"
+    "index = 3\n"
+    "while ok and index < len(args):\n"
+    "    word = args[index]\n"
+    "    index += 1\n"
+    "    if word == '--raw' or word.startswith('--format='):\n"
+    "        continue\n"
+    "    if word == '--format':\n"
+    "        ok = index < len(args)\n"
+    "        index += 1\n"
+    "    elif word.startswith('-'):\n"
+    "        ok = False\n"
+    "    else:\n"
+    "        images += 1\n"
+    "if ok and images == 1:\n"
+    f"    sys.stdout.buffer.write(b'{DOCKER_DIGEST}\\n')\n"
+    "else:\n"
+    "    sys.stderr.buffer.write(b'docker stand-in: unsupported command\\n')\n"
+    "    sys.exit(2)\n"
+)
+
+
 def write_windows_launcher(bin_dir: Path, name: str, source: str) -> None:
     """Give a stand-in a ``.cmd`` launcher on Windows, running a Python copy of it.
 
@@ -161,3 +212,5 @@ def add_home_tools(home: Path) -> None:
     """Install the read-only CLI stand-ins under the home ``.local/bin``."""
     _write(home / LOCAL_BIN / "doctl", DOCTL_STUB, 0o755)
     write_windows_launcher(home / LOCAL_BIN, "doctl", DOCTL_STUB_PYTHON)
+    _write(home / LOCAL_BIN / "docker", DOCKER_STUB, 0o755)
+    write_windows_launcher(home / LOCAL_BIN, "docker", DOCKER_STUB_PYTHON)
