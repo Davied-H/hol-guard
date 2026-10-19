@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .business_policy import BUSINESS_CLI_CASES, BUSINESS_CLI_EXECUTABLES
 from .clone_fixtures import add_long_lived_clone_config, long_lived_clone_checks
+from .edge_clone_fixtures import write_edge_clone
 from .extension_adapters import EXTENSION_ADAPTERS
 from .realism_fixtures import add_home_tools, add_main_shapes, borrow_main_modules
 from .review_fixtures import (
@@ -471,6 +472,8 @@ def _add_realistic_shapes(main: Path, home: Path, environment: dict[str, str], s
     ):
         _git(args, sibling, environment)
     add_home_tools(home)
+    # A clone with ignored local configuration files beside its code.
+    write_edge_clone(home, environment)
     if scenario_id == INSTEAD_OF_CASE:
         _git(("remote", "add", "origin", "acme:app.git"), main, environment)
     if scenario_id == BENCH_SEARCH_CASE:
