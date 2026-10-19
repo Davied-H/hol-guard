@@ -1128,6 +1128,9 @@
   "ci/native_runtime/test_guard_native_runtime_resident.py",
   "ci/native_runtime/test_guard_native_runtime_resident_cross_process.py",
   "ci/native_runtime/test_guard_native_runtime_windows_resident.py",
+  "tests/test_claude_daemon_hook_bridge_budget.py",
+  "tests/test_claude_hook_completion_contract.py",
+  "tests/test_claude_hook_exit_paths.py",
   "tests/test_cli_hook_source_ref.py",
   "tests/test_codex_event_trace.py",
   "tests/test_guard_codex_apply_patch_policy.py",
@@ -1380,6 +1383,32 @@
    "native_replacements": [
     "rust/crates/guard-command/src/shell_request_authority.rs",
     "rust/crates/guard-runtime/src/shell_request_authority_op.rs"
+   ]
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/adapters/claude_daemon_hook_bridge.py",
+   "source_sha256": "16e0ba714c2f2989e8b0b25711e61d77ae922991545dead5e69deeb32a9bf60a",
+   "forbidden_symbols": [
+    "_build_loopback_opener",
+    "_assert_loopback_http_url",
+    "_LoopbackOnlyRedirectHandler",
+    "_remaining_seconds",
+    "_post_to_loopback_daemon",
+    "_blocking_post_to_loopback_daemon",
+    "_read_bounded_response",
+    "_daemon_url",
+    "_run_local_fallback",
+    "_daemon_failure_reason",
+    "_daemon_failure_is_recoverable",
+    "_daemon_failure_is_authenticated_overload",
+    "_daemon_failure_kind",
+    "_recover_retry_or_fallback",
+    "_run_recovery_command"
+   ],
+   "native_replacements": [
+    "rust/crates/guard-runtime/src/claude_hook_bridge.rs",
+    "rust/crates/guard-runtime/src/claude_hook_bridge_transport.rs",
+    "rust/crates/guard-runtime/src/claude_hook_bridge_http.rs"
    ]
   }
  ]
