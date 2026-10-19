@@ -58,6 +58,7 @@ fn layout(name: &str) -> Layout {
     std::fs::write(clone.join(".env"), "SESSION_KEY=synthetic\n").unwrap();
     std::fs::write(clone.join("AGENTS.md"), "rules\n").unwrap();
     std::fs::write(clone.join(".git/config"), "[core]\n").unwrap();
+    std::fs::write(clone.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     std::fs::write(clone.join("scripts/run.sh"), "#!/bin/sh\n").unwrap();
     std::fs::set_permissions(
         clone.join("scripts/run.sh"),
