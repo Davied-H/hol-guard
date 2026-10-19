@@ -284,6 +284,10 @@ fn prove(
     !config::config_weakens_transport(&effective)
         && !config::repository_config_routes_transport(&repository)
         && !effective.keys().any(|key| key.starts_with("submodule."))
-        && probe.hooks_inert(["pre-auto-gc", "reference-transaction", "post-fetch"])
+        && probe.hooks_inert_in_a_stable_tree([
+            "pre-auto-gc",
+            "reference-transaction",
+            "post-fetch",
+        ])
         && upstream.is_none_or(|shape| pull::pull_inert(&effective, &repository, shape, &probe))
 }

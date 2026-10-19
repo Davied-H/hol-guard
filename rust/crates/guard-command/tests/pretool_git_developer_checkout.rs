@@ -6,15 +6,29 @@
 //! run, so an executable shim that stops at once is not a program to review.
 
 use crate::pretool_git_session_ops::{executable_hook, git, session, Session};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{symlink, PermissionsExt};
 
 const ADD: &str = "native_exact_safe_worktree_add";
+const REFRESH: &str = "native_exact_safe_git_origin_refresh";
+const WRITE: &str = "native_exact_safe_git_local_write";
+const HOOKS: [&str; 5] = [
+    "post-checkout",
+    "post-index-change",
+    "reference-transaction",
+    "pre-auto-gc",
+    "post-fetch",
+];
 const SHIM: &str = "#!/usr/bin/env sh\n. \"$(dirname \"$0\")/h\"\n";
 const RUNNER: &str = "#!/usr/bin/env sh\n[ \"$HUSKY\" = \"2\" ] && set -x\nn=$(basename \"$0\")\ns=$(dirname \"$(dirname \"$0\")\")/$n\n\n[ ! -f \"$s\" ] && exit 0\n\nsh -e \"$s\" \"$@\"\n";
 
 /// Husky 9 keeps its shims below `.husky/_` and sets `core.hooksPath` to it.
 fn husky(session: &Session, hooks: &[&str]) -> std::path::PathBuf {
-    let directory = session.primary.join(".husky/_");
+    husky_at(session, &session.primary, hooks)
+}
+
+/// The same directory in another working tree of the repository.
+fn husky_at(session: &Session, root: &std::path::Path, hooks: &[&str]) -> std::path::PathBuf {
+    let directory = root.join(".husky/_");
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(directory.join(".gitignore"), "*\n").unwrap();
     std::fs::write(directory.join("h"), RUNNER).unwrap();
@@ -41,7 +55,6 @@ fn head(session: &Session) -> String {
 
 #[test]
 fn origin_refresh_accepts_what_a_developer_checkout_carries() {
-    const REFRESH: &str = "native_exact_safe_git_origin_refresh";
     let session = session("developer");
     let primary = session.primary.display();
     let fetch = format!("git -C {primary} fetch origin main --quiet");
@@ -246,4 +259,91 @@ fn worktree_add_reads_the_hooks_the_commit_checked_out_tracks() {
         "git -C {primary} worktree add {} -b fix/tracked-hooks main~1",
         destination.display()
     ));
+}
+
+#[test]
+fn a_hooks_directory_spelled_oddly_or_reached_by_a_link_is_never_a_hook_managers() {
+    let session = session("husky-spelling");
+    let primary = session.primary.display();
+    let destination = session.org.join("app-portal-spelling");
+    let add = format!(
+        "git -C {primary} worktree add {} -b fix/spelling main",
+        destination.display()
+    );
+    let fetch = format!("git -C {primary} fetch origin main --quiet");
+    let status = format!("git -C {primary} status --short");
+    let hooks = husky(&session, &HOOKS);
+    session.assert_allow(&add, ADD);
+    session.assert_allow(&fetch, REFRESH);
+    assert_eq!(session.evaluate(&status).decision, "allow", "{status}");
+
+    // Git folds these into the directory above, but nothing here is built
+    // from a spelling that is not one plain relative path.
+    for path in [".husky/_/", ".husky//_", "./.husky/_", ".husky/./_"] {
+        session.config(&["core.hooksPath", path]);
+        for command in [&add, &fetch] {
+            session.assert_not_allow(command);
+        }
+    }
+    session.config(&["core.hooksPath", ".husky/_"]);
+    session.assert_allow(&add, ADD);
+
+    // Husky's runner finds the project hook from the path Git passes it, so a
+    // link at the hooks directory sends it to the project's own hook while the
+    // resolved path points somewhere that holds none.
+    let real = session.primary.join("vendor/_");
+    std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+    std::fs::rename(&hooks, &real).unwrap();
+    symlink("../vendor/_", &hooks).unwrap();
+    let project = ["reference-transaction", "post-index-change"]
+        .map(|hook| session.primary.join(".husky").join(hook));
+    for path in &project {
+        std::fs::write(path, "id\n").unwrap();
+    }
+    for command in [&add, &fetch, &status] {
+        session.assert_not_allow(command);
+    }
+    // The link alone is enough: no project hook is needed to refuse it.
+    for path in &project {
+        std::fs::remove_file(path).unwrap();
+    }
+    for command in [&add, &fetch, &status] {
+        session.assert_not_allow(command);
+    }
+    std::fs::remove_file(&hooks).unwrap();
+    std::fs::rename(&real, &hooks).unwrap();
+    session.assert_allow(&add, ADD);
+    session.assert_allow(&fetch, REFRESH);
+}
+
+#[test]
+fn a_hook_managers_shim_vouches_for_no_write_that_changes_the_tree() {
+    let session = session("husky-writes");
+    let worktree = session.worktree.display();
+    let primary = session.primary.display();
+    std::fs::write(session.worktree.join("notes.md"), "notes\n").unwrap();
+    let add = format!("cd {worktree} && git add notes.md");
+    let commit = format!("cd {worktree} && git add notes.md && git commit -m x");
+    let pull = format!("git -C {primary} pull --ff-only");
+    let fetch = format!("git -C {primary} fetch origin main --quiet");
+    session.config(&["branch.main.remote", "origin"]);
+    session.config(&["branch.main.merge", "refs/heads/main"]);
+    for (command, reason) in [
+        (&add, WRITE),
+        (&commit, WRITE),
+        (&pull, REFRESH),
+        (&fetch, REFRESH),
+    ] {
+        session.assert_allow(command, reason);
+    }
+
+    // Git finds the shim from either tree. A commit, an index write or a
+    // pull changes what the shim would run, so none of them rests on it.
+    husky_at(&session, &session.worktree, &HOOKS);
+    husky(&session, &HOOKS);
+    for command in [&add, &commit, &pull] {
+        session.assert_not_allow(command);
+    }
+    // A fetch writes no file of the tree, so the shim still stops at once.
+    session.assert_allow(&fetch, REFRESH);
 }

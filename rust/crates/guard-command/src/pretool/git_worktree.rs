@@ -3,9 +3,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
+#[path = "git_worktree_hooks.rs"]
+mod hooks;
 #[path = "git_worktree_config.rs"]
 mod sources;
 
+use hooks::{hooks_are_inert, repository_hooks_inert};
 use sources::{expand_config_path, safe_worktree_config, ConfigFacts};
 
 const CONFIG_LIMIT: u64 = 65_536;
@@ -72,13 +75,15 @@ pub(super) fn worktree_add_execution_free(
         &cwd,
         deadline,
     )?;
-    if !hooks_are_inert(&git_dir.join("hooks")) || !hooks_are_inert(&common_dir.join("hooks")) {
+    if !hooks_are_inert(&git_dir.join("hooks"), &|_| false)
+        || !hooks_are_inert(&common_dir.join("hooks"), &|_| false)
+    {
         return Some(false);
     }
     if !facts
         .hook_dirs
         .iter()
-        .all(|directory| hooks_are_inert(directory))
+        .all(|directory| hooks_are_inert(directory, &|_| false))
     {
         return Some(false);
     }
@@ -427,113 +432,4 @@ fn commit_id(output: &[u8]) -> Option<&str> {
         && commit.len() <= 64
         && commit.bytes().all(|byte| byte.is_ascii_hexdigit()))
     .then_some(commit)
-}
-
-/// Git runs hooks from the root of a working tree: `reference-transaction`
-/// in this repository and `post-checkout` in the new tree. A hooks directory
-/// below the repository root holds no hook either runs when this working
-/// tree's directory has none and the commit checked out tracks none, with no
-/// symlink on the way into the new tree. `None` is doubt.
-fn repository_hooks_inert(
-    base: &Command,
-    leading: &[String],
-    hooks_path: &str,
-    commit: &str,
-    deadline: Instant,
-) -> Option<bool> {
-    if !super::git_hook_files::repository_relative_hooks_path(hooks_path) {
-        return Some(false);
-    }
-    let (status, output) = git_query_with_args(
-        base,
-        leading,
-        &["rev-parse", "--show-toplevel"],
-        deadline,
-        WORKTREE_PROBE_LIMIT,
-    )?;
-    if !status.success() {
-        return None;
-    }
-    let toplevel = fs::canonicalize(std::str::from_utf8(&output).ok()?.trim()).ok()?;
-    match fs::canonicalize(toplevel.join(hooks_path)) {
-        Ok(directory) => {
-            if !directory.starts_with(&toplevel) || !hooks_are_inert(&directory) {
-                return Some(false);
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => return None,
-    }
-    // Every directory on the way must be a plain tree in the commit, or absent.
-    let mut prefix = String::new();
-    for component in hooks_path.split('/') {
-        if !prefix.is_empty() {
-            prefix.push('/');
-        }
-        prefix.push_str(component);
-        match tree_entry(base, leading, commit, &prefix, deadline)? {
-            None => return Some(true),
-            Some(mode) if mode == "040000" => {}
-            Some(_) => return Some(false),
-        }
-    }
-    for hook in EXECUTABLE_HOOKS {
-        let path = format!("{hooks_path}/{hook}");
-        match tree_entry(base, leading, commit, &path, deadline)? {
-            None => {}
-            Some(mode) if mode == "100644" => {}
-            Some(_) => return Some(false),
-        }
-    }
-    Some(true)
-}
-
-/// The mode of `path` in `commit`, or `None` where the tree has no such entry.
-fn tree_entry(
-    base: &Command,
-    leading: &[String],
-    commit: &str,
-    path: &str,
-    deadline: Instant,
-) -> Option<Option<String>> {
-    let (status, output) = git_query_with_args(
-        base,
-        leading,
-        &["ls-tree", "-z", "--full-tree", commit, "--", path],
-        deadline,
-        WORKTREE_PROBE_LIMIT,
-    )?;
-    if !status.success() {
-        return None;
-    }
-    if output.is_empty() {
-        return Some(None);
-    }
-    let rendered = std::str::from_utf8(&output).ok()?;
-    let entry = rendered.strip_suffix('\0')?;
-    let (meta, name) = entry.split_once('\t')?;
-    // One entry, named exactly: a pattern never widens the lookup.
-    (name == path && !entry.contains('\0'))
-        .then(|| meta.split(' ').next().map(str::to_owned))
-        .flatten()
-        .map(Some)
-}
-
-const EXECUTABLE_HOOKS: &[&str] = &[
-    "post-checkout",
-    "post-index-change",
-    "reference-transaction",
-];
-
-/// No hook Git runs for `worktree add` can start in the directory `path`.
-/// Git finds a hook by its exact name, so each is looked up directly.
-fn hooks_are_inert(path: &Path) -> bool {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
-        _ => return false,
-    }
-    EXECUTABLE_HOOKS
-        .iter()
-        .all(|hook| super::git_hook_files::hook_file_inert(&path.join(hook), hook))
 }

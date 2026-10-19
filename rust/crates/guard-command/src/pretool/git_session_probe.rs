@@ -156,10 +156,31 @@ impl Probe {
     }
 
     /// No named hook can run: each is absent, a non-executable file or a
-    /// known script that does nothing here (see `git_hook_files`).
+    /// known script that does nothing here (see `git_hook_files`). A hook
+    /// manager's shim is not one: the project hook it forwards to is read from
+    /// the working tree, which the writes this answers for may change.
+    pub(super) fn hooks_inert<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> bool {
+        self.hooks_inert_with(names, false)
+    }
+
+    /// `hooks_inert` for an operation that leaves the working tree as it is,
+    /// such as a fetch: the shim of a hook manager that stops at once when the
+    /// project has no such hook counts too, while Git reaches its directory
+    /// through the repository's own `core.hooksPath` with no link on the way.
+    pub(super) fn hooks_inert_in_a_stable_tree<'a>(
+        &self,
+        names: impl IntoIterator<Item = &'a str>,
+    ) -> bool {
+        self.hooks_inert_with(names, true)
+    }
+
     /// `--git-path` honors `core.hooksPath` and the linked worktree layout.
     /// One `rev-parse` resolves every name; it prints one path per request.
-    pub(super) fn hooks_inert<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> bool {
+    fn hooks_inert_with<'a>(
+        &self,
+        names: impl IntoIterator<Item = &'a str>,
+        stable_tree: bool,
+    ) -> bool {
         let mut arguments = vec!["rev-parse", "--path-format=absolute"];
         // Several writes may share a hook; ask for each path once.
         let mut hooks: Vec<&str> = Vec::new();
@@ -191,8 +212,34 @@ impl Probe {
         };
         paths.iter().zip(&hooks).all(|(path, hook)| {
             let path = PathBuf::from(path);
-            path.is_absolute() && super::git_hook_files::hook_file_inert(&path, hook)
+            path.is_absolute()
+                && super::git_hook_files::hook_file_inert(&path, hook, &|directory| {
+                    stable_tree && self.hooks_directory_reached(directory)
+                })
         })
+    }
+
+    /// Git reaches `directory` through the repository's own relative
+    /// `core.hooksPath` with no link on the way (see `git_hook_files`).
+    fn hooks_directory_reached(&self, directory: &Path) -> bool {
+        let Some(top) = self
+            .text(&["rev-parse", "--show-toplevel"])
+            .and_then(|top| fs::canonicalize(top).ok())
+        else {
+            return false;
+        };
+        let Some((effective, repository)) = self.config() else {
+            return false;
+        };
+        let values = |config: &super::git_remote_config::GitConfig| {
+            config.get("core.hookspath").cloned().unwrap_or_default()
+        };
+        super::git_hook_files::reached_without_a_link(
+            &top,
+            &values(&effective),
+            &values(&repository),
+            directory,
+        )
     }
 
     /// Every configured credential helper resolves to a trusted executable.
