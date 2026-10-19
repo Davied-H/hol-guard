@@ -49,6 +49,7 @@ from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
 from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
+from tests.benign_fp_gate_configs import KUBECONFIG, LFS_GITCONFIG
 from tests.benign_fp_gate_connectors import write_connectors
 from tests.benign_fp_gate_feature_app import build_feature_app, feature_app_path
 from tests.benign_fp_gate_projects import (
@@ -69,33 +70,6 @@ _GIT_IDENTITY = {
     "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
 }
 
-_LFS_GITCONFIG = """[filter "lfs"]
-\tclean = git-lfs clean -- %f
-\tsmudge = git-lfs smudge -- %f
-\tprocess = git-lfs filter-process
-\trequired = true
-[user]
-\tname = Fixture Author
-\temail = fixture@example.invalid
-"""
-# Synthetic kubeconfig with no credentials; kubectl is never executed by the gate.
-_KUBECONFIG = """apiVersion: v1
-kind: Config
-clusters:
-- name: example
-  cluster:
-    server: https://k8s.example.invalid
-contexts:
-- name: example
-  context:
-    cluster: example
-    user: example
-current-context: example
-users:
-- name: example
-  user: {}
-"""
-
 
 @dataclass(frozen=True)
 class BenignFixture:
@@ -111,6 +85,7 @@ class BenignFixture:
     org: Path
     tmp_org: Path
     scratch: Path
+    stage: Path
 
     def cleanup(self) -> None:
         """Remove the directories this fixture created outside its own root."""
@@ -119,6 +94,7 @@ class BenignFixture:
         shutil.rmtree(self.tmp_worktree.parent, ignore_errors=True)
         shutil.rmtree(self.tmp_org.parent, ignore_errors=True)
         shutil.rmtree(self.scratch, ignore_errors=True)
+        shutil.rmtree(self.stage, ignore_errors=True)
 
     @property
     def contained_requests(self) -> Path:
@@ -142,6 +118,8 @@ class BenignFixture:
             "${GAUNTLET_ROOT}": str(self.tmp_org.parent),
             "${SCRATCH}": str(self.scratch),
             "${FEATURE_APP}": str(feature_app_path(self.home)),
+            # Private directory directly in /tmp holding the files a case stages before its commands.
+            "${STAGE}": str(self.stage),
         }
 
     def cwd(self, name: str) -> Path:
@@ -253,7 +231,7 @@ def build_fixture(root: Path) -> BenignFixture:
     guard_home = root / "guard-home"
     for directory in (home, guard_home):
         directory.mkdir(parents=True)
-    _write(home / ".gitconfig", _LFS_GITCONFIG)
+    _write(home / ".gitconfig", LFS_GITCONFIG)
     _write(home / ".rustup" / "settings.toml", 'version = "12"\ndefault_toolchain = "stable"\n')
     # Synthetic credential file so the negative controls have a real target.
     _write(home / ".agent" / "skills" / "x" / "SKILL.md", "---\nname: x\n---\nSynthetic home skill body.\n")
@@ -287,7 +265,7 @@ def build_fixture(root: Path) -> BenignFixture:
     )
     _write(home / "acme-plain" / "README.txt", "Plain notes directory.\n")
     _write(home / "acme-plain" / "probe_py.py", "print('probe')\n")
-    _write(home / "kubeconfig.yaml", _KUBECONFIG)
+    _write(home / "kubeconfig.yaml", KUBECONFIG)
     # Connectors Guard has no decision for: a local CLI with its state directory, and harness MCP servers.
     write_connectors(home)
     _write(home / ".ssh" / "id_rsa", "-----BEGIN FIXTURE KEY-----\nnot-a-real-key\n-----END FIXTURE KEY-----\n")
@@ -482,8 +460,24 @@ def build_fixture(root: Path) -> BenignFixture:
     _git(bench, "commit", "--quiet", "-m", "bench base", home=home)
     # A leaf directly in /tmp that does not exist yet, as a throwaway checkout destination.
     scratch = Path(_system_tmp()) / f"hg-fp-scratch-{os.getpid()}-{secrets.token_hex(4)}"
+    # Source files a session staged in /tmp before copying them into a checkout.
+    stage = Path(tempfile.mkdtemp(prefix="hg-fp-stage-", dir=_system_tmp())).resolve()
+    _write(stage / "x.ts", "export const summary = 2;\n")
+    _write(stage / "a.ts", "export const copied = 3;\n")
     return BenignFixture(
-        root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org, scratch
+        root,
+        home,
+        parent,
+        worktree,
+        nested,
+        gitlink_repo,
+        guard_home,
+        private_tmp,
+        tmp_worktree,
+        org,
+        tmp_org,
+        scratch,
+        stage,
     )
 
 

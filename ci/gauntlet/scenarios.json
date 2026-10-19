@@ -588,6 +588,31 @@
       ]
     },
     {
+      "id": "omp-native-edit-clone-beside-session-folder",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "read",
+        "edit"
+      ],
+      "prompt": "The checkout I am working on is at {{home}}/other-project. Open src/report.ts in it with the read tool, use the edit tool to change report-window-marker to report-window-fixed, and read the file again to confirm. Use the absolute path {{home}}/other-project/src/report.ts for every call; for the edit input header, use that absolute path with the 4-character hash the read gave you. Make no other change."
+    },
+    {
+      "id": "omp-native-shell-writes-clone-beside-session-folder",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "bash"
+      ],
+      "prompt": "I am editing the checkout at {{home}}/other-project from a different folder. Run each listed command once, in order, exactly as written, and tell me when they have finished. Do not change anything else.",
+      "commands": [
+        "cat {{stage}}/x.ts > {{home}}/other-project/src/summary.ts",
+        "cat {{stage}}/x.ts >> {{home}}/other-project/src/report.ts",
+        "cat > {{home}}/other-project/.pending-edits.md <<'EOF'\n# Pending\n- retry window\nEOF",
+        "cp {{stage}}/a.ts {{stage}}/b.ts && cat {{stage}}/a.ts > {{home}}/other-project/src/copied.ts"
+      ]
+    },
+    {
       "id": "omp-native-git-readonly-nested-repo",
       "expectation": "allow",
       "oracle": "native-tools",
