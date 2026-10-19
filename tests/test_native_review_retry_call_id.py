@@ -36,6 +36,13 @@ def _approve_once(store: object, request_id: str) -> None:
     )
 
 
+def _not_allowed(response: dict[str, object]) -> None:
+    hook_output = response["hookSpecificOutput"]
+    assert isinstance(hook_output, dict)
+    assert hook_output["permissionDecision"] != "allow"
+    assert response["policy_action"] == "review"
+
+
 @pytest.mark.parametrize("harness", ("claude-code", "codex"))
 def test_retry_under_a_new_tool_use_id_consumes_the_approval_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, harness: str
@@ -59,8 +66,7 @@ def test_retry_under_a_new_tool_use_id_consumes_the_approval_once(
     assert store.list_approval_requests(status="pending") == []
     payload["tool_use_id"] = "toolu_later"
     later = worker.review_http_payload(**kwargs)
-    assert later["policy_action"] == "review"
-    assert later["decision"] == "deny"
+    _not_allowed(later)
 
 
 @pytest.mark.parametrize("harness", ("claude-code", "codex"))
@@ -81,12 +87,12 @@ def test_a_changed_command_or_session_does_not_inherit_the_approval(
     payload["tool_use_id"] = "toolu_retry"
     payload["tool_input"] = {"command": "ls -l"}
     reworded = worker.review_http_payload(**kwargs)
-    assert reworded["decision"] == "deny"
+    _not_allowed(reworded)
     assert reworded["approval_request_id"] != first["approval_request_id"]
     payload["tool_input"] = {"command": "ls -la"}
     payload["session_id"] = "another-session"
     other_session = worker.review_http_payload(**kwargs)
-    assert other_session["decision"] == "deny"
+    _not_allowed(other_session)
     assert other_session["approval_request_id"] != first["approval_request_id"]
 
 
@@ -106,5 +112,5 @@ def test_sessionless_retry_does_not_inherit_the_approval(
     _approve_once(store, first["approval_request_id"])
     payload["tool_use_id"] = "toolu_retry"
     retry = worker.review_http_payload(**kwargs)
-    assert retry["decision"] == "deny"
+    _not_allowed(retry)
     assert retry["approval_request_id"] != first["approval_request_id"]
