@@ -75,29 +75,19 @@ fn bounded_text(text: &str) -> bool {
     // not necessarily notice an embedded URL or token inside a search query.
     // An uncertain outbound value keeps the normal review, not the read proof.
     let lower = text.to_ascii_lowercase();
-    ![
-        "http://",
-        "https://",
-        "%3a%2f%2f",
-        "github_pat_",
-        "ghp_",
-        "gho_",
-        "ghu_",
-        "ghs_",
-        "ghr_",
-        "bearer ",
-        "authorization:",
-        "access_token=",
-        "api_key=",
-        "apikey=",
-        "password=",
-        "secret=",
-        "xoxb-",
-        "xoxp-",
-        "sk-",
-    ]
-    .iter()
-    .any(|marker| lower.contains(marker))
+    let at_token_start = |marker: &str| {
+        lower.match_indices(marker).any(|(index, _)| {
+            index == 0 || !lower.as_bytes()[index - 1].is_ascii_alphanumeric()
+        })
+    };
+    let anywhere = [
+        "http://", "https://", "%3a%2f%2f", "github_pat_",
+        "bearer ", "authorization:", "access_token=",
+        "api_key=", "apikey=", "password=", "secret=",
+    ];
+    let prefixes = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "xoxb-", "xoxp-", "sk-"];
+    !(anywhere.iter().any(|marker| lower.contains(marker))
+        || prefixes.iter().any(|marker| at_token_start(marker)))
 }
 
 /// `owner/name` on github.com. A host or a URL in front of the slug would send
