@@ -26,8 +26,8 @@ TOKEN_READ_CASE = "omp-native-read-token-handling-sources"
 TOKEN_SHELL_CASE = "omp-native-shell-cat-token-handling-sources"
 WORKSPACE_GREP_CASE = "omp-native-grep-workspace-root"
 CLONE_GREP_CASE = "omp-native-shell-grep-clone-local-config"
-CLONE_FIND_CASE = "omp-native-shell-find-exec-grep-clone-workers"
-CLONE_SEARCH_CASES = frozenset({CLONE_GREP_CASE, CLONE_FIND_CASE})
+CLONE_SEARCH_CASES = frozenset({CLONE_GREP_CASE})
+WORKSPACE_FIND_CASE = "omp-native-shell-find-exec-grep-workspace-absolute"
 # Every value in the fixture's local configuration files starts with this.
 LOCAL_VALUE_PREFIX = "GAUNTLET_SYNTHETIC_"
 # One line of each token-handling file, which only that file's real text carries.
@@ -182,6 +182,14 @@ def _clone_search_match(scenario: Scenario, calls: list[dict[str, Any]]) -> bool
     return text is not None and text.replace("\\", "/").splitlines() == [f"{{{{home}}}}/{CLONE}/{SOURCE_PATH}"]
 
 
+def _workspace_find_match(calls: list[dict[str, Any]]) -> bool:
+    """The find named the one source file that holds the word, spelled with the workspace's own path."""
+    if len(calls) != 1:
+        return False
+    text = _text(calls[0])
+    return text is not None and text.replace("\\", "/").splitlines() == ["{{workspace}}/src/settings.ts"]
+
+
 def command_outputs_match(scenario: Scenario, calls: list[dict[str, Any]]) -> bool:
     """A successful host status cannot replace the required read, search or transformation."""
     if scenario.id == BUSINESS_ORDINARY_READ:
@@ -192,6 +200,8 @@ def command_outputs_match(scenario: Scenario, calls: list[dict[str, Any]]) -> bo
         return _workspace_search_match(calls)
     if scenario.id in CLONE_SEARCH_CASES:
         return _clone_search_match(scenario, calls)
+    if scenario.id == WORKSPACE_FIND_CASE:
+        return _workspace_find_match(calls)
     if scenario.id not in OUTPUT_SCENARIOS:
         return True
     if len(calls) != len(scenario.commands):

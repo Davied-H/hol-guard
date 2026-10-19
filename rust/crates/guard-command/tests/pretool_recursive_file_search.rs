@@ -280,7 +280,7 @@ fn recursive_search_source_globs_are_not_mistaken_for_env_files() {
         ("tests/deploy.test.ts", "ordinary"),
         ("tests/helpers.ts", "ordinary"),
         ("configured/app.test.ts", "ordinary"),
-        ("configured/.env", "TOKEN=synthetic"),
+        ("configured/.env", "TOKEN=ordinary"),
     ] {
         let file = root.join(path);
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();

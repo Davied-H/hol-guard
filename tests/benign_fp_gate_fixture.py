@@ -152,6 +152,7 @@ class BenignFixture:
             "tmp_worktree": self.tmp_worktree,
             "gitlink_repo": self.gitlink_repo,
             "org": self.org,
+            "edge_clone": self.home / "edge-clone",
             "org_app": self.org / "app-portal",
             "org_wt": self.org.parent / "app-portal-fix",
             "tmp_org": self.tmp_org,

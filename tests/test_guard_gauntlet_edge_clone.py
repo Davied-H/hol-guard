@@ -7,9 +7,9 @@ from pathlib import Path
 
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.command_outputs import (
-    CLONE_FIND_CASE,
     CLONE_GREP_CASE,
     CLONE_SEARCH_CASES,
+    WORKSPACE_FIND_CASE,
     WORKSPACE_GREP_CASE,
     command_outputs_match,
 )
@@ -51,16 +51,16 @@ def _grep(text: str, path: str | None = "{{workspace}}", pattern: str = "ordinar
 
 
 def test_cases_are_allow_only_search_cases() -> None:
-    for identifier in (WORKSPACE_GREP_CASE, *CLONE_SEARCH_CASES):
+    for identifier in (WORKSPACE_GREP_CASE, WORKSPACE_FIND_CASE, *CLONE_SEARCH_CASES):
         scenario = SCENARIOS[identifier]
         assert (scenario.expectation, scenario.oracle) == ("allow", "native-tools")
     assert SCENARIOS[WORKSPACE_GREP_CASE].required_tools == ("grep",)
     assert "{{workspace}}" in SCENARIOS[WORKSPACE_GREP_CASE].prompt
-    for identifier in CLONE_SEARCH_CASES:
+    for identifier in (WORKSPACE_FIND_CASE, *CLONE_SEARCH_CASES):
         assert SCENARIOS[identifier].required_tools == ("bash",)
     assert SCENARIOS[CLONE_GREP_CASE].commands == (f'grep -rln "{MARKER}" {{{{home}}}}/{CLONE}/',)
-    assert SCENARIOS[CLONE_FIND_CASE].commands == (
-        rf'find {{{{home}}}}/{CLONE}/workers -type f -name "*.ts" -exec grep -l "{MARKER}" {{}} \;',
+    assert SCENARIOS[WORKSPACE_FIND_CASE].commands == (
+        r'find {{workspace}}/src -type f -name "*.ts" -exec grep -l "retryLimit" {} \;',
     )
 
 
@@ -108,3 +108,15 @@ def test_the_clone_search_must_list_exactly_the_committed_source() -> None:
             assert not command_outputs_match(scenario, [_call("bash", {"command": "x"}, text)]), text
         assert not command_outputs_match(scenario, [])
         assert not command_outputs_match(scenario, [_call("bash", {}, LISTED), _call("bash", {}, LISTED)])
+
+
+def test_the_workspace_find_must_name_exactly_the_settings_source() -> None:
+    scenario = SCENARIOS[WORKSPACE_FIND_CASE]
+    listed = "{{workspace}}/src/settings.ts\n"
+    assert command_outputs_match(scenario, [_call("bash", {"command": "x"}, listed)])
+    # Windows find joins the path with a backslash.
+    assert command_outputs_match(scenario, [_call("bash", {"command": "x"}, listed.replace("/", "\\"))])
+    for text in ("", "held for review", listed + listed, listed + "{{workspace}}/src/one.ts\n"):
+        assert not command_outputs_match(scenario, [_call("bash", {"command": "x"}, text)]), text
+    assert not command_outputs_match(scenario, [])
+    assert not command_outputs_match(scenario, [_call("bash", {}, listed), _call("bash", {}, listed)])

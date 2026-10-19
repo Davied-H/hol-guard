@@ -136,53 +136,62 @@ fn a_plain_pattern_clears_the_sensitive_files_it_cannot_match() {
         .join(std::process::id().to_string());
     let home = root.join("home");
     let repo = home.join("work/app");
-    let write = |relative: &str, text: &str| {
-        let path = repo.join(relative);
+    let held = home.join("work/held");
+    let write = |base: &std::path::Path, relative: &str, text: &str| {
+        let path = base.join(relative);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, text).unwrap();
     };
-    write("src/index.ts", "export const handler = 1;\n");
-    write("workers/api/.dev.vars", "API_TOKEN=placeholder\n");
-    write(".env.bak", "COOKIE_NAME=synthetic\n");
-    write("keys/server.key", "placeholder\n");
-    write("stores/.aws/credentials", "placeholder\n");
-    write("links/real.txt", "placeholder\n");
-    std::os::unix::fs::symlink(repo.join("links/real.txt"), repo.join("links/.env.link")).unwrap();
-    let (home, repo) = (
+    write(&repo, "src/index.ts", "export const handler = 1;\n");
+    write(&repo, "workers/api/.dev.vars", "API_TOKEN=placeholder\n");
+    write(&repo, ".env.bak", "COOKIE_NAME=synthetic\n");
+    // A folder with files that are never read stays held, even at the root.
+    write(&held, "src/index.ts", "export const handler = 1;\n");
+    write(&held, "keys/server.key", "placeholder\n");
+    write(&held, "stores/.aws/credentials", "placeholder\n");
+    write(&held, "links/real.txt", "placeholder\n");
+    std::os::unix::fs::symlink(held.join("links/real.txt"), held.join("links/.env.link")).unwrap();
+    let (home, repo, held) = (
         crate::runtime_read_paths::canonicalize_text(&home).unwrap(),
         crate::runtime_read_paths::canonicalize_text(&repo).unwrap(),
+        crate::runtime_read_paths::canonicalize_text(&held).unwrap(),
     );
-    let context = crate::pretool::PathContext {
-        home_dir: home.to_str(),
-        cwd: repo.to_str(),
-        ..Default::default()
-    };
-    for (command, allowed) in [
-        ("-rn handler .", true),
-        ("-rn handler workers", true),
-        ("-rni HANDLER workers", true),
-        ("-rn foo|handler .", true),
-        ("-rn -e handler .", true),
-        ("-rn api_token workers", false),
-        ("-rn API_TOKEN workers", false),
-        ("-rn foo|cookie_name .", false),
-        ("-rn cookie.name .", false),
-        ("-rn ha.*er .", false),
-        ("-rn ^handler .", false),
-        ("-rn -ehandler .", false),
-        ("-rn -e handler -e other .", false),
-        ("-rnv handler .", false),
-        ("-rnL handler .", false),
-        ("-rn --invert-match handler .", false),
-        ("-rn handler keys", false),
-        ("-rn handler stores", false),
-        ("-rn handler links", false),
+    for (cwd, command, allowed) in [
+        (&repo, "-rn handler .", true),
+        (&repo, "-rn handler workers", true),
+        (&repo, "-rni HANDLER workers", true),
+        (&repo, "-rn foo|handler .", true),
+        (&repo, "-rn -e handler .", true),
+        (&repo, "-rn api_token workers", false),
+        (&repo, "-rn API_TOKEN workers", false),
+        (&repo, "-rn foo|cookie_name .", false),
+        (&repo, "-rn cookie.name .", false),
+        (&repo, "-rn ha.*er .", false),
+        (&repo, "-rn ^handler .", false),
+        (&repo, "-rn -ehandler .", false),
+        (&repo, "-rn -e handler -e other .", false),
+        (&repo, "-rnv handler .", false),
+        (&repo, "-rnL handler .", false),
+        (&repo, "-rn --invert-match handler .", false),
+        (&repo, "-rnc handler .", false),
+        (&repo, "-rn handler src", true),
+        (&held, "-rn handler src", true),
+        (&held, "-rn handler .", false),
+        (&held, "-rn handler keys", false),
+        (&held, "-rn handler stores", false),
+        (&held, "-rn handler links", false),
     ] {
+        let context = crate::pretool::PathContext {
+            home_dir: home.to_str(),
+            cwd: cwd.to_str(),
+            ..Default::default()
+        };
         let arguments: Vec<String> = command.split(' ').map(str::to_owned).collect();
         assert_eq!(
             super::safe_grep_arguments(&arguments, context),
             allowed,
-            "{command}"
+            "{command} in {}",
+            cwd.display()
         );
     }
     std::fs::remove_dir_all(root).unwrap();
