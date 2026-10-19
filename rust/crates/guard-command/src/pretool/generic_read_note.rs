@@ -42,7 +42,7 @@ pub(super) fn read_review_reason(
         )
     } else if guard_secure_fs::credential_named_path(checked) {
         format!(
-            "{shown} is named like a credential store, so Guard holds a read of it. Read a source or document file inside it by its exact path, or leave it for the user."
+            "{shown} is named like a credential store, so Guard holds a read of it. Read a different file, or leave it for the user."
         )
     } else {
         format!(

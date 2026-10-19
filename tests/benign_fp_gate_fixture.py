@@ -45,13 +45,12 @@ from pathlib import Path
 
 import pytest
 
-from ci.gauntlet.feature_directory_fixtures import HELD as FEATURE_HELD
-from ci.gauntlet.feature_directory_fixtures import SOURCES as FEATURE_SOURCES
 from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
 from ci.gauntlet.source_output_fixtures import SOURCES as TOKEN_SOURCES
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
 from tests.benign_fp_gate_connectors import write_connectors
+from tests.benign_fp_gate_feature_app import build_feature_app, feature_app_path
 from tests.benign_fp_gate_projects import (
     _INSTALLED_PACKAGES,
     _NODE_PACKAGES,
@@ -142,6 +141,7 @@ class BenignFixture:
             # The live Gauntlet's fixture root and its fresh scratch leaf directly in /tmp.
             "${GAUNTLET_ROOT}": str(self.tmp_org.parent),
             "${SCRATCH}": str(self.scratch),
+            "${FEATURE_APP}": str(feature_app_path(self.home)),
         }
 
     def cwd(self, name: str) -> Path:
@@ -161,6 +161,7 @@ class BenignFixture:
             # A checkout whose `.gitignore` re-includes a hidden template,
             # the shape nearly every application repository carries.
             "ignore_negation": self.home / "Code" / "ignore-rules" / "billing-api",
+            "feature_app": feature_app_path(self.home),
         }[name]
 
 
@@ -332,9 +333,8 @@ def build_fixture(root: Path) -> BenignFixture:
     # The live Gauntlet's token-handling sources (redirect route, link worker, HMAC helper).
     for relative, text in TOKEN_SOURCES.items():
         _write(worktree / relative, text)
-    # The live Gauntlet's sign-in folder, plus the data files in it that stay under review.
-    for relative, text in {**FEATURE_SOURCES, **FEATURE_HELD}.items():
-        _write(worktree / relative, text)
+    # The live Gauntlet's sign-in folder and the held data files beside it, in a repository of their own.
+    build_feature_app(home, os.environ.get("PATH", ""))
     # Fresh worktree package whose dependencies are installed only in the canonical checkout.
     _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")
     _write(worktree / "web" / "package.json", '{"private": true}\n')

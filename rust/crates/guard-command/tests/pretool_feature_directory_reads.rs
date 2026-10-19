@@ -40,6 +40,7 @@ fn layout(name: &str) -> Layout {
     let home = fixture::canonical_spelling(&root).join("home");
     let clone = home.join("acme-app");
     write(&clone.join(".git/config"), "[core]\n");
+    write(&clone.join(".git/HEAD"), "ref: refs/heads/main\n");
     for (relative, text) in [
         ("src/lib/auth/session.ts", "export const a = 1;\n"),
         ("src/lib/auth/README.md", "# Sign-in\n"),
@@ -143,6 +144,7 @@ fn a_home_directory_that_is_a_work_tree_keeps_its_review() {
     // named `auth` inside it is not a project feature.
     let layout = layout("dotfiles");
     write(&layout.home.join(".git/config"), "[core]\n");
+    write(&layout.home.join(".git/HEAD"), "ref: refs/heads/main\n");
     write(&layout.home.join("auth/README.md"), "# Notes\n");
     for harness in ["omp", "claude-code"] {
         let (action, _, _) = read(
@@ -178,6 +180,15 @@ fn a_held_read_is_explained_as_a_read_and_not_as_a_search() {
             );
             assert!(reason.contains(relative), "{harness} {relative}: {reason}");
             assert!(!reason.contains("search"), "{harness} {relative}: {reason}");
+            // The next step must be one that a later read is not held for again.
+            assert!(
+                reason.contains("Read a different file, or leave it for the user."),
+                "{harness} {relative}: {reason}"
+            );
+            assert!(
+                !reason.contains("inside it"),
+                "{harness} {relative}: {reason}"
+            );
         }
     }
 }

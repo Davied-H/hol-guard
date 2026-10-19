@@ -167,8 +167,13 @@ def _feature_directory_match(calls: list[dict[str, Any]]) -> bool:
     for call in calls:
         if call.get("name") != "read":
             continue
-        target = re.sub(r":\d+(-\d+)?$", "", str(call["args"].get("path", ""))).rstrip("/")
-        source = next((path for path in expected if target == path or target.endswith("/" + path)), None)
+        # Only this fixture's own tree counts: a read of the same relative path in another
+        # workspace, or of a longer path that merely ends in it, must not satisfy the case.
+        target = re.sub(r":\d+(-\d+)?$", "", str(call["args"].get("path", "")))
+        if "/" not in target:
+            target = target.replace("\\", "/")
+        target = target.rstrip("/")
+        source = next((path for path in expected if target in (path, "{{workspace}}/" + path)), None)
         if source is None:
             continue
         text = _text(call)

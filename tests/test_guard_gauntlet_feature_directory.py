@@ -83,3 +83,22 @@ def test_the_folder_and_both_files_must_come_back_as_their_own_text() -> None:
     assert not command_outputs_match(SCENARIO, _calls(session="held for review"))
     other = _read("{{workspace}}/README.md", "hello\n")
     assert not command_outputs_match(SCENARIO, [*_calls()[:2], other])
+
+
+def test_only_reads_inside_this_workspace_count() -> None:
+    calls = _calls()
+    for prefix in ("{{home}}/elsewhere/", "{{workspace}}/nested/", "/other/", "{{workspace}}x/"):
+        foreign = [_read(prefix + README_PATH, f"1|{README_MARKER}\n"), *calls[:1], calls[2]]
+        assert not command_outputs_match(SCENARIO, foreign), prefix
+    # A relative path and a redacted Windows path are the same tree.
+    relative = [_read(AUTH_DIRECTORY, LISTING), _read(README_PATH, f"1|{README_MARKER}\n"), calls[2]]
+    assert command_outputs_match(SCENARIO, relative)
+    windows = [
+        _read("{{workspace}}\\" + path.replace("/", "\\"), text)
+        for path, text in (
+            (AUTH_DIRECTORY, LISTING),
+            (README_PATH, f"1|{README_MARKER}\n"),
+            (SESSION_PATH, f"1|{SESSION_MARKER}\n"),
+        )
+    ]
+    assert command_outputs_match(SCENARIO, windows)

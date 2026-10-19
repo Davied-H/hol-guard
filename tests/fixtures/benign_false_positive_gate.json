@@ -1030,9 +1030,9 @@
       ],
       "tool": "read",
       "tool_input": {
-        "path": "${WORKTREE}/console/src/lib/auth"
+        "path": "${FEATURE_APP}/console/src/lib/auth"
       },
-      "cwd": "worktree",
+      "cwd": "feature_app",
       "expect": "allow"
     },
     {
@@ -1046,9 +1046,9 @@
       ],
       "tool": "read",
       "tool_input": {
-        "path": "${WORKTREE}/console/src/lib/auth/README.md"
+        "path": "${FEATURE_APP}/console/src/lib/auth/README.md"
       },
-      "cwd": "worktree",
+      "cwd": "feature_app",
       "expect": "allow"
     },
     {
@@ -1062,9 +1062,9 @@
       ],
       "tool": "read",
       "tool_input": {
-        "path": "${WORKTREE}/console/src/lib/auth/session.ts"
+        "path": "${FEATURE_APP}/console/src/lib/auth/session.ts"
       },
-      "cwd": "worktree",
+      "cwd": "feature_app",
       "expect": "allow"
     },
     {
@@ -1078,9 +1078,9 @@
       ],
       "tool": "read",
       "tool_input": {
-        "path": "${WORKTREE}/console/src/lib/auth/settings.json"
+        "path": "${FEATURE_APP}/console/src/lib/auth/settings.json"
       },
-      "cwd": "worktree",
+      "cwd": "feature_app",
       "expect": "not_allow"
     },
     {
@@ -1094,9 +1094,9 @@
       ],
       "tool": "read",
       "tool_input": {
-        "path": "${WORKTREE}/console/src/lib/auth/oauth_tokens/session.json"
+        "path": "${FEATURE_APP}/console/src/lib/auth/oauth_tokens/session.json"
       },
-      "cwd": "worktree",
+      "cwd": "feature_app",
       "expect": "not_allow"
     },
     {

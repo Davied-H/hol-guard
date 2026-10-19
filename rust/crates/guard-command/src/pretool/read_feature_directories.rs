@@ -12,6 +12,7 @@
 //! such a directory (data files, extensionless files, anything a sibling
 //! screen already refuses) keeps its review. Source files never needed it.
 
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 /// Directory names that name a feature when they sit inside a repository.
@@ -22,6 +23,7 @@ const DOCUMENT_EXTENSIONS: [&str; 3] = ["md", "mdx", "rst"];
 const MANIFEST_NAMES: [&str; 2] = ["package.json", "tsconfig.json"];
 
 const MAX_ANCESTORS: usize = 64;
+const MAX_POINTER_BYTES: u64 = 4 * 1024;
 
 /// True when the only reason `canonical` reads as credential-named is a
 /// feature directory below a repository root, and what is read is a directory
@@ -34,9 +36,11 @@ pub(super) fn feature_only_credential_name(canonical: &Path, home_dir: Option<&s
     let Some(repository) = repository_root(canonical) else {
         return false;
     };
-    // A dotfiles repository makes the home directory itself a work tree.
+    // A home directory that is a work tree (a dotfiles repository) or sits inside
+    // one (a container or CI home under a checkout) is where the credential-name
+    // screen matters most, so nothing below it is exempt.
     let home = home_dir.and_then(|home| std::fs::canonicalize(home).ok());
-    if home.is_some_and(|home| home == repository) {
+    if home.is_some_and(|home| home.starts_with(&repository) && canonical.starts_with(&home)) {
         return false;
     }
     let Ok(relative) = canonical.strip_prefix(&repository) else {
@@ -79,8 +83,35 @@ fn document_or_manifest(path: &Path) -> bool {
 fn repository_root(path: &Path) -> Option<PathBuf> {
     path.ancestors()
         .take(MAX_ANCESTORS)
-        .find(|directory| std::fs::symlink_metadata(directory.join(".git")).is_ok())
+        .find(|directory| git_work_tree(directory))
         .map(Path::to_path_buf)
+}
+
+/// A real work tree: a `.git` directory that holds a `HEAD` file, or a `.git`
+/// file that is a single-purpose `gitdir:` pointer. A stray empty marker, a
+/// dangling link or an unrelated file named `.git` does not make a folder a
+/// repository, so it cannot lend its name-based exemption to anything below.
+fn git_work_tree(directory: &Path) -> bool {
+    let marker = directory.join(".git");
+    let Ok(metadata) = std::fs::symlink_metadata(&marker) else {
+        return false;
+    };
+    if metadata.is_dir() {
+        return std::fs::symlink_metadata(marker.join("HEAD")).is_ok_and(|head| head.is_file());
+    }
+    metadata.is_file() && metadata.len() <= MAX_POINTER_BYTES && gitdir_pointer(&marker)
+}
+
+fn gitdir_pointer(marker: &Path) -> bool {
+    let mut text = String::new();
+    let read = std::fs::File::open(marker)
+        .and_then(|file| file.take(MAX_POINTER_BYTES).read_to_string(&mut text));
+    read.is_ok()
+        && text
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .and_then(|line| line.strip_prefix("gitdir: "))
+            .is_some_and(|target| !target.trim().is_empty())
 }
 
 #[cfg(all(test, unix))]
@@ -104,6 +135,7 @@ mod tests {
             .join(format!("{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         let root = std::fs::canonicalize(&root).unwrap();
         for file in files {
             let target = root.join(file);
@@ -203,5 +235,98 @@ mod tests {
             &repo.root.join("auth/README.md"),
             home
         ));
+    }
+
+    #[test]
+    fn a_home_directory_nested_in_a_work_tree_keeps_its_review() {
+        let repo = repository(
+            "nested-home",
+            &[
+                "auth/README.md",
+                "sub-home/auth/README.md",
+                "sub-home/src/auth/README.md",
+            ],
+        );
+        let home = repo.root.join("sub-home");
+        let home = home.to_str();
+        // Below the nested home, the work tree above it lends nothing.
+        for relative in [
+            "sub-home/auth",
+            "sub-home/auth/README.md",
+            "sub-home/src/auth",
+        ] {
+            assert!(
+                !feature_only_credential_name(&repo.root.join(relative), home),
+                "{relative}"
+            );
+        }
+        // The same checkout outside that home is still an ordinary repository.
+        assert!(feature_only_credential_name(&repo.root.join("auth"), home));
+        assert!(feature_only_credential_name(
+            &repo.root.join("auth/README.md"),
+            home
+        ));
+    }
+
+    #[test]
+    fn a_project_under_a_home_that_is_not_a_work_tree_stays_exempt() {
+        let root = std::env::temp_dir().join(format!("hg-feature-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let project = root.join("home/acme");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        std::fs::write(project.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::create_dir_all(project.join("auth")).unwrap();
+        std::fs::write(project.join("auth/README.md"), "x\n").unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        let home = root.join("home");
+        let verdicts = [
+            feature_only_credential_name(&root.join("home/acme/auth"), home.to_str()),
+            feature_only_credential_name(&root.join("home/acme/auth/README.md"), home.to_str()),
+        ];
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(verdicts, [true, true]);
+    }
+
+    #[test]
+    fn a_stray_git_marker_does_not_make_a_work_tree() {
+        let root = std::env::temp_dir().join(format!("hg-feature-stray-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for name in ["empty-dir", "stray-file", "dangling-link", "pointer-only"] {
+            std::fs::create_dir_all(root.join(name).join("auth")).unwrap();
+            std::fs::write(root.join(name).join("auth/README.md"), "x\n").unwrap();
+        }
+        std::fs::create_dir_all(root.join("empty-dir/.git")).unwrap();
+        std::fs::write(root.join("stray-file/.git"), "not a pointer\n").unwrap();
+        std::os::unix::fs::symlink("missing", root.join("dangling-link/.git")).unwrap();
+        std::fs::write(root.join("pointer-only/.git"), "gitdir: \n").unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        let verdicts: Vec<bool> = ["empty-dir", "stray-file", "dangling-link", "pointer-only"]
+            .iter()
+            .flat_map(|name| {
+                [
+                    feature_only_credential_name(&root.join(name).join("auth"), None),
+                    feature_only_credential_name(&root.join(name).join("auth/README.md"), None),
+                ]
+            })
+            .collect();
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(verdicts, vec![false; 8]);
+    }
+
+    #[test]
+    fn a_linked_work_tree_pointer_is_a_work_tree() {
+        let root = std::env::temp_dir().join(format!("hg-feature-linked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("auth")).unwrap();
+        std::fs::write(root.join("auth/README.md"), "x\n").unwrap();
+        std::fs::write(
+            root.join(".git"),
+            "gitdir: /elsewhere/.git/worktrees/linked\n",
+        )
+        .unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        let verdict = feature_only_credential_name(&root.join("auth/README.md"), None);
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(verdict);
     }
 }
