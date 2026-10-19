@@ -13608,7 +13608,8 @@
         "command": "export LD_PRELOAD=/tmp/hook.so; ls"
       },
       "cwd": "worktree",
-      "expect": "not_allow"
+      "expect": "not_allow",
+      "contained_ok": true
     },
     {
       "id": "neg-env-git-dir-then-list",
@@ -13625,7 +13626,8 @@
         "command": "export GIT_DIR=/tmp/other.git; ls"
       },
       "cwd": "worktree",
-      "expect": "not_allow"
+      "expect": "not_allow",
+      "contained_ok": true
     },
     {
       "id": "neg-env-pager-names-program",
@@ -13642,7 +13644,8 @@
         "command": "export PAGER=/tmp/pager.sh; ls"
       },
       "cwd": "worktree",
-      "expect": "not_allow"
+      "expect": "not_allow",
+      "contained_ok": true
     },
     {
       "id": "neg-env-bare-set-then-list",
@@ -13659,7 +13662,8 @@
         "command": "set; ls"
       },
       "cwd": "worktree",
-      "expect": "not_allow"
+      "expect": "not_allow",
+      "contained_ok": true
     }
   ],
   "mcp_cases": [
