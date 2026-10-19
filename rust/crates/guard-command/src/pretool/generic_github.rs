@@ -12,16 +12,22 @@
 use super::extract::GenericSignals;
 use serde_json::{Map, Value};
 
-const READ_OPERATIONS: [&str; 8] = [
-    "repo_view",
-    "file_read",
-    "search_issues",
-    "search_prs",
-    "search_code",
-    "search_commits",
-    "search_repos",
-    "run_watch",
-];
+/// The arguments each read-only operation takes beside `op`, `repo` and the
+/// intent label `i`, or `None` for any other operation. A key that belongs to
+/// another operation, such as `path` on a pull request search, is not part of
+/// the lookup and keeps the call under review.
+fn operation_arguments(operation: &str) -> Option<&'static [&'static str]> {
+    Some(match operation {
+        "repo_view" => &["branch"],
+        "file_read" => &["path", "branch"],
+        "search_issues" | "search_prs" | "search_commits" => {
+            &["query", "limit", "since", "until", "dateField"]
+        }
+        "search_code" | "search_repos" => &["query", "limit"],
+        "run_watch" => &["run", "branch", "tail"],
+        _ => return None,
+    })
+}
 
 /// Text arguments of the read operations. `i` is Oh My Pi's intent label.
 const TEXT_ARGUMENTS: [&str; 8] = [
@@ -45,14 +51,19 @@ const MAX_TEXT_BYTES: usize = 1024;
 /// (a credential-shaped query, a command, a URL) lets it through is decided by
 /// the caller from the shared signals.
 pub(super) fn read_only_call(input: &Map<String, Value>, tool: Option<&str>) -> bool {
+    let Some(operation_arguments) = input
+        .get("op")
+        .and_then(Value::as_str)
+        .and_then(operation_arguments)
+    else {
+        return false;
+    };
     tool == Some("github")
-        && input
-            .get("op")
-            .and_then(Value::as_str)
-            .is_some_and(|op| READ_OPERATIONS.contains(&op))
-        && input
-            .iter()
-            .all(|(key, value)| argument_allowed(key, value))
+        && input.iter().all(|(key, value)| {
+            (matches!(key.as_str(), "op" | "repo" | "i")
+                || operation_arguments.contains(&key.as_str()))
+                && argument_allowed(key, value)
+        })
 }
 
 fn argument_allowed(key: &str, value: &Value) -> bool {

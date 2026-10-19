@@ -81,7 +81,13 @@ fn a_lookup_with_anything_beyond_the_read_arguments_keeps_its_review() {
         json!({"op": "search_code", "repo": "example-org", "query": "x"}),
         json!({"op": "search_code", "repo": "/example-org/app", "query": "x"}),
         json!({"op": "search_code", "repo": "example-org/.hidden", "query": "x"}),
-        // Arguments the read operations do not take.
+        // Arguments the read operations do not take, or another operation's.
+        json!({"op": "search_prs", "query": "x", "path": "src/index.ts"}),
+        json!({"op": "search_prs", "query": "x", "run": "1234567890"}),
+        json!({"op": "search_code", "query": "x", "since": "2026-01-01"}),
+        json!({"op": "repo_view", "repo": "example-org/app", "query": "x"}),
+        json!({"op": "file_read", "repo": "example-org/app", "path": "a.ts", "limit": 5}),
+        json!({"op": "run_watch", "repo": "example-org/app", "run": "1", "path": "a.ts"}),
         json!({"op": "search_prs", "query": "x", "body": "text"}),
         json!({"op": "search_prs", "query": "x", "pr": "12"}),
         json!({"op": "search_prs", "query": "x", "force": true}),
