@@ -35,7 +35,7 @@ from .hook_native_review_approval import (
     pause_native_pre_tool_for_approval,
     record_claude_permission_notice_for_native_review,
 )
-from .hook_native_review_fence import native_review_fence
+from .hook_native_review_fence import native_review_fence, published_binding_token
 from .hook_policy_fence_window import POLICY_SOURCE_FENCE_ERRORS, PolicySourceFenceBusyError
 from .hook_worker_native_review import (
     CONTROL_BINDING_REFRESH_ERRORS,
@@ -767,6 +767,7 @@ class HookWorkerNativeMixin:
                 "failure_reason_code": reason_code,
             }
 
+        unleased_binding: tuple[object, object] | None = None
         try:
             with native_review_fence(
                 policy_snapshot=policy_snapshot,
@@ -775,6 +776,8 @@ class HookWorkerNativeMixin:
                 guard_home=guard_home,
                 deadline=deadline,
             ) as fenced:
+                if fenced is None:
+                    unleased_binding = published_binding_token(self.policy_snapshot_publisher)
                 from ..runtime_transition_hook_probe import transition_hook_probe
 
                 probe = transition_hook_probe(payload)
@@ -791,15 +794,21 @@ class HookWorkerNativeMixin:
                     policy_snapshot=policy_snapshot,
                     **({"request_id": probe[1]} if probe is not None else {}),
                 )
-                # A completed edge was reached under the lease, so keep it
-                # rather than reporting the review unavailable: discarding it
-                # would ask about ordinary work and would drop a deny that the
-                # native review had already reached.
+                # A completed edge is kept rather than reported unavailable:
+                # discarding it would ask about ordinary work and would drop a
+                # deny the native review had already reached. A deadline that
+                # passed while it was being reached says the host was busy, not
+                # that the answer is wrong.
         except TimeoutError:
             return unavailable("native_review_deadline_exceeded")
         except (OSError, NativePolicySnapshotError):
             if fenced is False:
                 raise
+            return unavailable("native_command_control_fence_unavailable")
+        if fenced is None and published_binding_token(self.policy_snapshot_publisher) != unleased_binding:
+            # This edge was reached without the lease and a control mutation
+            # published across it. Honouring it could allow a command, or claim
+            # a saved approval, against the policy the user is replacing.
             return unavailable("native_command_control_fence_unavailable")
         if edge is None:
             if event_name == "PostToolUse":
