@@ -111,6 +111,7 @@ class BenignFixture:
             "${PRIVATE_TMP}": str(self.private_tmp),
             "${ORG}": str(self.org),
             "${ORG_WT}": str(self.org.parent / "app-portal-fix"),
+            "${ORG_CLONE}": str(self.org.parent / "app-portal-clone"),
             "${PORTAL_WEB_HEAD}": head_commit(self.org),
             "${TMP_ORG}": str(self.tmp_org),
             "${TMP_ORG_WT}": str(self.tmp_org.parent / "app-followup"),
@@ -133,11 +134,11 @@ class BenignFixture:
             "org": self.org,
             "org_app": self.org / "app-portal",
             "org_wt": self.org.parent / "app-portal-fix",
+            "org_clone": self.org.parent / "app-portal-clone",
             "tmp_org": self.tmp_org,
             "org_rebase": self.org.parent / "app-portal-rebase",
             "org_rebase_exec": self.org.parent / "app-portal-rebase-exec",
-            # A checkout whose `.gitignore` re-includes a hidden template,
-            # the shape nearly every application repository carries.
+            # A checkout whose `.gitignore` re-includes a hidden template, as most application repositories do.
             "ignore_negation": self.home / "Code" / "ignore-rules" / "billing-api",
         }[name]
 
@@ -180,6 +181,7 @@ def _session_worktree(org: Path, home: Path) -> None:
     _node_package(portal, "vitest", _NODE_PACKAGES["vitest"])
     worktree = org.parent / "app-portal-fix"
     _git(portal, "worktree", "add", "--quiet", "-b", "fix/report-lane", str(worktree), home=home)
+    _git(home, "clone", "--quiet", str(portal), str(org.parent / "app-portal-clone"), home=home)
     _write(worktree / "scripts" / "report.ts", "console.log(process.env.REPORT_WINDOW ?? '7d');\n")
     _git(worktree, "commit", "--quiet", "-am", "widen report window", home=home)
     portal_manifest = {"name": "app-portal", "private": True, "devDependencies": {"vite": "^7.1.5"}}
@@ -232,7 +234,6 @@ def build_fixture(root: Path) -> BenignFixture:
         directory.mkdir(parents=True)
     _write(home / ".gitconfig", LFS_GITCONFIG)
     _write(home / ".rustup" / "settings.toml", 'version = "12"\ndefault_toolchain = "stable"\n')
-    # Synthetic credential file so the negative controls have a real target.
     _write(home / ".agent" / "skills" / "x" / "SKILL.md", "---\nname: x\n---\nSynthetic home skill body.\n")
     _write(home / ".agent" / "artifacts" / "report.md", "# Report\nInert build report text.\n")
     _write(home / ".agents" / "skills" / "x" / "SKILL.md", "---\nname: x\n---\nSynthetic home skill body.\n")

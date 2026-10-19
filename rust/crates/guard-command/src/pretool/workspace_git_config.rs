@@ -70,6 +70,19 @@ pub(crate) fn repository_config(root: &Path) -> Result<Option<String>, ()> {
     ))
 }
 
+/// The URL of every remote the repository whose work tree is `root` names, or
+/// `None` when its configuration cannot be read as plain, bounded entries.
+pub(super) fn remote_urls(root: &Path) -> Option<Vec<String>> {
+    let config = repository_config(root).ok()??;
+    Some(
+        entries(&config)?
+            .into_iter()
+            .filter(|(section, key, _)| section == "remote" && key == "url")
+            .map(|(_, _, value)| value)
+            .collect(),
+    )
+}
+
 /// The shared Git directory and admin entry of the verified linked worktree
 /// whose work tree holds `workspace`, or `None` for any other workspace.
 #[cfg(any(unix, test))]

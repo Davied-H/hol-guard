@@ -12152,6 +12152,108 @@
       "expect": "not_allow"
     },
     {
+      "id": "session-ln-s-node-modules-into-local-clone",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_CLONE}/node_modules"
+      },
+      "cwd": "org_clone",
+      "expect": "allow"
+    },
+    {
+      "id": "session-ln-s-node-modules-into-local-clone-from-original",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_CLONE}/node_modules"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-ln-s-node-modules-into-local-clone-ls-grep",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_CLONE}/node_modules && ls -la ${ORG_CLONE}/ | grep node_module"
+      },
+      "cwd": "org_clone",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-ln-s-ssh-into-local-clone",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${HOME}/.ssh ${ORG_CLONE}/ssh-link"
+      },
+      "cwd": "org_clone",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-ln-sf-node-modules-into-local-clone-replace",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -sf ${ORG}/app-portal/node_modules ${ORG_CLONE}/node_modules"
+      },
+      "cwd": "org_clone",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-ln-s-node-modules-into-unrelated-repository",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${PARENT}/deps-link"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
       "id": "session-gh-api-short-jq-tag-sha",
       "fix_area": "gh",
       "harnesses": [

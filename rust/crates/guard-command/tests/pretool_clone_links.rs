@@ -1,0 +1,160 @@
+#![cfg(unix)]
+//! A dependency link between a checkout and a separate clone of the same
+//! repository stays quiet, as it does between a checkout and its linked
+//! worktree. A clone is told apart by the remote URLs both configurations
+//! name, so an unrelated repository, a different remote, a hidden or file
+//! target and an existing name keep their review.
+
+use crate::pretool_git_session_ops::{git, session, Session};
+use std::path::{Path, PathBuf};
+
+fn action(session: &Session, command: &str, cwd: &Path) -> String {
+    session.evaluate_at(command, cwd).minimum_action
+}
+
+fn origin(session: &Session, repository: &Path, url: &str) {
+    git(&session.home, repository, &["remote", "add", "origin", url]);
+}
+
+/// `home/org/app-portal-clone`, a `git clone` of the primary checkout.
+fn local_clone(session: &Session) -> PathBuf {
+    let clone = session.org.join("app-portal-clone");
+    git(
+        &session.home,
+        &session.home,
+        &[
+            "clone",
+            "--quiet",
+            session.primary.to_str().unwrap(),
+            clone.to_str().unwrap(),
+        ],
+    );
+    std::fs::create_dir_all(clone.join("node_modules/pkg")).unwrap();
+    clone
+}
+
+/// A fresh repository outside `org` that names `url` as its origin, the shape
+/// a second clone of the hosted repository has.
+fn repository_with_origin(session: &Session, name: &str, url: &str) -> PathBuf {
+    let repository = session.home.join(name);
+    std::fs::create_dir_all(&repository).unwrap();
+    git(
+        &session.home,
+        &repository,
+        &["init", "--quiet", "-b", "main"],
+    );
+    origin(session, &repository, url);
+    repository
+}
+
+#[test]
+fn dependency_link_into_a_local_clone_is_quiet_from_either_checkout() {
+    let session = session("clone-link-local");
+    let clone = local_clone(&session);
+    let primary = session.primary.display();
+    let clone_text = clone.display();
+    for cwd in [&session.org, &session.primary, &clone] {
+        for command in [
+            format!("ln -s {primary}/node_modules {clone_text}/deps"),
+            format!("ln -s {clone_text}/node_modules {primary}/deps"),
+            format!(
+                "ln -s {primary}/node_modules {clone_text}/deps && ls -la {clone_text}/ | grep deps"
+            ),
+        ] {
+            assert_eq!(action(&session, &command, cwd), "allow", "{command}");
+        }
+    }
+}
+
+#[test]
+fn dependency_link_into_a_clone_beside_the_checkout_needs_no_shared_parent() {
+    let session = session("clone-link-sibling");
+    let clone = session.home.join("app-portal-clone");
+    git(
+        &session.home,
+        &session.home,
+        &[
+            "clone",
+            "--quiet",
+            session.primary.to_str().unwrap(),
+            clone.to_str().unwrap(),
+        ],
+    );
+    let primary = session.primary.display();
+    let clone_text = clone.display();
+    std::fs::create_dir_all(clone.join("vendor")).unwrap();
+    for cwd in [&session.primary, &clone] {
+        for command in [
+            format!("ln -s {primary}/node_modules {clone_text}/node_modules"),
+            format!("ln -s {clone_text}/vendor {primary}/vendor"),
+        ] {
+            assert_eq!(action(&session, &command, cwd), "allow", "{command}");
+        }
+    }
+}
+
+#[test]
+fn dependency_link_between_clones_of_one_hosted_repository_is_quiet() {
+    let session = session("clone-link-hosted");
+    let remote = repository_with_origin(
+        &session,
+        "app-portal-remote",
+        "https://github.com/example-org/app-portal.git",
+    );
+    let primary = session.primary.display();
+    let remote_text = remote.display();
+    for cwd in [&session.primary, &remote] {
+        let command = format!("ln -s {primary}/node_modules {remote_text}/node_modules");
+        assert_eq!(action(&session, &command, cwd), "allow", "{command}");
+    }
+}
+
+#[test]
+fn dependency_link_into_an_unrelated_repository_stays_reviewed() {
+    let session = session("clone-link-unrelated");
+    let primary = session.primary.display();
+    let plain = repository_with_origin(
+        &session,
+        "plain",
+        "https://github.com/example-org/other-app.git",
+    );
+    let bare = session.home.join("bare");
+    std::fs::create_dir_all(&bare).unwrap();
+    git(&session.home, &bare, &["init", "--quiet", "-b", "main"]);
+    for repository in [&plain, &bare] {
+        let name = repository.display();
+        let command = format!("ln -s {primary}/node_modules {name}/node_modules");
+        for cwd in [&session.primary, repository] {
+            assert_ne!(action(&session, &command, cwd), "allow", "{command}");
+        }
+    }
+}
+
+#[test]
+fn dependency_link_into_a_clone_keeps_every_other_boundary() {
+    let session = session("clone-link-bounds");
+    let clone = local_clone(&session);
+    std::fs::write(clone.join("tracked-file.txt"), "x\n").unwrap();
+    let home = session.home.display();
+    let primary = session.primary.display();
+    let clone_text = clone.display();
+    for command in [
+        // Hidden, file and credential targets.
+        format!("ln -s {primary}/.git {clone_text}/deps"),
+        format!("ln -s {primary}/.git/hooks {clone_text}/deps"),
+        format!("ln -s {primary}/tracked.txt {clone_text}/deps"),
+        format!("ln -s {home}/.ssh {clone_text}/deps"),
+        // The link is a fresh, visible name.
+        format!("ln -s {primary}/node_modules {clone_text}/tracked-file.txt"),
+        format!("ln -s {primary}/node_modules {clone_text}/node_modules"),
+        format!("ln -s {primary}/node_modules {clone_text}/.deps"),
+        format!("ln -sf {primary}/node_modules {clone_text}/deps"),
+        format!("ln -s {primary}/node_modules {clone_text}/pkg/deps"),
+        // Relative targets resolve against the link's directory.
+        format!("ln -s ../app-portal/node_modules {clone_text}/deps"),
+    ] {
+        for cwd in [&session.primary, &clone] {
+            assert_ne!(action(&session, &command, cwd), "allow", "{command}");
+        }
+    }
+}
