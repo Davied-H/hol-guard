@@ -207,11 +207,23 @@ def _desktop_main(
             return _desktop_denial(event_name, unauthenticated)
         sys.stdout.flush()
         # Desktop dispatch spends part of this hook's budget before the runtime
-        # starts, so the child reviews inside what is left of it rather than
-        # starting a second one.
-        remaining = input_ready_at + timeout_seconds - time.monotonic()
-        if remaining <= 0:
+        # starts, so the runtime reviews inside what is left of it rather than
+        # starting a second one. It derives its own deadline, and the browser
+        # approval wait hanging off it, from the configured timeout for this
+        # event, so the remainder has to reach it as that timeout.
+        remaining = int(input_ready_at + timeout_seconds - time.monotonic())
+        if remaining < 1:
             return _desktop_denial(event_name, _RUNTIME_DEADLINE_CODE)
+        try:
+            child_timeouts, child_config = _budget_for_the_runtime(
+                event_name=event_name,
+                remaining_seconds=remaining,
+                hook_timeouts=hook_timeouts,
+                config_json=config_json,
+            )
+        except ValueError:
+            # A registration this hook cannot read is not one it can shorten.
+            return _desktop_denial(event_name, _LAUNCH_UNAUTHENTICATED_CODE)
         try:
             completed = subprocess.run(
                 _native_argv(
@@ -220,13 +232,15 @@ def _desktop_main(
                     fallback_command=fallback_command,
                     start_command=start_command,
                     query=query,
-                    hook_timeouts=hook_timeouts,
+                    hook_timeouts=child_timeouts,
                     manifest_path=manifest_path,
-                    config_json=config_json,
+                    config_json=child_config,
                 ),
                 input=raw_data.encode("utf-8", "surrogateescape"),
                 capture_output=True,
-                timeout=remaining,
+                # The runtime answers on its own deadline; this only stops a
+                # child that ignored the deadline it was given.
+                timeout=remaining + _HOOK_TIMEOUT_GRACE_SECONDS,
                 check=False,
             )
         except OSError:
@@ -514,6 +528,35 @@ def _deny_before_the_runtime_runs(reason_code: str) -> int:
     sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
     _write_failure_cause(reason_code)
     return 0
+
+
+def _budget_for_the_runtime(
+    *,
+    event_name: str,
+    remaining_seconds: int,
+    hook_timeouts: Mapping[str, int],
+    config_json: str | None,
+) -> tuple[Mapping[str, int], str | None]:
+    """This hook's registration with one event's timeout cut to what is left.
+
+    The runtime subtracts the same grace Python did, so the remainder goes back
+    on as a configured timeout rather than as a deadline of its own.
+    """
+
+    configured = remaining_seconds + _HOOK_TIMEOUT_GRACE_SECONDS
+    timeouts = {str(event): int(timeout) for event, timeout in hook_timeouts.items()}
+    timeouts[event_name] = configured
+    if config_json is None:
+        return timeouts, None
+    config = json.loads(config_json)
+    if not isinstance(config, dict):
+        raise ValueError("codex_hook_bridge_config_not_an_object")
+    registered = config.get("hook_timeouts")
+    config["hook_timeouts"] = {
+        **({str(event): int(timeout) for event, timeout in registered.items()} if isinstance(registered, dict) else {}),
+        event_name: configured,
+    }
+    return timeouts, json.dumps(config, ensure_ascii=False, separators=(",", ":"))
 
 
 def _desktop_denial(event_name: str, reason_code: str) -> int:

@@ -257,9 +257,11 @@ def test_desktop_dispatch_hands_the_runtime_what_is_left_of_the_budget(
     monkeypatch.setattr(codex_daemon_hook_bridge.sys, "stdout", stdout)
     monkeypatch.setattr(codex_daemon_hook_bridge.sys, "stderr", stderr)
     budgets: list[float] = []
+    configured: list[int] = []
 
     def run(command, **kwargs):
         budgets.append(kwargs["timeout"])
+        configured.append(json.loads(command[2])["hook_timeouts"]["PreToolUse"])
         raise codex_daemon_hook_bridge.subprocess.TimeoutExpired(command, kwargs["timeout"])
 
     monkeypatch.setattr(codex_daemon_hook_bridge.subprocess, "run", run)
@@ -273,7 +275,11 @@ def test_desktop_dispatch_hands_the_runtime_what_is_left_of_the_budget(
     )
 
     assert result == 0
-    assert 3.0 < budgets[0] <= 4.0
+    # The runtime subtracts the same two-second grace from what it is told, so
+    # the five seconds in its config leave it the three this hook has left.
+    assert configured == [5]
+    # Python's own wait only outlives that deadline; it does not set it.
+    assert budgets[0] > configured[0] - 2
     assert json.loads(stdout.getvalue())["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert json.loads(stderr.getvalue())["causes"] == [{"reason_code": "codex_hook_native_runtime_deadline_exceeded"}]
 
