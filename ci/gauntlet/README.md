@@ -58,6 +58,7 @@ Real sessions were stopped on ordinary work the catalog never ran. Nine more `na
 | Clone or linked worktree outside cwd | `omp-native-git-sibling-worktree-reads` | `other-project-wt` (branch `fix/report-window`) via `git -C ... log` and `status --short` |
 | Compound git reads | `omp-native-git-compound-reads` | `;`-joined `rev-parse`/`echo`/`log` and `log`/`status`; the prompt also says "do not delete anything" |
 | Search and read outside cwd | `omp-native-search-sibling-sources`, `omp-native-jq-sibling-package-name` | quoted-marker `grep -rln` and `jq -r '.name'` in `other-project`; the `jq` case needs `jq` on `PATH` |
+| Contained search from a parent directory | `omp-native-contained-parent-search` | the session starts in `Code/org`, which holds `app-portal` but is not a repository; a quoted-marker `grep -rln` over the repository by absolute path runs through the contained-test rewrite, and `git -C` reads its log |
 
 #### Real-world false-positive shapes
 

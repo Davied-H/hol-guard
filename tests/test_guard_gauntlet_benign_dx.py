@@ -24,9 +24,11 @@ from ci.gauntlet.fixtures import (
     SIBLING_WORKTREE,
     Fixture,
     create_fixture,
+    filesystem_checks,
     gitconfig_variant,
 )
 from ci.gauntlet.host_process import realistic_environment
+from ci.gauntlet.parent_fixtures import PARENT_WORKSPACE_CASE
 from ci.gauntlet.realism_fixtures import DASHBOARD, REVIEW_NOTES_MARKER
 
 NEW_IDS = {
@@ -38,6 +40,7 @@ NEW_IDS = {
     "omp-native-git-compound-reads",
     "omp-native-search-sibling-sources",
     "omp-native-jq-sibling-package-name",
+    PARENT_WORKSPACE_CASE,
 }
 
 
@@ -96,6 +99,24 @@ def test_sibling_shapes_exist_outside_the_agent_directory(tmp_path: Path) -> Non
     assert _git(linked, fixture.home, "status", "--short") == ""
     assert _git(fixture.workspace, fixture.home, "config", "remote.origin.url").strip() == "acme:app.git"
     assert not linked.is_relative_to(fixture.workspace)
+
+
+def test_parent_directory_scenario_starts_in_a_plain_parent_of_a_repository(tmp_path: Path) -> None:
+    fixture = create_fixture(tmp_path / "fx", realistic=True, scenario_id=PARENT_WORKSPACE_CASE)
+    repository = fixture.home / "Code/org/app-portal"
+    assert fixture.workspace == fixture.home / "Code/org"
+    assert fixture.workspace.is_relative_to(fixture.home) and fixture.workspace != fixture.home
+    assert not (fixture.workspace / ".git").exists()
+    assert _git(repository, fixture.home, "log", "--oneline", "-3").strip()
+    assert _git(repository, fixture.home, "status", "--short") == ""
+    assert (repository / ".deploy-production.lock.d").is_dir()
+    assert (repository / "node_modules/acme-dep/index.ts").is_file()
+    checks = filesystem_checks(fixture, "native-tools", PARENT_WORKSPACE_CASE)
+    assert checks["protected:.env"] and checks["protected:deletion-target/keep.txt"]
+    commands = commands_for(PARENT_WORKSPACE_CASE)
+    search = _shell(fixture, commands[0].replace("{{home}}", str(fixture.home)))
+    assert search.stdout.split() == [str(repository / "src/report.ts")]
+    assert _shell(fixture, commands[1].replace("{{home}}", str(fixture.home))).stdout.strip()
 
 
 REALISM_IDS = {
