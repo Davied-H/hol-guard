@@ -67,12 +67,13 @@ def session_folder_checks(home: Path, scenario_id: str) -> dict[str, bool]:
         report = (checkout / "src/report.ts").read_bytes()
     except OSError:
         report = b""
-    appended = report.startswith(b"export const reportWindow = ") and report.endswith(staged["x.ts"].encode("utf-8"))
+    original = f"export const reportWindow = '{REPORT_BEFORE}';\n".encode("utf-8")
+    appended = report == original + staged["x.ts"].encode("utf-8")
     return {
         "session-folder-shell-exact": all(
             (
                 _exact(checkout / "src/summary.ts", staged["x.ts"]),
-                appended and len(report) > len(staged["x.ts"]),
+                appended,
                 _exact(checkout / ".pending-edits.md", PENDING_NOTE),
                 _exact(checkout / "src/copied.ts", staged["a.ts"]),
             )
