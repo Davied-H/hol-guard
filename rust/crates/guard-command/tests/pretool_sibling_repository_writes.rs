@@ -4,8 +4,9 @@
 //! edits, still writes that repository through the shell the way a file-edit
 //! tool does: `cat /tmp/x.ts > <clone>/src/lib/y.ts`, an append, a quoted
 //! heredoc, or a staging copy followed by a write. Hooks, settings,
-//! instruction files, credential files, links and executables keep their
-//! review, and so does any folder that is not a repository.
+//! credential files, links and executables keep their review, and so does any
+//! folder that is not a repository. Instruction files are judged as they are
+//! inside a repository.
 
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -142,7 +143,7 @@ fn protected_targets_links_and_other_folders_keep_their_review() {
     let (home, notes) = (layout.home.display(), layout.notes.display());
     let mut wrongly_allowed = Vec::new();
     for command in [
-        // Git control files, hooks, dotenv, instruction and harness files.
+        // Git control files, hooks, dotenv and harness settings.
         format!("cat {scratch}/x.ts > {clone}/.git/config"),
         format!("cat {scratch}/x.ts >> {clone}/.git/hooks/pre-commit"),
         format!("cat {scratch}/x.ts >> {clone}/.env"),
@@ -158,7 +159,6 @@ fn protected_targets_links_and_other_folders_keep_their_review() {
         format!("cat {scratch}/x.ts > {home}/notes.md"),
         format!("cat {scratch}/x.ts >> {home}/.zshrc"),
         // The same boundaries hold for heredocs.
-        format!("cat > {clone}/AGENTS.md <<'EOF'\nmore rules\nEOF"),
         format!("cat > {clone}/.git/hooks/pre-commit <<'EOF'\nexit 0\nEOF"),
         format!("cat > {clone}/.env <<'EOF'\nX=1\nEOF"),
         format!("cat > {notes}/b.md <<'EOF'\nx\nEOF"),
@@ -177,6 +177,17 @@ fn protected_targets_links_and_other_folders_keep_their_review() {
         }
     }
     assert!(wrongly_allowed.is_empty(), "{wrongly_allowed:#?}");
+}
+
+#[test]
+fn instruction_file_heredocs_are_not_held_where_redirects_are_not() {
+    // The same write as the redirect form: a repository session runs the
+    // heredoc inside its sandbox, and a session folder has no sandbox around
+    // the clone, so the target checks stand in for it.
+    let layout = layout("instruction-heredoc");
+    let clone = layout.clone.display();
+    let command = format!("cat > {clone}/AGENTS.md <<'EOF'\nmore rules\nEOF");
+    assert!(permitted(&layout, &layout.session, &command), "{command}");
 }
 
 #[test]
