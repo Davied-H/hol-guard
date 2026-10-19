@@ -12,7 +12,8 @@
 //! in three places: the bytes a write tool puts into the file it names no
 //! longer bind the approval, paging and formatting options no longer bind a
 //! read, and one named file outside the workspace is a scope an approval can
-//! cover (a directory outside it still is not).
+//! cover. A directory outside it still is not, and neither is any path a
+//! search tool is given to walk.
 
 use std::collections::BTreeMap;
 use std::io::Read;

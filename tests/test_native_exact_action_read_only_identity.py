@@ -253,6 +253,11 @@ def test_read_outside_the_workspace_and_grep_regex_scope(
         assert _tool_proven(tool, {"path": str(outside)}, workspace)
         # A directory stands for everything below it, so it keeps its review.
         assert not _tool_proven(tool, {"path": str(elsewhere)}, workspace)
+    # A search tool is given a directory to walk, so a path of its own outside
+    # the workspace keeps the review even when nothing is there today.
+    for tool in ("ls", "list_dir", "glob", "grep"):
+        assert not _tool_proven(tool, {"path": str(outside)}, workspace)
+        assert not _tool_proven(tool, {"path": str(tmp_path / "absent" / "x")}, workspace)
     assert _tool_decision("read", {"path": str(workspace / "a.txt")}, workspace)[0] is not None
     # A content regex that looks like an absolute path is not a path scope.
     assert _tool_decision("grep", {"pattern": "/api/v1", "path": "src"}, workspace)[0] is not None
