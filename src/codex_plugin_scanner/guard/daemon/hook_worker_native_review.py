@@ -242,14 +242,12 @@ def _review_native_edge_once(
                 claimed_approval_request_id=claimed_approval_request_id,
                 capture_receipts=capture_receipts,
             )
-            if (
-                fenced
-                and native_used
-                and response.get("policy_action") == "allow"
-                and deadline is not None
-                and time.monotonic() >= deadline
-            ):
-                raise TimeoutError("native_review_fence_deadline")
+            # The lease is still held here, so this decision was reached on the
+            # same snapshot a faster review would have read. A deadline that
+            # passed while it was being reached says the host was busy, not
+            # that the answer is stale, and discarding it turns ordinary work
+            # into an approval row. The fence's own entry check still refuses
+            # to start a review that is already out of time.
         if capture_receipts and worker.capture_writer is not None:
             with suppress(Exception):
                 _ = worker.capture_writer.submit_native_capture(

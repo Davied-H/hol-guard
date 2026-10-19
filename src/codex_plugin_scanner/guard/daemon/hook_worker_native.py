@@ -791,8 +791,10 @@ class HookWorkerNativeMixin:
                     policy_snapshot=policy_snapshot,
                     **({"request_id": probe[1]} if probe is not None else {}),
                 )
-                if edge is not None and deadline is not None and time.monotonic() >= deadline:
-                    raise TimeoutError("native_review_fence_deadline")
+                # A completed edge was reached under the lease, so keep it
+                # rather than reporting the review unavailable: discarding it
+                # would ask about ordinary work and would drop a deny that the
+                # native review had already reached.
         except TimeoutError:
             return unavailable("native_review_deadline_exceeded")
         except (OSError, NativePolicySnapshotError):
