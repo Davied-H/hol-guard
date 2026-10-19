@@ -17,7 +17,9 @@
 //! literal (`?? 'dev-secret'`), a concatenation and an encoded-looking
 //! argument are never treated as code here.
 
-use crate::code_cursor::{is_identifier_byte, is_identifier_start, text_ok, Cursor, Scan};
+use crate::code_cursor::{
+    is_identifier_byte, is_identifier_start, text_ok, Cursor, Scan, MAX_EXPRESSION_BYTES,
+};
 
 const KEYWORDS: [&[u8]; 9] = [
     b"null",
@@ -55,12 +57,31 @@ pub(crate) fn is_code_expression(matched: &str, rest_of_line: &str) -> bool {
             Mode::Compare
         };
     } else if body.starts_with('>') && separator == b'=' {
+        // A hash/map literal value after => is not an expression proof.
+        let key = matched[..index].trim_end();
+        let after = body[1..].trim_start();
+        let rest = rest_of_line.trim_start();
+        let literal_prefix = |value: &str| {
+            value.starts_with(['"', '`']) || value.starts_with(char::from(39u8))
+        };
+        if key.ends_with('"')
+            || key.ends_with(char::from(39u8))
+            || key.trim_start().starts_with(':')
+            || literal_prefix(after)
+            || (after.is_empty() && literal_prefix(rest))
+        {
+            return false;
+        }
         body = &body[1..];
         mode = Mode::Arrow;
     }
     let mut expression = String::with_capacity(body.len() + rest_of_line.len());
     expression.push_str(body.trim_start());
     expression.push_str(rest_of_line);
+    // Truncated source cannot prove the absence of a later credential.
+    if expression.len() > MAX_EXPRESSION_BYTES {
+        return false;
+    }
     let mut cursor = Cursor::new(&expression);
     match mode {
         Mode::Arrow => cursor.scan(None, 1) != Scan::Fail,
@@ -108,8 +129,17 @@ impl<'a> Cursor<'a> {
                         return false;
                     }
                     self.at += 2;
-                } else if next == b'`' || self.operand(true).is_none() {
+                } else if next == b'`' {
                     return false;
+                } else {
+                    // A bare fallback may be a credential, regardless of
+                    // whether the left side computed its value.
+                    let Some(fallback) = self.operand(true) else {
+                        return false;
+                    };
+                    if !fallback.structural && !fallback.dotted {
+                        return false;
+                    }
                 }
                 structural = structural || fallback_proves;
             } else if self.keyword(b"as") || self.keyword(b"satisfies") {
@@ -240,7 +270,11 @@ impl<'a> Cursor<'a> {
         if self.done() || matches!(self.bytes[self.at], b'"' | b'\'' | b'`') {
             return false;
         }
-        self.operand(false).is_some() && self.scan(None, 1) != Scan::Fail
+        self.operand(false).is_some()
+            && !self.bytes[self.at..]
+                .iter()
+                .any(|&byte| byte == b'"' || byte == 39 || byte == b'`')
+            && self.scan(None, 1) != Scan::Fail
     }
 }
 
