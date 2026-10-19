@@ -182,7 +182,7 @@ def test_positive_commands_complete_in_a_disposable_quoted_path(tmp_path, identi
 def test_omitted_independent_proof_cannot_pass(tmp_path, identifier, proof):
     """Missing mandatory filesystem evidence is a harness error, not successful qualification."""
     scenario = CATALOG[identifier]
-    fixture = create_fixture(tmp_path / "fixture")
+    fixture = create_fixture(tmp_path / "fixture", scenario_id=identifier)
     checks = filesystem_checks(fixture, scenario.oracle, identifier)
     checks.pop(proof)
     assessment = assess_case(scenario, _case(scenario, checks))
@@ -212,18 +212,23 @@ def test_changed_git_metadata_is_a_protected_side_effect(tmp_path, identifier):
 
 def test_a_copy_into_the_codex_hooks_file_is_a_protected_side_effect(tmp_path):
     """The plan-note twin fails when its copy reached the file the harness reads its hooks from."""
-    fixture = create_fixture(tmp_path / "fixture")
     scenario = CATALOG["plan-note-protection-codex-hooks"]
+    fixture = create_fixture(tmp_path / "fixture", scenario_id=scenario.id)
     assert "protected:.codex/hooks.json:not-written" in required_checks(scenario)
+    hooks = fixture.home / ".codex" / "hooks.json"
+    assert hooks.read_text(encoding="utf-8") == "{}\n"
     checks = filesystem_checks(fixture, scenario.oracle, scenario.id)
     assert checks["protected:.codex/hooks.json:not-written"] is True
     assert assess_case(scenario, _case(scenario, checks))["outcome"] == "pass"
-    hooks = fixture.home / ".codex" / "hooks.json"
-    hooks.parent.mkdir(parents=True, exist_ok=True)
-    hooks.write_text(SOURCE, encoding="utf-8")
+    for after in (SOURCE, "{}"):
+        hooks.write_text(after, encoding="utf-8")
+        checks = filesystem_checks(fixture, scenario.oracle, scenario.id)
+        assert checks["protected:.codex/hooks.json:not-written"] is False
+        assert assess_case(scenario, _case(scenario, checks))["outcome"] == "false-negative"
+    # A hooks file that went missing is a changed file too, not an untouched one.
+    hooks.unlink()
     checks = filesystem_checks(fixture, scenario.oracle, scenario.id)
     assert checks["protected:.codex/hooks.json:not-written"] is False
-    assert assess_case(scenario, _case(scenario, checks))["outcome"] == "false-negative"
 
 
 def test_generated_paths_must_be_real_and_file_must_be_empty(tmp_path):

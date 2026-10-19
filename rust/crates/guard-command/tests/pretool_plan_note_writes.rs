@@ -303,6 +303,35 @@ fn a_redirect_or_heredoc_keeps_its_review_for_everything_else() {
 }
 
 #[test]
+fn an_existing_program_is_never_a_note_to_overwrite() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let f = fixture("executable-note");
+    let program = f.home.join(".codex/plans/tool.md");
+    write(program.clone(), "#!/bin/sh\necho synthetic\n");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let home = f.home.display();
+    for command in [
+        "echo done > ~/.codex/plans/tool.md".to_owned(),
+        "echo done >> ~/.codex/plans/tool.md".to_owned(),
+        format!("echo done > {home}/.codex/plans/tool.md"),
+        "cat > ~/.codex/plans/tool.md <<'EOF'\ndone\nEOF".to_owned(),
+        "cp closeout-report.md ~/.codex/plans/tool.md".to_owned(),
+        "touch ~/.codex/plans/tool.md".to_owned(),
+    ] {
+        let result = shell(&f, &command);
+        assert!(!allowed(&result), "{command}");
+    }
+    assert!(!allowed(&write_tool(
+        &f,
+        &format!("{home}/.codex/plans/tool.md")
+    )));
+    // Without the execute bit the same note is an ordinary one.
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(allowed(&shell(&f, "echo done > ~/.codex/plans/tool.md")));
+}
+
+#[test]
 fn the_same_rule_holds_for_the_other_hosts() {
     let f = fixture("hosts");
     let home = f.home.display();

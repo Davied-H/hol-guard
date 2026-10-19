@@ -110,12 +110,10 @@ pub(super) fn bounded_write(target: &str, context: PathContext<'_>) -> bool {
         plan_note_write_target,
     };
     // A plan note filed in the harness home is a bounded write wherever the
-    // session runs, spelled from `~` or from the root.
+    // session runs, spelled from `~` or from the root. The note check resolves
+    // the path before it looks for an execute bit.
     if plan_note_write_target(target, context.home_dir, context.cwd) {
-        return !crate::pretool::curl_reads::output_targets::existing_executable(
-            target,
-            context.cwd,
-        );
+        return true;
     }
     // Home is outside the workspace even when it sits below a temporary
     // directory, as it does for disposable and CI accounts.

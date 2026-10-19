@@ -89,8 +89,16 @@ pub(in crate::pretool) fn plan_note_write_target(
     let expanded = expand_home_read_path(value, home_dir).unwrap_or_else(|| value.to_owned());
     let path = Path::new(&expanded);
     path.is_absolute()
-        && super::super::worktree_writes::canonical_write_target(path)
-            .is_some_and(|canonical| plan_note_path(&canonical, &home))
+        && super::super::worktree_writes::canonical_write_target(path).is_some_and(|canonical| {
+            plan_note_path(&canonical, &home)
+                // Truncating an existing program replaces what a later step may
+                // run. The resolved path is checked, so a `~` spelling cannot
+                // hide an execute bit from a check that reads it relative to
+                // the working directory.
+                && !canonical.to_str().is_none_or(|canonical| {
+                    crate::pretool::curl_reads::output_targets::existing_executable(canonical, None)
+                })
+        })
         && super::bounded_native_file_write_target(value, home_dir, cwd)
 }
 
