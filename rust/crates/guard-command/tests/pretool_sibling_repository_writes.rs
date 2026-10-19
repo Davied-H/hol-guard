@@ -140,12 +140,12 @@ fn protected_targets_links_and_other_folders_keep_their_review() {
     let layout = layout("reviewed");
     let (clone, scratch) = (layout.clone.display(), layout.scratch.display());
     let (home, notes) = (layout.home.display(), layout.notes.display());
+    let mut wrongly_allowed = Vec::new();
     for command in [
         // Git control files, hooks, dotenv, instruction and harness files.
         format!("cat {scratch}/x.ts > {clone}/.git/config"),
         format!("cat {scratch}/x.ts >> {clone}/.git/hooks/pre-commit"),
         format!("cat {scratch}/x.ts >> {clone}/.env"),
-        format!("cat {scratch}/x.ts >> {clone}/AGENTS.md"),
         format!("cat {scratch}/x.ts > {clone}/.husky/pre-commit"),
         format!("cat {scratch}/x.ts > {clone}/.claude/settings.json"),
         // Existing programs are not truncated, and links are not followed.
@@ -172,6 +172,33 @@ fn protected_targets_links_and_other_folders_keep_their_review() {
         format!("cp {scratch}/a.ts {scratch}/b.ts && cat {scratch}/a.ts > {notes}/b.md"),
         format!("ln -s {home}/.zshrc {clone}/src/lib/l.ts && cat {scratch}/a.ts > {clone}/src/lib/l.ts"),
     ] {
-        assert!(!permitted(&layout, &layout.session, &command), "{command}");
+        if permitted(&layout, &layout.session, &command) {
+            wrongly_allowed.push(command);
+        }
+    }
+    assert!(wrongly_allowed.is_empty(), "{wrongly_allowed:#?}");
+}
+
+#[test]
+fn instruction_file_redirects_are_judged_as_from_inside_the_repository() {
+    // A plain redirect into an instruction file is a warning in a repository
+    // session; the session folder must not read it any looser or any tighter.
+    let layout = layout("instructions");
+    let (clone, scratch) = (layout.clone.display(), layout.scratch.display());
+    for (outside, inside) in [
+        (
+            format!("cat {scratch}/x.ts >> {clone}/AGENTS.md"),
+            format!("cat {scratch}/x.ts >> AGENTS.md"),
+        ),
+        (
+            format!("cat {scratch}/x.ts > {clone}/AGENTS.md"),
+            format!("cat {scratch}/x.ts > AGENTS.md"),
+        ),
+    ] {
+        assert_eq!(
+            permitted(&layout, &layout.session, &outside),
+            permitted(&layout, &layout.clone, &inside),
+            "{outside}"
+        );
     }
 }
