@@ -86,6 +86,17 @@ def test_a_job_selector_must_match_the_exact_started_job_token() -> None:
             "the model read a job it did not start here"
         )
 
+def test_job_id_in_unrelated_explanatory_text_cannot_bind_the_selector() -> None:
+    scenario = _scenario()
+    started = _call(
+        "bash", {"command": COMMAND, "async": True}, "job",
+        text="started background job bg_12. Previously saw bg_1 in a log.\\n",
+    )
+    assert native_tools_scope_error(scenario, [started, _read("proc://bg_1")], {}) == (
+        "the model read a job it did not start here"
+    )
+
+
 def test_a_read_without_the_commands_output_does_not_satisfy_the_case() -> None:
     scenario = _scenario()
     for text in (None, "", "job finished\n"):
