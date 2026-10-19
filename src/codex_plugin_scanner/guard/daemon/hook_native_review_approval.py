@@ -230,6 +230,9 @@ def pause_native_pre_tool_for_approval(
         )
         if queued is None:
             _LOGGER.warning("Silent review blocked without an inbox row for %s", harness)
+            # With no row there is nothing to approve, so the setup text that tells the
+            # agent to wait for the user's approval must not be shown.
+            setup_reason = None
         else:
             record_silent_native_review_event(store, queued)
         reason = setup_reason or safe_alternative_reason(

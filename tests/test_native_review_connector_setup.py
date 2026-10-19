@@ -44,12 +44,13 @@ def _pause(
     connector: SetupConnector | None,
     binding: str | None = "binding",
     token: str | None = None,
+    queue_fails: bool = False,
 ) -> tuple[str, list[dict[str, object]]]:
     queued: list[dict[str, object]] = []
 
-    def queue(*_args: object, **kwargs: object) -> dict[str, object]:
+    def queue(*_args: object, **kwargs: object) -> dict[str, object] | None:
         queued.append(kwargs)
-        return {"request_id": "abc", "approval_url": _URL}
+        return None if queue_fails else {"request_id": "abc", "approval_url": _URL}
 
     for name, value in {
         "native_review_policy_binding": lambda **_k: None,
@@ -99,6 +100,17 @@ def test_default_mode_waits_for_the_users_approval_with_the_link(
     assert "seek permission" not in text
     assert _URL in text
     assert queued[0]["connector"] == _CONNECTOR
+
+
+def test_a_setup_review_that_could_not_be_queued_never_says_it_is_waiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text, queued = _pause(tmp_path, monkeypatch, ask=False, connector=_CONNECTOR, queue_fails=True)
+
+    assert queued
+    assert "waiting for the user to approve it" not in text
+    assert "Allow once or Always allow" not in text
+    assert _URL not in text
 
 
 def test_ask_mode_waits_in_the_inbox_with_the_link(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
