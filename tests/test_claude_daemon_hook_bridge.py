@@ -72,6 +72,24 @@ def test_an_oversized_hook_without_a_runtime_keeps_its_event_denial(
     assert capsys.readouterr().out == bridge._limit_denied("hook input", expected)
 
 
+
+def test_native_spawn_error_denies_the_tool_instead_of_failing_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(bridge, "_native_bridge_executable", lambda _home: tmp_path / "vanished-runtime")
+    monkeypatch.setattr(bridge.sys, "stdin", io.StringIO('{"hook_event_name":"PreToolUse","tool_name":"Bash"}'))
+
+    def cannot_launch(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("cannot execute native runtime")
+
+    monkeypatch.setattr(bridge.subprocess, "run", cannot_launch)
+    assert _run(tmp_path) == 0
+    response = json.loads(capsys.readouterr().out)
+    assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert bridge._NATIVE_RUNTIME_UNAVAILABLE in response["hookSpecificOutput"]["permissionDecisionReason"]
+
 def test_the_launcher_hands_the_runtime_this_call_s_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
