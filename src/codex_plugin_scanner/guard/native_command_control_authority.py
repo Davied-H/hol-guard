@@ -15,6 +15,9 @@ PACK_AUTHORITY_SCHEMA = "guard.native-command-control-authority.v2"
 RECOVERY_SCHEMA = "guard.native-command-control-recovery.v1"
 AUTHORITY_FILE_NAME = "command-control-authority.v1.json"
 AUTHORITY_LOCK_NAME = "extension-control-authority.lock"
+# Entry turnstile for the lease above. Acquirers hold it only while they take
+# their own lease, so a writer can close the door on later readers.
+AUTHORITY_GATE_NAME = "extension-control-authority.gate"
 AUTHORITY_MAX_BYTES = 4096
 AUTHORITY_DOMAIN = b"hol-guard.native-command-control-authority.v1\0"
 PACK_AUTHORITY_DOMAIN = b"hol-guard.native-command-control-authority.v2\0"

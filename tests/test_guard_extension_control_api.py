@@ -101,6 +101,7 @@ def test_catalog_and_effective_responses_are_bounded_public_dtos(tmp_path: Path)
     assert effective == {
         "schema_version": "guard.daemon.extension-controls.v1",
         "health": "protected",
+        "authority_unread": False,
         "revision": 4,
         "catalog_digest": BUILT_IN_COMMAND_EXTENSION_REGISTRY.catalog_digest,
         "global_lockdown": False,

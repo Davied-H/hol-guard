@@ -821,10 +821,11 @@ fn evaluate_envelope(
         )
     });
     // macOS runs every credential-filtering profile. Windows runs the Python
-    // and Node evaluation and Vite build profiles in an AppContainer, for
+    // and Node evaluation profiles, the Vite build and the read-only Node
+    // tools (lint, typecheck and format checks) in an AppContainer, for
     // harnesses whose shell runs a sink command written for it: Claude Code
     // (Git Bash) and the Pi family (a bash implementation) take the
-    // POSIX-quoted one for all three, Codex a PowerShell one for the Python
+    // POSIX-quoted one for all of them, Codex a PowerShell one for the Python
     // profile only. Only harnesses that rewrite into the contained sink get
     // the receipt; others would see a bare deny.
     let windows_contained = match contained_test_reason {
@@ -833,6 +834,7 @@ fn evaluate_envelope(
         }
         Some(
             "native_node_build_output_containment_required"
+            | "native_node_tool_readonly_containment_required"
             | "native_node_eval_readonly_containment_required",
         ) => {
             matches!(harness, "claude-code" | "omp" | "oh-my-pi" | "pi")
