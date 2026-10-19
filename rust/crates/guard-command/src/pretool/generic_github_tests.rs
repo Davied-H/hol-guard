@@ -119,6 +119,26 @@ fn a_credential_path_in_a_lookup_is_still_held() {
 }
 
 #[test]
+fn lookup_text_with_embedded_urls_or_tokens_keeps_review() {
+    // A URL inside a query was not reported by generic URL extraction.
+    // All string argument slots must be checked before proving network read.
+    for field in ["query", "path", "branch", "i", "run", "since", "until", "dateField"] {
+        for text in [
+            "https://alice:ghp_fake123456@example.test/private",
+            "github_pat_fake123456",
+            "Bearer fake-credential",
+            "access_token=fake-credential",
+            "https%3A%2F%2Fexample.test%2Fprivate",
+        ] {
+            let mut input = json!({"op": "search_code", "repo": "example-org/app", "query": "ordinary"});
+            input.as_object_mut().unwrap().insert(field.to_owned(), json!(text));
+            let result = evaluate("omp", github(input));
+            assert_ne!(result.reason_code, "native_github_read", "{field}: {text}");
+        }
+    }
+}
+
+#[test]
 fn search_words_are_not_read_as_an_instruction() {
     // The query goes to GitHub's search, as a web search's does; it is never
     // handed to a model, so a phrase that would be an instruction in a prompt
