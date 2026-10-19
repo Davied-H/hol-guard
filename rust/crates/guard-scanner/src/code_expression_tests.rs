@@ -310,6 +310,7 @@ fn defaults_handed_to_getters_and_closures_are_credentials() {
         format!("const token = settings.get('TOKEN', '{secret}');"),
         format!("token = os.environ.setdefault(\"TOKEN\", \"{secret}\")"),
         format!("let token = maybe.unwrap_or(\"{secret}\");"),
+        format!("const token = settings.get(TOKEN_KEY, '{secret}');"),
     ] {
         assert!(flagged(&text), "{text:?}");
     }
@@ -321,4 +322,27 @@ fn defaults_handed_to_getters_and_closures_are_credentials() {
     ] {
         assert!(!flagged(text), "{text:?}");
     }
+}
+
+#[test]
+fn request_options_are_not_a_getter_default() {
+    for text in [
+        "const token = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}});",
+        "const token = axios.get(url, {params: {grant_type: 'client_credentials'}});",
+        "const tokenResponse = await axios.get('/oauth/token', { params: { grant_type: 'client_credentials' } });",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}
+
+#[test]
+fn a_template_default_holds_no_more_than_a_quoted_one() {
+    let secret = ["hunter2", "-production", "-value"].concat();
+    for text in [
+        format!("const token = settings.get('TOKEN', `{secret}`);"),
+        format!("const token = maybe.unwrap_or(`{secret}`);"),
+    ] {
+        assert!(flagged(&text), "{text:?}");
+    }
+    assert!(!flagged("const token = settings.get('TOKEN', `none`);"));
 }

@@ -185,9 +185,17 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// Whether the text of a template literal is acceptable under the current mode.
+    /// Whether the text of a template literal is acceptable under the current
+    /// mode. A template is quoted material like any other literal, so a mode
+    /// that bounds quoted literals bounds its text too: a backtick cannot be
+    /// used to hand a call the passphrase that the same quotes would refuse.
     fn template_text_ok(&self, text: &[u8]) -> bool {
-        text_ok(text) && (self.literals != Literals::Empty || text.is_empty())
+        text_ok(text)
+            && match self.literals {
+                Literals::Ordinary => true,
+                Literals::Word => short_literal(text),
+                Literals::Empty => text.is_empty(),
+            }
     }
 
     pub(crate) fn done(&self) -> bool {
@@ -410,8 +418,15 @@ impl<'a> Cursor<'a> {
                 argument += 1;
                 continue;
             }
+            // A getter's later argument is a default only when it is a plain
+            // value, as `config.get(KEY, "fallback")` spells it. An object
+            // literal there is a request's options, as in `fetch(url, {...})`
+            // or `axios.get(url, {params: {...}})`, and its ordinary literals,
+            // a media type or a grant type, stay ordinary. An environment read
+            // and an all-default call hold no options.
+            let options = defaults == Literals::Word && defaults_from > 0 && byte == b'{';
             let outer = self.literals;
-            if argument >= defaults_from {
+            if argument >= defaults_from && !options {
                 self.literals = defaults;
             }
             let scan = self.scan(None, 1);
