@@ -23,7 +23,16 @@ from codex_plugin_scanner.guard.stable_guard_cli import (
 )
 
 _RELEASE = "3.50.0a5-97b143fb3d2adf30a07b97d621d5d4eb0031db45822b3869c2e87442c94e2150"
+_NEWER = "3.50.0a6-1c0e7f2a9b4d3856e1f09a7c2d8b5e3f4a6c1d0b9e8f7a6b5c4d3e2f1a0b9c8d"
 _posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX launcher contract")
+
+
+def _select(launcher: Path, release: str) -> None:
+    """Point Desktop's ``current.json`` at `release`, as an update does."""
+
+    root = launcher.parents[3]
+    pointer = {"schema": "guard-core-install.v1", "relativePath": f"versions/{release}/bundle/hol-guard"}
+    (root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
 
 
 def _core(tmp_path: Path, *, stable: bool = True) -> tuple[Path, Path]:
@@ -111,16 +120,38 @@ def _extension(tmp_path: Path, command: str) -> Path:
 
 
 @_posix_only
-def test_an_extension_pinned_to_a_versioned_core_is_found(tmp_path: Path) -> None:
+def test_an_extension_pinned_to_a_core_that_desktop_replaced_is_found(tmp_path: Path) -> None:
     launcher, _shim = _core(tmp_path)
+    _select(launcher, _NEWER)
     extension = _extension(tmp_path, str(launcher))
 
     assert pi_extension_pinned_core.pinned_versioned_core(extension) == str(launcher)
 
 
 @_posix_only
+def test_an_extension_pinned_to_the_selected_core_is_healthy(tmp_path: Path) -> None:
+    """Desktop's update binds each adapter to the candidate before it moves ``current.json``."""
+
+    launcher, _shim = _core(tmp_path)
+    _select(launcher, _RELEASE)
+
+    assert pi_extension_pinned_core.pinned_versioned_core(_extension(tmp_path, str(launcher))) is None
+
+
+@_posix_only
+def test_a_pin_is_not_judged_without_a_readable_pointer(tmp_path: Path) -> None:
+    launcher, _shim = _core(tmp_path)
+    extension = _extension(tmp_path, str(launcher))
+
+    assert pi_extension_pinned_core.pinned_versioned_core(extension) is None
+    (launcher.parents[3] / "current.json").write_text("not json", encoding="utf-8")
+    assert pi_extension_pinned_core.pinned_versioned_core(extension) is None
+
+
+@_posix_only
 def test_a_pin_that_a_repair_could_not_replace_is_not_reported(tmp_path: Path) -> None:
     launcher, _shim = _core(tmp_path, stable=False)
+    _select(launcher, _NEWER)
 
     assert pi_extension_pinned_core.pinned_versioned_core(_extension(tmp_path, str(launcher))) is None
 
@@ -142,6 +173,7 @@ def test_diagnostics_call_a_pinned_extension_broken_so_repair_regenerates_it(
 ) -> None:
     adapter = adapter_type()
     launcher, _shim = _core(tmp_path)
+    _select(launcher, _NEWER)
     context = HarnessContext(home_dir=tmp_path / "home", workspace_dir=None, guard_home=tmp_path / "guard-home")
     extension = adapter._managed_extension_path(context)  # type: ignore[attr-defined]
     extension.parent.mkdir(parents=True)
@@ -155,4 +187,7 @@ def test_diagnostics_call_a_pinned_extension_broken_so_repair_regenerates_it(
     assert report["warnings"][0] == "existing"
     assert "hol-guard repair" in report["warnings"][1]
     extension.write_text('const GUARD_CLI_WRAPPER_COMMAND = "/usr/bin/true";\n', encoding="utf-8")
+    assert adapter.diagnostics(context)["setup_status"] == "active"
+    extension.write_text(f"const GUARD_CLI_WRAPPER_COMMAND = {json.dumps(str(launcher))};\n", encoding="utf-8")
+    _select(launcher, _RELEASE)
     assert adapter.diagnostics(context)["setup_status"] == "active"

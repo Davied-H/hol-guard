@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from typing import cast
 
+from ..desktop_core_currency import superseded_desktop_core
 from ..stable_guard_cli import desktop_core_shim_for_executable, frozen_cli_path_is_runnable
 
 _MAX_EXTENSION_BYTES = 2_000_000
@@ -23,11 +24,14 @@ _BAKED_COMMAND = re.compile(
 
 
 def pinned_versioned_core(extension_path: Path) -> str | None:
-    """Return the versioned Core launcher an extension bakes, when a stable one exists.
+    """Return the versioned Core launcher an extension bakes once Desktop has replaced it.
 
-    Only a launcher that has a runnable ``current-hol-guard`` beside its
-    ``versions`` directory counts: regenerating the extension then bakes that
-    launcher, so the finding is one repair can clear.
+    Desktop's own update binds each adapter to the candidate release before it
+    moves ``current.json``, so a pin to the release ``current.json`` selects
+    runs the Core Desktop runs and is healthy. Only a pin to a release that
+    ``current.json`` no longer selects counts, and only when a runnable
+    ``current-hol-guard`` sits beside its ``versions`` directory: regenerating
+    the extension then bakes that launcher, so the finding is one repair can clear.
     """
 
     try:
@@ -44,7 +48,7 @@ def pinned_versioned_core(extension_path: Path) -> str | None:
         if not isinstance(command, str) or not command:
             continue
         shim = desktop_core_shim_for_executable(Path(command))
-        if shim is not None and frozen_cli_path_is_runnable(shim):
+        if shim is not None and frozen_cli_path_is_runnable(shim) and superseded_desktop_core(Path(command)):
             return command
     return None
 
@@ -52,7 +56,7 @@ def pinned_versioned_core(extension_path: Path) -> str | None:
 def with_pinned_core_warning(
     diagnostics: dict[str, object], *, extension_path: Path, display_name: str
 ) -> dict[str, object]:
-    """Mark a managed extension broken when it is pinned to a versioned Desktop core."""
+    """Mark a managed extension broken when it is pinned to a Desktop core that Desktop replaced."""
 
     pinned = pinned_versioned_core(extension_path)
     if pinned is None:
@@ -60,8 +64,8 @@ def with_pinned_core_warning(
     warnings = diagnostics.get("warnings")
     updated: list[object] = [*cast(list[object], warnings)] if isinstance(warnings, list) else []
     updated.append(
-        f"The managed {display_name} extension runs a pinned Desktop core ({pinned}) that Desktop replaces on update, "
-        + "so its Guard calls can run against a newer Guard. Run `hol-guard repair` to regenerate it."
+        f"The managed {display_name} extension runs a pinned Desktop core ({pinned}) that Desktop has replaced, "
+        + "so its Guard calls run against a newer Guard. Run `hol-guard repair` to regenerate it."
     )
     status = diagnostics.get("setup_status")
     return {

@@ -87,6 +87,11 @@ def test_the_release_layout_without_a_bundle_directory_is_judged_too(tmp_path: P
         json.dumps({"relativePath": f"versions\\{_NEW}\\hol-guard"}),
         json.dumps({"relativePath": "versions"}),
         json.dumps({"relativePath": f"bundled/{_NEW}/bin/hol-guard"}),
+        json.dumps({"relativePath": f"versions/{_NEW}/README"}),
+        json.dumps({"relativePath": f"versions/{_NEW}/bundle/_internal/hol-guard"}),
+        json.dumps({"relativePath": f"versions/{_NEW}/bin/hol-guard"}),
+        json.dumps({"relativePath": f"versions/{_NEW}"}),
+        json.dumps({"relativePath": f"versions/{_NEW}/"}),
     ],
 )
 def test_a_pointer_that_cannot_be_judged_never_blocks_a_run(tmp_path: Path, pointer: str | None) -> None:
@@ -95,6 +100,25 @@ def test_a_pointer_that_cannot_be_judged_never_blocks_a_run(tmp_path: Path, poin
         (root / "current.json").write_text(pointer, encoding="utf-8")
 
     assert superseded_desktop_core(old_launcher) is None
+
+
+def test_the_windows_launcher_name_is_judged_too(tmp_path: Path) -> None:
+    root = tmp_path / "core"
+    old = root / "versions" / _OLD / "bundle" / "hol-guard.exe"
+    old.parent.mkdir(parents=True)
+    old.write_text("", encoding="utf-8")
+    pointer = {"relativePath": f"versions/{_NEW}/bundle/hol-guard.exe"}
+    (root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+
+    assert superseded_desktop_core(old) == SupersededCore(running=_OLD, current=_NEW)
+
+
+def test_a_selected_release_whose_launcher_is_absent_locally_is_still_judged(tmp_path: Path) -> None:
+    root, old_launcher = _core(tmp_path, current=None)
+    pointer = {"relativePath": "versions/3.99.0-not-installed/bundle/hol-guard"}
+    (root / "current.json").write_text(json.dumps(pointer), encoding="utf-8")
+
+    assert superseded_desktop_core(old_launcher) == SupersededCore(running=_OLD, current="3.99.0-not-installed")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX symlinks")

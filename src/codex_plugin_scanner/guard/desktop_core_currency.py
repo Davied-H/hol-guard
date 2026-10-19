@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import cast
 
-from .stable_guard_cli import desktop_core_root_for_executable
+from .stable_guard_cli import desktop_core_root_for_executable, versioned_launcher_release
 
 _POINTER = "current.json"
 _MAX_POINTER_BYTES = 64 * 1024
@@ -38,7 +38,13 @@ class SupersededCore:
 
 
 def _selected_release(core_root: Path) -> str | None:
-    """The release directory ``current.json`` selects, or None when it cannot be read."""
+    """The release whose Core launcher ``current.json`` selects, or None when it cannot be judged.
+
+    Only ``versions/<release>/hol-guard`` and ``versions/<release>/bundle/hol-guard``
+    (or the Windows ``.exe``) name a launcher. Any other shape, such as a file
+    inside the release tree, selects nothing and never blocks a run. The launcher
+    itself may be absent locally: the pointer is what the resident follows.
+    """
 
     pointer = core_root / _POINTER
     try:
@@ -50,12 +56,13 @@ def _selected_release(core_root: Path) -> str | None:
     relative = cast(dict[str, object], document).get("relativePath") if isinstance(document, dict) else None
     if not isinstance(relative, str) or not relative or "\\" in relative:
         return None
-    parts = PurePosixPath(relative).parts
-    if PurePosixPath(relative).is_absolute() or len(parts) < 3 or parts[0] != "versions":
+    path = PurePosixPath(relative)
+    parts = path.parts
+    if path.is_absolute() or len(parts) < 2 or parts[0] != "versions":
         return None
     if any(part in {"", ".", ".."} for part in parts):
         return None
-    return parts[1]
+    return versioned_launcher_release(parts[1:])
 
 
 def superseded_desktop_core(executable: Path | None = None) -> SupersededCore | None:

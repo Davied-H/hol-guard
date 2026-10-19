@@ -126,6 +126,14 @@ def desktop_core_root_for_executable(executable: Path) -> tuple[Path, str] | Non
     return None
 
 
+def versioned_launcher_release(relative_parts: tuple[str, ...]) -> str | None:
+    """Return the release a path below ``versions/`` names when it is a Core launcher."""
+
+    if not relative_parts or relative_parts[-1].lower() not in {"hol-guard", "hol-guard.exe"}:
+        return None
+    return relative_parts[0] if _versioned_launcher(relative_parts) else None
+
+
 def _versioned_launcher(relative_parts: tuple[str, ...]) -> bool:
     """Whether a path below ``versions/`` is a Core launcher.
 
@@ -256,4 +264,5 @@ __all__ = [
     "resolved_guard_cli",
     "trusted_frozen_guard_cli_paths",
     "uses_top_level_hook_command",
+    "versioned_launcher_release",
 ]
