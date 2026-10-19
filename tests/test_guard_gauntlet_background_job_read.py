@@ -97,6 +97,17 @@ def test_job_id_in_unrelated_explanatory_text_cannot_bind_the_selector() -> None
     )
 
 
+def test_job_id_followed_by_sentence_punctuation_still_binds_the_selector() -> None:
+    scenario = _scenario()
+    for text in (
+        "started background job bg_12. Previously saw bg_1 in a log.\n",
+        "started background job bg_12.\n",
+        "started background job bg_12-\n",
+    ):
+        started = _call("bash", {"command": COMMAND, "async": True}, "job", text=text)
+        assert native_tools_scope_error(scenario, [started, _read("proc://bg_12")], {}) is None, text
+
+
 def test_a_read_without_the_commands_output_does_not_satisfy_the_case() -> None:
     scenario = _scenario()
     for text in (None, "", "job finished\n"):
