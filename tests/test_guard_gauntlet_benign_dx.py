@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from ci.gauntlet.clone_fixtures import (
     long_lived_clone_checks,
     long_lived_clone_config,
 )
+from ci.gauntlet.command_outputs import command_outputs_match
 from ci.gauntlet.fixtures import (
     ALIAS_ESCAPES_CASE,
     INSTEAD_OF_CASE,
@@ -28,6 +30,7 @@ from ci.gauntlet.fixtures import (
 )
 from ci.gauntlet.host_process import realistic_environment
 from ci.gauntlet.realism_fixtures import DASHBOARD, REVIEW_NOTES_MARKER
+from ci.gauntlet.source_output_fixtures import HELPER_MARKER, ROUTE_MARKER, SOURCES, WORKER_MARKER
 
 NEW_IDS = {
     ALIAS_ESCAPES_CASE,
@@ -105,6 +108,8 @@ REALISM_IDS = {
     "omp-native-shell-linked-modules-build",
     "omp-native-shell-doctl-reads",
     "omp-native-shell-docker-imagetools-inspect",
+    "omp-native-read-token-handling-sources",
+    "omp-native-shell-cat-token-handling-sources",
 }
 
 
@@ -181,6 +186,47 @@ def test_placeholder_docs_and_field_copies_match_the_reported_shapes(tmp_path: P
     assert "password: cfg.password, // database" in session
     for command in commands_for("omp-native-shell-read-credential-placeholder-docs"):
         assert _shell(fixture, command).returncode == 0, command
+
+
+def test_token_handling_sources_are_tracked_and_hold_no_literal_secret(tmp_path: Path) -> None:
+    fixture = create_fixture(tmp_path / "fx", realistic=True)
+    for marker, relative in zip((ROUTE_MARKER, WORKER_MARKER, HELPER_MARKER), SOURCES, strict=True):
+        assert marker in (fixture.workspace / relative).read_text(encoding="utf-8")
+        assert _git(fixture.workspace, fixture.home, "ls-files", relative).strip() == relative
+    for scenario in load_catalog():
+        if scenario.id == "omp-native-shell-cat-token-handling-sources":
+            for command in scenario.commands:
+                assert _shell(fixture, command).returncode == 0, command
+    for text in SOURCES.values():
+        # Names of environment variables and short labels only: no quoted literal of a key's length.
+        assert not re.search(r"['\"][A-Za-z0-9+/_-]{16,}['\"]", text)
+
+
+def _tool_call(name: str, args: dict[str, str], text: str) -> dict[str, object]:
+    return {"name": name, "args": args, "result": {"content": [{"type": "text", "text": text}]}}
+
+
+def test_token_source_cases_need_every_file_and_its_own_text() -> None:
+    scenarios = {scenario.id: scenario for scenario in load_catalog()}
+    read = scenarios["omp-native-read-token-handling-sources"]
+    shell = scenarios["omp-native-shell-cat-token-handling-sources"]
+    markers = dict(zip(SOURCES, (ROUTE_MARKER, WORKER_MARKER, HELPER_MARKER), strict=True))
+    reads = [_tool_call("read", {"path": "{{workspace}}/" + path}, f"1|{marker}\n") for path, marker in markers.items()]
+    assert command_outputs_match(read, reads)
+    assert command_outputs_match(read, [reads[0], *reads])
+    assert not command_outputs_match(read, reads[:2])
+    other = _tool_call("read", {"path": "{{workspace}}/README.md"}, "hello\n")
+    assert not command_outputs_match(read, [reads[0], reads[1], other])
+    wrong = _tool_call("read", reads[2]["args"], "export const unrelated = 1;\n")  # type: ignore[arg-type]
+    assert not command_outputs_match(read, [*reads[:2], wrong])
+    commands = [f"cat {path}" for path in list(markers)[:2]] + [f"head -40 {list(markers)[2]}"]
+    shells = [
+        _tool_call("bash", {"command": command}, f"{marker}\n")
+        for command, marker in zip(commands, markers.values(), strict=True)
+    ]
+    assert command_outputs_match(shell, shells)
+    assert not command_outputs_match(shell, shells[:2])
+    assert not command_outputs_match(shell, [*shells[:2], _tool_call("bash", {"command": commands[2]}, "nothing\n")])
 
 
 def test_long_lived_clone_fixture_signs_by_default_and_tracks_many_branches(tmp_path: Path) -> None:

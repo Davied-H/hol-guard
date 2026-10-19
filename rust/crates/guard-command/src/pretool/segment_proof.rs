@@ -236,6 +236,7 @@ pub(super) fn exact_safe_segment_with_context(
                         && sensitive_path_argument(argument)
                 }))
         || !(segment.environment_names.is_empty()
+            || super::inert_environment::inert_prefix(segment)
             || (basename == "kubectl"
                 && super::kubectl_reads::trusted_kubeconfig_prefix(segment, context)))
         || (executable.contains(['/', '\\'])
@@ -253,6 +254,7 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::drive_targets_quoted(segment)
         }
         "pwd" | "true" | "echo" | "printf" | "which" | "whoami" | "uname" => true,
+        "unset" | "set" => super::inert_environment::safe_shell_setting(basename, segment),
         "type" | "command" => {
             super::lookup_reads::safe_lookup_arguments(basename, &segment.arguments)
         }
@@ -340,7 +342,10 @@ pub(super) fn exact_safe_segment_with_context(
         "gh" => safe_gh_arguments(&segment.arguments, &segment.text),
         "curl" => super::curl_reads::safe_curl_segment(model, segment, context),
         "kubectl" => super::kubectl_reads::safe_kubectl_segment(model, segment, context),
-        "export" => super::kubectl_reads::safe_export_segment(model, segment, context),
+        "export" => {
+            super::kubectl_reads::safe_export_segment(model, segment, context)
+                || super::inert_environment::safe_shell_setting(basename, segment)
+        }
         "wrangler" => super::wrangler_reads::safe_wrangler_arguments(&segment.arguments),
         "doctl" => super::doctl_reads::safe_doctl_arguments(&segment.arguments),
         "docker" => super::docker_reads::safe_docker_segment(model, segment),

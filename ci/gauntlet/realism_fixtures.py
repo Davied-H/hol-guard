@@ -12,6 +12,9 @@ sessions hit while the Gauntlet stayed green:
   source file copies credential fields from one object to another;
 * a read-only ``doctl`` sits on the developer ``PATH``;
 * a read-only ``docker`` answers one registry manifest query.
+* token-handling source (a redirect route, a link-building worker, an HMAC
+  helper) names credential-like identifiers on every line (see
+  ``source_output_fixtures``).
 
 None of it holds a credential, reaches the network or writes outside the fixture.
 """
@@ -22,6 +25,8 @@ import json
 import os
 import sys
 from pathlib import Path
+
+from .source_output_fixtures import PORTAL, SOURCES
 
 DASHBOARD = "dashboard"
 VITE_VERSION = "5.4.0"
@@ -105,7 +110,20 @@ DOCKER_DIGEST = "sha256:" + "0123456789abcdef" * 4
 DOCKER_STUB = (
     "#!/bin/sh\n"
     "# Read-only stand-in for docker: it never reaches a registry or a daemon.\n"
+    "# Only the options Guard admits for a manifest query are understood.\n"
     'if [ "${1:-}" = buildx ] && [ "${2:-}" = imagetools ] && [ "${3:-}" = inspect ]; then\n'
+    "  shift 3\n"
+    "  images=0\n"
+    '  while [ "$#" -gt 0 ]; do\n'
+    '    case "$1" in\n'
+    "      --raw | --format=*) ;;\n"
+    '      --format) [ "$#" -ge 2 ] || exit 2; shift ;;\n'
+    "      -*) printf 'docker stand-in: unsupported option\\n' >&2; exit 2 ;;\n"
+    "      *) images=$((images + 1)) ;;\n"
+    "    esac\n"
+    "    shift\n"
+    "  done\n"
+    '  [ "$images" -eq 1 ] || exit 2\n'
     f"  printf '{DOCKER_DIGEST}\\n'\n"
     "  exit 0\n"
     "fi\n"
@@ -114,7 +132,23 @@ DOCKER_STUB = (
 )
 DOCKER_STUB_PYTHON = (
     "import sys\n"
-    "if sys.argv[1:4] == ['buildx', 'imagetools', 'inspect']:\n"
+    "args = sys.argv[1:]\n"
+    "ok = args[:3] == ['buildx', 'imagetools', 'inspect']\n"
+    "images = 0\n"
+    "index = 3\n"
+    "while ok and index < len(args):\n"
+    "    word = args[index]\n"
+    "    index += 1\n"
+    "    if word == '--raw' or word.startswith('--format='):\n"
+    "        continue\n"
+    "    if word == '--format':\n"
+    "        ok = index < len(args)\n"
+    "        index += 1\n"
+    "    elif word.startswith('-'):\n"
+    "        ok = False\n"
+    "    else:\n"
+    "        images += 1\n"
+    "if ok and images == 1:\n"
     f"    sys.stdout.buffer.write(b'{DOCKER_DIGEST}\\n')\n"
     "else:\n"
     "    sys.stderr.buffer.write(b'docker stand-in: unsupported command\\n')\n"
@@ -153,6 +187,8 @@ def add_main_shapes(main: Path) -> tuple[str, ...]:
     _write(main / DASHBOARD / "package.json", DASHBOARD_PACKAGE)
     _write(main / DASHBOARD / "src/session.js", SESSION_SOURCE)
     _write(main / "docs/review-notes.md", REVIEW_NOTES)
+    for relative, text in SOURCES.items():
+        _write(main / relative, text)
     _write(main / "scripts/check.sh", CHECK_SCRIPT, 0o755)
     _write(main / "scripts/release/deploy.sh", DEPLOY_SCRIPT, 0o755)
     modules = main / DASHBOARD / "node_modules"
@@ -164,7 +200,7 @@ def add_main_shapes(main: Path) -> tuple[str, ...]:
     (modules / ".bin").mkdir()
     # npm links each bin relative to node_modules/.bin.
     (modules / ".bin/vite").symlink_to(Path("../vite/bin/vite"))
-    return (".gitignore", DASHBOARD, "docs/review-notes.md", "scripts")
+    return (".gitignore", DASHBOARD, PORTAL, "docs/review-notes.md", "scripts")
 
 
 def borrow_main_modules(main: Path, worktree: Path) -> None:

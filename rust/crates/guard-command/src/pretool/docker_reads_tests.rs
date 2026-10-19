@@ -68,10 +68,45 @@ fn registry_manifest_queries_are_admitted() {
             "buildx",
             "imagetools",
             "inspect",
+            "--format",
+            "{{ json .Index }} {{.Name}}",
+            "alpine:3.20",
+        ],
+        vec![
+            "buildx",
+            "imagetools",
+            "inspect",
             "registry.example.com/acme/acme-app@sha256:0123456789abcdef",
         ],
     ] {
         assert!(safe_docker_arguments(&arguments(&words)), "{words:?}");
+    }
+}
+
+#[test]
+fn registry_manifest_templates_cannot_print_the_image_configuration() {
+    for template in [
+        "{{json .Image}}",
+        "{{.Image.Config.Env}}",
+        "{{ .Provenance }}",
+        "{{json .}}",
+        "{{range .Image}}{{.}}{{end}}",
+        "{{printf \"%v\" .Image}}",
+        "{{.Manifest.Digest",
+        "}}{{.Name}}",
+        "{{.Manifest..Digest}}",
+        "{{.Manifest.Digest;}}",
+        "{{.ManifestX}}",
+    ] {
+        let format = format!("--format={template}");
+        let words = [
+            "buildx",
+            "imagetools",
+            "inspect",
+            format.as_str(),
+            "alpine:3.20",
+        ];
+        assert!(!safe_docker_arguments(&arguments(&words)), "{template}");
     }
 }
 
