@@ -86,9 +86,12 @@ fn first_sensitive_entry(
         return None;
     }
     let root = tree::expanded_operand(value, context)?;
-    let mut pending = vec![root.clone()];
+    // The flag marks an entry below a directory that only the clearance
+    // admitted, whose files must each clear on their own content.
+    let mut pending = vec![(root.clone(), false)];
     let mut inspected = 0_usize;
-    while let Some(path) = pending.pop() {
+    while let Some((path, admitted_below)) = pending.pop() {
+        let mut below = admitted_below;
         inspected += 1;
         if inspected > MAX_ENTRIES {
             return None;
@@ -116,6 +119,16 @@ fn first_sensitive_entry(
                 if metadata.is_file() {
                     continue;
                 }
+                below = true;
+            } else if admitted_below && metadata.is_file() {
+                if clearance.is_some_and(|clearance| clearance.clears(&path)) {
+                    continue;
+                }
+                return path
+                    .strip_prefix(&root)
+                    .ok()
+                    .and_then(|relative| relative.to_str())
+                    .map(str::to_owned);
             }
         }
         if metadata.is_dir() {
@@ -126,7 +139,7 @@ fn first_sensitive_entry(
                 .ok()?;
             entries.sort();
             // The stack pops the last entry first.
-            pending.extend(entries.into_iter().rev());
+            pending.extend(entries.into_iter().rev().map(|entry| (entry, below)));
         }
     }
     None

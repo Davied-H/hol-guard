@@ -424,10 +424,14 @@ fn walk_uncached(
     follow_links: bool,
     clearance: Option<&PatternClearance>,
 ) -> bool {
-    let mut pending = vec![(root.clone(), 0_usize)];
+    // The third field marks an entry below a directory that only the clearance
+    // admitted: its files have ordinary names, so nothing but their content
+    // says the pattern cannot match them.
+    let mut pending = vec![(root.clone(), 0_usize, false)];
     let mut inspected = 0_usize;
     // Inspect metadata only. Never follow links or read a secret to classify it.
-    while let Some((path, depth)) = pending.pop() {
+    while let Some((path, depth, admitted_below)) = pending.pop() {
+        let mut below = admitted_below;
         inspected += 1;
         if inspected > MAX_WALK_ENTRIES || depth > MAX_WALK_DEPTH {
             return false;
@@ -459,6 +463,13 @@ fn walk_uncached(
                 if metadata.is_file() {
                     continue;
                 }
+                below = true;
+            } else if admitted_below && metadata.is_file() {
+                // Below an admitted directory every file clears on its own.
+                if !clearance.is_some_and(|clearance| clearance.clears(&path)) {
+                    return false;
+                }
+                continue;
             }
         }
         if metadata.is_dir() {
@@ -470,7 +481,7 @@ fn walk_uncached(
                 if pending.len() + inspected >= MAX_WALK_ENTRIES {
                     return false;
                 }
-                pending.push((entry.path(), depth + 1));
+                pending.push((entry.path(), depth + 1, below));
             }
         } else if !metadata.is_file() {
             // A recursive tool lists a link without reading through it unless

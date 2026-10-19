@@ -316,3 +316,39 @@ fn find_fanout_over_the_absolute_repository_path_proceeds() {
     );
     assert!(!allowed(&result));
 }
+
+#[test]
+fn a_hidden_folder_the_clearance_admits_is_searched_file_by_file() {
+    let f = fixture("hidden-folder");
+    write(
+        f.repo.join(".cache/notes.txt"),
+        "retry window is 30 seconds\n",
+    );
+    write(
+        f.repo.join(".cache/nested/state.log"),
+        "<source name=\"synthetic-match\"/>\n",
+    );
+    // A pattern none of those files hold proceeds, whatever they are named.
+    assert!(allowed(&omp_grep(&f, json!({"pattern": "handler"}))));
+    assert!(allowed(&shell(&f, "grep -rn handler .")));
+    // A pattern an ordinary-named file inside the folder holds keeps the review:
+    // the folder was admitted on the strength of each file's content.
+    for pattern in ["retry", "synthetic-match"] {
+        assert!(
+            !allowed(&omp_grep(&f, json!({"pattern": pattern}))),
+            "{pattern}"
+        );
+        let result = shell(&f, &format!("grep -rn {pattern} ."));
+        assert!(!allowed(&result), "{pattern}");
+    }
+    let result = shell(&f, "grep -rn retry .");
+    assert!(
+        result.reason.contains("`.cache/notes.txt`"),
+        "{}",
+        result.reason
+    );
+    // A file the check cannot read as plain text inside the folder is never cleared.
+    write(f.repo.join(".cache/blob.bin"), "caf\u{e9} handler\n");
+    assert!(!allowed(&omp_grep(&f, json!({"pattern": "other"}))));
+    assert!(!allowed(&shell(&f, "grep -rn other .")));
+}
