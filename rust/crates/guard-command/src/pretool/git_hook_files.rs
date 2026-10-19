@@ -64,6 +64,41 @@ pub(super) fn repository_relative_hooks_path(value: &str) -> bool {
             .all(|component| matches!(component, Component::Normal(_)))
 }
 
+/// Whether `directory` lies outside the checkout at `toplevel`, with every
+/// link on its way resolved. The directory itself may not exist yet: the
+/// deepest existing ancestor is resolved and the rest, which must be plain
+/// components, is appended. A directory above the checkout counts as outside,
+/// as no tracked file of the checkout can be a hook in it. Doubt answers false.
+pub(super) fn outside_checkout(directory: &Path, toplevel: &Path) -> bool {
+    if !directory.is_absolute() || !toplevel.is_absolute() {
+        return false;
+    }
+    let mut existing = directory;
+    let mut missing: Vec<&std::ffi::OsStr> = Vec::new();
+    let resolved = loop {
+        match fs::canonicalize(existing) {
+            Ok(resolved) => break resolved,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
+                    return false;
+                };
+                missing.push(name);
+                existing = parent;
+            }
+            Err(_) => return false,
+        }
+    };
+    if directory
+        .components()
+        .any(|component| matches!(component, Component::ParentDir | Component::CurDir))
+    {
+        return false;
+    }
+    let mut resolved = resolved;
+    resolved.extend(missing.iter().rev());
+    !resolved.starts_with(toplevel)
+}
+
 /// What `toplevel.join(hooks_path)` names, walked one component at a time
 /// without following a link.
 pub(super) enum HooksDirectory {

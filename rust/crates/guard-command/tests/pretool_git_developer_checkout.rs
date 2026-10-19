@@ -358,3 +358,54 @@ fn a_hook_managers_shim_vouches_for_no_write_that_changes_the_tree() {
     // A fetch writes no file of the tree, so the shim still stops at once.
     session.assert_allow(&fetch, REFRESH);
 }
+
+#[test]
+fn a_pull_trusts_a_hooks_directory_of_the_user_only_outside_the_checkout() {
+    let session = session("user-hooks-pull");
+    let primary = session.primary.display();
+    let pull = format!("git -C {primary} pull --ff-only");
+    let gitconfig = session.home.join(".gitconfig");
+    let user_hooks = |value: &str| {
+        std::fs::write(&gitconfig, format!("[core]\n\thooksPath = {value}\n")).unwrap();
+    };
+    session.config(&["branch.main.remote", "origin"]);
+    session.config(&["branch.main.merge", "refs/heads/main"]);
+    session.assert_allow(&pull, REFRESH);
+
+    // A directory the user keeps outside the checkout holds nothing a pull adds.
+    let outside = session.home.join(".config/git/hooks");
+    std::fs::create_dir_all(&outside).unwrap();
+    let outside_path = outside.display().to_string();
+    for value in ["~/.config/git/hooks", outside_path.as_str()] {
+        user_hooks(value);
+        session.assert_allow(&pull, REFRESH);
+    }
+    // One that does not exist yet is outside too.
+    user_hooks("~/.config/git/later");
+    session.assert_allow(&pull, REFRESH);
+
+    // A tracked directory of the checkout can receive a hook from the incoming
+    // commit, however the user's configuration spells the path to it.
+    let tracked = session.primary.join("tools/hooks");
+    std::fs::create_dir_all(&tracked).unwrap();
+    let linked = session.home.join(".config/git/linked");
+    symlink(&tracked, &linked).unwrap();
+    let inside = [
+        tracked.display().to_string(),
+        session.primary.display().to_string(),
+        session.primary.join(".git/hooks").display().to_string(),
+        linked.display().to_string(),
+    ];
+    for value in [
+        "~/org/app-portal/tools/hooks",
+        "~/org/app-portal/tools/not-yet",
+        "~/.config/git/../../org/app-portal/tools/hooks",
+        "tools/hooks",
+    ]
+    .into_iter()
+    .chain(inside.iter().map(String::as_str))
+    {
+        user_hooks(value);
+        session.assert_not_allow(&pull);
+    }
+}

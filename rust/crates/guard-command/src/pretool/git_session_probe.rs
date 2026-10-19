@@ -219,6 +219,21 @@ impl Probe {
         })
     }
 
+    /// The directory Git runs hooks from, whichever configuration names it, lies
+    /// outside the checkout. An absolute or `~` value in the user's own
+    /// configuration can still name a tracked directory of the checkout, to
+    /// which an incoming commit adds a hook.
+    pub(super) fn hooks_directory_outside_toplevel(&self) -> bool {
+        let Some(top) = self
+            .text(&["rev-parse", "--show-toplevel"])
+            .and_then(|top| fs::canonicalize(top).ok())
+        else {
+            return false;
+        };
+        self.text(&["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
+            .is_some_and(|hooks| super::git_hook_files::outside_checkout(Path::new(&hooks), &top))
+    }
+
     /// Git reaches `directory` through the repository's own relative
     /// `core.hooksPath` with no link on the way (see `git_hook_files`).
     fn hooks_directory_reached(&self, directory: &Path) -> bool {
