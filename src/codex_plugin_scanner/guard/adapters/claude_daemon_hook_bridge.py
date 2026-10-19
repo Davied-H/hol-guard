@@ -73,7 +73,12 @@ def main(
     # The child inherits this hook call's stdio, so it reads the hook body and
     # writes the response itself. ``exec`` would save the fork, but this entry
     # point is also called in process, where replacing the caller is wrong.
-    return subprocess.run(argv, check=False).returncode
+    try:
+        return subprocess.run(argv, check=False).returncode
+    except OSError:
+        # A removed/unlaunchable runtime has not consumed stdin. Returning a
+        # traceback with exit 1 would let Claude run the unreviewed tool.
+        return _deny_without_a_runtime()
 
 
 def _native_bridge_executable(guard_home: Path) -> Path | None:
