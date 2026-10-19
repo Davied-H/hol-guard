@@ -72,6 +72,20 @@ def test_another_jobs_output_does_not_satisfy_the_case() -> None:
     assert native_tools_scope_error(scenario, calls, {}) == "the model read a job it did not start here"
 
 
+
+def test_a_job_selector_must_match_the_exact_started_job_token() -> None:
+    scenario = _scenario()
+    # Substrings must not bind one host job to a different proc:// selector.
+    for started, requested in [
+        ("bg_12", "proc://bg_1"),
+        ("bg_123", "proc://bg_12"),
+        ("build-42-other", "proc://build-42"),
+        ("job-123", "proc://job"),
+    ]:
+        assert native_tools_scope_error(scenario, [_job(started), _read(requested)], {}) == (
+            "the model read a job it did not start here"
+        )
+
 def test_a_read_without_the_commands_output_does_not_satisfy_the_case() -> None:
     scenario = _scenario()
     for text in (None, "", "job finished\n"):
