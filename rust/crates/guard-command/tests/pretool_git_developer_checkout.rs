@@ -390,11 +390,17 @@ fn a_pull_trusts_a_hooks_directory_of_the_user_only_outside_the_checkout() {
     std::fs::create_dir_all(&tracked).unwrap();
     let linked = session.home.join(".config/git/linked");
     symlink(&tracked, &linked).unwrap();
+    // A link whose target does not exist yet resolves once the commit adds it.
+    let dangling = session.home.join(".config/git/dangling");
+    symlink(session.primary.join("tools/not-yet"), &dangling).unwrap();
+    let dangling_below = format!("{}/hooks", dangling.display());
     let inside = [
         tracked.display().to_string(),
         session.primary.display().to_string(),
         session.primary.join(".git/hooks").display().to_string(),
         linked.display().to_string(),
+        dangling.display().to_string(),
+        dangling_below,
     ];
     for value in [
         "~/org/app-portal/tools/hooks",

@@ -66,8 +66,8 @@ pub(super) fn repository_relative_hooks_path(value: &str) -> bool {
 
 /// Whether `directory` lies outside the checkout at `toplevel`, with every
 /// link on its way resolved. The directory itself may not exist yet: the
-/// deepest existing ancestor is resolved and the rest, which must be plain
-/// components, is appended. A directory above the checkout counts as outside,
+/// deepest existing ancestor is resolved and the rest, which must be absent
+/// entries (a link that does not resolve is not one), is appended. A directory above the checkout counts as outside,
 /// as no tracked file of the checkout can be a hook in it. Doubt answers false.
 pub(super) fn outside_checkout(directory: &Path, toplevel: &Path) -> bool {
     if !directory.is_absolute() || !toplevel.is_absolute() {
@@ -79,6 +79,11 @@ pub(super) fn outside_checkout(directory: &Path, toplevel: &Path) -> bool {
         match fs::canonicalize(existing) {
             Ok(resolved) => break resolved,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // An entry that is there but does not resolve is a link whose
+                // target may appear, not a component that is absent.
+                if fs::symlink_metadata(existing).is_ok() {
+                    return false;
+                }
                 let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
                     return false;
                 };
