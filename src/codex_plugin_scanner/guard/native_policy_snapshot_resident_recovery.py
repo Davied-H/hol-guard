@@ -51,10 +51,10 @@ def is_resident_class_error(code: object) -> bool:
 class NativePolicySnapshotResidentRecoveryMixin:
     """Publisher state and actions for resident recovery."""
 
-    _resident_failure_streak: int
-    _last_attempt_monotonic: float | None
-    _last_revive_monotonic: float | None
-    _resident_reviver: Callable[[Path], bool] | None
+    _resident_failure_streak: int = 0
+    _last_attempt_monotonic: float | None = None
+    _last_revive_monotonic: float | None = None
+    _resident_reviver: Callable[[Path], bool] | None = None
 
     def _init_resident_recovery(self, reviver: Callable[[Path], bool] | None = None) -> None:
         self._resident_failure_streak = 0
