@@ -16,6 +16,7 @@
 //! not poison it, but a credential-named directory inside the tree still
 //! blocks its non-source files.
 use super::ReadContext;
+use crate::pretool::search_pattern_clearance::PatternClearance;
 use glob_expand::expand_glob_matches;
 use std::path::{Path, PathBuf};
 #[path = "glob_expand.rs"]
@@ -72,7 +73,7 @@ pub(in crate::pretool) const SECRET_EXTENSIONS: &[&str] = &[
 
 /// Names-only recursive listing (`ls -R`).
 pub(in crate::pretool) fn safe_recursive_target(value: &str, context: ReadContext<'_>) -> bool {
-    safe_walk_target(value, context, &[], &[], false, false)
+    safe_walk_target(value, context, &[], &[], false, false, None)
         || super::agent_root::agent_root_listing(value, context, true)
 }
 
@@ -121,7 +122,30 @@ pub(super) fn safe_recursive_target_excluding(
         excluded_directories,
         git_metadata,
         follow_links,
+        None,
     )
+}
+
+/// [`safe_recursive_target_excluding`] where a sensitive-named file the
+/// pattern cannot match does not fail the proof.
+pub(super) fn safe_recursive_target_cleared(
+    value: &str,
+    context: ReadContext<'_>,
+    excluded_files: &[&str],
+    excluded_directories: &[&str],
+    follow_links: bool,
+    clearance: &PatternClearance,
+) -> bool {
+    !expanded_operand(value, context).is_some_and(|root| inside_agent_state(&root, context))
+        && safe_walk_target(
+            value,
+            context,
+            excluded_files,
+            excluded_directories,
+            true,
+            follow_links,
+            Some(clearance),
+        )
 }
 
 pub(in crate::pretool) use super::roots::{listing_root_below_home, rg_root_inside_cwd};
@@ -139,6 +163,7 @@ fn safe_walk_target(
     excluded_directories: &[&str],
     git_metadata: bool,
     follow_links: bool,
+    clearance: Option<&PatternClearance>,
 ) -> bool {
     // A recursive walk through `..` reaches a sibling tree whose ignore rules
     // were never inspected; only the sibling-repository proof admits that.
@@ -151,13 +176,24 @@ fn safe_walk_target(
     let Some(root) = expanded_operand(value, context) else {
         return false;
     };
-    walk(
-        root,
-        excluded_files,
-        excluded_directories,
-        git_metadata,
-        follow_links,
-    )
+    // A clearance depends on the pattern, so its walk is never memoized.
+    match clearance {
+        Some(clearance) => walk_uncached(
+            root,
+            excluded_files,
+            excluded_directories,
+            git_metadata,
+            follow_links,
+            Some(clearance),
+        ),
+        None => walk(
+            root,
+            excluded_files,
+            excluded_directories,
+            git_metadata,
+            follow_links,
+        ),
+    }
 }
 
 /// A glob operand that is expanded here, component by component. Every
@@ -381,6 +417,7 @@ pub(super) fn walk(
                 excluded_directories,
                 git_metadata,
                 follow_links,
+                None,
             )
         },
     )
@@ -392,11 +429,17 @@ fn walk_uncached(
     excluded_directories: &[&str],
     git_metadata: bool,
     follow_links: bool,
+    clearance: Option<&PatternClearance>,
 ) -> bool {
-    let mut pending = vec![(root.clone(), 0_usize, None::<std::fs::FileType>)];
+    // The third field marks an entry below a directory that only the clearance
+    // admitted: its files have ordinary names, so nothing but their content
+    // says the pattern cannot match them. The fourth carries the kind the
+    // directory listing already reported for the entry.
+    let mut pending = vec![(root.clone(), 0_usize, false, None::<std::fs::FileType>)];
     let mut inspected = 0_usize;
     // Inspect metadata only. Never follow links or read a secret to classify it.
-    while let Some((path, depth, listed)) = pending.pop() {
+    while let Some((path, depth, admitted_below, listed)) = pending.pop() {
+        let mut below = admitted_below;
         inspected += 1;
         if inspected > MAX_WALK_ENTRIES || depth > MAX_WALK_DEPTH {
             return false;
@@ -434,7 +477,25 @@ fn walk_uncached(
                 }
             }
             if !descendant_allowed(&path, &root, kind.is_file()) {
-                return false;
+                // The name alone holds the search; a clearance may admit it.
+                // Only a name the screen refused reaches here, so reading the
+                // rest of its metadata leaves the ordinary entry as it was.
+                let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+                    return false;
+                };
+                if !clearance.is_some_and(|clearance| clearance.admits(&path, &metadata)) {
+                    return false;
+                }
+                if metadata.is_file() {
+                    continue;
+                }
+                below = true;
+            } else if admitted_below && kind.is_file() {
+                // Below an admitted directory every file clears on its own.
+                if !clearance.is_some_and(|clearance| clearance.clears(&path)) {
+                    return false;
+                }
+                continue;
             }
         }
         if kind.is_dir() {
@@ -449,7 +510,7 @@ fn walk_uncached(
                 let Ok(entry_kind) = entry.file_type() else {
                     return false;
                 };
-                pending.push((entry.path(), depth + 1, Some(entry_kind)));
+                pending.push((entry.path(), depth + 1, below, Some(entry_kind)));
             }
         } else if !kind.is_file() {
             // A recursive tool lists a link without reading through it unless

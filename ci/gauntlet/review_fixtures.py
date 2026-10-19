@@ -17,6 +17,8 @@ GITHUB_LOOKUP_REPO = "example-org/example-repo"
 GITHUB_LOOKUP_QUERY = "is:pr metrics OR analytics"
 GITHUB_STUB_CASES = frozenset({GITHUB_REVIEW_CASE, GITHUB_DELETE_CASE, GITHUB_LOOKUP_CASE})
 WORKTREE_CASE = "linked-worktree-edit-from-main-checkout"
+# Writes into a harness plan folder pass; the hooks file beside it stays reviewed.
+PLAN_NOTE_PROTECTION_CASE = "plan-note-protection-codex-hooks"
 # Not prefixed by the workspace name, so redaction cannot fold it into {{workspace}}.
 WORKTREE_NAME = "review-worktree"
 GITHUB_EXTENSION_ID = "command.github"
