@@ -27,7 +27,10 @@ SCRATCH_READ_TARGET = "{{scratch}}/notes.md"
 # A background shell job started with `async`, then its output read back through the host's own
 # `proc://<job id>` selector, which names the job table rather than a file.
 BACKGROUND_READ_CASE = "omp-native-read-background-job-output"
-JOB_OUTPUT_PATH = re.compile(r"proc://[A-Za-z0-9_][A-Za-z0-9_.-]*(?::[1-9][0-9]*-[1-9][0-9]*)?")
+JOB_OUTPUT_PATH = re.compile(r"proc://(?P<job>[A-Za-z0-9_][A-Za-z0-9_.-]*)(?::[1-9][0-9]*-[1-9][0-9]*)?")
+# The scenario's one command is `git hash-object README.md`, so its output is a single object id.
+# Holding the read to it keeps a read of some other job, or of an empty table row, from passing.
+JOB_OUTPUT_TEXT = re.compile(r"\b[0-9a-f]{40}\b")
 # Keys of the default delegated report; `files` entries are checked against the lookup path.
 REPORT_KEYS = frozenset({"summary", "report", "architecture", "files"})
 
@@ -209,15 +212,29 @@ def _scratch_read_error(calls: list[dict[str, Any]], *, require_steps: bool = Tr
 
 
 def _background_read_error(calls: list[dict[str, Any]], *, require_steps: bool = True) -> str | None:
-    """Hold every read to a background job's output, after the job started; ``require_steps`` also needs one."""
+    """Hold every read to a background job's output, after the job started; ``require_steps`` also needs one.
+
+    A syntactically valid ``proc://`` selector is not enough: the job it names has to be one the
+    model started here, and the read has to come back with that job's output. Otherwise a read of
+    an unrelated job already in the host's table would satisfy the scenario without exercising it.
+    """
     started: list[int] = []
     reads: list[int] = []
     for index, call in enumerate(calls):
         if call["name"] == "bash" and call["args"].get("async") is True:
             started.append(index)
         elif call["name"] == "read":
-            if JOB_OUTPUT_PATH.fullmatch(_write_path(call["args"])) is None:
+            job = JOB_OUTPUT_PATH.fullmatch(_write_path(call["args"]))
+            if job is None:
                 return "the model read something other than a background job's output"
+            # A read Guard stopped carries no output to check, and holding it to one would
+            # hide the false positive this scenario exists to catch.
+            if call["is_error"] is not True:
+                names = [_text(calls[other]) or "" for other in started]
+                if names and not any(job["job"] in name for name in names):
+                    return "the model read a job it did not start here"
+                if not JOB_OUTPUT_TEXT.search(_text(call) or ""):
+                    return "the job output the model read back did not carry the command's result"
             reads.append(index)
     # A read before any job exists is out of order even when Guard denied it.
     if reads and (not started or reads[0] < started[0]):
