@@ -1028,6 +1028,7 @@
       "harnesses": [
         "omp"
       ],
+      "mirror_pi": false,
       "tool": "read",
       "tool_input": {
         "path": "${FEATURE_APP}/console/src/lib/auth"

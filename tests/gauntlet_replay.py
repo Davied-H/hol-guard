@@ -104,7 +104,8 @@ def expand() -> list[ReplayCase]:
         # a case that depends on an inherited variable.
         if entry.get("environment"):
             continue
-        mirror_pi = "omp" in entry["harnesses"] and entry["tool"] in PI_TOOLS
+        # Pi's read tool takes files; an entry that reads a folder says so and is not mirrored.
+        mirror_pi = "omp" in entry["harnesses"] and entry["tool"] in PI_TOOLS and entry.get("mirror_pi", True)
         harnesses = list(entry["harnesses"]) + (["pi"] if mirror_pi else [])
         # A setup case keeps its expectation: a generic review there is a regression, not a block.
         expect = {"allow": "quiet", "setup": "setup"}.get(entry["expect"], "block")
