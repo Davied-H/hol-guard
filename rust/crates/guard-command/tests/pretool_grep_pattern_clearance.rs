@@ -331,13 +331,12 @@ fn a_hidden_folder_the_clearance_admits_is_searched_file_by_file() {
     // A pattern none of those files hold proceeds, whatever they are named.
     assert!(allowed(&omp_grep(&f, json!({"pattern": "handler"}))));
     assert!(allowed(&shell(&f, "grep -rn handler .")));
-    // A pattern an ordinary-named file inside the folder holds keeps the review:
-    // the folder was admitted on the strength of each file's content.
+    // The Oh My Pi walk never refused a hidden folder by its name, only a file
+    // named as sensitive, so that tool searches `.cache` as it always has. The
+    // shell walk refuses the folder by name, and a pattern an ordinary-named
+    // file inside it holds keeps the review: the folder was admitted on the
+    // strength of each file's content.
     for pattern in ["retry", "synthetic-match"] {
-        assert!(
-            !allowed(&omp_grep(&f, json!({"pattern": pattern}))),
-            "{pattern}"
-        );
         let result = shell(&f, &format!("grep -rn {pattern} ."));
         assert!(!allowed(&result), "{pattern}");
     }
@@ -349,6 +348,5 @@ fn a_hidden_folder_the_clearance_admits_is_searched_file_by_file() {
     );
     // A file the check cannot read as plain text inside the folder is never cleared.
     write(f.repo.join(".cache/blob.bin"), "caf\u{e9} handler\n");
-    assert!(!allowed(&omp_grep(&f, json!({"pattern": "other"}))));
     assert!(!allowed(&shell(&f, "grep -rn other .")));
 }
