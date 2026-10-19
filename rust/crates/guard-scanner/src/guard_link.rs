@@ -72,8 +72,9 @@ fn ends_with_loopback_url(text: &str) -> bool {
         return false;
     };
     let scheme_start = text[..separator]
-        .rfind(|character: char| !character.is_ascii_alphabetic())
-        .map_or(0, |index| index + 1);
+        .char_indices()
+        .rfind(|(_, character)| !character.is_ascii_alphabetic())
+        .map_or(0, |(index, character)| index + character.len_utf8());
     if text[..scheme_start]
         .chars()
         .next_back()

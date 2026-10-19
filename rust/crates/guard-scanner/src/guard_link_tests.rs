@@ -154,3 +154,17 @@ fn only_a_guard_token_fragment_is_considered() {
         &page[..page.len() - 1]
     ));
 }
+
+#[test]
+fn a_multibyte_character_before_the_link_is_read_whole() {
+    let token = session_token();
+    let page = "http://127.0.0.1:4781/requests/req-1";
+    // A no-break space separates the link like any other whitespace.
+    let spaced = format!("Open HOL Guard:\u{a0}{page}#guard-token={token}.");
+    assert!(!credential_assignment(&spaced));
+    // A letter or arrow glued to the scheme does not start a URL.
+    for glued in ["é", "→"] {
+        let text = format!("Open HOL Guard {glued}{page}#guard-token={token}.");
+        assert!(credential_assignment(&text), "{glued}");
+    }
+}
