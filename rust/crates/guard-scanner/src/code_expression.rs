@@ -14,10 +14,13 @@
 //! cannot (a call, `await`, `new`, a cast, an interpolation, an arrow) and
 //! every literal inside it is short or reads as a word, a slug or a path. A
 //! quoted value, a bare word, a dotenv-style upper-case key, a fallback
-//! literal (`?? 'dev-secret'`), a concatenation and an encoded-looking
-//! argument are never treated as code here.
+//! literal (`?? 'dev-secret'`), a concatenation, an encoded-looking argument,
+//! a hash pair (`'password' => 'x'`), a default handed to a getter and an
+//! expression longer than the cursor reads are never treated as code here.
 
-use crate::code_cursor::{is_identifier_byte, is_identifier_start, text_ok, Cursor, Scan};
+use crate::code_cursor::{
+    is_identifier_byte, is_identifier_start, text_ok, Cursor, Scan, MAX_EXPRESSION_BYTES,
+};
 
 const KEYWORDS: [&[u8]; 9] = [
     b"null",
@@ -55,15 +58,29 @@ pub(crate) fn is_code_expression(matched: &str, rest_of_line: &str) -> bool {
             Mode::Compare
         };
     } else if body.starts_with('>') && separator == b'=' {
+        // `'password' => 'x'` pairs a key with a value in Perl, PHP and Ruby
+        // maps; only a bare parameter names an arrow function.
+        if matched[..index].trim().ends_with(['"', '\'']) {
+            return false;
+        }
         body = &body[1..];
         mode = Mode::Arrow;
     }
     let mut expression = String::with_capacity(body.len() + rest_of_line.len());
     expression.push_str(body.trim_start());
     expression.push_str(rest_of_line);
+    // The cursor stops at its limit, so a longer expression could hide a literal.
+    if expression.len() > MAX_EXPRESSION_BYTES {
+        return false;
+    }
     let mut cursor = Cursor::new(&expression);
     match mode {
-        Mode::Arrow => cursor.scan(None, 1) != Scan::Fail,
+        Mode::Arrow => {
+            cursor.skip_blanks();
+            // A value that starts as a literal is a map entry, not a function.
+            !matches!(cursor.peek(0), b'"' | b'\'' | b'`' | b'0'..=b'9')
+                && cursor.scan(None, 1) != Scan::Fail
+        }
         Mode::Compare => cursor.comparison(),
         Mode::Assign => cursor.assigned(),
     }
@@ -108,8 +125,21 @@ impl<'a> Cursor<'a> {
                         return false;
                     }
                     self.at += 2;
-                } else if next == b'`' || self.operand(true).is_none() {
+                } else if next == b'`' {
                     return false;
+                } else {
+                    let start = self.at;
+                    let Some(fallback) = self.operand(true) else {
+                        return false;
+                    };
+                    // A long bare word of letters spells a value; a variable
+                    // reads as camelCase, snake_case or a member path.
+                    if !fallback.structural
+                        && !fallback.dotted
+                        && spelled_word(&self.bytes[start..self.at])
+                    {
+                        return false;
+                    }
                 }
                 structural = structural || fallback_proves;
             } else if self.keyword(b"as") || self.keyword(b"satisfies") {
@@ -217,10 +247,7 @@ impl<'a> Cursor<'a> {
                 return false;
             };
             let end = self.at + arrow;
-            let mut annotation = Cursor {
-                bytes: &bytes[self.at + 1..end],
-                at: 0,
-            };
+            let mut annotation = Cursor::over(&bytes[self.at + 1..end]);
             if annotation.scan(None, 1) == Scan::Fail || !annotation.done() {
                 return false;
             }
@@ -240,8 +267,74 @@ impl<'a> Cursor<'a> {
         if self.done() || matches!(self.bytes[self.at], b'"' | b'\'' | b'`') {
             return false;
         }
-        self.operand(false).is_some() && self.scan(None, 1) != Scan::Fail
+        let start = self.at;
+        self.operand(false).is_some()
+            && self.scan(None, 1) != Scan::Fail
+            && equality_literals_ok(&self.bytes[start..self.at])
     }
+}
+
+/// A bare run of at least sixteen lower-case letters, as in a passphrase.
+fn spelled_word(word: &[u8]) -> bool {
+    word.len() >= 16 && word.iter().all(u8::is_ascii_lowercase)
+}
+
+/// Literals set against a value by `==` or `!=` anywhere in a comparison: only
+/// an empty string or a short plain word is a mode or a label. A literal with a
+/// digit, or a long one, is a value that stays a credential finding.
+fn equality_literals_ok(expression: &[u8]) -> bool {
+    let mut at = 0usize;
+    while at + 1 < expression.len() {
+        if !matches!(&expression[at..at + 2], b"==" | b"!=") {
+            at += 1;
+            continue;
+        }
+        let mut after = at + 2;
+        while expression.get(after) == Some(&b'=') {
+            after += 1;
+        }
+        if let Some(literal) = leading_literal(expression[after..].trim_ascii_start()) {
+            if !label(literal) {
+                return false;
+            }
+        }
+        if let Some(literal) = trailing_literal(expression[..at].trim_ascii_end()) {
+            if !label(literal) {
+                return false;
+            }
+        }
+        at = after;
+    }
+    true
+}
+
+fn label(literal: &[u8]) -> bool {
+    literal.len() <= 12
+        && literal
+            .iter()
+            .all(|&byte| byte.is_ascii_alphabetic() || byte == b'-' || byte == b'_')
+}
+
+/// The body of a quoted literal that opens `text`, or the rest when unclosed.
+fn leading_literal(text: &[u8]) -> Option<&[u8]> {
+    let quote = *text.first()?;
+    if !matches!(quote, b'"' | b'\'' | b'`') {
+        return None;
+    }
+    let body = &text[1..];
+    let end = body.iter().position(|&byte| byte == quote);
+    Some(&body[..end.unwrap_or(body.len())])
+}
+
+/// The body of a quoted literal that closes `text`, or the rest when unopened.
+fn trailing_literal(text: &[u8]) -> Option<&[u8]> {
+    let quote = *text.last()?;
+    if !matches!(quote, b'"' | b'\'' | b'`') {
+        return None;
+    }
+    let body = &text[..text.len() - 1];
+    let start = body.iter().rposition(|&byte| byte == quote);
+    Some(&body[start.map_or(0, |index| index + 1)..])
 }
 
 /// `name:` or `name?:` at the start of a parameter list.

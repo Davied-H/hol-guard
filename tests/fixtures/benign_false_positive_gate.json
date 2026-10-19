@@ -10939,7 +10939,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "cat portal/src/lib/attribution-token.ts .env"
+        "command": "cat portal/src/lib/attribution-token.ts portal/.env"
       },
       "cwd": "worktree",
       "expect": "not_allow"

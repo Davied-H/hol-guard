@@ -178,3 +178,135 @@ fn environment_defaults_are_credentials_and_lookups_stay_inert() {
         assert!(!flagged(text), "{text:?}");
     }
 }
+
+#[test]
+fn hash_pairs_with_literal_values_are_credentials() {
+    let phrase = ["correct horse", " battery staple"].concat();
+    for text in [
+        "'password' => 'hunter2'".to_string(),
+        "\"password\" => \"S3cretPw9\"".to_string(),
+        "password => \"S3cretPw9\"".to_string(),
+        ":password => 'hunter2'".to_string(),
+        format!("$c = ['db_password' => '{phrase}'];"),
+    ] {
+        assert!(flagged(&text), "{text:?}");
+    }
+    for text in [
+        "tokens.map(token => token.trim())",
+        "const parse = token => token.trim();",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}
+
+#[test]
+fn an_expression_longer_than_the_cursor_reads_is_never_code() {
+    let phrase = ["correct-horse", "-battery-staple"].concat();
+    let arguments = "user, ".repeat(110);
+    let long = format!("const token = sign({arguments}'{phrase}');");
+    assert!(long.len() > 600);
+    assert!(flagged(&long));
+    let short = format!("const token = sign({}'{phrase}');", "user, ".repeat(2));
+    assert!(flagged(&short));
+}
+
+#[test]
+fn interpolated_templates_that_spell_a_passphrase_are_credentials() {
+    let hyphenated = ["correct-horse", "-battery-staple"].concat();
+    let spoken = ["correct horse", " battery staple "].concat();
+    for text in [
+        format!("const token = `{hyphenated}${{suffix}}`;"),
+        format!("const token = `{spoken}${{suffix}}`;"),
+    ] {
+        assert!(flagged(&text), "{text:?}");
+    }
+    for text in [
+        "const token = `${base}/reset-password/${id}`;",
+        "const token = `Bearer ${raw}`;",
+        "const token = `${head}.${sig}`;",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}
+
+#[test]
+fn later_comparison_literals_with_a_value_shape_are_credentials() {
+    for text in [
+        "if (password === expected || 'hunter2' === input) {",
+        "if (password === expected && input === 'hunter2') {",
+        "if (password == expected || input == \"S3cretPw9\") {",
+    ] {
+        assert!(flagged(text), "{text:?}");
+    }
+    for text in [
+        "if (token === expected || scheme === 'Bearer') {",
+        "if (password === expected && mode !== 'prod') {",
+        "if (token === expected && kind !== '') {",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}
+
+#[test]
+fn long_bare_fallbacks_are_credentials_and_variables_stay_inert() {
+    for text in [
+        "const password = getPassword(user, 12) || correcthorsebatterystaple;",
+        "const token = getToken(user, 12) ?? correcthorsebatterystaple;",
+    ] {
+        assert!(flagged(text), "{text:?}");
+    }
+    for text in [
+        "const token = getToken(user, 12) || fallbackToken;",
+        "const token = getToken(user, 12) ?? defaults.token;",
+        "const token = getToken(user, 12) || fallback_token;",
+        "const token = getToken(user, 12) || undefined;",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}
+
+#[test]
+fn short_secrets_passed_to_calls_are_credentials() {
+    for text in [
+        "const password = login(user, 'hunter2prod');",
+        "const token = sign(payload, 'my secret key here');",
+        "const token = Buffer.from('c2VjcmV0', 'base64');",
+        "const token = sign(payload, 'S3cretPw9');",
+    ] {
+        assert!(flagged(text), "{text:?}");
+    }
+    for text in [
+        "const token = sign(payload, 'HS256');",
+        "const token = Buffer.from(payload).toString('base64url');",
+        "const token = header.split(' ').pop();",
+        "const token = crypto.createHash('sha256').update(id).digest('hex');",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}
+
+#[test]
+fn defaults_handed_to_getters_and_closures_are_credentials() {
+    let secret = ["hunter2", "-production", "-value"].concat();
+    for text in [
+        format!(
+            "let token = std::env::var(\"TOKEN\").unwrap_or_else(|_| \"{secret}\".to_string());"
+        ),
+        format!("token = os.getenv(\"TOKEN\", default=\"{secret}\")"),
+        format!("let token = std::env::var(\"TOKEN\").unwrap_or(String::from(\"{secret}\"));"),
+        format!("token = config.get(\"api_token\", \"{secret}\")"),
+        format!("const token = settings.get('TOKEN', '{secret}');"),
+        format!("token = os.environ.setdefault(\"TOKEN\", \"{secret}\")"),
+        format!("let token = maybe.unwrap_or(\"{secret}\");"),
+    ] {
+        assert!(flagged(&text), "{text:?}");
+    }
+    for text in [
+        "const token = client.get('token', 'header');",
+        "token = os.environ.get(\"TOKEN\", \"\")",
+        "let token = std::env::var(\"TOKEN\").unwrap_or_else(|_| String::new());",
+        "let token = maybe.unwrap_or(\"none\");",
+    ] {
+        assert!(!flagged(text), "{text:?}");
+    }
+}

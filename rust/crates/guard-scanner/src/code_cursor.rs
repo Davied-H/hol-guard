@@ -4,8 +4,22 @@
 //! building a syntax tree, and fails closed on anything it does not know: a
 //! long or encoded-looking literal, a stray symbol, an unbalanced bracket.
 
-const MAX_EXPRESSION_BYTES: usize = 600;
+/// The longest expression read. A longer one is never treated as code, because
+/// the cursor would stop before it had seen every literal.
+pub(crate) const MAX_EXPRESSION_BYTES: usize = 600;
 const MAX_DEPTH: usize = 8;
+
+/// Which quoted literals a scan accepts.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Literals {
+    /// Short words, slugs, hosts and paths.
+    Ordinary,
+    /// One short word: the default of a getter, which may hold a real value.
+    Word,
+    /// Only the empty string: the default of an environment read.
+    Empty,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Scan {
     Fail,
@@ -23,6 +37,7 @@ pub(crate) struct Operand {
 pub(crate) struct Cursor<'a> {
     pub(crate) bytes: &'a [u8],
     pub(crate) at: usize,
+    pub(crate) literals: Literals,
 }
 
 pub(crate) fn is_identifier_start(byte: u8) -> bool {
@@ -45,25 +60,62 @@ const ENVIRONMENT_READS: [&[u8]; 4] = [b"get", b"fetch", b"var", b"var_os"];
 /// Calls that supply the value used when the environment has none.
 const ENVIRONMENT_DEFAULTS: [&[u8]; 4] =
     [b"unwrap_or", b"unwrap_or_else", b"or_else", b"getOrDefault"];
+/// Getters on any receiver whose later arguments are default values.
+const DEFAULT_GETTERS: [&[u8]; 4] = [b"get", b"fetch", b"getOrDefault", b"setdefault"];
+/// Calls on any receiver whose arguments are all default values.
+const DEFAULT_FALLBACKS: [&[u8]; 4] = [b"unwrap_or", b"unwrap_or_else", b"or_else", b"orElse"];
+/// Encoding and curve names that mix letters and digits without being encoded.
+const KNOWN_ENCODINGS: [&[u8]; 2] = [b"base64url", b"secp256k1"];
 
-/// The first argument position of an environment call whose literals are
-/// hardcoded defaults rather than variable names. `os.getenv("TOKEN", "x")`
-/// spells the name first and the default second; `.unwrap_or("x")` on an
-/// environment read is all default.
-pub(crate) fn environment_call(path_env: bool, name: &[u8]) -> Option<usize> {
+/// The first argument position of a call whose literals are hardcoded defaults
+/// rather than names, and the literals those defaults may hold. A default on an
+/// environment read can only be empty: `os.getenv("TOKEN", "x")` spells the name
+/// first and the default second, and `.unwrap_or("x")` is all default. A default
+/// on any other getter may be one short word, never a longer phrase or slug.
+pub(crate) fn environment_call(path_env: bool, name: &[u8]) -> Option<(usize, Literals)> {
     if name == b"getenv" || (path_env && ENVIRONMENT_READS.contains(&name)) {
-        return Some(1);
+        return Some((1, Literals::Empty));
     }
-    (path_env && ENVIRONMENT_DEFAULTS.contains(&name)).then_some(0)
+    if path_env && ENVIRONMENT_DEFAULTS.contains(&name) {
+        return Some((0, Literals::Empty));
+    }
+    if DEFAULT_GETTERS.contains(&name) {
+        return Some((1, Literals::Word));
+    }
+    DEFAULT_FALLBACKS
+        .contains(&name)
+        .then_some((0, Literals::Word))
 }
 
-/// A quoted argument that cannot be a credential: every word is short, or the
-/// whole literal reads as a slug, a host or a path of at most three words.
+/// A quoted argument that cannot be a credential: one short word, or a literal
+/// that reads as a slug, a host or a path of at most three words.
 pub(crate) fn literal_ok(literal: &[u8]) -> bool {
-    literal
-        .split(|byte| byte.is_ascii_whitespace())
-        .all(|word| word.len() < 12)
-        || word_like(literal)
+    short_literal(literal) || word_like(literal)
+}
+
+/// At most one short word, with any blanks or punctuation around it, as in
+/// `'hex'`, `'Bearer '`, `' '` or `', '`. Several words stay a possible
+/// passphrase.
+pub(crate) fn short_literal(literal: &[u8]) -> bool {
+    literal.len() < 12
+        && literal
+            .split(|byte| byte.is_ascii_whitespace())
+            .filter(|word| word.iter().any(u8::is_ascii_alphanumeric))
+            .count()
+            <= 1
+        && !literal
+            .split(|byte| !byte.is_ascii_alphanumeric())
+            .any(mixed_run)
+}
+
+/// A run of letters and digits long enough to be encoded and holding both.
+fn mixed_run(run: &[u8]) -> bool {
+    run.len() >= 8
+        && run.iter().any(u8::is_ascii_digit)
+        && run.iter().any(u8::is_ascii_alphabetic)
+        && !KNOWN_ENCODINGS
+            .iter()
+            .any(|known| known.eq_ignore_ascii_case(run))
 }
 
 pub(crate) fn word_like(literal: &[u8]) -> bool {
@@ -74,27 +126,68 @@ pub(crate) fn word_like(literal: &[u8]) -> bool {
         && literal.iter().filter(|&&byte| byte == b'-').count() <= 2
         && literal
             .split(|byte| !byte.is_ascii_alphanumeric())
-            .all(|run| {
-                run.len() < 16
-                    && !(run.len() >= 10
-                        && run.iter().any(u8::is_ascii_digit)
-                        && run.iter().any(u8::is_ascii_alphabetic))
-            })
+            .all(|run| run.len() < 16 && !mixed_run(run))
 }
 
-/// Literal text of a template: no run that looks like an encoded secret.
+/// Literal text of a template: no run that looks like an encoded secret and no
+/// spelled-out phrase.
 pub(crate) fn text_ok(text: &[u8]) -> bool {
     text.split(|&byte| !(byte.is_ascii_alphanumeric() || byte == b'_'))
         .all(|run| run.len() < 20 && !encoded_looking(run))
+        && !spelled_phrase(text)
+}
+
+/// Four or more words joined by hyphens, or four lower-case words in a row, as
+/// in the passphrase `correct-horse-battery-staple`.
+fn spelled_phrase(text: &[u8]) -> bool {
+    text.split(|&byte| !(byte.is_ascii_alphanumeric() || byte == b'-' || byte == b' '))
+        .any(|segment| {
+            let hyphenated = segment.split(|&byte| byte == b' ').any(|part| {
+                part.split(|&byte| byte == b'-')
+                    .filter(|word| !word.is_empty())
+                    .count()
+                    >= 4
+            });
+            let mut spoken = 0usize;
+            let mut phrase = false;
+            for word in segment.split(|&byte| byte == b' ') {
+                if word.len() >= 2 && word.iter().all(u8::is_ascii_lowercase) {
+                    spoken += 1;
+                    phrase = phrase || spoken >= 4;
+                } else {
+                    spoken = 0;
+                }
+            }
+            hyphenated || phrase
+        })
 }
 
 impl<'a> Cursor<'a> {
     pub(crate) fn new(text: &'a str) -> Self {
         let bytes = text.as_bytes();
+        Self::over(&bytes[..bytes.len().min(MAX_EXPRESSION_BYTES)])
+    }
+
+    pub(crate) fn over(bytes: &'a [u8]) -> Self {
         Self {
-            bytes: &bytes[..bytes.len().min(MAX_EXPRESSION_BYTES)],
+            bytes,
             at: 0,
+            literals: Literals::Ordinary,
         }
+    }
+
+    /// Whether one quoted literal is acceptable under the current mode.
+    fn literal_allowed(&self, literal: &[u8]) -> bool {
+        match self.literals {
+            Literals::Ordinary => literal_ok(literal),
+            Literals::Word => short_literal(literal),
+            Literals::Empty => literal.is_empty(),
+        }
+    }
+
+    /// Whether the text of a template literal is acceptable under the current mode.
+    fn template_text_ok(&self, text: &[u8]) -> bool {
+        text_ok(text) && (self.literals != Literals::Empty || text.is_empty())
     }
 
     pub(crate) fn done(&self) -> bool {
@@ -169,7 +262,7 @@ impl<'a> Cursor<'a> {
         let mut text: Vec<u8> = Vec::new();
         loop {
             if self.done() {
-                let scan = if text_ok(&text) {
+                let scan = if self.template_text_ok(&text) {
                     Scan::Incomplete
                 } else {
                     Scan::Fail
@@ -185,7 +278,7 @@ impl<'a> Cursor<'a> {
             }
             if byte == b'`' {
                 self.at += 1;
-                let scan = if text_ok(&text) {
+                let scan = if self.template_text_ok(&text) {
                     Scan::Done
                 } else {
                     Scan::Fail
@@ -193,7 +286,7 @@ impl<'a> Cursor<'a> {
                 return (scan, interpolations);
             }
             if byte == b'$' && self.peek(1) == b'{' {
-                if !text_ok(&text) {
+                if !self.template_text_ok(&text) {
                     return (Scan::Fail, interpolations);
                 }
                 text.clear();
@@ -258,7 +351,7 @@ impl<'a> Cursor<'a> {
                     }
                 }
                 b'"' | b'\'' => match self.quoted() {
-                    Some(literal) if literal_ok(literal) => {}
+                    Some(literal) if self.literal_allowed(literal) => {}
                     _ => return Scan::Fail,
                 },
                 b'`' => {
@@ -292,11 +385,15 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// The argument list of an environment call. A quoted argument from
-    /// `defaults_from` onward is a hardcoded default, which can hold a real
-    /// credential, so the expression is not inert code. An empty literal is
-    /// no such value and is read like any other argument.
-    pub(crate) fn environment_arguments(&mut self, defaults_from: usize) -> Scan {
+    /// The argument list of a call with default values. From `defaults_from`
+    /// onward each argument is read for `defaults` only, so a hardcoded default
+    /// that can hold a real credential does not make the expression inert code.
+    /// Nested calls and closures in a default are read the same way.
+    pub(crate) fn environment_arguments(
+        &mut self,
+        defaults_from: usize,
+        defaults: Literals,
+    ) -> Scan {
         let mut argument = 0usize;
         loop {
             self.skip_blanks();
@@ -313,14 +410,13 @@ impl<'a> Cursor<'a> {
                 argument += 1;
                 continue;
             }
-            if matches!(byte, b'"' | b'\'' | b'`') && argument >= defaults_from {
-                if self.peek(1) != byte {
-                    return Scan::Fail;
-                }
-                self.at += 2;
-                continue;
+            let outer = self.literals;
+            if argument >= defaults_from {
+                self.literals = defaults;
             }
-            if self.scan(None, 1) == Scan::Fail {
+            let scan = self.scan(None, 1);
+            self.literals = outer;
+            if scan == Scan::Fail {
                 return Scan::Fail;
             }
             if self.done() {
@@ -435,7 +531,9 @@ impl<'a> Cursor<'a> {
                 self.at += 1;
                 let close = if byte == b'(' { b')' } else { b']' };
                 let scan = match (byte, environment_call(path_env, name)) {
-                    (b'(', Some(defaults_from)) => self.environment_arguments(defaults_from),
+                    (b'(', Some((defaults_from, defaults))) => {
+                        self.environment_arguments(defaults_from, defaults)
+                    }
                     _ => self.scan(Some(close), 1),
                 };
                 name = b"";
