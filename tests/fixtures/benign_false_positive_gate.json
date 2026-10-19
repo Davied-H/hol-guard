@@ -6353,6 +6353,38 @@
       "expect": "not_allow"
     },
     {
+      "id": "gauntlet-grep-rln-checkout-from-parent-directory",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rln \"report-window-marker\" ${HOME}/Code/org/app-portal --include=\"*.ts\" 2>/dev/null | grep -v node_modules | head -20"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "gauntlet-git-log-checkout-from-parent-directory",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${HOME}/Code/org/app-portal log --oneline -3"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
       "id": "gauntlet-jq-name-sibling-package",
       "fix_area": "shell",
       "harnesses": [
@@ -11153,6 +11185,86 @@
       "expect": "allow"
     },
     {
+      "id": "docker-imagetools-inspect-digest",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker buildx imagetools inspect registry.example.com/acme/acme-app:1a2b3c4 --format '{{.Manifest.Digest}}'"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "docker-imagetools-inspect-digest-head",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker buildx imagetools inspect registry.example.com/acme/acme-app:1a2b3c4 --format '{{.Manifest.Digest}}' 2>&1 | head -5"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "docker-imagetools-inspect-raw-head",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker buildx imagetools inspect --raw registry.example.com/acme/acme-app:1a2b3c4 | head -40"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "docker-imagetools-inspect-plain",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker buildx imagetools inspect registry.example.com/acme/acme-app:1a2b3c4"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "docker-imagetools-inspect-raw-flag-last-head",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker buildx imagetools inspect registry.example.com/acme/acme-app:1a2b3c4 --raw 2>&1 | head -5"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "neg-doctl-auth-token-head",
       "fix_area": "negative",
       "harnesses": [
@@ -11164,6 +11276,54 @@
       "tool": "shell",
       "tool_input": {
         "command": "doctl auth token 2>&1 | head -1"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-docker-imagetools-create",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker buildx imagetools create -t registry.example.com/acme/acme-app:latest registry.example.com/acme/acme-app:1a2b3c4"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-docker-imagetools-inspect-builder",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker buildx imagetools inspect --builder remote registry.example.com/acme/acme-app:1a2b3c4"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-docker-imagetools-inspect-remote-host",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "docker -H tcp://build.example.com:2376 buildx imagetools inspect registry.example.com/acme/acme-app:1a2b3c4"
       },
       "cwd": "worktree",
       "expect": "not_allow"

@@ -17,6 +17,7 @@ from .business_policy import BUSINESS_CLI_CASES, BUSINESS_CLI_EXECUTABLES
 from .clone_fixtures import add_long_lived_clone_config, long_lived_clone_checks
 from .edge_clone_fixtures import write_edge_clone
 from .extension_adapters import EXTENSION_ADAPTERS
+from .parent_fixtures import PARENT_WORKSPACE_CASE, write_parent_workspace
 from .realism_fixtures import add_home_tools, add_main_shapes, borrow_main_modules
 from .review_fixtures import (
     GH_LOG,
@@ -434,7 +435,10 @@ def _git(args: tuple[str, ...], cwd: Path, environment: dict[str, str]) -> None:
 
 
 def _add_realistic_shapes(main: Path, home: Path, environment: dict[str, str], scenario_id: str | None = None) -> Path:
-    """Add developer-machine shapes and return the linked worktree the agent works in."""
+    """Add developer-machine shapes and return the directory the agent works in.
+
+    That is the linked worktree, or for the parent-directory case a plain parent of repositories.
+    """
     (home / ".gitconfig").write_text(gitconfig_variant(scenario_id), encoding="utf-8", newline="\n")
     (home / ".config/git/hooks").mkdir(parents=True)
     for relative, text in (
@@ -512,4 +516,10 @@ def _add_realistic_shapes(main: Path, home: Path, environment: dict[str, str], s
     _git(("worktree", "add", "--quiet", "-b", "inner", str(worktree / ".worktrees/inner")), worktree, environment)
     # Last, so default signing never touches the fixture's own commits.
     add_long_lived_clone_config(main, scenario_id)
+    if scenario_id == PARENT_WORKSPACE_CASE:
+        parent = write_parent_workspace(home, environment)
+        for relative in (".env", "deletion-target/keep.txt"):
+            (parent / relative).parent.mkdir(parents=True, exist_ok=True)
+            (parent / relative).write_bytes((worktree / relative).read_bytes())
+        return parent
     return worktree
