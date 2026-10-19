@@ -68,7 +68,21 @@ fn argument_allowed(key: &str, value: &Value) -> bool {
 }
 
 fn bounded_text(text: &str) -> bool {
-    text.len() <= MAX_TEXT_BYTES && !text.contains('\0')
+    if text.len() > MAX_TEXT_BYTES || text.contains('\0') {
+        return false;
+    }
+    // These values go straight to GitHub. The generic signal extractor does
+    // not necessarily notice an embedded URL or token inside a search query.
+    // An uncertain outbound value keeps the normal review, not the read proof.
+    let lower = text.to_ascii_lowercase();
+    ![
+        "http://", "https://", "%3a%2f%2f",
+        "github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_",
+        "bearer ", "authorization:", "access_token=", "api_key=",
+        "apikey=", "password=", "secret=", "xoxb-", "xoxp-", "sk-",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
 }
 
 /// `owner/name` on github.com. A host or a URL in front of the slug would send
