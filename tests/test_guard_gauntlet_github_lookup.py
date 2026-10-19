@@ -67,6 +67,13 @@ def test_a_different_query_or_repository_is_not_the_requested_search(tmp_path: P
         assert filesystem_checks(fixture, "native-tools", GITHUB_LOOKUP_CASE)[CHECK] is False
 
 
+def test_extra_terms_or_scopes_do_not_satisfy_the_lookup(tmp_path: Path) -> None:
+    for additional in (" extra", " repo:other/project", " is:closed"):
+        fixture = create_fixture(tmp_path / f"extra-{len(additional)}-{additional.count(' ')}")
+        _search(fixture, GITHUB_LOOKUP_QUERY + additional)
+        assert filesystem_checks(fixture, "native-tools", GITHUB_LOOKUP_CASE)[CHECK] is False
+
+
 def test_other_cases_leave_the_stub_checks_alone(tmp_path: Path) -> None:
     fixture = create_fixture(tmp_path / "case")
     assert CHECK not in filesystem_checks(fixture, "native-tools", "omp-native-grep-ordinary-sources")
