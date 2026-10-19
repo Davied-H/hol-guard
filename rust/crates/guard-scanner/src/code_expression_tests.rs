@@ -131,6 +131,14 @@ fn literal_secrets_beside_code_are_still_credentials() {
     let hex = ["abcdef0123", "456789abcdef"].concat();
     let run = ["abcdefghijklmnop", "1234567890"].concat();
     for text in [
+        "const token = login(user, 'hunter2prod');".to_string(),
+        "const token = sign(payload, 'my secret key here');".to_string(),
+        "const token = Buffer.from('c2VjcmV0', 'base64');".to_string(),
+        "password = getPassword() || correcthorsebatterystaple".to_string(),
+        "if (password === expected || 'hunter2' === input) {".to_string(),
+        "'password' => 'hunter2',".to_string(),
+        r#"password => "S3cretPw9""#.to_string(),
+        format!("token = sign({}, 'hunter2prod');", "a".repeat(700)),
         "const token = process.env.TOKEN || 'dev-token-123';".to_string(),
         "const secret = process.env.SECRET ?? 'fallbackSecretValue1';".to_string(),
         "const token = prefix + 'hunter2';".to_string(),
