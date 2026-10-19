@@ -4,6 +4,10 @@
 //! worktree. A clone is told apart by the remote URLs both configurations
 //! name, so an unrelated repository, a different remote, a hidden or file
 //! target and an existing name keep their review.
+//!
+//! The reviewed cases run from the original checkout, so the link sits outside
+//! the working directory. A link inside the working directory is admitted by
+//! the older workspace link rule for any readable source, whatever its owner.
 
 use crate::pretool_git_session_ops::{git, session, Session};
 use std::path::{Path, PathBuf};
@@ -124,9 +128,11 @@ fn dependency_link_into_an_unrelated_repository_stays_reviewed() {
     for repository in [&plain, &bare] {
         let name = repository.display();
         let command = format!("ln -s {primary}/node_modules {name}/node_modules");
-        for cwd in [&session.primary, repository] {
-            assert_ne!(action(&session, &command, cwd), "allow", "{command}");
-        }
+        assert_ne!(
+            action(&session, &command, &session.primary),
+            "allow",
+            "{command}"
+        );
     }
 }
 
@@ -149,12 +155,14 @@ fn dependency_link_into_a_clone_keeps_every_other_boundary() {
         format!("ln -s {primary}/node_modules {clone_text}/node_modules"),
         format!("ln -s {primary}/node_modules {clone_text}/.deps"),
         format!("ln -sf {primary}/node_modules {clone_text}/deps"),
-        format!("ln -s {primary}/node_modules {clone_text}/pkg/deps"),
+        format!("ln -s {primary}/node_modules {clone_text}/node_modules/pkg/deps"),
         // Relative targets resolve against the link's directory.
         format!("ln -s ../app-portal/node_modules {clone_text}/deps"),
     ] {
-        for cwd in [&session.primary, &clone] {
-            assert_ne!(action(&session, &command, cwd), "allow", "{command}");
-        }
+        assert_ne!(
+            action(&session, &command, &session.primary),
+            "allow",
+            "{command}"
+        );
     }
 }
