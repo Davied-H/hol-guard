@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ..windows_paths import trusted_windows_local_temp
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
-from .contained_authority import settled_authority
+from .contained_authority import last_unavailable_reason, settled_authority
 from .contained_command_prefix import (
     _assignments_applied,
     _peel_for_receipt,
@@ -49,6 +49,15 @@ _PYTHON_EXECUTABLE = re.compile(r"(?i)^(?:python|pythonw)(?:\d+(?:\.\d+)*)?(?:\.
 
 
 def _reject() -> RestrictedPytestError:
+    unavailable = last_unavailable_reason()
+    if unavailable is not None:
+        # The runtime never decided, so this is not a verdict on the command.
+        # Say so, with the code, instead of the refusal wording below.
+        return RestrictedPytestError(
+            _FAILURE,
+            f"Guard's native policy runtime did not answer ({unavailable}), so this command was not run. "
+            "Try it again; if it keeps failing, run `hol-guard repair`.",
+        )
     return RestrictedPytestError(_FAILURE, "Guard could not authorize this contained run.")
 
 

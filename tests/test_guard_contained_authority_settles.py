@@ -71,6 +71,90 @@ def test_a_missing_resident_reply_is_asked_again() -> None:
     assert slept == [0.75]
 
 
+def test_an_ask_that_waited_out_the_readiness_window_is_not_asked_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Three 27 second asks were an 84 second backgrounded job with nothing to report."""
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard.runtime import contained_authority
+
+    now = [0.0]
+    asked: list[dict[str, object]] = []
+
+    def authorize(payload: dict[str, object]) -> object:
+        asked.append(payload)
+        now[0] += 27.0
+        return {**UNAVAILABLE, "reason_code": "native_pre_tool_unavailable"}
+
+    monkeypatch.setattr(contained_authority, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=lambda _s: None))
+    response = settled_authority(authorize, {"tool_input": {}})
+    assert len(asked) == 1
+    assert authority_unavailable(response)
+    assert contained_authority.last_unavailable_reason() == "native_pre_tool_unavailable"
+
+
+def test_a_quick_miss_is_still_asked_again_after_a_slow_one_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard.runtime import contained_authority
+
+    now = [0.0]
+    answers = [UNAVAILABLE, ALLOW]
+    asked: list[dict[str, object]] = []
+
+    def authorize(payload: dict[str, object]) -> object:
+        asked.append(payload)
+        now[0] += 0.4
+        return answers[len(asked) - 1]
+
+    monkeypatch.setattr(contained_authority, "time", SimpleNamespace(monotonic=lambda: now[0], sleep=lambda _s: None))
+    assert settled_authority(authorize, {"tool_input": {}}) == ALLOW
+    assert len(asked) == 2
+    assert contained_authority.last_unavailable_reason() is None
+
+
+def test_a_silent_runtime_is_reported_as_silent_not_as_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The operator is told the runtime did not answer, with its code, and how to recover."""
+    from codex_plugin_scanner.guard import native_restricted_pytest
+    from codex_plugin_scanner.guard.runtime import contained_authority
+
+    monkeypatch.setattr(contained_authority.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        native_restricted_pytest,
+        "restricted_native",
+        lambda *_args, **_kwargs: {
+            "inline_eval": False,
+            "node_test": False,
+            "vitest": False,
+            "git": False,
+            "node_tool": False,
+        },
+    )
+    silent = {**UNAVAILABLE, "reason_code": "native_pre_tool_unavailable"}
+    with pytest.raises(RestrictedPytestError) as failure:
+        _ = sink.run_authorized_contained_test(
+            {"hook_event_name": "PreToolUse", "tool_name": "bash", "tool_input": {"command": "ls src"}},
+            workspace=tmp_path,
+            authorize=lambda _payload: silent,
+            timeout_seconds=30,
+        )
+    assert failure.value.reason_code == "contained_run_authorization_failed"
+    assert "native_pre_tool_unavailable" in str(failure.value)
+    assert "did not answer" in str(failure.value)
+    assert "hol-guard repair" in str(failure.value)
+    assert "could not authorize" not in str(failure.value)
+
+
+def test_a_real_refusal_keeps_the_refusal_wording(tmp_path: Path) -> None:
+    """A decided command is not described as an unreachable runtime."""
+    from codex_plugin_scanner.guard.runtime.contained_authority import last_unavailable_reason
+
+    assert settled_authority(lambda _payload: ALLOW, {"tool_input": {}}) == ALLOW
+    assert last_unavailable_reason() is None
+    assert "did not answer" not in str(sink._reject())
+
+
 @pytest.mark.parametrize(
     ("command_text", "expected_reason"),
     [

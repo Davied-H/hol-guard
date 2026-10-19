@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
+from typing import cast
 
 # A contained run re-asks native authority from its own short-lived process.
 # That process starts its own policy publisher and waits for the resident to
@@ -21,6 +22,15 @@ AUTHORITY_UNAVAILABLE_REASONS = frozenset(
 )
 _SETTLE_ATTEMPTS = 3
 _SETTLE_PAUSE_SECONDS = 0.75
+# An ask that came back unavailable within this window found the runtime
+# between states, so asking again is cheap and usually lands. An ask that
+# already spent longer than this waited out the whole publisher readiness
+# window with no acknowledgement, and asking twice more only turns a 27 second
+# failure into a minute and a half of a backgrounded job that has nothing to
+# report. That time is not "a moment".
+_SETTLE_RETRY_WITHIN_SECONDS = 5.0
+
+_last_unavailable_reason: str | None = None
 
 
 def authority_unavailable(response: object) -> bool:
@@ -41,11 +51,26 @@ def settled_authority(
     itself asked to run contained. A real decision is deterministic and
     arrives on the first ask; only an unavailable runtime is asked again.
     """
+    global _last_unavailable_reason
     wait = time.sleep if pause is None else pause
+    _last_unavailable_reason = None
+    started = time.monotonic()
     response = authorize(payload)
     for _ in range(_SETTLE_ATTEMPTS - 1):
-        if not authority_unavailable(response):
-            return response
+        if not authority_unavailable(response) or time.monotonic() - started > _SETTLE_RETRY_WITHIN_SECONDS:
+            break
         wait(_SETTLE_PAUSE_SECONDS)
+        started = time.monotonic()
         response = authorize(payload)
+    if authority_unavailable(response):
+        _last_unavailable_reason = str(cast("Mapping[str, object]", response).get("reason_code"))
     return response
+
+
+def last_unavailable_reason() -> str | None:
+    """The reason code of the latest ask that ended with no runtime decision.
+
+    The sink runs one command per short-lived process, so the latest ask is the
+    one whose failure the operator is about to be told about.
+    """
+    return _last_unavailable_reason
