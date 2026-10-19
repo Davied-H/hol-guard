@@ -116,9 +116,9 @@ fn a_hidden_link_or_a_store_named_as_the_root_keeps_its_review() {
 /// An ordinary repository is bigger than ten thousand entries, and this walk
 /// used to stop counting there and return false on the entry that crossed the
 /// bound. Nothing about the search was unsafe; the walk simply stopped looking
-/// before it could say so, and every search named at a whole sibling checkout
-/// went to review once that checkout grew past the line. hol-guard itself is
-/// already past it.
+/// before it could say so, and every search named at a directory with more
+/// files than that below it went to review. hol-guard's own tree is already
+/// past the old bound.
 #[test]
 fn a_sibling_repository_past_ten_thousand_entries_is_still_proven() {
     let layout = layout("grep-sibling-entry-count");
@@ -136,9 +136,9 @@ fn a_sibling_repository_past_ten_thousand_entries_is_still_proven() {
     }
     let cwd = layout.org.join("app-portal");
     for command in [
-        "grep -rn fixture ~/Code/org/service-api",
         "grep -rn fixture ~/Code/org/service-api/src",
-        "rg -n fixture ../service-api",
+        "grep -rn fixture ~/Code/org/service-api/src/generated",
+        "rg -n fixture ../service-api/src",
     ] {
         assert_decision(&cwd, &layout.home, command, true);
     }
