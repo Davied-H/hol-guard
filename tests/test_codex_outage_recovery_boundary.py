@@ -109,10 +109,15 @@ def test_total_outage_rejects_unverified_recovery_action(
     def unexpected_child(*_args, **_kwargs):
         pytest.fail("The outage must not execute an unauthenticated child")
 
-    # The install wrote no runtime beside the Guard home, so the bridge has
-    # nothing to launch. It must answer the hook itself rather than reach for
-    # a name on PATH or a path the workspace can spell.
-    assert bridge._native_bridge_executable(Path(config["state_path"]).parent) is None
+    # A total outage is a Guard home with no runtime beside it. A development
+    # checkout may still have a built runtime somewhere the resolver finds, so
+    # the outage is imposed here rather than assumed from the install. The
+    # bridge must answer the hook itself rather than reach for a name on PATH
+    # or a path the workspace can spell.
+    def no_runtime(_guard_home: Path) -> None:
+        return None
+
+    monkeypatch.setattr(bridge, "_native_bridge_executable", no_runtime)
     monkeypatch.setattr(bridge.subprocess, "run", unexpected_child)
 
     assert bridge.main(**config) == 0

@@ -32,7 +32,7 @@ from urllib.parse import parse_qs
 
 if __package__:
     from ..approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
-    from ..codex_hook_bridge_runtime import BridgeConfig
+    from ..codex_hook_bridge_runtime import BridgeConfig, trusted_hook_launch
     from ..codex_hook_bridge_runtime import bounded_hook_input as _hook_input
     from ..codex_hook_bridge_runtime import bridge_config_from_argv as _parse_bridge_config
     from ..codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND, NATIVE_CODEX_HOOK_FEATURE
@@ -58,6 +58,7 @@ else:  # pragma: no cover - exercised by subprocess integration tests
     from codex_plugin_scanner.guard.approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from codex_plugin_scanner.guard.codex_hook_bridge_runtime import (
         BridgeConfig,
+        trusted_hook_launch,
     )
     from codex_plugin_scanner.guard.codex_hook_bridge_runtime import (
         bounded_hook_input as _hook_input,
@@ -118,7 +119,16 @@ def main(
         )
     native = _native_bridge_executable(state.parent)
     if native is None:
-        return _deny_without_a_runtime()
+        return _deny_before_the_runtime_runs()
+    if not _registration_is_authentic(
+        state_path=state,
+        fallback_command=fallback_command,
+        start_command=start_command,
+        hook_timeouts=hook_timeouts,
+        manifest_path=manifest_path,
+        config_json=config_json,
+    ):
+        return _deny_before_the_runtime_runs()
     sys.stdout.flush()
     # The child inherits this hook call's stdio, so it reads the hook body and
     # writes the response itself. ``exec`` would save the fork, but this entry
@@ -172,7 +182,15 @@ def _desktop_main(
         return 1
     if probe_command is None:
         native = _native_bridge_executable(state.parent)
-        if native is None:
+        authentic = native is not None and _registration_is_authentic(
+            state_path=state,
+            fallback_command=fallback_command,
+            start_command=start_command,
+            hook_timeouts=hook_timeouts,
+            manifest_path=manifest_path,
+            config_json=config_json,
+        )
+        if native is None or not authentic:
             sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
             return 0
         sys.stdout.flush()
@@ -405,7 +423,60 @@ def _request_timeout(event_name: str, hook_timeouts: Mapping[str, int]) -> float
     return float(max(1, timeout - _HOOK_TIMEOUT_GRACE_SECONDS))
 
 
-def _deny_without_a_runtime() -> int:
+def _registration_is_authentic(
+    *,
+    state_path: Path,
+    fallback_command: Sequence[str],
+    start_command: Sequence[str],
+    hook_timeouts: Mapping[str, int],
+    manifest_path: str | Path | None,
+    config_json: str | None,
+) -> bool:
+    """Whether this registration still matches the manifest it was installed with.
+
+    The runtime runs the registered fallback argv as the prefix of the
+    contained-execution sink and the start argv to bring the daemon up, so a
+    registration an attacker rewrote must not reach it. This authenticates the
+    hook's own installation; it renders no verdict about the call, which stays
+    the runtime's to make.
+    """
+
+    if manifest_path is None and config_json is None:
+        return True
+    if manifest_path is None or config_json is None:
+        return False
+    try:
+        trusted_hook_launch(
+            manifest_path=manifest_path,
+            state_path=state_path,
+            fallback_command=fallback_command,
+            start_command=start_command,
+            config_json=config_json,
+            deadline_monotonic=_validation_deadline(hook_timeouts),
+        )
+    except Exception:  # a validator fault leaves the launch unauthenticated
+        return False
+    return True
+
+
+def _validation_deadline(hook_timeouts: Mapping[str, int]) -> float | None:
+    """The budget this authentication may spend out of the hook's own timeout.
+
+    The call's event is unknown here, because the body belongs to the runtime,
+    so the shortest configured timeout bounds it. Authentication reads the
+    manifest and hashes the registered files; it must never be what makes a
+    hook miss its deadline.
+    """
+
+    timeouts = [int(timeout) for timeout in hook_timeouts.values() if int(timeout) > 0]
+    if not timeouts:
+        return None
+    return time.monotonic() + max(1, min(timeouts) - _HOOK_TIMEOUT_GRACE_SECONDS)
+
+
+def _deny_before_the_runtime_runs() -> int:
+    """Fail this hook closed without launching anything."""
+
     data = _hook_input(_MAX_HOOK_INPUT_BYTES)
     event_name = "PreToolUse" if data is None else _event_name(data)
     sys.stdout.write(json.dumps(_fail_closed(event_name), separators=(",", ":")))
