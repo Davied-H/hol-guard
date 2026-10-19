@@ -217,10 +217,22 @@ fn ranged_and_quoted_native_credential_paths_keep_output_review() {
         let path = source.join(name);
         fs::write(&path, "token=not-a-real-token\n").unwrap();
         let target = text(&path);
-        for given in [target.clone(), format!("{target}:1-20"), format!(r#""{target}:1-20""#)] {
-            assert!(!read_file(&root, "read", json!({"path": given.clone()}), Some(&root)), "{given}");
+        for given in [
+            target.clone(),
+            format!("{target}:1-20"),
+            format!(r#""{target}:1-20""#),
+        ] {
+            assert!(
+                !read_file(&root, "read", json!({"path": given.clone()}), Some(&root)),
+                "{given}"
+            );
         }
-        assert!(!read_only(&root, "rg", json!({"pattern": "token", "path": format!(r#""{target}""#)}), Some(&root)));
+        assert!(!read_only(
+            &root,
+            "rg",
+            json!({"pattern": "token", "path": format!(r#""{target}""#)}),
+            Some(&root)
+        ));
     }
 }
 
