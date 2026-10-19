@@ -58,4 +58,3 @@ def settled_authority(
         started = time.monotonic()
         response = authorize(payload)
     return response
-

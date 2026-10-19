@@ -110,6 +110,11 @@ def test_a_quick_miss_is_still_asked_again_after_a_slow_one_elsewhere(monkeypatc
     assert len(asked) == 2
 
 
+def _not_a_pytest(*_args: object, **_kwargs: object) -> object:
+    """The planner's own refusal, independent of this host's sandbox support."""
+    raise RestrictedPytestError(PYTEST_INVALID_COMMAND_REASON_CODE, "Restricted pytest accepts only pytest.")
+
+
 def test_a_silent_runtime_is_reported_as_silent_not_as_a_refusal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -129,6 +134,7 @@ def test_a_silent_runtime_is_reported_as_silent_not_as_a_refusal(
             "node_tool": False,
         },
     )
+    monkeypatch.setattr(sink, "prepare_restricted_pytest", _not_a_pytest)
     silent = {**UNAVAILABLE, "reason_code": "native_pre_tool_unavailable"}
     with pytest.raises(RestrictedPytestError) as failure:
         _ = sink.run_authorized_contained_test(
@@ -151,7 +157,9 @@ def test_a_real_refusal_keeps_the_refusal_wording(tmp_path: Path) -> None:
 
 
 def test_unavailable_wording_never_leaks_into_independent_rejections() -> None:
-    assert authority_unavailable(settled_authority(lambda _payload: UNAVAILABLE, {"tool_input": {}}, pause=lambda _: None))
+    assert authority_unavailable(
+        settled_authority(lambda _payload: UNAVAILABLE, {"tool_input": {}}, pause=lambda _: None)
+    )
     assert "did not answer" in str(sink._reject(UNAVAILABLE))
     assert "did not answer" not in str(sink._reject())
     assert "did not answer" not in str(sink._reject({"reason_code": "native_command_review_required"}))
