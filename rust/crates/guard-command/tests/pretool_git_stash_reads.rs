@@ -71,10 +71,21 @@ fn a_configured_stash_pager_keeps_the_review() {
         &session.primary,
         &["config", "pager.stash", "./synthetic-never-execute"],
     );
-    let result = session.evaluate_at("git stash list", &session.primary);
-    assert_ne!(result.minimum_action, "allow", "{}", result.reason_code);
-    let result = session.evaluate_at("git stash show -p stash@{0}", &session.primary);
-    assert_ne!(result.minimum_action, "allow", "{}", result.reason_code);
+    for command in [
+        "git stash list",
+        "git stash show -p stash@{0}",
+        // Beside another Git read that needs the helper probe, the stash
+        // read has to be probed too, not waved through with its neighbor.
+        "git log -1 && git stash list",
+        "git status --short && git stash list",
+    ] {
+        let result = session.evaluate_at(command, &session.primary);
+        assert_ne!(
+            result.minimum_action, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
+    }
 }
 
 #[test]
@@ -86,6 +97,17 @@ fn an_external_diff_driver_keeps_the_show_reviewed() {
         &session.primary,
         &["config", "diff.external", "./synthetic-never-execute"],
     );
-    let result = session.evaluate_at("git stash show -p stash@{0}", &session.primary);
-    assert_ne!(result.minimum_action, "allow", "{}", result.reason_code);
+    for command in [
+        "git stash show -p stash@{0}",
+        "git log -1 && git stash show -p stash@{0}",
+        "git status --short && git stash show -p stash@{0}",
+        "cd . && git stash show -p stash@{0}",
+    ] {
+        let result = session.evaluate_at(command, &session.primary);
+        assert_ne!(
+            result.minimum_action, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
+    }
 }

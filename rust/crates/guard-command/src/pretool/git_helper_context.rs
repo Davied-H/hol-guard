@@ -59,6 +59,9 @@ fn segment_runs_helpers(original: &crate::CommandSegmentV1, context: PathContext
                         "blame" | "describe" | "reflog" => true,
                         // grep pages by default through pager.grep or core.pager.
                         "grep" => true,
+                        // A stash listing is a log that pages under
+                        // pager.stash, and `stash show` runs the diff drivers.
+                        "stash" => true,
                         // A shortlog pages under pager.shortlog, and both
                         // listings read the repository's configuration.
                         "shortlog" | "check-ignore" => true,
