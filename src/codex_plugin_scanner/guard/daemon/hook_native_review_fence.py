@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -22,41 +22,55 @@ from ..native_command_control_authority_io import (
 LEASE_WAIT_SECONDS = 0.25
 
 
-def published_binding_token(publisher: object) -> tuple[object, object, object] | None:
-    """Read *committed* control inputs, not the cached publisher snapshot.
+def _reader(publisher: object, name: str) -> Callable[[], object] | None:
+    """Bind one of the publisher's own readers, which this module only duck-types."""
 
-    An external CLI can commit to SQLite while this process's in-memory
-    generation stays unchanged. If durable control inputs cannot be read,
-    an unleased review must fail closed rather than treat two None values
-    as proof of unchanged authority.
+    reader = getattr(publisher, name, None)
+    return reader if callable(reader) else None
+
+
+def published_binding_token(publisher: object) -> tuple[object, ...] | None:
+    """Read the *committed* control state, not the cached publisher snapshot.
+
+    Another process can commit a control mutation while this process's
+    in-memory generation is unchanged, so the cached snapshot binding alone
+    cannot show that the policy under review was replaced. The committed
+    control marker moves on every projection the mutation lease protects, and
+    the retained business source and the local-CLI revision cover the writers
+    that commit without publishing one.
+
+    Each of the three is a small read that takes no lease. Compiling the
+    control projection here instead would re-enter the authority lock this
+    fence exists to stay out of, and would spend the budget the review still
+    needs; an absent marker is a definite state and compares as one. None is
+    returned only when the committed state could not be read at all, and an
+    unleased review then fails closed rather than reading an unknown as
+    unchanged.
     """
 
-    import hashlib
-    import json
-
-    compiled = getattr(publisher, "_compiled_command_extensions", None)
-    business = getattr(publisher, "_compiled_business_source", None)
-    revision = getattr(publisher, "_current_local_cli_revision", None)
-    if not all(callable(fn) for fn in (compiled, business, revision)):
+    authority = _reader(publisher, "_committed_control_authority")
+    business = _reader(publisher, "_compiled_business_source")
+    revision = _reader(publisher, "_current_local_cli_revision")
+    if authority is None or business is None or revision is None:
         return None
     try:
-        controls = compiled()
-        business_source = business()
+        marker = authority() or {}
+        source = business()
         cli_revision = revision()
-        business_bytes = (
-            getattr(business_source, "retained_identity_bytes", None)
-            if business_source is not None
-            else b""
-        )
-        if not isinstance(controls, Mapping) or not isinstance(business_bytes, bytes):
+        identity = b"" if source is None else getattr(source, "retained_identity_bytes", None)
+        if not isinstance(marker, Mapping) or not isinstance(identity, bytes):
             return None
-        controls_data = json.dumps(controls, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return (
-            hashlib.sha256(controls_data.encode("utf-8")).hexdigest(),
-            hashlib.sha256(business_bytes).hexdigest(),
+            marker.get("epoch"),
+            marker.get("mutation_revision"),
+            marker.get("phase"),
+            marker.get("effective_digest"),
+            marker.get("authority_key_id"),
+            marker.get("pack_program_digest"),
+            identity,
             cli_revision,
         )
-    except (OSError, RuntimeError, TypeError, ValueError, KeyError):
+    except (OSError, RuntimeError, TypeError, ValueError, KeyError, IndexError):
         return None
 
 

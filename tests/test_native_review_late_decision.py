@@ -147,31 +147,50 @@ def test_an_unleased_allow_on_an_unchanged_binding_is_delivered(tmp_path, monkey
 def test_durable_control_token_changes_without_a_publisher_generation_change() -> None:
     from codex_plugin_scanner.guard.daemon.hook_native_review_fence import published_binding_token
 
+    committed = {"epoch": 1, "mutation_revision": 7, "phase": "committed", "effective_digest": "digest-1"}
+
     class Publisher:
-        controls = {"extensions": {"one": True}}
         business_source = None
         revision = 3
 
-        def _compiled_command_extensions(self):
-            return self.controls
+        def _committed_control_authority(self) -> dict[str, object]:
+            return dict(committed)
 
-        def _compiled_business_source(self):
+        def _compiled_business_source(self) -> None:
             return self.business_source
 
-        def _current_local_cli_revision(self):
+        def _current_local_cli_revision(self) -> int:
             return self.revision
 
-        def current_snapshot_binding(self):
+        def current_snapshot_binding(self) -> dict[str, object]:
             # The cached binding has not changed despite a committed write.
             return {"generation": 4, "policy_digest": "unchanged"}
 
     publisher = Publisher()
     before = published_binding_token(publisher)
     assert before is not None
-    publisher.controls = {"extensions": {"one": False}}
+    committed["effective_digest"] = "digest-2"
     assert published_binding_token(publisher) != before
+    committed["effective_digest"] = "digest-1"
+    assert published_binding_token(publisher) == before
     publisher.revision += 1
     assert published_binding_token(publisher) != before
+
+
+def test_a_durable_control_read_that_fails_leaves_no_token() -> None:
+    from codex_plugin_scanner.guard.daemon.hook_native_review_fence import published_binding_token
+
+    class Publisher:
+        def _committed_control_authority(self) -> dict[str, object]:
+            raise OSError("authority unreadable")
+
+        def _compiled_business_source(self) -> None:
+            return None
+
+        def _current_local_cli_revision(self) -> int:
+            return 1
+
+    assert published_binding_token(Publisher()) is None
 
 
 def test_unleased_review_without_durable_authority_cannot_allow(tmp_path, monkeypatch):
