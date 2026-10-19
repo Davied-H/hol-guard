@@ -198,6 +198,13 @@ fn hook_inert(path: &Path) -> bool {
         }
         Ok(metadata) => {
             !(metadata.file_type().is_symlink() || metadata.is_file() && executable(&metadata))
+                // A hook manager's shim that stops before it runs anything.
+                || path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|hook| {
+                        super::super::git_hook_files::hook_file_inert(path, hook)
+                    })
         }
     }
 }

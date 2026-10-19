@@ -136,6 +136,17 @@ pub(super) fn worktree_add_execution_free(
     if !status.success() || output.is_empty() {
         return Some(false);
     }
+    // A hook manager's repository-relative hooks directory also runs from the
+    // new tree, which the commit being checked out decides.
+    if let Some(hooks_path) = facts.repository_hooks_path.as_deref() {
+        // A fetch earlier in the same command can move the reference.
+        if reference_may_move {
+            return Some(false);
+        }
+        if !repository_hooks_inert(&base, leading, hooks_path, commit_id(&output)?, deadline)? {
+            return Some(false);
+        }
+    }
     if !facts.filters {
         return Some(true);
     }
@@ -146,13 +157,7 @@ pub(super) fn worktree_add_execution_free(
     if reference_may_move {
         return Some(facts.only_standard_lfs);
     }
-    let commit = std::str::from_utf8(&output).ok()?.trim();
-    if commit.len() < 40
-        || commit.len() > 64
-        || !commit.bytes().all(|byte| byte.is_ascii_hexdigit())
-    {
-        return None;
-    }
+    let commit = commit_id(&output)?;
     let attribute_sources_free = no_filter_attributes(
         &base,
         leading,
@@ -416,56 +421,119 @@ fn git_paths<const N: usize>(
     paths.try_into().ok()
 }
 
+fn commit_id(output: &[u8]) -> Option<&str> {
+    let commit = std::str::from_utf8(output).ok()?.trim();
+    (commit.len() >= 40
+        && commit.len() <= 64
+        && commit.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    .then_some(commit)
+}
+
+/// Git runs hooks from the root of a working tree: `reference-transaction`
+/// in this repository and `post-checkout` in the new tree. A hooks directory
+/// below the repository root holds no hook either runs when this working
+/// tree's directory has none and the commit checked out tracks none, with no
+/// symlink on the way into the new tree. `None` is doubt.
+fn repository_hooks_inert(
+    base: &Command,
+    leading: &[String],
+    hooks_path: &str,
+    commit: &str,
+    deadline: Instant,
+) -> Option<bool> {
+    if !super::git_hook_files::repository_relative_hooks_path(hooks_path) {
+        return Some(false);
+    }
+    let (status, output) = git_query_with_args(
+        base,
+        leading,
+        &["rev-parse", "--show-toplevel"],
+        deadline,
+        WORKTREE_PROBE_LIMIT,
+    )?;
+    if !status.success() {
+        return None;
+    }
+    let toplevel = fs::canonicalize(std::str::from_utf8(&output).ok()?.trim()).ok()?;
+    match fs::canonicalize(toplevel.join(hooks_path)) {
+        Ok(directory) => {
+            if !directory.starts_with(&toplevel) || !hooks_are_inert(&directory) {
+                return Some(false);
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return None,
+    }
+    // Every directory on the way must be a plain tree in the commit, or absent.
+    let mut prefix = String::new();
+    for component in hooks_path.split('/') {
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(component);
+        match tree_entry(base, leading, commit, &prefix, deadline)? {
+            None => return Some(true),
+            Some(mode) if mode == "040000" => {}
+            Some(_) => return Some(false),
+        }
+    }
+    for hook in EXECUTABLE_HOOKS {
+        let path = format!("{hooks_path}/{hook}");
+        match tree_entry(base, leading, commit, &path, deadline)? {
+            None => {}
+            Some(mode) if mode == "100644" => {}
+            Some(_) => return Some(false),
+        }
+    }
+    Some(true)
+}
+
+/// The mode of `path` in `commit`, or `None` where the tree has no such entry.
+fn tree_entry(
+    base: &Command,
+    leading: &[String],
+    commit: &str,
+    path: &str,
+    deadline: Instant,
+) -> Option<Option<String>> {
+    let (status, output) = git_query_with_args(
+        base,
+        leading,
+        &["ls-tree", "-z", "--full-tree", commit, "--", path],
+        deadline,
+        WORKTREE_PROBE_LIMIT,
+    )?;
+    if !status.success() {
+        return None;
+    }
+    if output.is_empty() {
+        return Some(None);
+    }
+    let rendered = std::str::from_utf8(&output).ok()?;
+    let entry = rendered.strip_suffix('\0')?;
+    let (meta, name) = entry.split_once('\t')?;
+    // One entry, named exactly: a pattern never widens the lookup.
+    (name == path && !entry.contains('\0'))
+        .then(|| meta.split(' ').next().map(str::to_owned))
+        .flatten()
+        .map(Some)
+}
+
+const EXECUTABLE_HOOKS: &[&str] = &[
+    "post-checkout",
+    "post-index-change",
+    "reference-transaction",
+];
+
+/// No hook Git runs for `worktree add` can start in the directory `path`.
+/// Git finds a hook by its exact name, so each is looked up directly.
 fn hooks_are_inert(path: &Path) -> bool {
-    const EXECUTABLE_HOOKS: &[&str] = &[
-        "post-checkout",
-        "post-index-change",
-        "reference-transaction",
-    ];
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
-        Err(_) => return false,
-    };
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return false;
+        _ => return false,
     }
-    let entries = match fs::read_dir(path) {
-        Ok(entries) => entries,
-        Err(_) => return false,
-    };
-    for (count, entry) in entries.enumerate() {
-        if count >= 256 {
-            return false;
-        }
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) => return false,
-        };
-        let metadata = match fs::symlink_metadata(entry.path()) {
-            Ok(metadata) => metadata,
-            Err(_) => return false,
-        };
-        // Git runs hooks by exact name, so only an entry with a hook's name
-        // matters; a symlink under such a name is not followed here.
-        let hook_named = EXECUTABLE_HOOKS.contains(&entry.file_name().to_string_lossy().as_ref());
-        if hook_named && metadata.file_type().is_symlink() {
-            return false;
-        }
-        if hook_named && metadata.is_file() && hook_is_executable(&metadata) {
-            return false;
-        }
-    }
-    true
-}
-
-#[cfg(unix)]
-fn hook_is_executable(metadata: &fs::Metadata) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    metadata.permissions().mode() & 0o111 != 0
-}
-
-#[cfg(not(unix))]
-fn hook_is_executable(metadata: &fs::Metadata) -> bool {
-    metadata.is_file()
+    EXECUTABLE_HOOKS
+        .iter()
+        .all(|hook| super::git_hook_files::hook_file_inert(&path.join(hook), hook))
 }

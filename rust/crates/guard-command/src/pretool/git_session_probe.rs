@@ -155,22 +155,26 @@ impl Probe {
         super::git_remote_config::parse_scoped(&output)
     }
 
-    /// No named hook can run: each is absent or a non-executable file.
+    /// No named hook can run: each is absent, a non-executable file or a
+    /// known script that does nothing here (see `git_hook_files`).
     /// `--git-path` honors `core.hooksPath` and the linked worktree layout.
     /// One `rev-parse` resolves every name; it prints one path per request.
     pub(super) fn hooks_inert<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> bool {
         let mut arguments = vec!["rev-parse", "--path-format=absolute"];
         // Several writes may share a hook; ask for each path once.
-        let mut requests: Vec<String> = Vec::new();
+        let mut hooks: Vec<&str> = Vec::new();
         for name in names {
-            let request = format!("hooks/{name}");
-            if !requests.contains(&request) {
-                requests.push(request);
+            if !hooks.contains(&name) {
+                hooks.push(name);
             }
         }
-        if requests.is_empty() {
+        if hooks.is_empty() {
             return true;
         }
+        let requests = hooks
+            .iter()
+            .map(|name| format!("hooks/{name}"))
+            .collect::<Vec<_>>();
         for request in &requests {
             arguments.extend(["--git-path", request.as_str()]);
         }
@@ -185,15 +189,9 @@ impl Probe {
         else {
             return false;
         };
-        paths.iter().map(PathBuf::from).all(|path| {
-            path.is_absolute()
-                && match fs::symlink_metadata(&path) {
-                    Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-                    Ok(metadata) => {
-                        !(metadata.file_type().is_symlink()
-                            || metadata.is_file() && hook_is_executable(&metadata))
-                    }
-                }
+        paths.iter().zip(&hooks).all(|(path, hook)| {
+            let path = PathBuf::from(path);
+            path.is_absolute() && super::git_hook_files::hook_file_inert(&path, hook)
         })
     }
 
@@ -255,17 +253,6 @@ fn lines(output: &[u8], count: usize) -> Option<Vec<String>> {
         .map(|value| line(value.as_bytes()))
         .collect::<Option<Vec<_>>>()?;
     (values.len() == count).then_some(values)
-}
-
-#[cfg(unix)]
-fn hook_is_executable(metadata: &fs::Metadata) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    metadata.permissions().mode() & 0o111 != 0
-}
-
-#[cfg(not(unix))]
-fn hook_is_executable(metadata: &fs::Metadata) -> bool {
-    metadata.is_file()
 }
 
 #[cfg(test)]
