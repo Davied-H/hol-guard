@@ -39,6 +39,12 @@ fn result_schema_field_names_are_not_credential_reads() {
         ]}),
         json!({"$ref": "#/$defs/Finding", "$defs": {"Finding": {"type": "object",
             "properties": {"authorizationHeader": {"type": "string"}}}}}),
+        json!({"type":"object", "if":{"properties":{"apiToken":{"type":"string"}}},
+            "then":{"properties":{"password":{"type":"string"}}},
+            "else":{"properties":{"accessToken":{"type":"string"}}}}),
+        json!({"type":"object", "properties":{
+            "publisher_id":{"type":"object", "properties":{"displayName":{"type":"string"}}},
+            "artifact_id":{"type":"object", "properties":{"displayName":{"type":"string"}}}}}),
     ] {
         assert_eq!(decision("omp", &task(schema.clone())), "allow", "{schema}");
     }
@@ -67,6 +73,12 @@ fn a_credential_named_property_with_a_value_keeps_the_review() {
         json!({"type": "object", "properties": {"token": {"type": "string", "examples": ["x"]}}}),
         json!({"type": "object", "properties": {"token": {"type": "object",
             "properties": {"value": {"type": "string", "default": "x"}}}}}),
+        // A credential-named property can reference a concrete value stored
+        // elsewhere. Keep review instead of trusting unresolved $ref.
+        json!({"type":"object", "properties":{"apiToken":{"$ref":"#/$defs/Shared"}},
+            "$defs":{"Shared":{"const":"sk-example"}}}),
+        json!({"type":"object", "properties":{"password":{"$ref":"#/definitions/Ref"}},
+            "definitions":{"Ref":{"default":"example"}}}),
         // A name map whose entry is a bare value, not a schema.
         json!({"type": "object", "properties": {"apiToken": "abc123"}}),
         // A look-alike inside an example is data, never a schema to trust.
