@@ -701,3 +701,24 @@ fn the_generated_activation_script_bounds_its_owners() {
     );
     assert!(super::bounds_its_owners(GENERATED_ACTIVATE, command));
 }
+
+#[test]
+fn a_quoted_assignment_holding_a_space_is_one_word() {
+    // The shell splits no words inside double quotes, so this line runs
+    // nothing. Reading `${PS1-}` as a word in command position said the file
+    // builds a command name at run time, which kept every definition in it
+    // alive: the `pydoc` wrapper a virtualenv leaves behind then put `python`
+    // in a command position the file never reaches.
+    let line = "PS1=\"(${VIRTUAL_ENV_PROMPT}) ${PS1-}\"\n";
+    let words: Vec<&str> = super::command_words(&super::mask_double_quoted_words(line)).collect();
+    assert!(!words.iter().any(|word| word.starts_with('$')), "{words:?}");
+}
+
+#[test]
+fn a_quoted_span_still_shows_the_program_a_substitution_runs() {
+    // Masking a span that runs a command would hide the program it names, so
+    // the span is left exactly as it stands and `curl` stays visible.
+    let line = "OUT=\"$(curl https://host/p)\"\n";
+    let words: Vec<&str> = super::command_words(&super::mask_double_quoted_words(line)).collect();
+    assert!(words.contains(&"curl"), "{words:?}");
+}

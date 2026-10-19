@@ -860,7 +860,7 @@ fn running_text(text: &str, command: &str) -> String {
     // read as dead may be exactly what `${f}` calls. Masking that expansion
     // into a plain word hides the call, so the definitions stay.
     let expands_a_command =
-        command_words(&mask_double_quoted_separators(&plain)).any(|word| word.starts_with('$'));
+        command_words(&mask_double_quoted_words(&plain)).any(|word| word.starts_with('$'));
     let literal = mask_parameter_expansions(&plain);
     if expands_a_command {
         return literal;
@@ -1064,6 +1064,21 @@ fn synthesizes_program(literal: &str, sourced: bool) -> bool {
 /// substitution is left untouched because its commands still run. That
 /// includes `$(...)`, backticks, and Bash's `${ cmd; }` / `${| cmd; }` form.
 fn mask_double_quoted_separators(literal: &str) -> String {
+    mask_double_quoted(literal, false)
+}
+
+/// The text with every double-quoted span reduced to one word: the separators
+/// `mask_double_quoted_separators` masks, and its spaces too.
+///
+/// The shell splits no words inside double quotes, so `PS1="(${NAME}) ${PS1-}"`
+/// is a single assignment. Splitting it on the space reads `${PS1-}` as a word
+/// in command position, which is how an ordinary activation script looked like
+/// a file that builds a command name at run time.
+fn mask_double_quoted_words(literal: &str) -> String {
+    mask_double_quoted(literal, true)
+}
+
+fn mask_double_quoted(literal: &str, words: bool) -> String {
     let mut out = String::with_capacity(literal.len());
     let mut span: Option<String> = None;
     let mut escaped = false;
@@ -1084,7 +1099,7 @@ fn mask_double_quoted_separators(literal: &str) -> String {
         } else if character == '\\' {
             escaped = true;
         } else if character == '"' {
-            out.push_str(&mask_span(quoted));
+            out.push_str(&mask_span(quoted, words));
             out.push(character);
             span = None;
             continue;
@@ -1103,7 +1118,7 @@ fn span_runs_a_command(quoted: &str) -> bool {
         || crate::parser_brace_command::brace_runs_a_command(quoted)
 }
 
-fn mask_span(quoted: &str) -> String {
+fn mask_span(quoted: &str, words: bool) -> String {
     if span_runs_a_command(quoted) {
         return quoted.to_owned();
     }
@@ -1111,6 +1126,7 @@ fn mask_span(quoted: &str) -> String {
         .chars()
         .map(|character| match character {
             ';' | '&' | '|' | '(' | ')' | '{' | '}' | '\n' => 'x',
+            ' ' | '\t' if words => 'x',
             other => other,
         })
         .collect()
