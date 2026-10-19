@@ -186,6 +186,7 @@ pub mod pretool_sibling_glob_search;
 pub mod pretool_sibling_ignore_negations;
 pub mod pretool_sibling_named_paths;
 pub mod pretool_sibling_read_filters;
+pub mod pretool_sibling_repository_writes;
 pub mod pretool_sibling_sequence_reads;
 pub mod pretool_skill_listings;
 pub mod pretool_skill_roots;

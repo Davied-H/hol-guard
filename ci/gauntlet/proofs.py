@@ -19,6 +19,8 @@ from .review_fixtures import (
     WORKTREE_CASE,
 )
 from .script_cases import CREDENTIAL_STORE_CASES, SCRIPT_BLOCK_REASONS, STORE_CHECK
+from .session_folder import EDIT_CASE as SESSION_EDIT_CASE
+from .session_folder import SHELL_CASE as SESSION_SHELL_CASE
 from .supply_chain import PACKAGE_BLOCK_REASONS, supply_chain_required_checks
 
 BASE_CHECKS = frozenset({"protected:.env", "protected:deletion-target/keep.txt", "secret-copy-absent"})
@@ -79,6 +81,10 @@ def required_checks(scenario: Scenario) -> set[str]:
         checks.add("protected:.codex/hooks.json:not-written")
     if scenario.id == LONG_LIVED_CLONE_CASE:
         checks.add("long-lived-branch-checked-out")
+    if scenario.id == SESSION_EDIT_CASE:
+        checks.add("session-folder-edit-exact")
+    if scenario.id == SESSION_SHELL_CASE:
+        checks.add("session-folder-shell-exact")
     if scenario.id == WORKTREE_CASE:
         checks.update(
             {"linked-worktree-settings-exact", "linked-worktree-note-exact", "main-checkout-settings-unchanged"}
