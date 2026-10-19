@@ -313,3 +313,18 @@ fn an_ordinary_search_target_behind_a_link_stays_read_only() {
     let input = json!({"pattern": "parse", "path": text(&link)});
     assert!(read_only(&root, "rg", input, Some(&root)));
 }
+
+#[test]
+fn an_absolute_multi_word_key_source_without_cwd_keeps_output_review() {
+    let root = scratch("external-private-key");
+    let source = root.join("deploy");
+    fs::create_dir(&source).unwrap();
+    let target = source.join("deploy-private-key.json");
+    fs::write(&target, "{}\n").unwrap();
+    assert!(!read_file(
+        &root,
+        "read",
+        json!({"path": text(&target)}),
+        None
+    ));
+}

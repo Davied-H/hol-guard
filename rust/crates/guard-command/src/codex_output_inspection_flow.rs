@@ -246,17 +246,22 @@ fn stem_has_compound_secret_segment(stem: &str, split_compound: bool) -> bool {
     })
 }
 
-/// Whether the stem's last segment is the secret word, as `service-token` or
-/// `npm_secret` is. The head noun names what the file holds, so it reads as a
-/// credential source wherever it sits. A leading secret word names the subject
-/// instead — `token-discipline.md` is a document about tokens — and only the
-/// in-project exemption, which needs a caller cwd, could take that back.
+/// Whether the stem ends in the secret word, as `service-token`, `npm_secret`
+/// or `deploy-private-key` does. The head noun names what the file holds, so
+/// it reads as a credential source wherever it sits. A leading secret word
+/// names the subject instead — `token-discipline.md` is a document about
+/// tokens — and only the in-project exemption, which needs a caller cwd, could
+/// take that back. Listed stems carry their own separator (`private-key`), so
+/// match the whole suffix rather than one split segment.
 fn stem_ends_with_secret_segment(stem: &str) -> bool {
     let lowered = stem.to_lowercase();
-    lowered.rsplit(['-', '_']).next().is_some_and(|segment| {
-        !segment.is_empty()
-            && segment != lowered
-            && SECRET_LIKE_SOURCE_NAME_STEMS.contains(&segment)
+    SECRET_LIKE_SOURCE_NAME_STEMS.iter().any(|word| {
+        lowered.len() > word.len()
+            && lowered.ends_with(word)
+            && matches!(
+                lowered.as_bytes()[lowered.len() - word.len() - 1],
+                b'-' | b'_'
+            )
     })
 }
 
