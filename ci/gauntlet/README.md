@@ -72,6 +72,7 @@ Further `native-tools` allow scenarios reproduce interruptions reported from rea
 | Token-handling source (post-tool output scan) | `omp-native-read-token-handling-sources`, `omp-native-shell-cat-token-handling-sources` | `portal/` holds a click redirect route, a reminder worker that builds links carrying signed tokens, and an HMAC helper that names its key only through the environment; many lines name a credential-like identifier and none holds a value |
 | Read-only cloud CLI | `omp-native-shell-doctl-reads` | a `doctl` stand-in under `$HOME/.local/bin` (prepended to `PATH`) answers `version` and `apps list` only |
 | Registry manifest query | `omp-native-shell-docker-imagetools-inspect` | a `docker` stand-in under `$HOME/.local/bin` answers `buildx imagetools inspect` with a fixed digest and refuses everything else; the query stays quiet alone and behind `2>&1 \| head -5`, while `imagetools create` stays reviewed in the model-free gate |
+| Harness plan-note reads with discarded stderr | `omp-native-shell-plan-note-reads` | `rg`, `cat` and `head` of seeded synthetic plan notes under `~/.codex/plans` and `~/.claude/plans`, each with `2>/dev/null` and a `head` pipe; none of the three may be reviewed |
 
 The model-free gate pairs each with protection counterparts: `cat docs/review-notes.md .env`, the vite build piped to an upload, `doctl auth token`, `doctl compute droplet delete` and `doctl apps list --trace` must not allow.
 
