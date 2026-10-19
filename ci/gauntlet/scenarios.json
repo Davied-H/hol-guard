@@ -469,6 +469,15 @@
       "prompt": "Use the grep tool once to find where the text ordinary-workflow-fixture appears under {{workspace}}/src, then tell me which files matched."
     },
     {
+      "id": "omp-native-github-search-prs",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "github"
+      ],
+      "prompt": "Use the github tool once to search pull requests: op search_prs, repo example-org/example-repo, and the query is:pr metrics OR analytics exactly as written. Do not add other arguments or run other searches, and do not inspect the project. Then tell me how many pull requests it listed."
+    },
+    {
       "id": "omp-native-eval-reads-skill-doc",
       "expectation": "allow",
       "oracle": "native-tools",
@@ -749,6 +758,19 @@
         "ls -d {{home}}/acme-plain/.git 2>/dev/null; ls {{home}}/acme-plain",
         "ls -a {{home}}/other-project",
         "ls -la {{home}}/other-project/.keep"
+      ]
+    },
+    {
+      "id": "omp-native-read-background-job-output",
+      "expectation": "allow",
+      "oracle": "native-tools",
+      "required_tools": [
+        "bash",
+        "read"
+      ],
+      "prompt": "Start the listed command as a background job with the bash tool's async option, then open that job's output with the read tool at proc:// followed by the job id the bash result gives you, and tell me what it printed.",
+      "commands": [
+        "git hash-object README.md"
       ]
     },
     {
