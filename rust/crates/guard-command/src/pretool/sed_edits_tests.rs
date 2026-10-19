@@ -321,7 +321,6 @@ fn ordinary_workspace_files_are_edited_in_place() {
 #[test]
 fn protected_outside_and_linked_targets_stay_reviewed() {
     let layout = layout("refused");
-    let root = layout.root.to_str().unwrap().to_owned();
     let home = layout.home.clone();
     let mut commands: Vec<String> = [
         ".git/config",
@@ -345,7 +344,7 @@ fn protected_outside_and_linked_targets_stay_reviewed() {
     .collect();
     commands.extend([
         format!("sed -i '' 's/a/b/' {home}/notes.txt"),
-        format!("sed -i '' 's/a/b/' {root}/outside/file.ts"),
+        "sed -i '' 's/a/b/' /opt/guard-outside/file.ts".to_owned(),
         "sed -i '' 's/a/b/e' src/app/page.tsx".to_owned(),
         "sed -i '' 's/a/b/w src/out.txt' src/app/page.tsx".to_owned(),
         "sed -i '' 's/a/b/;w src/out.txt' src/app/page.tsx".to_owned(),
