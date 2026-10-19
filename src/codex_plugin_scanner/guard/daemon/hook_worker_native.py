@@ -770,7 +770,7 @@ class HookWorkerNativeMixin:
                 "failure_reason_code": reason_code,
             }
 
-        unleased_binding: tuple[object, object] | None = None
+        unleased_binding: tuple[object, ...] | None = None
         try:
             with native_review_fence(
                 policy_snapshot=policy_snapshot,

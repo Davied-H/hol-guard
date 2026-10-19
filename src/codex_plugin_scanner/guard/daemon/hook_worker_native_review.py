@@ -217,7 +217,7 @@ def _review_native_edge_once(
     # unavailable route and cannot establish recording-only authority.
     recording_only = recording_only_for_binding(policy_snapshot, harness)
     fenced: bool | None = None
-    unleased_binding: tuple[object, object] | None = None
+    unleased_binding: tuple[object, ...] | None = None
     capture_receipts: list[Mapping[str, object]] = []
     try:
         with native_review_fence(
