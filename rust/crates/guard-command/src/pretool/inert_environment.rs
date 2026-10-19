@@ -116,7 +116,10 @@ fn safe_set_arguments(arguments: &[String]) -> bool {
         // -a and other shell flags can change execution environment too.
         // Only the documented e/u/x flags and one trailing -o operand
         // are safe to compose in this read-only prelude.
-        if !flags.chars().all(|flag| matches!(flag, 'e' | 'u' | 'x' | 'o')) {
+        if !flags
+            .chars()
+            .all(|flag| matches!(flag, 'e' | 'u' | 'x' | 'o'))
+        {
             return false;
         }
         if flags.contains('o') {
