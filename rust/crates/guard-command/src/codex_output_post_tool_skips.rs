@@ -13,11 +13,14 @@ use serde_json::{Map, Value};
 use crate::codex_output_commands::is_focused_pytest_verification;
 use crate::codex_output_entry::{scope_of, secret_like_source_name};
 use crate::codex_output_fs as pyfs;
-use crate::codex_output_inspection_flow::is_read_only_source_inspection;
+use crate::codex_output_inspection_flow::{
+    is_read_only_source_inspection, target_name_is_secret_like,
+};
 use crate::codex_output_post_tool::{absolute, Input, PostToolError, Run};
 use crate::codex_output_post_tool_sources::sensitive_local_source_matches;
 use crate::codex_output_py::{py_splitlines, py_strip, shlex_split, PyPath};
 use crate::codex_output_source_paths::resolve_source_candidate_path;
+use crate::sfrs_constants::FILE_READ_TOOL_NAMES;
 use crate::sfrs_read_only_filters::read_only_lookup_target_is_safe;
 
 const NATIVE_SEARCH_TOOLS: [&str; 4] = ["grep", "egrep", "fgrep", "rg"];
@@ -210,6 +213,10 @@ fn native_search_target_is_safe(
     {
         return false;
     }
+    let scope = scope_of(run.ctx, input.cwd.as_ref(), input.home_dir.as_ref());
+    if target_name_is_secret_like(target, scope) {
+        return false;
+    }
     let Some(candidate) =
         resolve_source_candidate_path(target, input.cwd.as_ref(), input.home_dir.as_ref(), run.ctx)
     else {
@@ -274,6 +281,57 @@ fn native_search_is_read_only(run: &Run, input: &Input) -> bool {
         .all(|target| native_search_target_is_safe(run, input, target, home.as_deref()))
 }
 
+/// A harness read tool may carry the lines it wants in the path it was given
+/// (`src/app.ts:1-52`). The range is not part of the file name, and a Windows
+/// drive letter (`C:\\src`) is not a range.
+fn without_line_range(target: &str) -> &str {
+    let Some(colon) = target.rfind(':') else {
+        return target;
+    };
+    let (path, range) = (&target[..colon], &target[colon + 1..]);
+    let numbered = |text: &str| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit());
+    let ranged = match range.split_once('-') {
+        Some((start, end)) => numbered(start) && numbered(end),
+        None => numbered(range),
+    };
+    if ranged && !path.is_empty() {
+        path
+    } else {
+        target
+    }
+}
+
+/// A harness-native read of one file, with no command line of its own. The
+/// tool names the file directly, so the same target rules as a native search
+/// decide whether reading it was read-only inspection.
+fn native_read_is_read_only(run: &Run, input: &Input) -> bool {
+    let tool = match input.tool_name() {
+        Value::String(name) => py_strip(name).to_lowercase(),
+        _ => return false,
+    };
+    let Some(tool_input) = input.tool_input.as_object() else {
+        return false;
+    };
+    if !FILE_READ_TOOL_NAMES.contains(&tool.as_str())
+        || EXPLICIT_COMMAND_KEYS
+            .iter()
+            .any(|key| tool_input.get(*key).and_then(nonempty).is_some())
+    {
+        return false;
+    }
+    let Some(targets) = native_search_targets(tool_input) else {
+        return false;
+    };
+    if targets.is_empty() {
+        return false;
+    }
+    let home = os_path(input.home_dir.as_ref());
+    targets.iter().all(|target| {
+        let target = without_line_range(target);
+        native_search_target_is_safe(run, input, target, home.as_deref())
+    })
+}
+
 /// The command reads no local secret and names no secret-like source.
 fn names_no_secret_source(
     run: &Run,
@@ -302,10 +360,12 @@ pub(crate) fn source_inspection_can_skip(
     input: &Input,
     command: &str,
     content: &[Value],
+    reads_sensitive_file: bool,
 ) -> Result<bool, PostToolError> {
     let scope = scope_of(run.ctx, input.cwd.as_ref(), input.home_dir.as_ref());
-    let read_only =
-        is_read_only_source_inspection(command, scope) || native_search_is_read_only(run, input);
+    let read_only = is_read_only_source_inspection(command, scope)
+        || native_search_is_read_only(run, input)
+        || (!reads_sensitive_file && native_read_is_read_only(run, input));
     if !read_only || !names_no_secret_source(run, input, command, false)? {
         return Ok(false);
     }
