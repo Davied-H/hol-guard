@@ -90,6 +90,25 @@ def test_native_spawn_error_denies_the_tool_instead_of_failing_open(
     assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert bridge._NATIVE_RUNTIME_UNAVAILABLE in response["hookSpecificOutput"]["permissionDecisionReason"]
 
+
+def test_native_probe_budget_is_shared_with_one_bounded_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[float] = []
+    started = time.monotonic()
+
+    def unavailable(_feature: str, *, guard_home: Path, deadline_monotonic: float) -> None:
+        assert guard_home == tmp_path
+        calls.append(deadline_monotonic)
+        return None
+
+    monkeypatch.setattr(bridge, "native_hook_bridge_executable", unavailable)
+    assert bridge._native_bridge_executable(tmp_path) is None
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+    assert started < calls[0] <= time.monotonic() + 1.5
+
+
 def test_the_launcher_hands_the_runtime_this_call_s_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
