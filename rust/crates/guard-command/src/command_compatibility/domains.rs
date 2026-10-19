@@ -368,11 +368,12 @@ pub(super) fn observe(
     // A proven `sed` print or stdout substitution writes no file.
     let write_command = (executable == "sed"
         && !crate::pretool::sed_edits::proven_read_segment(command, segment, context))
+        || (executable == "dd"
+            && !crate::pretool::dd_reads::proven_read_segment(command, segment, context))
         || matches!(
             executable.as_str(),
             "cp" | "mv"
                 | "tee"
-                | "dd"
                 | "install"
                 | "touch"
                 | "truncate"
@@ -473,15 +474,16 @@ pub(super) fn observe(
                 | "poweroff"
                 | "halt"
                 | "diskutil"
-                | "dd"
                 | "truncate"
-        ) || (executable == "find"
-            && !is_contained_compile_check_arguments(arguments)
-            && crate::read_only_fanout::find_exec(arguments).is_none()
-            && option(
-                arguments,
-                &["-delete", "-exec", "-execdir", "-ok", "-okdir"],
-            ))
+        ) || (executable == "dd"
+            && !crate::pretool::dd_reads::proven_read_segment(command, segment, context))
+            || (executable == "find"
+                && !is_contained_compile_check_arguments(arguments)
+                && crate::read_only_fanout::find_exec(arguments).is_none()
+                && option(
+                    arguments,
+                    &["-delete", "-exec", "-execdir", "-ok", "-okdir"],
+                ))
             || (matches!(executable.as_str(), "sed" | "perl")
                 && arguments.iter().any(|value| value.starts_with("-i"))))
     {

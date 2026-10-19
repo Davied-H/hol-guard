@@ -94,6 +94,7 @@ pub(crate) fn benign_command_segments(
                         basename,
                     "ls" | "cat"
                         | "base64"
+                        | "dd"
                         | "cp"
                         | "mkdir"
                         | "touch"
@@ -296,6 +297,7 @@ pub(super) fn exact_safe_segment_with_context(
                 || (segment.pipeline_index > 0
                     && super::stdin_filters::safe_arguments(basename, &segment.arguments))
         }
+        "dd" => super::dd_reads::safe_dd_arguments(&segment.arguments, context),
         "du" => super::metadata_reads::safe_du_arguments(&segment.arguments, context),
         "df" => super::metadata_reads::safe_df_arguments(&segment.arguments),
         "diff" => super::metadata_reads::safe_diff_arguments(&segment.arguments, context),
