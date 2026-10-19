@@ -12,6 +12,7 @@ import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from ..desktop_core_currency import OUT_OF_SYNC_REASON, superseded_desktop_core
 from ..windows_paths import trusted_windows_local_temp
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
 from .contained_authority import authority_unavailable, settled_authority
@@ -53,6 +54,9 @@ def _reject(response: object = None) -> RestrictedPytestError:
     # Shape validation and unrelated later rejections must not inherit state
     # from a previous native authority call in this process.
     if authority_unavailable(response) and isinstance(response, Mapping):
+        superseded = superseded_desktop_core()
+        if superseded is not None:
+            return RestrictedPytestError(OUT_OF_SYNC_REASON, superseded.message())
         reason = response.get("reason_code")
         return RestrictedPytestError(
             _FAILURE,
