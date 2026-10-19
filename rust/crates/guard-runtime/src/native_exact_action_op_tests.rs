@@ -11,9 +11,11 @@
 //! so it is not the way to resolve a difference. The tool-target family departs
 //! in three places: the bytes a write tool puts into the file it names no
 //! longer bind the approval, paging and formatting options no longer bind a
-//! read, and one named file outside the workspace is a scope an approval can
-//! cover. A directory outside it still is not, and neither is any path a
-//! search tool is given to walk.
+//! read, and one file a read tool names outside the workspace is a scope an
+//! approval can cover. A directory outside it still is not, neither is any
+//! path a search tool is given to walk, and neither is a write out there: the
+//! bytes are not part of the identity, so naming only the path would let one
+//! allow answer for every later edit of a shell profile or a launch agent.
 
 use std::collections::BTreeMap;
 use std::io::Read;

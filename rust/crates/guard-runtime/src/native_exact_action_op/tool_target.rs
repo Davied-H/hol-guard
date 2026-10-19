@@ -86,16 +86,22 @@ fn sensitive(value: &str, cwd: &str, home: Option<&str>) -> bool {
 }
 
 /// Whether a resolved path outside the workspace is still a scope an approval
-/// can name. One file named by a read or a write is: a checkout beside the
-/// workspace is a place the user can answer for once, and what the allow
-/// covers stays that one file. A directory stands for everything under it, so
-/// it keeps `broad_scope` and the review stays once-only. A path whose parent
-/// does not exist names nothing yet, so it does too. A search tool never
-/// qualifies: `ls`, `glob` and `grep` are given a directory to walk, and a
-/// path of theirs that is not a directory today may be one by the time the
-/// remembered allow is used again.
-fn nameable_target(resolved: &str, names_one_file: bool) -> bool {
-    if !names_one_file || fs_path::is_dir(resolved) {
+/// can name. One file a read tool names is: a checkout beside the workspace is
+/// a place the user can answer for once, and what the allow covers stays that
+/// one file whose bytes the allow never changes.
+///
+/// Nothing else qualifies. A directory stands for everything under it, and a
+/// path whose parent does not exist names nothing yet, so both keep
+/// `broad_scope` and the review stays once-only. A search tool is given a
+/// directory to walk, and a path of its own that is not a directory today may
+/// be one by the time the remembered allow is used again. A write outside the
+/// workspace is the one case where naming only the path would widen what the
+/// allow covers: the file's bytes are not part of the identity, so an `Always
+/// allow` on an edit to `~/.zshrc`, a launch agent or a crontab would answer
+/// for every later edit of that file. Those stay `broad_scope`, and the user
+/// keeps both choices on each one.
+fn nameable_target(resolved: &str, reads_one_file: bool) -> bool {
+    if !reads_one_file || fs_path::is_dir(resolved) {
         return false;
     }
     fs_path::is_file(resolved) || fs_path::is_dir(&fs_path::parent(resolved))
@@ -195,7 +201,7 @@ pub(super) fn tool_target_identity(
         if sensitive(raw, cwd, ctx.home) || sensitive(&resolved, cwd, ctx.home) {
             return Err(SENSITIVE_PATH);
         }
-        if !fs_path::is_inside(&resolved, &root) && !nameable_target(&resolved, names_one_file) {
+        if !fs_path::is_inside(&resolved, &root) && !nameable_target(&resolved, is_read) {
             return Err(BROAD_SCOPE);
         }
         targets.push(resolved);

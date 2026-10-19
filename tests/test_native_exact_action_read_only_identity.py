@@ -258,6 +258,12 @@ def test_read_outside_the_workspace_and_grep_regex_scope(
     for tool in ("ls", "list_dir", "glob", "grep"):
         assert not _tool_proven(tool, {"path": str(outside)}, workspace)
         assert not _tool_proven(tool, {"path": str(tmp_path / "absent" / "x")}, workspace)
+    # A write outside the workspace is the one case where naming only the path
+    # would widen the allow: the bytes are not part of the identity, so an
+    # `Always allow` on one edit would answer for every later edit of that
+    # file. A shell profile, a launch agent and a crontab all live out here.
+    for tool in ("write", "write_file", "edit", "edit_file"):
+        assert not _tool_proven(tool, {"path": str(outside), "content": "x\n"}, workspace)
     assert _tool_decision("read", {"path": str(workspace / "a.txt")}, workspace)[0] is not None
     # A content regex that looks like an absolute path is not a path scope.
     assert _tool_decision("grep", {"pattern": "/api/v1", "path": "src"}, workspace)[0] is not None
