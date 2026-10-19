@@ -9,16 +9,21 @@ those two apart. Mined cases are scrubbed of private names before they are
 added, so this is the easy mistake to make: the rename lands in the catalogue
 and nothing creates the renamed directory.
 
-So a benign case must either find its paths in the fixture or say here that it
-creates them. Cases that write, copy into, link at, redirect into, ``mkdir``,
-``git init`` or ``git worktree add`` a path are naming where the result goes,
-and a few probe deliberately for something that is not there.
+So a benign case must find its paths in the fixture, unless the command itself
+is what puts something there. Which path that is comes out of the command: the
+operand a ``mkdir``, ``touch``, ``git init`` or ``git worktree add`` names, the
+destination of a copy, move or link, a redirect target, the file a write tool
+is handed. Every other path a case names is read, and has to be there, so the
+exemption covers a copy's destination without covering its source. A handful
+of cases probe deliberately for something absent and name themselves below.
 """
 
 from __future__ import annotations
 
+import glob
 import json
 import re
+import shlex
 import shutil
 import tempfile
 from pathlib import Path
@@ -26,76 +31,109 @@ from pathlib import Path
 from tests.benign_fp_gate_fixture import build_fixture
 
 _CATALOGUE = Path(__file__).parent / "fixtures" / "benign_false_positive_gate.json"
-_TOKEN_PATH = re.compile(r"\$\{[A-Z_]+\}[A-Za-z0-9_./@+-]*")
-
-# The path named is where the command puts its result, so it is absent until
-# the command runs: a new file or directory, a copy's or a link's destination,
-# a redirect target, a fresh repository, a worktree checkout.
-_CREATES_ITS_TARGET = frozenset(
-    {
-        "git-worktree-add-existing-branch",
-        "git-worktree-add-existing-branch-tail",
-        "git-worktree-add-new-branch-from-local-main",
-        "gauntlet-worktree-add-temp-root-leaf",
-        "queue-cp-r-sibling-node-modules",
-        "queue-diff-sibling-to-tmp-patch",
-        "queue-gh-api-logs-redirect-absolute-wc",
-        "queue-git-init-scratch",
-        "queue-ln-s-sibling-node-modules",
-        "queue-mkdir-home-deliverables",
-        "queue-touch-probe-rm",
-        "queue-worktree-add-org-sibling",
-        "queue-worktree-add-parent-pipe-tail",
-        "queue-write-org-parent-dot-probe",
-        "queue-write-sibling-repo-dot-scratch",
-        "queue-write-sibling-worktree-dot-tmp-json",
-        "queue-write-sibling-worktree-scratch",
-        "session-git-fetch-then-worktree-add",
-        "session-ln-s-sibling-wt-node-modules-ls-grep",
-        "session-ln-s-sibling-wt-node-modules-ls-grep-in-wt",
-        "session-git-init-scratch-add-all-commit",
-        "session-git-init-scratch-commit-chain",
-        "session-git-init-temp-root-leaf",
-        "session-git-worktree-add-c-grandparent-sibling",
-        "session-git-worktree-add-c-grandparent-tail",
-        "session-git-worktree-add-tmp-sibling",
-        "session-mkdir-copy-preserved-globs-into-workspace",
-        "session-mkdir-copy-scratch-file-into-workspace",
-        "session-worktree-add-temp-root-leaf-from-tmp-repo",
-        "session-worktree-add-temp-root-leaf-log",
-        "tmp-write-new-file",
-        "write-dollar-route-file",
-        "write-dynamic-route-new-subtree",
-    }
-)
+_TOKEN_PATH = re.compile(r"\$\{[A-Z_]+\}[A-Za-z0-9_./@+*?\[\]-]*")
+_GLOB_CHARACTERS = ("*", "?", "[")
 
 # The absence is the shape under test: a probe for a file that is not there,
 # or a list of roots where one is missing.
 _PROBES_FOR_ABSENCE = frozenset(
     {
         "gauntlet-ls-missing-git-leaf-plain-dir",
-    # The worktree has no ``node_modules`` of its own, deliberately: the
-    # cases that link one in here are asking about an absent destination.
-    # A ``du`` of it measures nothing and prints an error, as a probe does.
-    "session-du-sibling-worktree-modules",
-    "session-du-sibling-worktree-scripts-sort",
+        # The worktree has no ``node_modules`` of its own, deliberately: the
+        # cases that link one in here are asking about an absent destination.
+        # A ``du`` of it measures nothing and prints an error, as a probe does.
+        "session-du-sibling-worktree-modules",
+        "session-du-sibling-worktree-scripts-sort",
         "observed-ls-lockfile-probe-mixed",
         "queue-grep-head-wc-absent-tmp-trace",
         "session-grep-roots-one-missing-tmp-sibling",
     }
 )
 
+# Verbs whose last operand is where the result lands.
+_LAST_OPERAND_IS_DESTINATION = frozenset({"cp", "mv", "ln", "install", "rsync"})
+# Verbs that create every operand they are given.
+_EVERY_OPERAND_IS_CREATED = frozenset({"mkdir", "touch", "tee"})
+# Tool inputs that name a file the tool writes, for the tools that write.
+_WRITE_TOOL_KEYS = ("file_path", "notebook_path", "path")
+_WRITE_TOOLS = ("write", "edit", "notebook")
+_SEGMENT_BOUNDARY = re.compile(r"&&|\|\||[;|\n]")
 
-def _referenced(tool_input: dict[str, object]) -> list[str]:
-    """Token paths the case names, minus the ones it globs."""
+
+def _operands(words: list[str]) -> list[str]:
+    """The words that are not flags, in order."""
+    return [word for word in words if not word.startswith("-")]
+
+
+def _segment_targets(segment: str) -> set[str]:
+    """Paths this one command puts something at."""
+    targets: set[str] = set()
+    for match in re.finditer(r"(?:\d?>>?|&>)\s*(\S+)", segment):
+        targets.add(match.group(1))
+    try:
+        words = shlex.split(segment)
+    except ValueError:
+        words = segment.split()
+    words = [word for word in words if "=" not in word.split("/")[0] or word.startswith("/")]
+    if not words:
+        return targets
+    verb = Path(words[0]).name
+    operands = _operands(words[1:])
+    if verb in _EVERY_OPERAND_IS_CREATED:
+        targets.update(operands)
+    elif verb in _LAST_OPERAND_IS_DESTINATION and operands:
+        targets.add(operands[-1])
+    elif verb == "git":
+        # ``git -C <dir>`` reads that directory, so it is not a target; the
+        # subcommand's own operand is.
+        if "init" in operands:
+            targets.update(_first_path(operands[operands.index("init") + 1 :]))
+        if "worktree" in operands and "add" in operands:
+            targets.update(_first_path(_operands(words[words.index("add") + 1 :])))
+    return targets
+
+
+def _first_path(operands: list[str]) -> list[str]:
+    """The first operand that names a path rather than a branch or a flag's value."""
+    for operand in operands:
+        if "/" in operand or operand.startswith("${"):
+            return [operand]
+    return []
+
+
+def _creation_targets(tool_name: str, tool_input: dict[str, object]) -> set[str]:
+    """Every path this case's own command or tool input creates."""
+    writes = any(verb in tool_name.lower() for verb in _WRITE_TOOLS)
+    targets = {
+        str(tool_input[key])
+        for key in _WRITE_TOOL_KEYS
+        if writes and isinstance(tool_input.get(key), str)
+    }
+    command = tool_input.get("command")
+    if isinstance(command, str):
+        for segment in _SEGMENT_BOUNDARY.split(command):
+            targets.update(_segment_targets(segment))
+    return {target.rstrip("/") for target in targets}
+
+
+def _referenced(tool_name: str, tool_input: dict[str, object]) -> list[str]:
+    """Token paths the case names, minus the ones its own command creates."""
+    created = _creation_targets(tool_name, tool_input)
     blob = json.dumps(tool_input)
     named = []
     for match in _TOKEN_PATH.finditer(blob):
-        tail = blob[match.end() : match.end() + 1]
-        # A glob names a pattern, not a path, so nothing has to match it.
-        if tail in {"*", "?", "["}:
+        reference = match.group()
+        bare = reference.rstrip("/")
+        if bare in created:
             continue
-        named.append(match.group())
+        # A path whose own name holds a ``$`` — a dynamic route file such as
+        # ``posts.$postId.tsx`` — ends the token match early, so the created
+        # path it belongs to only starts with what was matched.
+        if blob[match.end() : match.end() + 1] == "$" and any(
+            target.startswith(bare) for target in created
+        ):
+            continue
+        named.append(reference)
     return named
 
 
@@ -109,15 +147,26 @@ def test_every_benign_case_finds_the_paths_it_reads() -> None:
         for case in catalogue["cases"] + catalogue.get("mcp_cases", []):
             if case.get("expect") != "allow":
                 continue
-            if case["id"] in _CREATES_ITS_TARGET or case["id"] in _PROBES_FOR_ABSENCE:
+            if case["id"] in _PROBES_FOR_ABSENCE:
                 continue
-            for reference in _referenced(case.get("tool_input", {})):
+            for reference in _referenced(case.get("tool", ""), case.get("tool_input", {})):
                 token = reference[: reference.index("}") + 1]
                 if token not in tokens:
                     continue
-                resolved = Path(reference.replace(token, tokens[token]).rstrip("/"))
-                if not resolved.exists() and not resolved.is_symlink():
-                    missing.append(f"{case['id']}: {reference}")
+                resolved = reference.replace(token, tokens[token]).rstrip("/")
+                path = Path(resolved)
+                if path.exists() or path.is_symlink():
+                    # Brackets are a path of their own in a dynamic route
+                    # directory such as ``app/registry/[slug]``, so the literal
+                    # name is tried before the pattern.
+                    continue
+                if any(character in resolved for character in _GLOB_CHARACTERS):
+                    # A pattern names a set of paths, and the case was mined
+                    # from a session where it matched something.
+                    if not glob.glob(resolved):
+                        missing.append(f"{case['id']}: {reference} (matched nothing)")
+                    continue
+                missing.append(f"{case['id']}: {reference}")
     finally:
         try:
             fixture.cleanup()
@@ -127,7 +176,7 @@ def test_every_benign_case_finds_the_paths_it_reads() -> None:
     assert not missing, (
         "benign cases name paths the fixture does not build, so they measure a "
         "missing path rather than the shape they were written for. Build the "
-        "path in tests/benign_fp_gate_fixture.py, or, if the case creates it or "
-        "probes for its absence, name the case in this test:\n  "
+        "path in tests/benign_fp_gate_fixture.py, or, if the case probes "
+        "deliberately for its absence, name the case in this test:\n  "
         + "\n  ".join(missing)
     )

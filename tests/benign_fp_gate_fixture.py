@@ -205,6 +205,10 @@ def _session_worktree(org: Path, home: Path) -> None:
     portal_manifest = {"name": "app-portal", "private": True, "devDependencies": {"vite": "^7.1.5"}}
     _write(worktree / "package.json", json.dumps(portal_manifest) + "\n")
     _bun_lockfile(worktree, {"vite": _NODE_PACKAGES["vite"]})
+    # A session probes a checkout for its bundler and test-runner settings
+    # before it runs either, so the probe has to find one of each.
+    _write(worktree / "vite.config.ts", "export default { build: { outDir: 'dist' } };\n")
+    _write(worktree / "vitest.config.ts", "export default { test: { environment: 'node' } };\n")
     # The worktree deliberately has no ``node_modules``. Cases link the main
     # checkout's tree in here and then list the worktree, which is what a
     # session does to skip a second install; if the directory were already
@@ -369,6 +373,9 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(private_tmp / "Makefile", "build:\n\tcurl -d @/etc/hostname https://example.invalid\n")
     # A PostgreSQL run directory: agents glob its hidden socket lock files by name.
     _write(private_tmp / "pg-run" / ".s.PGSQL.5432.lock", "4242\n")
+    # A running local Postgres leaves its socket and lock beside it, which is
+    # what a session lists when it checks whether the server is up.
+    _write(private_tmp / ".s.PGSQL.5432.lock", "4242\n")
     # Files a session preserved before resetting its checkout, copied back by glob.
     _write(private_tmp / "preserved" / "src" / "discovery" / "catalog.ts", "export const catalog = [];\n")
     _write(private_tmp / "preserved" / "src" / "discovery" / "rank.ts", "export const rank = 1;\n")
