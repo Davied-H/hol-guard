@@ -141,6 +141,9 @@ class _HookWorkerNativeHost(Protocol):
     @property
     def evidence_dispatch(self) -> object | None: ...
 
+    @property
+    def policy_snapshot_publisher(self) -> object: ...
+
     _last_native_decision_receipt: dict[str, object] | None
     _native_policy_snapshot: Callable[..., dict[str, object] | None]
     _native_runtime_status: Callable[[], NativeRuntimeStatus]
