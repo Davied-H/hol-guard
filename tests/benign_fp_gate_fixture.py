@@ -208,6 +208,12 @@ def _session_worktree(org: Path, home: Path) -> None:
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')
     _write(home / ".codex" / "plans" / "todo.md", "# Todo\n- Synthetic plan item.\n")
+    _write(
+        home / ".codex" / "plans" / "acme-plan-findings.md", "# Findings\n- 541 retry window\n- 1367 report window\n"
+    )
+    _write(home / ".codex" / "plans" / "acme-plan-todo.md", "# Todo\n- [ ] 541 retry window\n")
+    _write(home / ".codex" / "plans" / "evidence" / "run-1" / "summary.json", '{"cases": []}\n')
+    _write(home / ".claude" / "plans" / "acme-plan.md", "# Plan\nSynthetic plan notes.\n")
     _write(home / ".codex" / "auth.json", '{"tokens": "synthetic-not-a-secret"}\n')
     # Claude Code home: a memory note agents read, beside a login and a settings file that must stay guarded.
     _write(home / ".claude" / "projects" / "p" / "memory" / "note.md", "# Note\nSynthetic memory note.\n")

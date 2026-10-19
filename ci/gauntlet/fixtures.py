@@ -443,6 +443,12 @@ def _add_realistic_shapes(main: Path, home: Path, environment: dict[str, str], s
         ("other-project/src/report.ts", SIBLING_REPORT),
         ("other-project/package.json", SIBLING_PACKAGE),
         ("other-project/.keep", ""),
+        # Plan and evidence notes agents keep in the harness homes, which they
+        # search and print with a discarded stderr like any other file.
+        (".codex/plans/acme-plan-findings.md", "# Findings\n- 541 retry window\n- 1367 report window\n"),
+        (".codex/plans/acme-plan-todo.md", "# Todo\n- [ ] 541 retry window\n"),
+        (".codex/plans/evidence/run-1/summary.json", '{"cases": []}\n'),
+        (".claude/plans/acme-plan.md", "# Plan\nSynthetic plan notes.\n"),
         # A plain directory with no .git, where a leaf probe finds nothing.
         (f"{PLAIN_DIRECTORY}/README.txt", "Plain notes directory.\n"),
         # Ordinary files a toolchain and a repository's own automation keep
