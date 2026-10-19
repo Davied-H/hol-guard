@@ -333,8 +333,16 @@ def native_tools_scope_error(
         return scope
     if scenario.id == TMP_ALIAS_READ_CASE and (scope := _scratch_read_error(calls, require_steps=False)):
         return scope
-    if scenario.id == TASK_SCHEMA_CASE and (scope := _task_schema_error(calls, set(delegated), require_result=not guard_denied)):
-        return scope
+    if scenario.id == TASK_SCHEMA_CASE:
+        if (scope := _task_schema_error(calls, set(delegated), require_result=not guard_denied)):
+            return scope
+        if not guard_denied and not any(
+            call["id"] in delegated
+            and call["name"] == "read"
+            and _write_path(call["args"]) in {"README.md", "{{workspace}}/README.md"}
+            for call in calls
+        ):
+            return "delegated lookup did not read README.md"
     if guard_denied:
         return None
     if not set(scenario.required_tools) <= {call["name"] for call in calls}:
