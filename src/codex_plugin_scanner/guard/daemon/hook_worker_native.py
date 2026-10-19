@@ -808,7 +808,9 @@ class HookWorkerNativeMixin:
             if fenced is False:
                 raise
             return unavailable("native_command_control_fence_unavailable")
-        if fenced is None and published_binding_token(self.policy_snapshot_publisher) != unleased_binding:
+        if fenced is None and (
+            unleased_binding is None or published_binding_token(self.policy_snapshot_publisher) != unleased_binding
+        ):
             # This edge was reached without the lease and a control mutation
             # published across it. Honouring it could allow a command, or claim
             # a saved approval, against the policy the user is replacing.
