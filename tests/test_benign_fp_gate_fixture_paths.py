@@ -51,6 +51,8 @@ _CREATES_ITS_TARGET = frozenset(
         "queue-write-sibling-worktree-dot-tmp-json",
         "queue-write-sibling-worktree-scratch",
         "session-git-fetch-then-worktree-add",
+        "session-ln-s-sibling-wt-node-modules-ls-grep",
+        "session-ln-s-sibling-wt-node-modules-ls-grep-in-wt",
         "session-git-init-scratch-add-all-commit",
         "session-git-init-scratch-commit-chain",
         "session-git-init-temp-root-leaf",
@@ -72,6 +74,11 @@ _CREATES_ITS_TARGET = frozenset(
 _PROBES_FOR_ABSENCE = frozenset(
     {
         "gauntlet-ls-missing-git-leaf-plain-dir",
+    # The worktree has no ``node_modules`` of its own, deliberately: the
+    # cases that link one in here are asking about an absent destination.
+    # A ``du`` of it measures nothing and prints an error, as a probe does.
+    "session-du-sibling-worktree-modules",
+    "session-du-sibling-worktree-scripts-sort",
         "observed-ls-lockfile-probe-mixed",
         "queue-grep-head-wc-absent-tmp-trace",
         "session-grep-roots-one-missing-tmp-sibling",

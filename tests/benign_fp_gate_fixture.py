@@ -205,13 +205,11 @@ def _session_worktree(org: Path, home: Path) -> None:
     portal_manifest = {"name": "app-portal", "private": True, "devDependencies": {"vite": "^7.1.5"}}
     _write(worktree / "package.json", json.dumps(portal_manifest) + "\n")
     _bun_lockfile(worktree, {"vite": _NODE_PACKAGES["vite"]})
-    # The worktree's dependencies are installed, as a session that ran its
-    # package manager there leaves them. Cases measure the size of that tree
-    # and link into a file inside it; against a tree that is not there they
-    # would measure a missing path instead of an installed one.
-    _node_package(worktree, "vite", _NODE_PACKAGES["vite"])
-    _node_package(worktree, "vitest", _NODE_PACKAGES["vitest"])
-    _write(worktree / "node_modules" / "vitest" / "index.js", "module.exports = {};\n")
+    # The worktree deliberately has no ``node_modules``. Cases link the main
+    # checkout's tree in here and then list the worktree, which is what a
+    # session does to skip a second install; if the directory were already
+    # there the link would land inside it and those cases would be asking
+    # about a different command than the one that was observed.
     for name in ("findings", "prd", "todo"):
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')
