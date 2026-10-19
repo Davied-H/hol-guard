@@ -20,6 +20,9 @@ from .review_fixtures import (
     WORKTREE_CASE,
     WORKTREE_NAME,
 )
+from .session_folder import CHECKOUT
+from .session_folder import EDIT_CASE as SESSION_EDIT_CASE
+from .session_folder import SHELL_CASE as SESSION_SHELL_CASE
 
 PRIVATE_TEMP_ROOTS = ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
 # Git Bash ``mktemp -d`` on Windows prints a directory in the fixture profile's
@@ -30,6 +33,8 @@ SCRATCH_NAME = "scratch-notes.txt"
 # /private/tmp; the evidence redacts both spellings to ``{{scratch}}``.
 TMP_ALIAS_READ_CASE = "omp-native-read-tmp-alias-worktree-file"
 SCRATCH_READ_TARGET = "{{scratch}}/notes.md"
+# The checkout file a session opened in a plain folder reads and edits through its absolute path.
+SESSION_EDIT_TARGET = f"{{{{home}}}}/{CHECKOUT}/src/report.ts"
 # A background shell job started with `async`, then its output read back through the host's own
 # `proc://<job id>` selector, which names the job table rather than a file.
 BACKGROUND_READ_CASE = "omp-native-read-background-job-output"
@@ -243,6 +248,29 @@ def _scratch_read_error(calls: list[dict[str, Any]], *, require_steps: bool = Tr
     return None
 
 
+def _session_edit_error(calls: list[dict[str, Any]], *, require_steps: bool = True) -> str | None:
+    """Hold every file call to the checkout's report; ``require_steps`` also needs read, edit, read back."""
+    steps: list[str] = []
+    for call in calls:
+        name = call["name"]
+        if name not in {"read", "edit"}:
+            continue
+        path = _edit_path(call["args"]) if name == "edit" else _path(call["args"])
+        if path is not None and name == "read":
+            path = re.sub(r":\d+(-\d+)?$", "", path)
+        if path != SESSION_EDIT_TARGET:
+            return "the model used a file other than the checkout's report"
+        steps.append(name)
+    if not require_steps:
+        return None
+    if "edit" not in steps:
+        return "the model did not edit the checkout's report"
+    edit = steps.index("edit")
+    if "read" not in steps[:edit] or "read" not in steps[edit:]:
+        return "the model did not read the report before and after editing it"
+    return None
+
+
 def _background_read_error(calls: list[dict[str, Any]], *, require_steps: bool = True) -> str | None:
     """Hold every read to a background job's output, after the job started; ``require_steps`` also needs one.
 
@@ -376,6 +404,8 @@ def native_tools_scope_error(
         return scope
     if scenario.id == TMP_ALIAS_READ_CASE and (scope := _scratch_read_error(calls, require_steps=False)):
         return scope
+    if scenario.id == SESSION_EDIT_CASE and (scope := _session_edit_error(calls, require_steps=False)):
+        return scope
     if scenario.id == GITHUB_LOOKUP_CASE and (scope := _github_lookup_error(calls, require_call=False)):
         return scope
     if scenario.id == BACKGROUND_READ_CASE and (scope := _background_read_error(calls, require_steps=False)):
@@ -389,6 +419,11 @@ def native_tools_scope_error(
     ran = {call["args"].get("command") for call in calls if call["name"] == "bash"}
     if listed - ran:
         return "the model skipped a listed shell command"
+    if scenario.id == SESSION_SHELL_CASE and not guard_denied:
+        expected = [command.replace("{{root}}", "{{fixture}}") for command in scenario.commands]
+        executed = [call["args"].get("command") for call in calls if call["name"] == "bash"]
+        if executed != expected:
+            return "the shell commands were duplicated or out of order"
     if any(call["name"] == "bash" for call in calls) != bool(scenario.commands):
         return "the shell commands were omitted or unexpected"
     if "private-temp-write" in scenario.id:
@@ -397,6 +432,8 @@ def native_tools_scope_error(
         return _linked_worktree_error(calls)
     if scenario.id == TMP_ALIAS_READ_CASE:
         return _scratch_read_error(calls)
+    if scenario.id == SESSION_EDIT_CASE:
+        return _session_edit_error(calls)
     if scenario.id == BACKGROUND_READ_CASE:
         return _background_read_error(calls)
     return None

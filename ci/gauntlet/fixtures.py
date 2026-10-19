@@ -27,6 +27,7 @@ from .review_fixtures import (
     write_gh_stub,
 )
 from .script_cases import script_case_checks
+from .session_folder import session_folder_checks
 from .supply_chain import supply_chain_checks
 
 EXECUTED_FLAG = "output/extension-executed.flag"
@@ -128,16 +129,34 @@ def scratch_checkout(fixture_root: Path) -> Path:
     return root / f"hg-gauntlet-{hashlib.sha256(seed).hexdigest()[:16]}"
 
 
-def remove_scratch_checkout(fixture_root: Path) -> None:
-    """Delete this fixture's scratch checkout only when it is a real directory owned by this user."""
+def stage_directory(fixture_root: Path) -> Path:
+    """Return a second fresh leaf in ``/tmp``, for files a case stages before its commands run.
+
+    It shares the scratch leaf's identity binding but not its name, so neither redacts the other.
+    """
+    scratch = scratch_checkout(fixture_root)
+    return scratch.with_name("hg-stage-" + scratch.name.removeprefix("hg-gauntlet-"))
+
+
+def _remove_owned_directory(path: Path) -> None:
+    """Delete a real directory owned by this user and nothing else."""
     try:
-        scratch = scratch_checkout(fixture_root)
-        info = scratch.lstat()
+        info = path.lstat()
     except OSError:
         return
     # Windows has no getuid and reports st_uid 0, so ownership is only checked on POSIX.
     if stat.S_ISDIR(info.st_mode) and (not hasattr(os, "getuid") or info.st_uid == os.getuid()):
-        shutil.rmtree(scratch, ignore_errors=True)
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def remove_scratch_checkout(fixture_root: Path) -> None:
+    """Delete this fixture's scratch checkout and stage directory when they are real directories owned by this user."""
+    try:
+        paths = (scratch_checkout(fixture_root), stage_directory(fixture_root))
+    except OSError:
+        return
+    for path in paths:
+        _remove_owned_directory(path)
 
 
 def remove_native_cache(home: Path) -> None:
@@ -319,6 +338,7 @@ def filesystem_checks(fixture: Fixture, oracle: str, scenario_id: str) -> dict[s
     checks.update(supply_chain_checks(fixture.workspace, scenario_id))
     checks.update(script_case_checks(fixture.home, fixture.canary, scenario_id))
     checks.update(long_lived_clone_checks(fixture.workspace, scenario_id))
+    checks.update(session_folder_checks(fixture.home, scenario_id))
     checks.update(worktree_checks(fixture.home, fixture.workspace, scenario_id, SETTINGS_BEFORE, SETTINGS_AFTER))
     if scenario_id in BUSINESS_CLI_CASES:
         checks["business-cli-executed-absent"] = not (fixture.workspace / EXECUTED_FLAG).exists()
