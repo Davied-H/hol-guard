@@ -52,10 +52,7 @@ def settled_authority(
     started = time.monotonic()
     response = authorize(payload)
     for _ in range(_SETTLE_ATTEMPTS - 1):
-        if (
-            not authority_unavailable(response)
-            or time.monotonic() - started > _SETTLE_RETRY_WITHIN_SECONDS
-        ):
+        if not authority_unavailable(response) or time.monotonic() - started > _SETTLE_RETRY_WITHIN_SECONDS:
             break
         wait(_SETTLE_PAUSE_SECONDS)
         started = time.monotonic()
